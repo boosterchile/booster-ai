@@ -1,7 +1,8 @@
 # Sonda puntual, solo en rama de trabajo (no se mergea a main): consumo facturable de HERE
 # por la API de Usage, para revisar el experimento de facturación sin pasar por el portal.
-# Requiere credenciales OAuth 2.0 de la app en secretos del repo; si faltan, se omite con
-# aviso y la revisión vuelve a pedir los números al PO.
+# Requiere las dos credenciales OAuth 2.0 de la app en secretos del repo (HERE_REALM_ID es
+# opcional: se deriva de la cuenta); si faltan, se omite con aviso y la revisión vuelve a
+# pedir los números al PO.
 name: Probe HERE — Usage API (consumo facturable)
 
 on:
@@ -28,10 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Sin credenciales → omitido
-        if: env.HERE_ACCESS_KEY_ID == '' || env.HERE_ACCESS_KEY_SECRET == '' || env.HERE_REALM_ID == ''
-        run: echo "::warning::Faltan HERE_ACCESS_KEY_ID / HERE_ACCESS_KEY_SECRET / HERE_REALM_ID; la lectura de Usage se omite."
+        if: env.HERE_ACCESS_KEY_ID == '' || env.HERE_ACCESS_KEY_SECRET == ''
+        run: echo "::warning::Faltan HERE_ACCESS_KEY_ID / HERE_ACCESS_KEY_SECRET; la lectura de Usage se omite."
       - name: Usage API
-        if: env.HERE_ACCESS_KEY_ID != '' && env.HERE_ACCESS_KEY_SECRET != '' && env.HERE_REALM_ID != ''
+        if: env.HERE_ACCESS_KEY_ID != '' && env.HERE_ACCESS_KEY_SECRET != ''
         run: python3 -I scripts/probes/probe-here-usage.py
       - uses: actions/upload-artifact@v4
         if: always()

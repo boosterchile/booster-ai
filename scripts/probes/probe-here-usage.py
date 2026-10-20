@@ -9,7 +9,8 @@ Flujo:
   3. Imprime el JSON crudo recortado y, si la forma coincide con la documentada (ítems por
      feature con usageValue/billableValue), una tabla por fecha y feature.
 
-Env: HERE_ACCESS_KEY_ID, HERE_ACCESS_KEY_SECRET (secretos), HERE_REALM_ID (org), HERE_APP_ID,
+Env: HERE_ACCESS_KEY_ID, HERE_ACCESS_KEY_SECRET (secretos), HERE_REALM_ID (org; si falta se
+     deriva con GET account.api.here.com/user/me), HERE_APP_ID,
      USAGE_START (YYYY-MM-DD, default 2026-10-20), USAGE_END (default hoy UTC).
 Sin credenciales: sale con código 2 y mensaje claro; no inventa datos.
 """
@@ -68,18 +69,36 @@ def token(key_id: str, key_secret: str) -> str:
     return tok
 
 
+def realm_de_la_cuenta(tok: str) -> str:
+    """GET /user/me con el token: la respuesta trae el realm (org) de la cuenta."""
+    req = urllib.request.Request("https://account.api.here.com/user/me", headers={"Authorization": f"Bearer {tok}", "User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            j = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"user/me HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}")
+    realm = j.get("realm") or j.get("realmId") or ""
+    if not realm:
+        raise SystemExit(f"user/me sin campo realm; claves: {list(j.keys())}. Cargar HERE_REALM_ID a mano.")
+    return str(realm)
+
+
 def main() -> int:
     key_id = os.environ.get("HERE_ACCESS_KEY_ID", "")
     key_secret = os.environ.get("HERE_ACCESS_KEY_SECRET", "")
     realm = os.environ.get("HERE_REALM_ID", "")
     app_id = os.environ.get("HERE_APP_ID", "")
-    if not (key_id and key_secret and realm):
-        print("faltan HERE_ACCESS_KEY_ID / HERE_ACCESS_KEY_SECRET / HERE_REALM_ID", file=sys.stderr)
+    if not (key_id and key_secret):
+        print("faltan HERE_ACCESS_KEY_ID / HERE_ACCESS_KEY_SECRET", file=sys.stderr)
         return 2
     start = os.environ.get("USAGE_START", "2026-10-20")
     end = os.environ.get("USAGE_END") or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
 
     tok = token(key_id, key_secret)
+    if not realm:
+        # Sin HERE_REALM_ID: el realm (org) se deriva de la cuenta dueña de las credenciales.
+        realm = realm_de_la_cuenta(tok)
+        print(f"realm derivado de la cuenta: {realm}")
     params = {"startDate": start, "endDate": end}
     if app_id:
         params["appId"] = app_id
