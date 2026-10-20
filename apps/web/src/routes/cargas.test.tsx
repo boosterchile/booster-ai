@@ -183,6 +183,12 @@ describe('CargasNuevoRoute', () => {
     wrap(<CargasNuevoRoute />);
     await user.click(screen.getByRole('button', { name: 'Crear carga' }));
     expect(await screen.findAllByText('Selecciona una región')).toHaveLength(2);
+    // useScrollToFirstError enfoca el primer error (Desde) 50 ms después del
+    // submit. Si el tipeo arranca antes, ese foco se roba a mitad de la
+    // dirección y el envío corregido no llega a publicarse.
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Desde/)).toHaveFocus();
+    });
 
     await user.type(screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
     await user.type(screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
