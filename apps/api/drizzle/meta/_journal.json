@@ -456,6 +456,13 @@
       "when": 1780876800028,
       "tag": "0064_viajes_destination_latlng",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1780876800029,
+      "tag": "0065_membresias_puede_aceptar_ofertas",
+      "breakpoints": true
     }
   ]
 }

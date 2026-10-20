@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
+import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -166,6 +166,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     type MembershipPayload = {
       id: string;
       role: (typeof memberships.role.enumValues)[number];
+      puede_aceptar_ofertas: boolean;
       status: (typeof memberships.status.enumValues)[number];
       joined_at: Date | null;
       empresa: {
@@ -188,6 +189,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const empresaMemberships: MembershipPayload[] = empresaRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
+      puede_aceptar_ofertas: r.membership.puedeAceptarOfertas === true,
       status: r.membership.status,
       joined_at: r.membership.joinedAt,
       empresa: {
@@ -204,6 +206,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const stakeholderMemberships: MembershipPayload[] = stakeholderOrgRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
+      puede_aceptar_ofertas: r.membership.puedeAceptarOfertas === true,
       status: r.membership.status,
       joined_at: r.membership.joinedAt,
       empresa: null,
@@ -245,23 +248,18 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       active = activeMembershipsList[0] ?? null;
     }
 
-    // Ficha propia en `conductores` de la empresa activa (alta «Soy yo el
-    // conductor»). No cambia quién puede aceptar: el cliente la combina
-    // con el rol `dueno` solo para mostrar la tarjeta de voz.
-    let tieneFichaConductor = false;
-    if (active?.empresa) {
+    // Reemplaza el chequeo por `conductores.usuario_id = user.id`
+    // (`tiene_ficha_conductor` de #814, me.ts). La ficha cuenta si está
+    // viva en la empresa activa y el RUT de su usuario es el de la sesión.
+    // `esOwnerOperator` (shared-schemas) combina este booleano con el rol.
+    let fichaConductorMismoRut = false;
+    if (active?.empresa && user.rut) {
       const fichaRows = await opts.db
-        .select({ id: conductores.id })
+        .select({ rut: users.rut })
         .from(conductores)
-        .where(
-          and(
-            eq(conductores.userId, user.id),
-            eq(conductores.empresaId, active.empresa.id),
-            isNull(conductores.deletedAt),
-          ),
-        )
-        .limit(1);
-      tieneFichaConductor = fichaRows.length > 0;
+        .innerJoin(users, eq(conductores.userId, users.id))
+        .where(and(eq(conductores.empresaId, active.empresa.id), isNull(conductores.deletedAt)));
+      fichaConductorMismoRut = fichaRows.some((row) => mismoRut(row.rut, user.rut));
     }
 
     // La allowlist env-var es la fuente de autoridad para platform admin
@@ -290,7 +288,10 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       },
       memberships: membershipsPayload,
       active_membership: active,
-      tiene_ficha_conductor: tieneFichaConductor,
+      ficha_conductor_mismo_rut: fichaConductorMismoRut,
+      // Mismo booleano, con el nombre de #814, para clientes que todavía
+      // leen ese campo. La tarjeta de voz usa `esOwnerOperator`.
+      tiene_ficha_conductor: fichaConductorMismoRut,
     });
   });
 

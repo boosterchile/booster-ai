@@ -44,6 +44,12 @@ export const membershipSchema = z.object({
   user_id: userIdSchema,
   empresa_id: empresaIdSchema,
   role: membershipRoleSchema,
+  /**
+   * El despachador acepta o rechaza ofertas solo si este flag está en
+   * true. Dueño y admin no lo necesitan. Default false (migración 0065).
+   * Opcional en el contrato para filas leídas antes de esa columna.
+   */
+  puede_aceptar_ofertas: z.boolean().optional(),
   status: membershipStatusSchema,
   /** UserId del que invitó. Null si es el owner inicial al crear empresa. */
   invited_by_user_id: userIdSchema.nullable(),

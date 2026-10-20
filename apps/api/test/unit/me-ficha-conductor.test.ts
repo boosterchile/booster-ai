@@ -3,9 +3,10 @@ import { Hono } from 'hono';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * GET /me expone `tiene_ficha_conductor` para la empresa activa.
- * No cambia quién puede aceptar una oferta: el booleano solo dice si
- * este usuario tiene fila viva en `conductores` de esa empresa.
+ * GET /me expone `ficha_conductor_mismo_rut`: ficha viva en `conductores`
+ * de la empresa activa cuyo usuario tiene el mismo RUT que la sesión.
+ * Reemplaza la comparación por `usuario_id` de #814. `esOwnerOperator`
+ * combina este booleano con el rol `dueno`.
  */
 
 beforeAll(() => {
@@ -76,7 +77,10 @@ function membershipRow(role: 'dueno' | 'admin' | 'conductor') {
   };
 }
 
-function makeDbStub(opts: { role: 'dueno' | 'admin' | 'conductor'; ficha: { id: string }[] }) {
+function makeDbStub(opts: {
+  role: 'dueno' | 'admin' | 'conductor';
+  fichas: { rut: string }[];
+}) {
   const selectResults: unknown[][] = [[userRow()], [membershipRow(opts.role)], []];
   let fichaWhere: unknown;
   const limit = vi.fn(() => Promise.resolve(selectResults.shift() ?? []));
@@ -91,10 +95,12 @@ function makeDbStub(opts: { role: 'dueno' | 'admin' | 'conductor'; ficha: { id: 
       table && typeof table === 'object' ? getTableName(table as Record<string, unknown>) : '';
     if (nombre === 'conductores') {
       return {
-        where: vi.fn((clause: unknown) => {
-          fichaWhere = clause;
-          return { limit: vi.fn(() => Promise.resolve(opts.ficha)) };
-        }),
+        innerJoin: vi.fn(() => ({
+          where: vi.fn((clause: unknown) => {
+            fichaWhere = clause;
+            return Promise.resolve(opts.fichas);
+          }),
+        })),
       };
     }
     return { where, innerJoin };
@@ -155,39 +161,51 @@ describe('GET /me — ficha de conductor de la empresa activa', () => {
     vi.clearAllMocks();
   });
 
-  it('dueño con fila en conductores → tiene_ficha_conductor true, filtrada por empresa y no eliminada', async () => {
-    const stub = makeDbStub({ role: 'dueno', ficha: [{ id: 'cond-test' }] });
+  it('dueño con ficha del mismo RUT → ficha_conductor_mismo_rut true', async () => {
+    const stub = makeDbStub({ role: 'dueno', fichas: [{ rut: '11.111.111-1' }] });
     const app = await buildApp(stub.db);
     const res = await app.request('/me', {
       headers: { 'x-empresa-id': EMPRESA_ID },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { tiene_ficha_conductor?: boolean };
+    const body = (await res.json()) as {
+      ficha_conductor_mismo_rut?: boolean;
+      tiene_ficha_conductor?: boolean;
+    };
+    expect(body.ficha_conductor_mismo_rut).toBe(true);
     expect(body.tiene_ficha_conductor).toBe(true);
     expect(stub.from.mock.calls.some((call) => getTableName(call[0]) === 'conductores')).toBe(true);
     const columnas = nombresDeColumna(stub.fichaWhere());
-    expect(columnas).toEqual(expect.arrayContaining(['usuario_id', 'empresa_id', 'eliminado_en']));
+    expect(columnas).toEqual(expect.arrayContaining(['empresa_id', 'eliminado_en']));
   });
 
-  it('dueño sin fila → tiene_ficha_conductor false', async () => {
-    const stub = makeDbStub({ role: 'dueno', ficha: [] });
-    const app = await buildApp(stub.db);
-    const res = await app.request('/me');
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { tiene_ficha_conductor?: boolean };
-    expect(body.tiene_ficha_conductor).toBe(false);
+  it('dueño sin ficha, o con ficha de otro RUT, → false', async () => {
+    const sinFicha = makeDbStub({ role: 'dueno', fichas: [] });
+    const appVacio = await buildApp(sinFicha.db);
+    const vacio = await appVacio.request('/me');
+    expect(
+      ((await vacio.json()) as { ficha_conductor_mismo_rut?: boolean }).ficha_conductor_mismo_rut,
+    ).toBe(false);
+
+    const otroRut = makeDbStub({ role: 'dueno', fichas: [{ rut: '22.222.222-2' }] });
+    const appOtro = await buildApp(otroRut.db);
+    const otro = await appOtro.request('/me');
+    expect(
+      ((await otro.json()) as { ficha_conductor_mismo_rut?: boolean }).ficha_conductor_mismo_rut,
+    ).toBe(false);
   });
 
-  it('admin con ficha sigue recibiendo el booleano true (la autorización de aceptar no mira este flag)', async () => {
-    const stub = makeDbStub({ role: 'admin', ficha: [{ id: 'cond-test' }] });
+  it('admin con ficha del mismo RUT recibe el flag, pero no es owner-operator por el rol', async () => {
+    const stub = makeDbStub({ role: 'admin', fichas: [{ rut: '11111111-1' }] });
     const app = await buildApp(stub.db);
     const res = await app.request('/me');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      tiene_ficha_conductor?: boolean;
-      active_membership: { role: string } | null;
+      ficha_conductor_mismo_rut?: boolean;
+      active_membership: { role: string; puede_aceptar_ofertas?: boolean } | null;
     };
     expect(body.active_membership?.role).toBe('admin');
-    expect(body.tiene_ficha_conductor).toBe(true);
+    expect(body.ficha_conductor_mismo_rut).toBe(true);
+    expect(body.active_membership?.puede_aceptar_ofertas).toBe(false);
   });
 });
