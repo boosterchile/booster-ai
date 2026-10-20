@@ -198,7 +198,7 @@ describe('AsignacionDetalleRoute', () => {
         return {
           trip_request: {
             id: 't1',
-            tracking_code: 'BOO-HC7DJX',
+            tracking_code: 'BOO-TEST01',
             status: 'asignado',
             origin: { address_raw: 'A', region_code: 'XIII' },
             destination: { address_raw: 'B', region_code: 'V' },
@@ -275,22 +275,23 @@ describe('AsignacionDetalleRoute', () => {
         return {
           trip_request: {
             id: 't1',
-            tracking_code: 'BOO-HC7DJX',
+            tracking_code: 'BOO-TEST01',
             status: 'asignado',
             origin: { address_raw: 'A', region_code: 'XIII' },
             destination: { address_raw: 'B', region_code: 'V' },
             cargo_type: 'carga_seca',
             cargo_weight_kg: 5000,
-            shipper_legal_name: 'Prueba Generador',
+            shipper_legal_name: 'Generador Demo',
           },
           assignment: {
             id: 'a1',
             status: 'asignado',
             empresa_id: 'emp-voo',
             driver_user_id: 'u-driver',
-            driver_name: 'Pedro González',
+            driver_name: 'Conductor Demo',
             vehicle_id: 'v-jw',
-            vehicle_plate: 'JWTH77',
+            vehicle_plate: 'TEST01',
+            vehicle_status: 'mantenimiento',
           },
         };
       }
@@ -303,7 +304,7 @@ describe('AsignacionDetalleRoute', () => {
               status: 'activo',
               user: {
                 id: 'u-driver',
-                full_name: 'Pedro González',
+                full_name: 'Conductor Demo',
                 rut: '11.111.111-1',
                 email: 'conductor@example.com',
                 is_pending: false,
@@ -316,8 +317,8 @@ describe('AsignacionDetalleRoute', () => {
         return {
           vehicles: [
             {
-              id: 'v-jw',
-              plate: 'JWTH77',
+              id: 'v-otro',
+              plate: 'ABCD12',
               type: 'camion_pesado',
               unit_category: 'motriz',
               status: 'activo',
@@ -329,7 +330,7 @@ describe('AsignacionDetalleRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    expect(await screen.findByRole('option', { name: 'JWTH77' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'TEST01' })).toBeInTheDocument();
     expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-jw');
     expect(api.get).toHaveBeenCalledWith(
       '/vehiculos',

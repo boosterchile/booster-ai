@@ -49,6 +49,7 @@ interface AssignmentDetail {
     empresa_legal_name: string | null;
     vehicle_id: string | null;
     vehicle_plate: string | null;
+    vehicle_status?: string | null;
     vehicle_type: string | null;
     driver_user_id: string | null;
     driver_name: string | null;
@@ -157,6 +158,7 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
           currentDriverName={assignment.driver_name}
           currentVehicleId={assignment.vehicle_id}
           currentVehiclePlate={assignment.vehicle_plate}
+          currentVehicleStatus={assignment.vehicle_status ?? null}
           carrierEmpresaId={assignment.empresa_id ?? null}
           assignmentStatus={assignment.status}
         />

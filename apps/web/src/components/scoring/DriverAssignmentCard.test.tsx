@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, setActiveEmpresaId } from '../../lib/api-client.js';
 import { empresaKey } from '../../lib/empresa-activa.js';
-import { DriverAssignmentCard } from './DriverAssignmentCard.js';
+import { DriverAssignmentCard, conCamionAsignado } from './DriverAssignmentCard.js';
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -95,6 +95,17 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   setActiveEmpresaId(null);
+});
+
+describe('conCamionAsignado', () => {
+  it('no inventa status activo si el assignment no trae estado', () => {
+    const sinEstado = conCamionAsignado([], 'v-test', 'TEST01', null);
+    expect(sinEstado).toEqual([{ id: 'v-test', plate: 'TEST01' }]);
+    expect(sinEstado[0]).not.toHaveProperty('status');
+
+    const conEstado = conCamionAsignado([], 'v-test', 'TEST01', 'mantenimiento');
+    expect(conEstado[0]).toMatchObject({ id: 'v-test', plate: 'TEST01', status: 'mantenimiento' });
+  });
 });
 
 describe('DriverAssignmentCard', () => {
@@ -410,12 +421,12 @@ describe('DriverAssignmentCard', () => {
     });
     // Inicio y /app/vehiculos guardan un arreglo en ['vehiculos', empresa].
     // Esa entrada vacía no es la flota de la carga: la card lee su propia
-    // clave, y ahí el arreglo (sin `.vehicles`) sí trae a JWTH77.
+    // clave, y ahí el arreglo (sin `.vehicles`) sí trae a TEST01.
     client.setQueryData(empresaKey('emp-voo', 'vehiculos'), []);
     client.setQueryData(empresaKey('emp-voo', 'vehiculos', 'asignacion'), [
       {
         id: 'v-jw',
-        plate: 'JWTH77',
+        plate: 'TEST01',
         type: 'camion_pesado',
         unit_category: 'motriz',
         status: 'activo',
@@ -438,16 +449,16 @@ describe('DriverAssignmentCard', () => {
       <QueryClientProvider client={client}>
         <DriverAssignmentCard
           assignmentId="a1"
-          currentDriverName="Pedro González"
+          currentDriverName="Conductor Demo"
           currentVehicleId="v-jw"
-          currentVehiclePlate="JWTH77"
+          currentVehiclePlate="TEST01"
           carrierEmpresaId="emp-voo"
           assignmentStatus="asignado"
         />
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByRole('option', { name: 'JWTH77' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'TEST01' })).toBeInTheDocument();
     expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-jw');
     expect(screen.queryByRole('option', { name: 'SEMI01' })).toBeNull();
     expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
@@ -485,9 +496,9 @@ describe('DriverAssignmentCard', () => {
       <Wrapper>
         <DriverAssignmentCard
           assignmentId="a1"
-          currentDriverName="Pedro González"
+          currentDriverName="Conductor Demo"
           currentVehicleId="v-jw"
-          currentVehiclePlate="JWTH77"
+          currentVehiclePlate="TEST01"
           carrierEmpresaId="emp-voo"
           assignmentStatus="asignado"
         />
@@ -496,7 +507,7 @@ describe('DriverAssignmentCard', () => {
 
     const select = await screen.findByTestId('vehicle-assignment-select');
     expect(select).toHaveValue('v-jw');
-    expect(screen.getByRole('option', { name: 'JWTH77' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'TEST01' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'ABCD12' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'MANT01' })).toBeNull();
     expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
@@ -507,7 +518,7 @@ describe('DriverAssignmentCard', () => {
     const Wrapper = makeWrapper();
     const props = {
       assignmentId: 'a1',
-      currentDriverName: 'Pedro González',
+      currentDriverName: 'Conductor Demo',
       assignmentStatus: 'asignado',
       carrierEmpresaId: 'emp-voo',
     };
@@ -534,7 +545,7 @@ describe('DriverAssignmentCard', () => {
       assignment_id: 'a1',
       previous_driver_user_id: null,
       new_driver_user_id: 'u-driver-1',
-      driver_name: 'Pedro González',
+      driver_name: 'Conductor Demo',
     });
     const Wrapper = makeWrapper();
     render(
@@ -589,9 +600,9 @@ describe('DriverAssignmentCard', () => {
       <Wrapper>
         <DriverAssignmentCard
           assignmentId="a1"
-          currentDriverName="Pedro González"
+          currentDriverName="Conductor Demo"
           currentVehicleId="v-jw"
-          currentVehiclePlate="JWTH77"
+          currentVehiclePlate="TEST01"
           carrierEmpresaId="emp-voo"
           assignmentStatus="asignado"
         />
@@ -603,7 +614,7 @@ describe('DriverAssignmentCard', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
     expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-jw');
-    expect(screen.getByRole('option', { name: 'JWTH77' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'TEST01' })).toBeInTheDocument();
   });
 
   it('mientras /vehiculos no responde, no aparece el aviso de flota vacía', async () => {
@@ -621,9 +632,9 @@ describe('DriverAssignmentCard', () => {
       <Wrapper>
         <DriverAssignmentCard
           assignmentId="a1"
-          currentDriverName="Pedro González"
+          currentDriverName="Conductor Demo"
           currentVehicleId="v-jw"
-          currentVehiclePlate="JWTH77"
+          currentVehiclePlate="TEST01"
           carrierEmpresaId="emp-voo"
           assignmentStatus="asignado"
         />

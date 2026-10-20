@@ -122,6 +122,7 @@ const ASSIGNMENT_DETAIL_ROW = {
   empresaLegalName: 'Carrier SpA',
   vehicleId: 'veh-uuid',
   vehiclePlate: 'AB-CD-12',
+  vehicleStatus: 'activo',
   vehicleType: 'camion_pequeno',
   driverUserId: 'driver-uuid',
   driverName: 'Pedro Conductor',
@@ -275,6 +276,7 @@ describe('GET /assignments/:id', () => {
     expect(assignment.driver_user_id).toBe('driver-uuid');
     expect(assignment.vehicle_id).toBeNull();
     expect((body.assignment as { empresa_id?: string }).empresa_id).toBe(CARRIER_EMP);
+    expect((body.assignment as { vehicle_status?: string | null }).vehicle_status).toBeNull();
   });
 
   it('happy path con telemetría: retorna ubicacion_actual con last point', async () => {
@@ -301,6 +303,7 @@ describe('GET /assignments/:id', () => {
     };
     expect(body.assignment.ubicacion_actual?.latitude).toBeCloseTo(-33.45);
     expect(body.assignment.ubicacion_actual?.speed_kmh).toBe(85);
+    expect((body.assignment as { vehicle_status?: string | null }).vehicle_status).toBe('activo');
   });
 });
 

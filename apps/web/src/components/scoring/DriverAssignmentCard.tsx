@@ -76,26 +76,28 @@ function esCamionElegible(v: VehiculoFlota): boolean {
   return v.status === 'activo' && v.unit_category !== 'arrastre';
 }
 
-function conCamionAsignado(
+export function conCamionAsignado(
   camiones: readonly VehiculoFlota[],
   id: string | null,
   plate: string | null,
-): VehiculoFlota[] {
+  status: string | null,
+): Array<Pick<VehiculoFlota, 'id' | 'plate'> & { status?: string }> {
   if (!id) {
     return [...camiones];
   }
   if (camiones.some((v) => v.id === id)) {
     return [...camiones];
   }
-  return [
-    ...camiones,
-    {
-      id,
-      plate: plate && plate.length > 0 ? plate : 'Camión asignado',
-      status: 'activo',
-      unit_category: 'motriz',
-    },
-  ];
+  // El assignment a veces no trae estado. No se inventa `activo`: confirmar
+  // un camión que no lo está lo rechaza el guardado.
+  const agregado: Pick<VehiculoFlota, 'id' | 'plate'> & { status?: string } = {
+    id,
+    plate: plate && plate.length > 0 ? plate : 'Camión asignado',
+  };
+  if (status != null && status.length > 0) {
+    agregado.status = status;
+  }
+  return [...camiones, agregado];
 }
 
 interface AsignarResponse {
@@ -116,6 +118,8 @@ export interface DriverAssignmentCardProps {
   currentVehicleId?: string | null;
   /** Patente del camión ya asignado, si la lista filtrada no lo trae. */
   currentVehiclePlate?: string | null;
+  /** Estado real del camión en el assignment. Vacío si la API no lo manda. */
+  currentVehicleStatus?: string | null;
   /**
    * Empresa transportista dueña de la carga. La flota, los conductores y
    * el POST de confirmar usan este id, no la empresa activa de la sesión.
@@ -132,6 +136,7 @@ export function DriverAssignmentCard({
   currentDriverName,
   currentVehicleId = null,
   currentVehiclePlate = null,
+  currentVehicleStatus = null,
   carrierEmpresaId = null,
   assignmentStatus,
 }: DriverAssignmentCardProps) {
@@ -186,7 +191,12 @@ export function DriverAssignmentCard({
   const filas = vehiculosQ.isSuccess ? filasVehiculos(vehiculosQ.data) : null;
   const formaMala = vehiculosQ.isSuccess && filas == null;
   const camiones = (filas ?? []).filter(esCamionElegible);
-  const opcionesCamion = conCamionAsignado(camiones, currentVehicleId, currentVehiclePlate);
+  const opcionesCamion = conCamionAsignado(
+    camiones,
+    currentVehicleId,
+    currentVehiclePlate,
+    currentVehicleStatus,
+  );
   const cargandoFlota =
     puedeElegirCamion && vehiculosQ.isPending && !vehiculosQ.isError && !formaMala;
   const errorCarga =
