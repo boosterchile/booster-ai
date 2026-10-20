@@ -58,6 +58,9 @@ const STATUS_LABELS: Record<DriverStatus, string> = {
   fuera_servicio: 'Fuera de servicio',
 };
 
+const TELEFONO_WHATSAPP_RE = /^\+569\d{8}$/;
+const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
+
 const STATUS_COLORS: Record<DriverStatus, string> = {
   activo: 'bg-success-50 text-success-700',
   suspendido: 'bg-amber-50 text-amber-700',
@@ -813,6 +816,14 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       : undefined);
   const puedeGuardarEmail = emailParse.success;
   const [pinReenviado, setPinReenviado] = useState<string | null>(null);
+  const [telefonoContacto, setTelefonoContacto] = useState('');
+  const [telefonoError, setTelefonoError] = useState<string | null>(null);
+  const [pinTelefono, setPinTelefono] = useState<string | null>(null);
+  const telefonoNormalizado = telefonoContacto.trim();
+  const telefonoValido = TELEFONO_WHATSAPP_RE.test(telefonoNormalizado);
+  const telefonoMensaje =
+    telefonoError ??
+    (telefonoNormalizado.length > 0 && !telefonoValido ? MENSAJE_TELEFONO_INVALIDO : undefined);
 
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
@@ -872,6 +883,41 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     },
   });
 
+  const telefonoM = useMutation({
+    mutationFn: async (phone: string) => {
+      return await api.post<{
+        phone: string;
+        email: string;
+        invitacion_reenviada: boolean;
+        cuenta_activa: boolean;
+        activation_pin?: string;
+      }>(`/conductores/${id}/telefono`, { phone });
+    },
+    onSuccess: (res) => {
+      queryClient.setQueryData<Conductor>(['conductores', id], (current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          user: {
+            ...current.user,
+            phone: res.phone,
+            email: res.email,
+          },
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['conductores'], exact: true });
+      setPinTelefono(res.activation_pin ?? null);
+      setTelefonoError(null);
+      setTelefonoContacto(res.phone);
+    },
+    onError: (err: Error) => {
+      setPinTelefono(null);
+      setTelefonoError(err.message);
+    },
+  });
+
   const deleteM = useMutation({
     mutationFn: async () => await api.delete<{ ok: boolean }>(`/conductores/${id}`),
     onSuccess: () => {
@@ -906,6 +952,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     });
     const actual = conductorQ.data.user.email;
     setEmailContacto(esEmailDeRelleno(actual) ? '' : actual);
+    setTelefonoContacto(conductorQ.data.user.phone ?? '');
   }, [conductorQ.data, reset]);
 
   function guardarEmail() {
@@ -916,6 +963,15 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     }
     setEmailError(null);
     emailM.mutate(parsed.data);
+  }
+
+  function guardarTelefono() {
+    if (!telefonoValido) {
+      setTelefonoError(MENSAJE_TELEFONO_INVALIDO);
+      return;
+    }
+    setTelefonoError(null);
+    telefonoM.mutate(telefonoNormalizado);
   }
 
   return (
@@ -1054,6 +1110,60 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
                 driverRut={conductorQ.data.user.rut ?? ''}
                 titulo={`Invitación reenviada a ${conductorQ.data.user.full_name}`}
                 onContinue={() => setPinReenviado(null)}
+              />
+            )}
+          </section>
+
+          <section className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+            <div>
+              <h2 className="font-semibold text-neutral-900">Teléfono (WhatsApp)</h2>
+              <p className="mt-1 text-neutral-600 text-sm">
+                {conductorQ.data.user.is_pending
+                  ? 'Por este WhatsApp le llega el enlace de activación. Si sigue pendiente, al guardar se reenvía la invitación y el PIN anterior deja de servir.'
+                  : 'Este conductor ya activó su acceso. Cambiar el teléfono actualiza el contacto: no cambia su RUT ni su clave.'}
+              </p>
+            </div>
+            <FormField
+              label="Teléfono (WhatsApp)"
+              required
+              error={telefonoMensaje}
+              render={({ id: fieldId, describedBy }) => (
+                <input
+                  id={fieldId}
+                  aria-describedby={describedBy}
+                  type="tel"
+                  inputMode="tel"
+                  value={telefonoContacto}
+                  onChange={(event) => {
+                    setTelefonoContacto(event.target.value);
+                    setTelefonoError(null);
+                  }}
+                  disabled={!canWrite || conductorQ.data.deleted_at != null || telefonoM.isPending}
+                  className={fieldInputClass(!!telefonoMensaje)}
+                  placeholder="+56912345678"
+                  autoComplete="tel"
+                />
+              )}
+            />
+            {canWrite && conductorQ.data.deleted_at == null && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={guardarTelefono}
+                  disabled={!telefonoValido || telefonoM.isPending}
+                  className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {telefonoM.isPending ? 'Guardando…' : 'Guardar teléfono y reenviar invitación'}
+                </button>
+              </div>
+            )}
+            {pinTelefono && (
+              <ActivationPinCard
+                pin={pinTelefono}
+                driverName={conductorQ.data.user.full_name}
+                driverRut={conductorQ.data.user.rut ?? ''}
+                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name}`}
+                onContinue={() => setPinTelefono(null)}
               />
             )}
           </section>
