@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -303,6 +303,70 @@ describe('ConductoresNuevoRoute', () => {
     await waitFor(() =>
       expect(screen.getByText(/ya está asociado a un conductor activo/)).toBeInTheDocument(),
     );
+  });
+
+  async function enviarAlta() {
+    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
+    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
+  }
+
+  it('reactivado con PIN → muestra el PIN igual que un alta', async () => {
+    vi.spyOn(api, 'post').mockResolvedValueOnce({
+      conductor: buildConductor(),
+      activation_pin: '654321',
+      reactivado: true,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(await screen.findByText('654321')).toBeInTheDocument();
+    expect(screen.getByText(/PIN de activación/)).toBeInTheDocument();
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-title', 'Conductor reactivado');
+  });
+
+  it('error duplicate → mensaje en español, no el código crudo', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(409, 'duplicate', { code: 'duplicate', error: 'duplicate' }, 'duplicate'),
+    );
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(await screen.findByText(/vuelve a intentar el alta/)).toBeInTheDocument();
+    expect(screen.queryByText('duplicate')).toBeNull();
+  });
+
+  it('error conductor_retirado_otra_empresa → explica que no se puede reactivar', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(
+        409,
+        'conductor_retirado_otra_empresa',
+        { code: 'conductor_retirado_otra_empresa' },
+        'API error 409 (conductor_retirado_otra_empresa)',
+      ),
+    );
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(await screen.findByText(/retirado de otra empresa/)).toBeInTheDocument();
+    expect(screen.queryByText(/conductor_retirado_otra_empresa/)).toBeNull();
+  });
+
+  it('error identidad_vinculada en el alta → explica el vínculo y no muestra PIN', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(new Error('identidad_vinculada'));
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(await screen.findByText(/otra empresa o tiene otro rol/)).toBeInTheDocument();
+    expect(screen.queryByText(/PIN de activación/)).toBeNull();
   });
 });
 

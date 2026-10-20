@@ -28,7 +28,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -411,6 +411,38 @@ interface CreateConductorResponse {
   // D10 — PIN no se devuelve si el user ya estaba activado (e.g. dueño-conductor
   // que se agrega a sí mismo). En ese caso no hay que mostrar la card de PIN.
   activation_pin?: string;
+  /** true cuando el POST reactivó una fila retirada de esta empresa (200). */
+  reactivado?: boolean;
+}
+
+function codigoDeError(err: Error): string {
+  if (err instanceof ApiError && err.code) {
+    return err.code;
+  }
+  return err.message;
+}
+
+function mensajeErrorAltaConductor(err: Error): string {
+  const codigo = codigoDeError(err);
+  if (codigo.includes('user_already_driver')) {
+    return 'Ese RUT ya está asociado a un conductor activo. Si dejó la empresa, primero retíralo desde su perfil.';
+  }
+  if (codigo.includes('conductor_retirado_otra_empresa')) {
+    return 'Este conductor fue retirado de otra empresa. No lo puedes reactivar desde aquí.';
+  }
+  if (codigo.includes('identidad_vinculada')) {
+    return 'Esta persona también está en otra empresa o tiene otro rol. No la puedes dar de alta ni reactivar desde aquí.';
+  }
+  if (codigo.includes('email_already_registered')) {
+    return 'Ese email ya está registrado en otra persona.';
+  }
+  if (codigo.includes('rut_invalido')) {
+    return 'El RUT no es válido (revisa el dígito verificador).';
+  }
+  if (codigo.includes('duplicate')) {
+    return 'Ese RUT ya figura como conductor. Si lo retiraste de esta empresa, vuelve a intentar el alta.';
+  }
+  return err.message;
 }
 
 function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
@@ -425,6 +457,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     pin: string;
     driverName: string;
     driverRut: string;
+    reactivado: boolean;
   } | null>(null);
 
   const createM = useMutation({
@@ -453,23 +486,14 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           pin: res.activation_pin,
           driverName: variables.full_name.trim(),
           driverRut: variables.rut.trim(),
+          reactivado: res.reactivado === true,
         });
       } else {
         void navigate({ to: '/app/conductores' });
       }
     },
     onError: (err: Error) => {
-      if (err.message.includes('user_already_driver')) {
-        setError(
-          'Ese RUT ya está asociado a un conductor activo. Si dejó la empresa, primero retíralo desde su perfil.',
-        );
-      } else if (err.message.includes('email_already_registered')) {
-        setError('Ese email ya está registrado en otra persona.');
-      } else if (err.message.includes('rut_invalido')) {
-        setError('El RUT no es válido (revisa el dígito verificador).');
-      } else {
-        setError(err.message);
-      }
+      setError(mensajeErrorAltaConductor(err));
     },
   });
 
@@ -540,13 +564,14 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   }
 
   if (activationResult) {
+    const tituloPagina = activationResult.reactivado ? 'Conductor reactivado' : 'Conductor creado';
     return (
-      <Layout me={me} title="Conductor creado">
+      <Layout me={me} title={tituloPagina}>
         <div className="mb-6 flex items-center gap-3">
           <Link to="/app/conductores" className="text-neutral-500 hover:text-neutral-900">
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
-          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Conductor creado</h1>
+          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">{tituloPagina}</h1>
         </div>
 
         <ActivationPinCard
@@ -557,6 +582,9 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
             setActivationResult(null);
             void navigate({ to: '/app/conductores' });
           }}
+          {...(activationResult.reactivado
+            ? { titulo: `${activationResult.driverName} volvió a estar activo` }
+            : {})}
         />
       </Layout>
     );
