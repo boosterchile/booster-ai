@@ -86,7 +86,8 @@ function makeDbStub(opts: {
   insertReturning?: Record<string, unknown>[][];
   updateReturning?: Record<string, unknown>[][];
   selectError?: Error;
-  insertError?: { code: string };
+  insertError?: unknown;
+  updateError?: unknown;
 }) {
   const selectQueue = [...(opts.selectQueueRows ?? [])];
   const insertQueue = [...(opts.insertReturning ?? [])];
@@ -100,7 +101,16 @@ function makeDbStub(opts: {
     const finalize = () => Promise.resolve(nextSelect());
     const orderBy = vi.fn(finalize);
     const limit = vi.fn(finalize);
-    const where = vi.fn(() => ({ orderBy, limit }));
+    const where = vi.fn(() => ({
+      orderBy,
+      limit,
+      then(
+        onFulfilled: (rows: Record<string, unknown>[]) => unknown,
+        onRejected?: (err: unknown) => unknown,
+      ) {
+        return Promise.resolve(nextSelect()).then(onFulfilled, onRejected);
+      },
+    }));
     const innerJoin = vi.fn(() => ({ where }));
     const from = vi.fn(() => ({ where, innerJoin }));
     return vi.fn(() => ({ from }));
@@ -118,7 +128,12 @@ function makeDbStub(opts: {
   }
 
   function makeUpdateChain() {
-    const returning = vi.fn(() => Promise.resolve(nextUpdate()));
+    const returning = vi.fn(() => {
+      if (opts.updateError) {
+        return Promise.reject(opts.updateError);
+      }
+      return Promise.resolve(nextUpdate());
+    });
     const where = vi.fn(() => ({ returning }));
     const set = vi.fn(() => ({ where }));
     return vi.fn(() => ({ set }));
@@ -144,14 +159,30 @@ function makeDbStub(opts: {
 
 async function buildApp(
   db: Parameters<typeof import('../../src/routes/conductores.js').createConductoresRoutes>[0]['db'],
-  opts: { role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null } = {
+  opts: {
+    role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null;
+    firebaseAuth?: Parameters<
+      typeof import('../../src/routes/conductores.js').createConductoresRoutes
+    >[0]['firebaseAuth'];
+    emailSender?: Parameters<
+      typeof import('../../src/routes/conductores.js').createConductoresRoutes
+    >[0]['emailSender'];
+    logger?: Parameters<
+      typeof import('../../src/routes/conductores.js').createConductoresRoutes
+    >[0]['logger'];
+    whatsappClient?: Parameters<
+      typeof import('../../src/routes/conductores.js').createConductoresRoutes
+    >[0]['whatsappClient'];
+    activacionContentSid?: string;
+  } = {
     role: 'dueno',
   },
 ) {
   const { createConductoresRoutes } = await import('../../src/routes/conductores.js');
+  const role = opts.role === undefined ? 'dueno' : opts.role;
   const app = new Hono();
   app.use('*', async (c, next) => {
-    if (opts.role === null) {
+    if (role === null) {
       await next();
       return;
     }
@@ -159,13 +190,23 @@ async function buildApp(
       user: { id: 'u-1', firebaseUid: 'fb-1', email: 'test@x.com' },
       memberships: [],
       activeMembership: {
-        membership: { id: 'm-1', role: opts.role },
-        empresa: { id: EMPRESA_ID, legal_name: 'Test SA' },
+        membership: { id: 'm-1', role },
+        empresa: { id: EMPRESA_ID, legalName: 'Test SA' },
       },
     });
     await next();
   });
-  app.route('/conductores', createConductoresRoutes({ db, logger: noopLogger }));
+  app.route(
+    '/conductores',
+    createConductoresRoutes({
+      db,
+      logger: opts.logger ?? noopLogger,
+      ...(opts.firebaseAuth ? { firebaseAuth: opts.firebaseAuth } : {}),
+      ...(opts.emailSender ? { emailSender: opts.emailSender } : {}),
+      ...(opts.whatsappClient ? { whatsappClient: opts.whatsappClient } : {}),
+      ...(opts.activacionContentSid ? { activacionContentSid: opts.activacionContentSid } : {}),
+    }),
+  );
   return app;
 }
 
@@ -754,5 +795,772 @@ describe('POST /conductores — fecha de licencia no rompe la respuesta', () => 
     expect(res.status).toBe(201);
     const body = (await res.json()) as { conductor: { license_expiry: string | null } };
     expect(body.conductor.license_expiry).toBeNull();
+  });
+});
+
+const EMAIL_REAL = 'usuario@example.com';
+
+function filaConductor(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    conductorId: CONDUCTOR_ID,
+    deletedAt: null,
+    userId: USER_ID,
+    email: 'pending-rut-111111111@boosterchile.invalid',
+    fullName: 'Camila Rojas',
+    rut: VALID_RUT,
+    phone: '+56912345678',
+    firebaseUid: 'pending-rut:11.111.111-1',
+    claveNumericaHash: null,
+    ...overrides,
+  };
+}
+
+function firebaseSinCuentas() {
+  return {
+    getUserByEmail: vi.fn(async () => {
+      throw Object.assign(new Error('not found'), { code: 'auth/user-not-found' });
+    }),
+    updateUser: vi.fn(async () => undefined),
+    deleteUser: vi.fn(async () => undefined),
+  };
+}
+
+describe('POST /conductores — email real y único', () => {
+  it('rechaza el correo de relleno', async () => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: 'pending-rut-111111111@boosterchile.invalid',
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it.each(['abc', 'a@b', 'a@b.c'])('email %s → 400 y no escribe', async (email) => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('email de otra persona → 409 email_already_registered y no inserta', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[], [{ id: 'otro-usuario' }]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('carrera de unique (23505 en cause) → 409 email_already_registered', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[], []],
+      insertError: Object.assign(new Error('Failed query'), {
+        cause: { code: '23505', constraint: 'usuarios_email_unique' },
+      }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+  });
+
+  it('23505 de otro constraint (RUT) → 409 duplicate', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[], []],
+      insertError: Object.assign(new Error('Failed query'), {
+        code: '23505',
+        constraint: 'uq_usuarios_rut',
+      }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('duplicate');
+  });
+
+  it('reemplazar el relleno de alguien vinculado a otra empresa → 409 sin escribir ni Firebase', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Camila Rojas',
+            firebaseUid: 'pending-rut:11.111.111-1',
+            claveNumericaHash: null,
+            activationPinHash: null,
+            email: 'pending-rut-111111111@boosterchile.invalid',
+          },
+        ],
+        [],
+        [],
+        [
+          {
+            empresaId: '99999999-9999-9999-9999-999999999999',
+            role: 'dueno',
+            organizacionId: null,
+            status: 'activa',
+          },
+        ],
+      ],
+    });
+    const firebase = firebaseSinCuentas();
+    const app = await buildApp(stub.db, { firebaseAuth: firebase });
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /conductores/:id/email', () => {
+  it.each(['abc', 'a@b', 'a@b.c'])('email %s → 400 y no escribe', async (email) => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it.each(['conductor', 'visualizador'] as const)('%s → 403 y no escribe', async (role) => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db, { role });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(403);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin', 'despachador'] as const)(
+    '%s reemplaza el relleno, reenvía el PIN y audita',
+    async (role) => {
+      const stub = makeDbStub({
+        selectQueueRows: [[filaConductor()], []],
+        updateReturning: [[{ id: USER_ID }]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const send = vi.fn(async () => ({ enviado: true as const, id: 'mail-1' }));
+      const info = vi.fn();
+      const logger = { ...noopLogger, info, child: () => logger } as unknown as typeof noopLogger;
+      const firebase = firebaseSinCuentas();
+      const app = await buildApp(stub.db, {
+        role,
+        firebaseAuth: firebase,
+        emailSender: { send },
+        logger,
+      });
+      const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: `  ${EMAIL_REAL.toUpperCase()}  ` }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        email: string;
+        invitacion_reenviada: boolean;
+        cuenta_activa: boolean;
+        activation_pin?: string;
+      };
+      expect(body.email).toBe(EMAIL_REAL);
+      expect(body.invitacion_reenviada).toBe(true);
+      expect(body.cuenta_activa).toBe(false);
+      expect(body.activation_pin).toMatch(/^\d{6}$/);
+      expect(send).toHaveBeenCalledTimes(1);
+      const mensaje = send.mock.calls[0]?.[0] as { to: string; text: string };
+      expect(mensaje.to).toBe(EMAIL_REAL);
+      expect(mensaje.text).toContain(body.activation_pin);
+      expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
+      expect(firebase.updateUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cuenta ya activa: cambia el contacto y no toca Firebase ni la clave', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          filaConductor({
+            email: 'viejo@example.com',
+            firebaseUid: 'fb-real-uid',
+            claveNumericaHash: 'hash-clave',
+          }),
+        ],
+        [],
+      ],
+      updateReturning: [[{ id: USER_ID }]],
+      insertReturning: [[{ id: 'audit-1' }]],
+    });
+    const firebase = firebaseSinCuentas();
+    const app = await buildApp(stub.db, { firebaseAuth: firebase });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invitacion_reenviada: boolean; activation_pin?: string };
+    expect(body.invitacion_reenviada).toBe(false);
+    expect(body.activation_pin).toBeUndefined();
+    expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+    expect(firebase.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('email ya usado por otra persona → 409 y no escribe', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], [{ id: 'otro-usuario' }]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('dos cuentas Firebase que ya entraron → 409 y no escribe', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+    });
+    const cuentas: Record<
+      string,
+      { uid: string; email: string; metadata: { lastSignInTime?: string } }
+    > = {
+      'drivers+111111111@boosterchile.invalid': {
+        uid: 'uid-sintetico',
+        email: 'drivers+111111111@boosterchile.invalid',
+        metadata: { lastSignInTime: 'Mon, 19 Oct 2026 12:00:00 GMT' },
+      },
+      'pending-rut-111111111@boosterchile.invalid': {
+        uid: 'uid-relleno',
+        email: 'pending-rut-111111111@boosterchile.invalid',
+        metadata: { lastSignInTime: 'Mon, 19 Oct 2026 13:00:00 GMT' },
+      },
+    };
+    const firebase = {
+      getUserByEmail: vi.fn(async (email: string) => {
+        const encontrado = cuentas[email.toLowerCase()];
+        if (!encontrado) {
+          throw Object.assign(new Error('not found'), { code: 'auth/user-not-found' });
+        }
+        return encontrado;
+      }),
+      updateUser: vi.fn(),
+      deleteUser: vi.fn(),
+    };
+    const app = await buildApp(stub.db, { firebaseAuth: firebase });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_firebase_en_conflicto');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(firebase.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('conductor de otra empresa → 404', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[]] });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('conductor retirado → 410', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ deletedAt: new Date('2026-05-01T00:00:00Z') })]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(410);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('carrera de unique (23505 en cause) → 409 email_already_registered', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+      updateError: Object.assign(new Error('Failed query'), {
+        cause: { code: '23505', constraint: 'usuarios_email_key' },
+      }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+  });
+
+  it('23505 de otro constraint (firebase_uid) → 409 duplicate', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+      updateError: Object.assign(new Error('Failed query'), {
+        code: '23505',
+        constraint: 'usuarios_firebase_uid_key',
+      }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('duplicate');
+  });
+
+  it.each([
+    {
+      caso: 'membresía en otra empresa',
+      vinculo: {
+        empresaId: '99999999-9999-9999-9999-999999999999',
+        role: 'conductor',
+        organizacionId: null,
+        status: 'activa',
+      },
+    },
+    {
+      caso: 'rol dueno en esta empresa',
+      vinculo: {
+        empresaId: EMPRESA_ID,
+        role: 'dueno',
+        organizacionId: null,
+        status: 'activa',
+      },
+    },
+  ])('$caso → 409 identidad_vinculada y no escribe', async ({ vinculo }) => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], [], [vinculo]],
+    });
+    const firebase = firebaseSinCuentas();
+    const app = await buildApp(stub.db, { role: 'despachador', firebaseAuth: firebase });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('solo conductor de esta empresa: la membresía de conductor no bloquea', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor()],
+        [],
+        [
+          {
+            empresaId: EMPRESA_ID,
+            role: 'conductor',
+            organizacionId: null,
+            status: 'activa',
+          },
+        ],
+      ],
+      updateReturning: [[{ id: USER_ID }]],
+      insertReturning: [[{ id: 'audit-1' }]],
+    });
+    const app = await buildApp(stub.db, { firebaseAuth: firebaseSinCuentas() });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+function conductorInsertado() {
+  return {
+    id: CONDUCTOR_ID,
+    userId: USER_ID,
+    empresaId: EMPRESA_ID,
+    licenseClass: 'A5',
+    licenseNumber: 'LIC-1',
+    licenseExpiry: new Date('2028-06-28T00:00:00Z'),
+    isExtranjero: false,
+    driverStatus: 'activo',
+    createdAt: new Date('2026-05-10T22:00:00Z'),
+    updatedAt: new Date('2026-05-10T22:00:00Z'),
+    deletedAt: null,
+  };
+}
+
+function payloadsDeUpdate(update: ReturnType<typeof vi.fn>): Array<Record<string, unknown>> {
+  const resultado = update.mock.results.find((item) => item.type === 'return');
+  const set = (resultado?.value as { set?: ReturnType<typeof vi.fn> } | undefined)?.set;
+  if (!set) {
+    return [];
+  }
+  return set.mock.calls.map((call) => (call[0] ?? {}) as Record<string, unknown>);
+}
+
+const ALTA_BODY = {
+  rut: VALID_RUT,
+  full_name: 'Camila Rojas',
+  phone: '+56957790379',
+  email: EMAIL_REAL,
+  license_class: 'A5' as const,
+  license_number: 'LIC-1',
+  license_expiry: '2028-06-28',
+};
+
+describe('POST /conductores — RUT existente guarda phone si estaba vacío', () => {
+  it('provisoria sin código y phone null persiste el teléfono del alta', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Camila Rojas',
+            firebaseUid: 'pending-rut:11.111.111-1',
+            claveNumericaHash: null,
+            activationPinHash: null,
+            email: EMAIL_REAL,
+            phone: null,
+          },
+        ],
+        [],
+        [],
+      ],
+      insertReturning: [[conductorInsertado()]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA_BODY),
+    });
+    expect(res.status).toBe(201);
+    expect(
+      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === '+56957790379'),
+    ).toBe(true);
+  });
+
+  it('reemplazo de email de relleno con phone vacío también lo guarda', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Camila Rojas',
+            firebaseUid: 'pending-rut:11.111.111-1',
+            claveNumericaHash: null,
+            activationPinHash: null,
+            email: 'pending-rut-111111111@boosterchile.invalid',
+            phone: '',
+          },
+        ],
+        [],
+        [],
+        [],
+      ],
+      insertReturning: [[conductorInsertado()], [{ id: 'audit-1' }]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA_BODY),
+    });
+    expect(res.status).toBe(201);
+    expect(
+      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === '+56957790379'),
+    ).toBe(true);
+  });
+
+  it('no pisa un teléfono que el usuario ya tenía', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Camila Rojas',
+            firebaseUid: 'pending-rut:11.111.111-1',
+            claveNumericaHash: null,
+            activationPinHash: null,
+            email: EMAIL_REAL,
+            phone: '+56911111111',
+          },
+        ],
+        [],
+        [],
+      ],
+      insertReturning: [[conductorInsertado()]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA_BODY),
+    });
+    expect(res.status).toBe(201);
+    expect(payloadsDeUpdate(stub.spies.update).some((payload) => 'phone' in payload)).toBe(false);
+  });
+});
+
+describe('POST /conductores/:id/telefono', () => {
+  const TELEFONO_NUEVO = '+56987654321';
+
+  it('pendiente: guarda el número, regenera el PIN y avisa por WhatsApp', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const info = vi.fn();
+    const logger = { ...noopLogger, info, child: () => logger } as unknown as typeof noopLogger;
+    const app = await buildApp(stub.db, {
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+      logger,
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      phone: string;
+      email: string;
+      invitacion_reenviada: boolean;
+      cuenta_activa: boolean;
+      activation_pin?: string;
+    };
+    expect(body.phone).toBe(TELEFONO_NUEVO);
+    expect(body.email).toBe('pending-rut-111111111@boosterchile.invalid');
+    expect(body.invitacion_reenviada).toBe(true);
+    expect(body.cuenta_activa).toBe(false);
+    expect(body.activation_pin).toMatch(/^\d{6}$/);
+    expect(
+      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === TELEFONO_NUEVO),
+    ).toBe(true);
+    expect(sendContent).toHaveBeenCalledTimes(1);
+    expect(sendContent.mock.calls[0]?.[0]).toMatchObject({ to: TELEFONO_NUEVO });
+    expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
+  });
+
+  it('persona vinculada a otra empresa → 409 y no cambia el teléfono ni el PIN', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor({ phone: '+56911111111' })],
+        [
+          {
+            empresaId: '99999999-9999-9999-9999-999999999999',
+            role: 'conductor',
+            organizacionId: null,
+            status: 'activa',
+          },
+        ],
+      ],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      role: 'despachador',
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
+  it('teléfono inválido → 400 con mensaje claro y no escribe', async () => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: '912345678' }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('telefono_invalido');
+    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('fijo +562 → 400 con el mismo mensaje y no escribe', async () => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: '+56212345678' }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('telefono_invalido');
+    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('conductor de otra empresa → 404', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[]] });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('conductor_not_found');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('cuenta ya activa: actualiza el contacto y no reenvía WhatsApp ni PIN', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor({ firebaseUid: 'fb-real-uid', claveNumericaHash: 'hash-clave' })],
+      ],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invitacion_reenviada: boolean; activation_pin?: string };
+    expect(body.invitacion_reenviada).toBe(false);
+    expect(body.activation_pin).toBeUndefined();
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
+  it.each(['conductor', 'visualizador'] as const)('%s → 403 y no escribe', async (role) => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db, { role });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(403);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('conductor retirado → 410', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ deletedAt: new Date('2026-05-01T00:00:00Z') })]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(410);
+    expect(stub.spies.update).not.toHaveBeenCalled();
   });
 });

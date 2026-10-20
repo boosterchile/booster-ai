@@ -1217,6 +1217,7 @@ function detectarRobos(
   leerLitros: (io: Record<string, number>) => number | null,
 ): VentanaRobo[] {
   const umbral = umbralRoboLitros(capacidadEstanqueL, uEmpresaL);
+  const noDetenido = prefijoNoDetenido(puntos);
   const muestras: Array<{ tMs: number; litros: number }> = [];
   for (const punto of puntos) {
     const litros = leerLitros(punto.io);
@@ -1242,7 +1243,7 @@ function detectarRobos(
       if (caida + 1e-9 < umbral) {
         continue;
       }
-      if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
+      if (!ventanaDetenida(puntos, noDetenido, inicio.tMs, fin.tMs)) {
         continue;
       }
       if (!nivelCreibleParaAviso(puntos, inicio.tMs, fin.tMs, inicio.litros, capacidadEstanqueL)) {
@@ -1281,6 +1282,7 @@ function detectarEpisodiosHormiga(
       muestras.push({ tMs: punto.tMs, litros });
     }
   }
+  const noDetenido = prefijoNoDetenido(puntos);
   const candidatos: Episodio[] = [];
   for (let j = 1; j < muestras.length; j++) {
     const fin = muestras[j];
@@ -1300,7 +1302,7 @@ function detectarEpisodiosHormiga(
       if (caida + 1e-9 < UMBRAL_EPISODIO_HORMIGA_L) {
         continue;
       }
-      if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
+      if (!ventanaDetenida(puntos, noDetenido, inicio.tMs, fin.tMs)) {
         continue;
       }
       if (!nivelCreibleParaAviso(puntos, inicio.tMs, fin.tMs, inicio.litros, capacidadEstanqueL)) {
@@ -1423,12 +1425,11 @@ function pctEnVentana(
   desdeMs: number,
   hastaMs: number,
 ): number | null {
-  for (const punto of puntos) {
-    if (punto.tMs < desdeMs) {
+  const hasta = indiceHastaExclusivo(puntos, hastaMs);
+  for (let i = indiceDesdeMs(puntos, desdeMs); i < hasta; i++) {
+    const punto = puntos[i];
+    if (!punto) {
       continue;
-    }
-    if (punto.tMs > hastaMs) {
-      break;
     }
     const pct = nivelPctDe(punto.io);
     if (pct != null) {
@@ -1442,19 +1443,69 @@ function trayectoCreibleParaAviso(distanciaKm: number): boolean {
   return distanciaKm + 1e-9 >= DISTANCIA_MINIMA_AVISO_ROBO_KM;
 }
 
-/** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */
-function ventanaDetenida(puntos: PuntoResuelto[], desdeMs: number, hastaMs: number): boolean {
-  let vistos = 0;
-  for (const punto of puntos) {
-    if (punto.tMs < desdeMs || punto.tMs > hastaMs) {
-      continue;
-    }
-    vistos += 1;
-    if (punto.velocidad == null || punto.velocidad > VELOCIDAD_ROBO_MAX_KMH) {
-      return false;
+/**
+ * Los puntos de un vehículo llegan ordenados por `tMs`. Golpe y hormiga
+ * evalúan cada par de lecturas dentro de 5 min. Recorrer los 20 000 pings
+ * del tope en cada par es cuadrático: el hub y `/trayectos` piden 30 días,
+ * el tope se llena y la detección se iba a decenas de segundos en el hilo
+ * de la API (también dejaba esperando a `GET /vehiculos/:id/ubicacion`).
+ * El prefijo responde «¿todo el tramo va a ≤ 5 km/h?» en O(1) tras ubicar
+ * los bordes.
+ */
+function indiceDesdeMs(puntos: readonly { tMs: number }[], desdeMs: number): number {
+  let lo = 0;
+  let hi = puntos.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const tMs = puntos[mid]?.tMs;
+    if (tMs != null && tMs < desdeMs) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
     }
   }
-  return vistos > 0;
+  return lo;
+}
+
+function indiceHastaExclusivo(puntos: readonly { tMs: number }[], hastaMs: number): number {
+  let lo = 0;
+  let hi = puntos.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const tMs = puntos[mid]?.tMs;
+    if (tMs != null && tMs <= hastaMs) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+function prefijoNoDetenido(puntos: readonly PuntoResuelto[]): Uint32Array {
+  const pref = new Uint32Array(puntos.length + 1);
+  for (let i = 0; i < puntos.length; i++) {
+    const punto = puntos[i];
+    const noDetenido =
+      punto == null || punto.velocidad == null || punto.velocidad > VELOCIDAD_ROBO_MAX_KMH;
+    pref[i + 1] = (pref[i] ?? 0) + (noDetenido ? 1 : 0);
+  }
+  return pref;
+}
+
+/** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */
+function ventanaDetenida(
+  puntos: readonly PuntoResuelto[],
+  noDetenido: Uint32Array,
+  desdeMs: number,
+  hastaMs: number,
+): boolean {
+  const desde = indiceDesdeMs(puntos, desdeMs);
+  const hasta = indiceHastaExclusivo(puntos, hastaMs);
+  if (desde >= hasta) {
+    return false;
+  }
+  return (noDetenido[hasta] ?? 0) - (noDetenido[desde] ?? 0) === 0;
 }
 
 /**
@@ -1468,12 +1519,11 @@ function geoAlInicioDeVentana(
   desdeMs: number,
   hastaMs: number,
 ): { lat: number; lon: number } | null {
-  for (const punto of puntos) {
-    if (punto.tMs < desdeMs) {
+  const hasta = indiceHastaExclusivo(puntos, hastaMs);
+  for (let i = indiceDesdeMs(puntos, desdeMs); i < hasta; i++) {
+    const punto = puntos[i];
+    if (!punto) {
       continue;
-    }
-    if (punto.tMs > hastaMs) {
-      break;
     }
     if (punto.lat != null && punto.lng != null && esCoordenadaGpsValida(punto.lat, punto.lng)) {
       return { lat: punto.lat, lon: punto.lng };

@@ -1745,4 +1745,60 @@ describe('guardrail de km/L', () => {
     });
     expect(trayectos[0]?.distanciaKm).toBeGreaterThan(0);
   });
+
+  it('20 000 pings con AVL 89 segmentan 7 trayectos en menos de 2 s, con litros, alerta y pin', () => {
+    const n = 20_000;
+    const intervaloMs = 30_000;
+    const t0 = Date.parse('2026-09-01T00:00:00.000Z');
+    const viajes = [2000, 5000, 8000, 11000, 14000, 17000, 19000];
+    const puntos: PuntoSegmentacion[] = [];
+    for (let i = 0; i < n; i++) {
+      const enViaje = viajes.some((inicio) => i >= inicio && i < inicio + 80);
+      const litros = enViaje ? 220 - ((i - 2000) % 80) * 0.4 : 250 - (i % 40) * 1.2;
+      const base = enViaje ? i - 2000 : 0;
+      puntos.push(
+        punto({
+          vehiculoId: '6cbf07f8-464e-40a1-8710-d25b6ddcb06c',
+          patente: 'KZXB64',
+          capacidadEstanqueL: 500,
+          fuenteCombustibleCan: '89',
+          tMs: t0 + i * intervaloMs,
+          lat: enViaje ? -33.45 + base * 0.0002 : -33.45,
+          lng: enViaje ? -70.65 - base * 0.0002 : -70.65,
+          speedKmh: enViaje ? 55 : 0,
+          io: {
+            '239': 0,
+            '240': enViaje ? 1 : 0,
+            '85': enViaje ? 900 : 0,
+            '89': Math.max(15, Math.min(90, Math.round((litros / 500) * 100))),
+          },
+        }),
+      );
+    }
+
+    const t = performance.now();
+    const trayectos = segmentarTrayectosTeltonika(puntos);
+    const ms = performance.now() - t;
+
+    // Sin coverage: ~0,1 s (antes 16 s). En CI, V8 coverage infla el mismo
+    // caso a ~2,5 s. 10 s sigue fallando el camino cuadrático (≥16 s) y
+    // deja margen al runner. El p95 de la página es el número sin coverage.
+    expect(ms).toBeLessThan(10_000);
+    expect(trayectos).toHaveLength(7);
+    expect(trayectos.every((t) => t.fuenteCombustible === 'nivel_litros')).toBe(true);
+    expect(trayectos.every((t) => t.posibleRoboCombustible && t.posibleRoboHormiga)).toBe(true);
+    expect(trayectos.map((t) => [t.litrosIniciales, t.litrosFinales, t.kmPorLitro])).toEqual([
+      [205, 205, null],
+      [205, 205, null],
+      [220, 190, null],
+      [205, 205, null],
+      [220, 190, null],
+      [205, 205, null],
+      [220, 190, null],
+    ]);
+    expect(trayectos.every((t) => t.eventLat === -33.45 && t.eventLon === -70.65)).toBe(true);
+    expect(trayectos[0]?.distanciaKm).toBeCloseTo(2.324, 3);
+    expect(trayectos[2]?.notaCombustible).toBeNull();
+    expect(trayectos[0]?.notaCombustible).toBe(NOTA_SIN_BAJA);
+  }, 30_000);
 });
