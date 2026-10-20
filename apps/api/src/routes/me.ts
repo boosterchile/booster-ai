@@ -248,18 +248,25 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       active = activeMembershipsList[0] ?? null;
     }
 
-    // Reemplaza el chequeo por `conductores.usuario_id = user.id`
-    // (`tiene_ficha_conductor` de #814, me.ts). La ficha cuenta si está
-    // viva en la empresa activa y el RUT de su usuario es el de la sesión.
-    // `esOwnerOperator` (shared-schemas) combina este booleano con el rol.
+    // La ficha es la del propio usuario (como #814: usuario_id + LIMIT 1),
+    // viva y de la empresa activa. El RUT se compara recién sobre esa fila,
+    // no contra las demás fichas de la empresa.
     let fichaConductorMismoRut = false;
-    if (active?.empresa && user.rut) {
+    if (active?.empresa) {
       const fichaRows = await opts.db
         .select({ rut: users.rut })
         .from(conductores)
         .innerJoin(users, eq(conductores.userId, users.id))
-        .where(and(eq(conductores.empresaId, active.empresa.id), isNull(conductores.deletedAt)));
-      fichaConductorMismoRut = fichaRows.some((row) => mismoRut(row.rut, user.rut));
+        .where(
+          and(
+            eq(conductores.userId, user.id),
+            eq(conductores.empresaId, active.empresa.id),
+            isNull(conductores.deletedAt),
+          ),
+        )
+        .limit(1);
+      const ficha = fichaRows[0];
+      fichaConductorMismoRut = ficha != null && mismoRut(ficha.rut, user.rut);
     }
 
     // La allowlist env-var es la fuente de autoridad para platform admin

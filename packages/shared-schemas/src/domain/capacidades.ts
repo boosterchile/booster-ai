@@ -6,13 +6,12 @@ import { membershipRoleSchema } from './membership.js';
  * Capacidades por rol, compartidas entre la web y el API.
  *
  * Cada función reemplaza un chequeo suelto de `role === …`. El catálogo
- * de esos chequeos está en `CHEQUEOS_REEMPLAZADOS`. La decisión de cada
- * regla es de Felipe (2026-10-20) y ya no es provisoria.
+ * de esos chequeos está en `CHEQUEOS_REEMPLAZADOS`.
  *
- * `fichaConductorMismoRut` lo calcula quien tiene la base: una ficha viva
- * (`eliminado_en` nulo) en `conductores` de la empresa activa, cuyo usuario
- * tiene el mismo RUT que la sesión. Reemplaza la señal `tiene_ficha_conductor`
- * de #814, que comparaba `usuario_id`.
+ * `fichaConductorMismoRut` lo calcula quien tiene la base: la ficha viva
+ * (`eliminado_en` nulo) de este usuario (`conductores.usuario_id`) en la
+ * empresa activa, y el RUT de esa misma ficha coincide con el de la sesión.
+ * No se busca el RUT en fichas de otros usuarios.
  *
  * Entregar y reportar un incidente no se deciden por rol: `puedeEjecutarViaje`
  * compara al usuario con `driver_user_id`. El API de esos dos endpoints lo

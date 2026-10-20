@@ -461,7 +461,21 @@
       "idx": 65,
       "version": "7",
       "when": 1780876800029,
-      "tag": "0065_membresias_puede_aceptar_ofertas",
+      "tag": "0065_empresas_generador_activado",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1780876800030,
+      "tag": "0066_telemetria_gps_valido",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1780876800031,
+      "tag": "0067_membresias_puede_aceptar_ofertas",
       "breakpoints": true
     }
   ]

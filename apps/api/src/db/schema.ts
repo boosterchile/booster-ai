@@ -854,7 +854,7 @@ export const memberships = pgTable(
     /**
      * El despachador puede aceptar o rechazar ofertas solo con este flag.
      * Dueño y admin no lo consultan: aceptan por rol. Default false para
-     * no abrir el contrato a membresías que ya existían (migración 0065).
+     * no abrir el contrato a membresías que ya existían (migración 0067).
      */
     puedeAceptarOfertas: boolean('puede_aceptar_ofertas').notNull().default(false),
     status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),

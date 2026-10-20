@@ -3,10 +3,9 @@ import { Hono } from 'hono';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * GET /me expone `ficha_conductor_mismo_rut`: ficha viva en `conductores`
- * de la empresa activa cuyo usuario tiene el mismo RUT que la sesión.
- * Reemplaza la comparación por `usuario_id` de #814. `esOwnerOperator`
- * combina este booleano con el rol `dueno`.
+ * GET /me expone `ficha_conductor_mismo_rut`. La ficha se busca por
+ * `conductores.usuario_id = user.id` con LIMIT 1, y el RUT se compara
+ * recién sobre esa fila. Una ficha de otro usuario no cuenta.
  */
 
 beforeAll(() => {
@@ -83,6 +82,7 @@ function makeDbStub(opts: {
 }) {
   const selectResults: unknown[][] = [[userRow()], [membershipRow(opts.role)], []];
   let fichaWhere: unknown;
+  let fichaLimit: number | undefined;
   const limit = vi.fn(() => Promise.resolve(selectResults.shift() ?? []));
   const innerJoin = vi.fn(() => ({
     where: vi.fn(() => Promise.resolve(selectResults.shift() ?? [])),
@@ -98,7 +98,12 @@ function makeDbStub(opts: {
         innerJoin: vi.fn(() => ({
           where: vi.fn((clause: unknown) => {
             fichaWhere = clause;
-            return Promise.resolve(opts.fichas);
+            return {
+              limit: (n: number) => {
+                fichaLimit = n;
+                return Promise.resolve(opts.fichas.slice(0, n));
+              },
+            };
           }),
         })),
       };
@@ -111,6 +116,7 @@ function makeDbStub(opts: {
       typeof import('../../src/routes/me.js').createMeRoutes
     >[0]['db'],
     fichaWhere: () => fichaWhere,
+    fichaLimit: () => fichaLimit,
     from,
   };
 }
@@ -176,7 +182,9 @@ describe('GET /me — ficha de conductor de la empresa activa', () => {
     expect(body.tiene_ficha_conductor).toBe(true);
     expect(stub.from.mock.calls.some((call) => getTableName(call[0]) === 'conductores')).toBe(true);
     const columnas = nombresDeColumna(stub.fichaWhere());
-    expect(columnas).toEqual(expect.arrayContaining(['empresa_id', 'eliminado_en']));
+    expect(columnas).toEqual(expect.arrayContaining(['usuario_id', 'empresa_id', 'eliminado_en']));
+    expect(columnas).not.toContain('rut');
+    expect(stub.fichaLimit()).toBe(1);
   });
 
   it('dueño sin ficha, o con ficha de otro RUT, → false', async () => {
