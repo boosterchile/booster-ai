@@ -1,0 +1,29 @@
+# Sonda puntual, solo en rama de trabajo (no se mergea a main): lee las fuentes oficiales
+# (MTT, Subtrans, Transporte Informa, Ley Chile) de la restricción de camiones en
+# La Pirámide. Sin credenciales. Workflow aparte para no relanzar HERE/OSRM.
+name: Probe normativa La Pirámide (MTT / BCN)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-normativa.yml
+      - scripts/probes/probe-normativa-piramide.sh
+
+permissions:
+  contents: read
+
+jobs:
+  normativa:
+    name: Fuentes oficiales de la restricción
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/probes/probe-normativa-piramide.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-normativa
+          path: probe-out/
+          if-no-files-found: ignore
