@@ -62,12 +62,23 @@ describe('parseCommand', () => {
   it('esRatificacionDeAceptar solo admite la frase entera y niega "no" o "rechaz"', () => {
     expect(esRatificacionDeAceptar('  Aceptar  ')).toBe(true);
     expect(esRatificacionDeAceptar('acepto')).toBe(true);
+    expect(esRatificacionDeAceptar('Acepto.')).toBe(true);
+    expect(esRatificacionDeAceptar('acepto!')).toBe(true);
+    expect(esRatificacionDeAceptar('¡Acepto!')).toBe(true);
     expect(esRatificacionDeAceptar('no acepto')).toBe(false);
     expect(esRatificacionDeAceptar('no, no lo acepto')).toBe(false);
     expect(esRatificacionDeAceptar('acepto… mejor no')).toBe(false);
     expect(esRatificacionDeAceptar('no acepto la oferta')).toBe(false);
+    expect(esRatificacionDeAceptar('¡No acepto!')).toBe(false);
     expect(esRatificacionDeAceptar('acepto la oferta')).toBe(false);
     expect(esRatificacionDeAceptar('rechazo')).toBe(false);
+  });
+
+  it('una negación no es confirmar_entrega', () => {
+    expect(parseCommand('no entregué')).toBeNull();
+    expect(parseCommand('no entregue')).toBeNull();
+    expect(parseCommand('no, ya entregué')).toBeNull();
+    expect(parseCommand('ya entregué')?.intent).toBe('confirmar_entrega');
   });
 
   it('cancelar: "cancelar"', () => {

@@ -132,17 +132,28 @@ function escapeRegex(s: string): string {
  * «no» como palabra, o el tronco «rechaz» (rechazo, rechazar, rechazamos).
  * No usa /g: un regex compartido con lastIndex se pegaría entre llamadas.
  */
-function niegaAceptar(normalized: string): boolean {
+function esNegacion(normalized: string): boolean {
   return /\bno\b/.test(normalized) || /rechaz/.test(normalized);
 }
 
 /**
- * Ratificación de la oferta. Solo la frase completa, ya normalizada
- * (minúsculas y sin espacios de más). Cualquier «no» o «rechaz…» la niega.
+ * Quita puntuación y signos (¡ ! ¿ ? y el punto que agrega iOS Safari al
+ * dictar) y deja una sola cadena de palabras.
+ */
+function sinPuntuacion(s: string): string {
+  return s
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Ratificación de la oferta. Solo la frase completa, sin puntuación.
+ * Cualquier «no» o «rechaz…» la niega.
  */
 export function esRatificacionDeAceptar(transcript: string): boolean {
-  const normalized = transcript.toLowerCase().trim();
-  if (niegaAceptar(normalized)) {
+  const normalized = sinPuntuacion(transcript.toLowerCase());
+  if (esNegacion(normalized)) {
     return false;
   }
   return /^\s*(aceptar|acepto)\s*$/.test(normalized);
@@ -163,8 +174,8 @@ export function parseCommand(transcript: string, confidence = 1.0): RecognizedCo
   }
 
   for (const { intent, tokens } of PATTERNS) {
-    // «no acepto la oferta» no es aceptar: la negación cierra el intent.
-    if (intent === 'aceptar_oferta' && niegaAceptar(normalized)) {
+    // «no acepto la oferta» y «no entregué» no son el verbo afirmativo.
+    if ((intent === 'aceptar_oferta' || intent === 'confirmar_entrega') && esNegacion(normalized)) {
       continue;
     }
     for (const token of tokens) {
