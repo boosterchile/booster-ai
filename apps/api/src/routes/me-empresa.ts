@@ -7,6 +7,7 @@ import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { ctxDeUserContext, puedeAdministrarEmpresa } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { empresas } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
@@ -24,8 +25,6 @@ import type { UserContext } from '../services/user-context.js';
  * hueco de Task 13 (`.specs/activar-opt-in-huella/`): sin este boundary el
  * cómputo T11–T13 queda siempre OFF en prod salvo SQL.
  */
-
-const ROLES_QUE_GESTIONAN = new Set(['dueno', 'admin']);
 
 const huellaOptInCounter = getBusinessCounter('huella_opt_in_cambios_total');
 const umbralesRoboCounter = getBusinessCounter('umbrales_robo_combustible_cambios_total');
@@ -53,7 +52,9 @@ export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
         response: c.json({ error: 'forbidden', code: 'no_es_empresa' }, 403),
       };
     }
-    if (!ROLES_QUE_GESTIONAN.has(activa.membership.role)) {
+    // CHEQUEOS_REEMPLAZADOS empresa: antes ROLES_QUE_GESTIONAN (dueno|admin).
+    const ctx = ctxDeUserContext(userContext);
+    if (!ctx || !puedeAdministrarEmpresa(ctx)) {
       return {
         ok: false as const,
         response: c.json({ error: 'forbidden', code: 'admin_required' }, 403),

@@ -24,9 +24,11 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { ctxDeUserContext, puedeGestionarFlota, veSoloSuViaje } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { pgErrorCode } from '../db/pg-error.js';
 import {
+  assignments,
   pendingDevices,
   posicionesMovilConductor,
   telemetryPoints,
@@ -425,8 +427,9 @@ export function createVehiculosRoutes(opts: {
     if (!auth.ok) {
       return auth;
     }
-    const role = auth.activeMembership.membership.role;
-    if (role !== 'dueno' && role !== 'admin' && role !== 'despachador') {
+    // CHEQUEOS_REEMPLAZADOS vehiculos-ui: antes role !== dueno|admin|despachador.
+    const ctx = ctxDeUserContext(auth.userContext);
+    if (!ctx || !puedeGestionarFlota(ctx)) {
       return {
         ok: false as const,
         response: c.json({ error: 'forbidden', code: 'write_role_required' }, 403),
@@ -541,7 +544,7 @@ export function createVehiculosRoutes(opts: {
     }
     const empresaId = auth.activeMembership.empresa.id;
 
-    const vehicleRows = await opts.db
+    let vehicleRows = await opts.db
       .select({
         id: vehicles.id,
         plate: vehicles.plate,
@@ -553,6 +556,26 @@ export function createVehiculosRoutes(opts: {
       .from(vehicles)
       .where(eq(vehicles.empresaId, empresaId))
       .orderBy(asc(vehicles.plate));
+
+    // CHEQUEOS_REEMPLAZADOS flota: el conductor empleado no ve la flota.
+    const ctxFlota = ctxDeUserContext(auth.userContext);
+    if (ctxFlota && veSoloSuViaje(ctxFlota)) {
+      const asignados = await opts.db
+        .select({ vehicleId: assignments.vehicleId })
+        .from(assignments)
+        .where(
+          and(
+            eq(assignments.empresaId, empresaId),
+            eq(assignments.driverUserId, auth.userContext.user.id),
+          ),
+        );
+      const propios = new Set(
+        (Array.isArray(asignados) ? asignados : [])
+          .map((row) => row.vehicleId)
+          .filter((id): id is string => typeof id === 'string'),
+      );
+      vehicleRows = vehicleRows.filter((row) => propios.has(row.id));
+    }
 
     // D1/D2 — Particionamos los vehículos en tres grupos:
     //   - withOwnDevice: tienen teltonika_imei propio → lookup por
@@ -1468,6 +1491,25 @@ export function createVehiculosRoutes(opts: {
       .limit(1);
     if (!vehicle) {
       return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    // CHEQUEOS_REEMPLAZADOS flota: la ubicación de un vehículo ajeno no se entrega.
+    const ctxUbicacion = ctxDeUserContext(auth.userContext);
+    if (ctxUbicacion && veSoloSuViaje(ctxUbicacion)) {
+      const asignados = await opts.db
+        .select({ vehicleId: assignments.vehicleId })
+        .from(assignments)
+        .where(
+          and(
+            eq(assignments.empresaId, empresaId),
+            eq(assignments.driverUserId, auth.userContext.user.id),
+            eq(assignments.vehicleId, id),
+          ),
+        );
+      const filas = Array.isArray(asignados) ? asignados : [];
+      if (!filas.some((row) => row.vehicleId === id)) {
+        return c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403);
+      }
     }
 
     // D1/D2 — Determinar fuente de datos en orden de prioridad:

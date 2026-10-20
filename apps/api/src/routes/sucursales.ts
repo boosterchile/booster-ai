@@ -5,6 +5,11 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import {
+  ctxDeUserContext,
+  puedeAdministrarEmpresa,
+  puedeGestionarSucursales,
+} from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { sucursalesEmpresa } from '../db/schema.js';
 
@@ -57,8 +62,9 @@ export function createSucursalesRoutes(opts: { db: Db; logger: Logger }) {
     if (!auth.ok) {
       return auth;
     }
-    const role = auth.activeMembership.membership.role;
-    if (role !== 'dueno' && role !== 'admin' && role !== 'despachador') {
+    // CHEQUEOS_REEMPLAZADOS sucursales: antes dueno|admin|despachador sin mirar generador.
+    const ctx = ctxDeUserContext(auth.userContext);
+    if (!ctx || !puedeGestionarSucursales(ctx)) {
       return {
         ok: false as const,
         response: c.json({ error: 'forbidden', code: 'write_role_required' }, 403),
@@ -72,8 +78,9 @@ export function createSucursalesRoutes(opts: { db: Db; logger: Logger }) {
     if (!auth.ok) {
       return auth;
     }
-    const role = auth.activeMembership.membership.role;
-    if (role !== 'dueno' && role !== 'admin') {
+    // Borrar sigue siendo dueño o admin, y solo en una empresa generadora.
+    const ctx = ctxDeUserContext(auth.userContext);
+    if (!ctx || !puedeAdministrarEmpresa(ctx) || !ctx.isGeneradorCarga) {
       return {
         ok: false as const,
         response: c.json({ error: 'forbidden', code: 'admin_required' }, 403),
