@@ -5,6 +5,7 @@ import {
   type SpeechRecognitionEventLike,
   type SpeechRecognitionLike,
   createVoiceCommandRecognizer,
+  esRatificacionDeAceptar,
   parseCommand,
 } from './voice-commands.js';
 
@@ -46,6 +47,27 @@ describe('parseCommand', () => {
     expect(parseCommand('aceptar')?.intent).toBe('aceptar_oferta');
     expect(parseCommand('Acepto')?.intent).toBe('aceptar_oferta');
     expect(parseCommand('aceptaron la carga')).toBeNull();
+  });
+
+  it('una negación no es aceptar_oferta', () => {
+    expect(parseCommand('no acepto')).toBeNull();
+    expect(parseCommand('no, no lo acepto')).toBeNull();
+    expect(parseCommand('acepto… mejor no')).toBeNull();
+    expect(parseCommand('no acepto la oferta')).toBeNull();
+    expect(parseCommand('rechazo la oferta')).toBeNull();
+    expect(parseCommand('rechazar')).toBeNull();
+    expect(parseCommand('acepto la oferta')?.intent).toBe('aceptar_oferta');
+  });
+
+  it('esRatificacionDeAceptar solo admite la frase entera y niega "no" o "rechaz"', () => {
+    expect(esRatificacionDeAceptar('  Aceptar  ')).toBe(true);
+    expect(esRatificacionDeAceptar('acepto')).toBe(true);
+    expect(esRatificacionDeAceptar('no acepto')).toBe(false);
+    expect(esRatificacionDeAceptar('no, no lo acepto')).toBe(false);
+    expect(esRatificacionDeAceptar('acepto… mejor no')).toBe(false);
+    expect(esRatificacionDeAceptar('no acepto la oferta')).toBe(false);
+    expect(esRatificacionDeAceptar('acepto la oferta')).toBe(false);
+    expect(esRatificacionDeAceptar('rechazo')).toBe(false);
   });
 
   it('cancelar: "cancelar"', () => {

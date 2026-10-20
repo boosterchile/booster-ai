@@ -7,6 +7,7 @@ import {
   type RecognizedCommand,
   type VoiceCommandController,
   createVoiceCommandRecognizer,
+  esRatificacionDeAceptar,
 } from '../../services/voice-commands.js';
 import { VoiceCommandButton } from '../voice/VoiceCommandButton.js';
 
@@ -135,14 +136,18 @@ export function VoiceAcceptOfferControl({
       return;
     }
     if (cmd.intent === 'aceptar_oferta') {
-      // «aceptar» suelto no abre el contrato: en reposo hace falta la
-      // frase con «oferta». En la confirmación, «aceptar» sí ratifica.
-      const fraseDeOferta = cmd.transcript.includes('oferta');
+      const normalized = cmd.transcript.toLowerCase().trim();
+      // «no acepto», «acepto… mejor no» y «rechazo…» no avanzan ni cierran.
+      if (/\bno\b/.test(normalized) || /rechaz/.test(normalized)) {
+        return;
+      }
+      // En reposo hace falta la frase con «oferta». En confirmación solo
+      // vale «aceptar» o «acepto» enteros.
       if (localState === 'idle') {
-        if (fraseDeOferta) {
+        if (normalized.includes('oferta')) {
           enterConfirming();
         }
-      } else if (localState === 'confirming') {
+      } else if (localState === 'confirming' && esRatificacionDeAceptar(normalized)) {
         ratify();
       }
     }

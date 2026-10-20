@@ -329,6 +329,41 @@ describe('VoiceAcceptOfferControl', () => {
     }
   });
 
+  it('en confirmación, una negación o una frase larga no hace POST', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({});
+    const Wrapper = makeWrapper();
+    const r = makeRecognizer();
+    render(
+      <Wrapper>
+        <VoiceAcceptOfferControl
+          offerId={OFFER_ID}
+          trackingCode={TRACKING_CODE}
+          recognizer={r.ctrl}
+        />
+      </Wrapper>,
+    );
+    act(() => {
+      r.emitCommand({ intent: 'aceptar_oferta', transcript: 'aceptar oferta', confidence: 1 });
+    });
+    expect(screen.getByTestId('voice-accept-confirm')).toBeInTheDocument();
+
+    for (const transcript of [
+      'no acepto',
+      'no, no lo acepto',
+      'acepto… mejor no',
+      'no acepto la oferta',
+      'rechazo',
+      'acepto la oferta',
+    ]) {
+      act(() => {
+        r.emitCommand({ intent: 'aceptar_oferta', transcript, confidence: 1 });
+      });
+    }
+
+    expect(postSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('voice-accept-confirm')).toBeInTheDocument();
+  });
+
   it('SpeechRecognition: "aceptar" suelto en reposo no abre la confirmación', () => {
     const speech = instalarSpeechMock();
     try {

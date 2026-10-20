@@ -111,8 +111,8 @@ const PATTERNS: IntentPattern[] = [
       'tomar oferta',
       'tomo la oferta',
       'tomo oferta',
-      // Ratificación corta. En reposo la UI no la trata como primera
-      // frase: hace falta «oferta». Sirve para el segundo «aceptar».
+      // Ratificación corta. En reposo la UI exige «oferta». En
+      // confirmación solo vale la frase entera («aceptar» o «acepto»).
       'aceptar',
       'acepto',
     ],
@@ -126,6 +126,26 @@ const PATTERNS: IntentPattern[] = [
 /** Escapa caracteres especiales para uso en RegExp. */
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * «no» como palabra, o el tronco «rechaz» (rechazo, rechazar, rechazamos).
+ * No usa /g: un regex compartido con lastIndex se pegaría entre llamadas.
+ */
+function niegaAceptar(normalized: string): boolean {
+  return /\bno\b/.test(normalized) || /rechaz/.test(normalized);
+}
+
+/**
+ * Ratificación de la oferta. Solo la frase completa, ya normalizada
+ * (minúsculas y sin espacios de más). Cualquier «no» o «rechaz…» la niega.
+ */
+export function esRatificacionDeAceptar(transcript: string): boolean {
+  const normalized = transcript.toLowerCase().trim();
+  if (niegaAceptar(normalized)) {
+    return false;
+  }
+  return /^\s*(aceptar|acepto)\s*$/.test(normalized);
 }
 
 /**
@@ -143,6 +163,10 @@ export function parseCommand(transcript: string, confidence = 1.0): RecognizedCo
   }
 
   for (const { intent, tokens } of PATTERNS) {
+    // «no acepto la oferta» no es aceptar: la negación cierra el intent.
+    if (intent === 'aceptar_oferta' && niegaAceptar(normalized)) {
+      continue;
+    }
     for (const token of tokens) {
       // Frases multi-palabra: tolerar whitespace flexible entre palabras.
       // Single-word: word boundary.
