@@ -34,10 +34,13 @@ test.describe('marketplace: publicar → aceptar → tracking público', () => {
     await revisarPantalla(page, '/app/cargas/nueva (errores)', { errores: true });
 
     const regiones = page.getByRole('combobox', { name: 'Región' });
+    const comunas = page.getByRole('combobox', { name: 'Comuna' });
     await page.getByLabel('Dirección de recogida').fill('Av. Apoquindo 5550, Las Condes');
     await regiones.nth(0).selectOption('XIII');
+    await comunas.nth(0).selectOption('13114');
     await page.getByLabel('Dirección de entrega').fill('Av. Pajaritos 3000, Maipú');
     await regiones.nth(1).selectOption('XIII');
+    await comunas.nth(1).selectOption('13119');
     await page.getByLabel('Peso (kg)').fill('8000');
     const desde = new Date(Date.now() + 2 * 3_600_000);
     const hasta = new Date(Date.now() + 6 * 3_600_000);

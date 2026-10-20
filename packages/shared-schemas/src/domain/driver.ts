@@ -109,6 +109,18 @@ export const conductorContactEmailSchema = z
 
 export type ConductorContactEmail = z.infer<typeof conductorContactEmailSchema>;
 
+/** Mismo texto en el alta y en la ficha. */
+export const MENSAJE_TELEFONO_CONDUCTOR = 'Ingresa un teléfono válido (+569...)';
+
+/**
+ * WhatsApp del conductor: solo móvil +569. Un fijo (+562…) pasa
+ * `chileanPhoneSchema` y no recibe la plantilla de activación.
+ */
+export const telefonoMovilConductorSchema = chileanPhoneSchema.refine(
+  (value) => value.startsWith('+569'),
+  { message: MENSAJE_TELEFONO_CONDUCTOR },
+);
+
 /**
  * Body para crear un conductor desde la interfaz transportista. El RUT del
  * conductor se recibe acá (no en `users`) porque la creación primero hace
@@ -131,14 +143,15 @@ export const createDriverBodySchema = z.object({
    * Teléfono móvil en E.164. **Obligatorio** desde 2026-08-03: WhatsApp es el
    * canal principal hacia el conductor — los conductores chilenos de camión
    * usan WhatsApp, no correo. Por acá le llega el enlace de activación.
-   * El PIN no viaja por WhatsApp.
+   * El PIN no viaja por WhatsApp. Un fijo (+562…) no recibe la plantilla:
+   * el alta exige el mismo móvil +569 que la ficha.
    *
    * Era `nullable().optional()`. Medido en prod: 2 de 7 conductores quedaron
    * sin número, o sea inalcanzables por el canal que más van a usar. Mismo
    * razonamiento que llevó a exigir el email en la Fase B: el dato no se
    * perdió, nunca se pidió.
    */
-  phone: chileanPhoneSchema,
+  phone: telefonoMovilConductorSchema,
   license_class: licenseClassSchema,
   license_number: z.string().min(1).max(50),
   license_expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -39,6 +40,12 @@ vi.mock('../components/map/VehicleMap.js', () => ({
 }));
 
 const { CargasListRoute, CargasNuevoRoute, CargasDetalleRoute } = await import('./cargas.js');
+
+// jsdom no implementa scrollIntoView. useScrollToFirstError lo llama al
+// submit con errores y, sin stub, desmonta el árbol del test.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => undefined;
+}
 
 function makeMe(isShipper: boolean): MeOnboarded {
   return {
@@ -136,6 +143,76 @@ describe('CargasNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasNuevoRoute />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
+  });
+
+  it('al enviar vacío muestra dirección, región y fecha juntas', async () => {
+    const user = userEvent.setup();
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(await screen.findAllByText('Selecciona una fecha y hora')).toHaveLength(2);
+    expect(screen.getAllByText('Ingresa una dirección (mínimo 5 caracteres)')).toHaveLength(2);
+    expect(screen.getAllByText('Selecciona una región')).toHaveLength(2);
+    expect(screen.getByText('Ingresa el peso en kg')).toBeInTheDocument();
+  });
+
+  it('Compañía 4425 con región y comuna no marca la dirección como inválida', async () => {
+    const user = userEvent.setup();
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await user.type(screen.getByLabelText(/Dirección de recogida/), 'Compañía 4425');
+    const region = screen.getAllByLabelText(/Región/)[0];
+    const comuna = screen.getAllByLabelText('Comuna')[0];
+    if (!region || !comuna) {
+      throw new Error('faltan los selectores de región y comuna');
+    }
+    await user.selectOptions(region, 'XIII');
+    await user.selectOptions(comuna, '13101');
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(screen.getAllByText('Ingresa una dirección (mínimo 5 caracteres)')).toHaveLength(1);
+    expect(region).toHaveValue('XIII');
+    expect(comuna).toHaveValue('13101');
+  });
+
+  it('después de un envío vacío, corregir los campos publica la carga', async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      trip_request: { id: '11111111-1111-4111-8111-111111111111' },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(await screen.findAllByText('Selecciona una región')).toHaveLength(2);
+    // useScrollToFirstError enfoca el primer error (Desde) 50 ms después del
+    // submit. Si el tipeo arranca antes, ese foco se roba a mitad de la
+    // dirección y el envío corregido no llega a publicarse.
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Desde/)).toHaveFocus();
+    });
+
+    await user.type(screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
+    await user.type(screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
+    const regiones = screen.getAllByLabelText(/Región/);
+    const origen = regiones[0];
+    const destino = regiones[1];
+    if (!origen || !destino) {
+      throw new Error('faltan los selectores de región');
+    }
+    await user.selectOptions(origen, 'XIII');
+    await user.selectOptions(destino, 'VIII');
+    await user.type(screen.getByLabelText(/Peso/), '8000');
+    const local = (fecha: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+    };
+    fireEvent.change(screen.getByLabelText(/Desde/), {
+      target: { value: local(new Date(Date.now() + 2 * 60 * 60 * 1000)) },
+    });
+    fireEvent.change(screen.getByLabelText(/Hasta/), {
+      target: { value: local(new Date(Date.now() + 6 * 60 * 60 * 1000)) },
+    });
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
   });
 });
 

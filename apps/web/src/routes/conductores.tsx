@@ -1,9 +1,10 @@
 import {
-  chileanPhoneSchema,
+  MENSAJE_TELEFONO_CONDUCTOR,
   conductorContactEmailSchema,
   ensureRutHasDash,
   esEmailDeRelleno,
   rutSchema,
+  telefonoMovilConductorSchema,
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
@@ -57,9 +58,6 @@ const STATUS_LABELS: Record<DriverStatus, string> = {
   en_viaje: 'En viaje',
   fuera_servicio: 'Fuera de servicio',
 };
-
-const TELEFONO_WHATSAPP_RE = /^\+569\d{8}$/;
-const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
 
 const STATUS_COLORS: Record<DriverStatus, string> = {
   activo: 'bg-success-50 text-success-700',
@@ -368,7 +366,7 @@ function altaLista(values: NewConductorForm): boolean {
     values.rut.trim().length > 0 &&
     values.full_name.trim().length > 0 &&
     conductorContactEmailSchema.safeParse(values.email).success &&
-    chileanPhoneSchema.safeParse(values.phone).success &&
+    telefonoMovilConductorSchema.safeParse(values.phone.trim()).success &&
     values.license_number.trim().length > 0 &&
     /^\d{4}-\d{2}-\d{2}$/.test(values.license_expiry)
   );
@@ -543,6 +541,12 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     valores.email.trim().length > 0 && !emailParse.success
       ? emailParse.error.issues[0]?.message
       : errors.email?.message;
+  const telefonoAlta = valores.phone.trim();
+  const telefonoAltaValido = telefonoMovilConductorSchema.safeParse(telefonoAlta).success;
+  const phoneMensaje =
+    telefonoAlta.length > 0 && !telefonoAltaValido
+      ? MENSAJE_TELEFONO_CONDUCTOR
+      : errors.phone?.message;
   const puedeCrear = altaLista(valores);
 
   function onSubmit(values: NewConductorForm) {
@@ -694,7 +698,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           <FormField
             label="Teléfono"
             required
-            error={errors.phone?.message}
+            error={phoneMensaje}
             hint="Su WhatsApp. Por aquí le llega el enlace para activar la cuenta. El PIN va por correo y queda en esta pantalla."
             render={({ id, describedBy }) => (
               <input
@@ -704,13 +708,11 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
                 {...register('phone', {
                   required:
                     'El teléfono del conductor es obligatorio: WhatsApp es el canal principal con él.',
-                  pattern: {
-                    // Mismo formato que exige el backend (chileanPhoneSchema).
-                    value: /^\+56[2-9]\d{8}$/,
-                    message: 'Número chileno en formato +56912345678.',
-                  },
+                  validate: (value) =>
+                    telefonoMovilConductorSchema.safeParse(value.trim()).success ||
+                    MENSAJE_TELEFONO_CONDUCTOR,
                 })}
-                className={fieldInputClass(!!errors.phone)}
+                className={fieldInputClass(!!phoneMensaje)}
                 placeholder="+56912345678"
               />
             )}
@@ -848,10 +850,10 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
   const [telefonoError, setTelefonoError] = useState<string | null>(null);
   const [pinTelefono, setPinTelefono] = useState<string | null>(null);
   const telefonoNormalizado = telefonoContacto.trim();
-  const telefonoValido = TELEFONO_WHATSAPP_RE.test(telefonoNormalizado);
+  const telefonoValido = telefonoMovilConductorSchema.safeParse(telefonoNormalizado).success;
   const telefonoMensaje =
     telefonoError ??
-    (telefonoNormalizado.length > 0 && !telefonoValido ? MENSAJE_TELEFONO_INVALIDO : undefined);
+    (telefonoNormalizado.length > 0 && !telefonoValido ? MENSAJE_TELEFONO_CONDUCTOR : undefined);
 
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
@@ -995,7 +997,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
 
   function guardarTelefono() {
     if (!telefonoValido) {
-      setTelefonoError(MENSAJE_TELEFONO_INVALIDO);
+      setTelefonoError(MENSAJE_TELEFONO_CONDUCTOR);
       return;
     }
     setTelefonoError(null);

@@ -40,6 +40,7 @@ import {
   AssignmentNotMutableError,
   AssignmentNotOwnedError,
   DriverNotInCarrierError,
+  VehicleNotAssignableError,
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
 import { explicarCoberturaCero } from '../services/clasificar-cobertura-cero.js';
@@ -399,8 +400,10 @@ export function createAssignmentsRoutes(opts: {
         delivered_at: row.deliveredAt?.toISOString() ?? null,
         cancelled_at: row.cancelledAt?.toISOString() ?? null,
         empresa_legal_name: row.empresaLegalName,
+        vehicle_id: row.vehicleId,
         vehicle_plate: row.vehiclePlate,
         vehicle_type: row.vehicleType,
+        driver_user_id: row.driverUserId,
         driver_name: row.driverName,
         ubicacion_actual: ubicacionActual,
       },
@@ -1197,10 +1200,12 @@ export function createAssignmentsRoutes(opts: {
   // Auth: carrier owner del assignment. Rol requerido: dueno, admin,
   // despachador (no operador genérico — esto es decisión de operación).
   //
-  // Body: { driver_user_id: UUID }
+  // Body: { driver_user_id: UUID, vehiculo_id?: UUID }
+  // `vehiculo_id` es el camión de la flota. Ausente → se conserva el de la oferta.
   // ---------------------------------------------------------------------
   const asignarConductorBodySchema = z.object({
     driver_user_id: z.string().uuid(),
+    vehiculo_id: z.string().uuid().optional(),
   });
 
   app.post('/:id/asignar-conductor', zValidator('json', asignarConductorBodySchema), async (c) => {
@@ -1217,7 +1222,7 @@ export function createAssignmentsRoutes(opts: {
     }
 
     const assignmentId = c.req.param('id');
-    const { driver_user_id } = c.req.valid('json');
+    const { driver_user_id, vehiculo_id } = c.req.valid('json');
 
     try {
       const result = await asignarConductorAAssignment({
@@ -1225,6 +1230,7 @@ export function createAssignmentsRoutes(opts: {
         logger: opts.logger,
         assignmentId,
         driverUserId: driver_user_id,
+        ...(vehiculo_id ? { vehiculoId: vehiculo_id } : {}),
         empresaId: auth.activeMembership.empresa.id,
         actingUserId: auth.userContext.user.id,
       });
@@ -1234,6 +1240,9 @@ export function createAssignmentsRoutes(opts: {
         previous_driver_user_id: result.previousDriverUserId,
         new_driver_user_id: result.newDriverUserId,
         driver_name: result.driverName,
+        driver_pending: result.driverPending,
+        previous_vehicle_id: result.previousVehicleId,
+        new_vehicle_id: result.newVehicleId,
       });
     } catch (err) {
       if (err instanceof AssignmentNotFoundError) {
@@ -1254,6 +1263,16 @@ export function createAssignmentsRoutes(opts: {
       }
       if (err instanceof DriverNotInCarrierError) {
         return c.json({ error: 'driver_not_in_carrier', code: 'driver_not_in_carrier' }, 400);
+      }
+      if (err instanceof VehicleNotAssignableError) {
+        return c.json(
+          {
+            error: 'vehicle_not_assignable',
+            code: 'vehicle_not_assignable',
+            reason: err.reason,
+          },
+          400,
+        );
       }
       opts.logger.error({ err, assignmentId }, 'asignar-conductor failed');
       return c.json({ error: 'internal_server_error' }, 500);
