@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   INCIDENT_TYPES,
   INCIDENT_TYPE_LABELS,
@@ -8,7 +8,11 @@ import {
 } from '../../hooks/use-reportar-incidente.js';
 import { useVoiceCommand } from '../../hooks/use-voice-command.js';
 import { ApiError } from '../../lib/api-client.js';
-import type { RecognizedCommand, VoiceCommandController } from '../../services/voice-commands.js';
+import {
+  type RecognizedCommand,
+  type VoiceCommandController,
+  createVoiceCommandRecognizer,
+} from '../../services/voice-commands.js';
 import { VoiceCommandButton } from '../voice/VoiceCommandButton.js';
 
 /**
@@ -52,6 +56,9 @@ export function IncidentReportCard({ assignmentId, recognizer }: IncidentReportC
   const [localState, setLocalState] = useState<LocalState>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const mutation = useReportarIncidenteMutation();
+  // Mismo reconocedor que el botón. Si cada uno crea el suyo, «marcar
+  // incidente» llega al botón (no-op) y este listener nunca arranca.
+  const voice = useMemo(() => recognizer ?? createVoiceCommandRecognizer(), [recognizer]);
 
   const openPanel = (): void => {
     setLocalState('selecting');
@@ -82,7 +89,7 @@ export function IncidentReportCard({ assignmentId, recognizer }: IncidentReportC
   useVoiceCommand({
     acceptedIntents: new Set(['marcar_incidente', 'cancelar']),
     onCommand: handleVoiceCommand,
-    ...(recognizer ? { recognizer } : {}),
+    recognizer: voice,
   });
 
   const submitIncident = (incidentType: IncidentType): void => {
@@ -155,7 +162,7 @@ export function IncidentReportCard({ assignmentId, recognizer }: IncidentReportC
           <VoiceCommandButton
             acceptedIntents={new Set(['marcar_incidente', 'cancelar'])}
             onCommand={() => undefined /* no-op: listener vive arriba */}
-            {...(recognizer ? { recognizer } : {})}
+            recognizer={voice}
             idleLabel='Di "incidente"'
           />
         </div>

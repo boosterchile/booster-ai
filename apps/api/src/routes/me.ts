@@ -1,13 +1,14 @@
 import type { Logger } from '@booster-ai/logger';
 import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   assignments,
   carrierMemberships,
+  conductores,
   empresas,
   memberships,
   organizacionesStakeholder,
@@ -244,6 +245,25 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       active = activeMembershipsList[0] ?? null;
     }
 
+    // Ficha propia en `conductores` de la empresa activa (alta «Soy yo el
+    // conductor»). No cambia quién puede aceptar: el cliente la combina
+    // con el rol `dueno` solo para mostrar la tarjeta de voz.
+    let tieneFichaConductor = false;
+    if (active?.empresa) {
+      const fichaRows = await opts.db
+        .select({ id: conductores.id })
+        .from(conductores)
+        .where(
+          and(
+            eq(conductores.userId, user.id),
+            eq(conductores.empresaId, active.empresa.id),
+            isNull(conductores.deletedAt),
+          ),
+        )
+        .limit(1);
+      tieneFichaConductor = fichaRows.length > 0;
+    }
+
     // La allowlist env-var es la fuente de autoridad para platform admin
     // (mismo patrón que requirePlatformAdmin). Si el email está en la
     // allowlist, lo devolvemos true aunque el column en BD sea stale.
@@ -270,6 +290,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       },
       memberships: membershipsPayload,
       active_membership: active,
+      tiene_ficha_conductor: tieneFichaConductor,
     });
   });
 

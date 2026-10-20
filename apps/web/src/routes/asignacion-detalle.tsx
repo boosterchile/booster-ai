@@ -29,6 +29,7 @@ import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js'
 import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
+import { esConductorDelViaje } from '../lib/es-conductor-del-viaje.js';
 import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
 interface AssignmentDetail {
@@ -80,13 +81,19 @@ export function AsignacionDetalleRoute() {
           );
         }
         const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
-        return <AsignacionDetallePage canWriteDocs={canWriteDocs} />;
+        return <AsignacionDetallePage canWriteDocs={canWriteDocs} viewerUserId={ctx.me.user.id} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
+function AsignacionDetallePage({
+  canWriteDocs,
+  viewerUserId,
+}: {
+  canWriteDocs: boolean;
+  viewerUserId: string;
+}) {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
 
   // GET /assignments/:id devuelve trip + assignment metadata.
@@ -107,6 +114,9 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
   // Phase 4 PR-K4 — confirmación de entrega via voz hands-free.
   // Surface visible mientras el trip está activo (asignado | en_proceso).
   const isConfirmable = trip?.status === 'asignado' || trip?.status === 'en_proceso';
+  // Entrega e incidente son de quien conduce este viaje (el usuario
+  // asignado). El rol de la empresa no alcanza: un dueño que no es ese
+  // conductor administra, no maneja.
   // ADR-029 v1 / ADR-032 — "Cobra hoy" sólo aplica cuando el viaje ya
   // fue entregado. El service backend valida liquidación + flag; si el
   // flag está off, el modal muestra mensaje claro. Si no hay liquidación
@@ -120,6 +130,7 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
   const enPasoAsignacion =
     assignment != null && assignment.driver_user_id == null && assignment.status === 'asignado';
   const mostrarEjecucion = assignment != null && !enPasoAsignacion;
+  const conduceEsteViaje = esConductorDelViaje(viewerUserId, assignment?.driver_user_id);
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100">
@@ -181,17 +192,13 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
           Solo con vehículo asignado (si no, no hay telemetría posible). */}
           {tripQ.data?.assignment && <TrazaCargaCard assignmentId={assignmentId} />}
 
-          {/* Phase 4 PR-K4 — confirmación de entrega hands-free (voz +
-          botón visual). Visible para el carrier mientras el trip está
-          asignado o en_proceso. Doble confirmación dentro del componente
-          previene falsos positivos. */}
-          {isConfirmable && <DeliveryConfirmCard assignmentId={assignmentId} />}
+          {/* Confirmación de entrega (voz + botón). Solo quien conduce
+          este viaje. Doble confirmación dentro del componente. */}
+          {isConfirmable && conduceEsteViaje && <DeliveryConfirmCard assignmentId={assignmentId} />}
 
-          {/* Phase 4 PR-K6b — reportar incidente operacional (accidente,
-          demora, falla mecánica, etc.). Voice command "marcar
-          incidente" abre panel de selección. Visible mientras el trip
-          esté activo (mismo predicate que delivery confirm). */}
-          {isConfirmable && <IncidentReportCard assignmentId={assignmentId} />}
+          {/* Incidente operacional. Misma compuerta: el administrador
+          de la empresa no reporta un viaje que maneja otra persona. */}
+          {isConfirmable && conduceEsteViaje && <IncidentReportCard assignmentId={assignmentId} />}
 
           {/* Behavior score card — Phase 2 PR-I5. Solo se muestra cuando
           el trip está cerrado, porque el score se calcula post-entrega.
