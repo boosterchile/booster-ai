@@ -111,10 +111,14 @@ abortando por esos umbrales.
 - [x] El Job resuelve el host del tag a `199.36.153.8`. Si el objeto
       desaparece antes de leer los logs, el gate sale distinto de 0 y no
       dice que promueve.
-- [x] Un log del Job con HTTP 200 que cubre el piso cuenta como llegada
-      aunque no traiga el objeto `resumen` (el exit code del contenedor no
-      se lee). Un 404 que no llegó a la app, o un 5xx, sigue en exit
-      distinto de 0.
+- [x] El template del pod del Job lleva
+      `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`. Sin eso el
+      autoscaler puede borrar el pod (ScaleDown) antes del `resumen` y, con
+      `backoffLimit: 0`, el Job queda Failed.
+- [x] El conteo por línea, si no hay objeto `resumen`, solo aplica cuando el
+      Job quedó Complete y las líneas cubren el piso sin 404. 30×200 con el
+      Job Failed, un Job pendiente, o 30×200 mezclados con 404, salen
+      distinto de 0. Un 5xx sigue en exit distinto de 0.
 - [x] La imagen del Job va por digest. El CI corre los unittest de
       `scripts/deploy`.
 - [x] El bloque Python de `canary-verify` no introduce `$` sin escapar, y el

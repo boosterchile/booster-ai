@@ -272,7 +272,16 @@ def manifiesto_job(
             'ttlSecondsAfterFinished': TTL_JOB_SEGUNDOS,
             'activeDeadlineSeconds': 1800,
             'template': {
-                'metadata': {'labels': {'app': 'canary-probe'}},
+                'metadata': {
+                    'labels': {'app': 'canary-probe'},
+                    # GKE Autopilot (build 20739610): el autoscaler mató el pod
+                    # con ScaleDown después de 34/34 HTTP 200 y antes del
+                    # resumen. backoffLimit 0 no reintenta. Sin esta anotación
+                    # el Job queda Failed y el gate no promueve.
+                    'annotations': {
+                        'cluster-autoscaler.kubernetes.io/safe-to-evict': 'false',
+                    },
+                },
                 'spec': {
                     'restartPolicy': 'Never',
                     'automountServiceAccountToken': False,
@@ -452,9 +461,8 @@ def _ms(valor: object) -> float | None:
 def _resumen_desde_eventos(log: str) -> dict[str, Any] | None:
     """Si el objeto resumen no está, las líneas status=200/4xx/5xx deciden.
 
-    El step no lee el exit code del contenedor. Sin este conteo, un log con
-    HTTP 200 y sin el objeto resumen se marcaba como fallo. Un 404 que no
-    llegó a la app, o un 5xx, siguen siendo fallo.
+    Solo se llama con el Job Complete. Un 404 cuenta en contra: mezclado
+    con 200 no es llegada. Un 5xx se reporta para que el gate falle.
     """
     respuestas = 0
     cinco = 0
@@ -487,9 +495,10 @@ def _resumen_desde_eventos(log: str) -> dict[str, Any] | None:
             cuatro += 1
     if not vio:
         return None
-    # Por debajo del piso y sin 5xx no hay llegada: si no, el gate revierte
-    # el tag por muestra corta. El 5xx se entrega siempre.
-    if cinco == 0 and respuestas < PISO_RESPUESTAS_EN_LOG:
+    # En el respaldo los 404 cuentan en contra: sin el objeto resumen, 30
+    # respuestas 200 mezcladas con 404 no son llegada. El 5xx se entrega
+    # siempre. Por debajo del piso tampoco: el gate revertiría el tag.
+    if cinco == 0 and (cuatro > 0 or respuestas < PISO_RESPUESTAS_EN_LOG):
         return {
             'llego_a_la_app': False,
             'cinco_xx': 0,
@@ -510,10 +519,19 @@ def _resumen_desde_eventos(log: str) -> dict[str, Any] | None:
     }
 
 
-def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
-    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló."""
+def aplicar_log_job(
+    resultado: dict[str, Any],
+    log: str,
+    estado_terminal: str = '',
+) -> dict[str, Any]:
+    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló.
+
+    El conteo por línea (sin objeto resumen) solo vale con el Job Complete.
+    Failed, pendiente o un log cortado no promueven: el pod desalojado con
+    backoffLimit 0 queda Failed y ese caso lo cubre safe-to-evict.
+    """
     resumen = _extraer_resumen(log)
-    if resumen is None:
+    if resumen is None and estado_terminal == 'completo':
         resumen = _resumen_desde_eventos(log)
     if resumen is None:
         resultado['job'] = 'fallo'
@@ -640,7 +658,10 @@ def main(argv: list[str] | None = None) -> int:
         resultado = _leer_resultado(args.aplicar_log_job)
         with open(args.log_file, encoding='utf-8') as fh:
             log = fh.read()
-        _escribir(args.aplicar_log_job, aplicar_log_job(resultado, log))
+        _escribir(
+            args.aplicar_log_job,
+            aplicar_log_job(resultado, log, args.job_estado),
+        )
         return 0
 
     if args.marcar_job:
