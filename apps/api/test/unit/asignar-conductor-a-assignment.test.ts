@@ -5,6 +5,7 @@ import {
   AssignmentNotOwnedError,
   DriverNotInCarrierError,
   asignarConductorAAssignment,
+  condicionesConductorAsignable,
 } from '../../src/services/asignar-conductor-a-assignment.js';
 
 beforeAll(() => {
@@ -37,6 +38,8 @@ const TRIP_ID = '00000000-0000-0000-0000-000000000a02';
 const EMPRESA_ID = '00000000-0000-0000-0000-000000000a03';
 const ACTING_USER_ID = '00000000-0000-0000-0000-000000000a04';
 const DRIVER_USER_ID = '00000000-0000-0000-0000-000000000a05';
+const VEHICLE_ID = '00000000-0000-0000-0000-000000000a07';
+const OTHER_VEHICLE_ID = '00000000-0000-0000-0000-000000000a08';
 
 interface AssignmentRow {
   id: string;
@@ -44,11 +47,21 @@ interface AssignmentRow {
   status: string;
   driverUserId: string | null;
   tripId: string;
+  vehicleId: string;
+  unidadArrastreId: string | null;
 }
 interface DriverRow {
   userId: string;
   userFullName: string;
   conductorId: string;
+  firebaseUid: string;
+  email: string;
+}
+interface VehicleRow {
+  id: string;
+  empresaId: string;
+  vehicleStatus: string;
+  unitCategory: string;
 }
 
 /**
@@ -59,6 +72,7 @@ interface DriverRow {
 function makeDbStub(opts: {
   assignmentRow?: AssignmentRow | null;
   driverRow?: DriverRow | null;
+  vehicleRow?: VehicleRow | null;
 }) {
   const selectQueue: unknown[][] = [];
   if (opts.assignmentRow !== undefined) {
@@ -66,6 +80,9 @@ function makeDbStub(opts: {
   }
   if (opts.driverRow !== undefined) {
     selectQueue.push(opts.driverRow === null ? [] : [opts.driverRow]);
+  }
+  if (opts.vehicleRow !== undefined) {
+    selectQueue.push(opts.vehicleRow === null ? [] : [opts.vehicleRow]);
   }
 
   const limitFn = vi.fn(() => Promise.resolve(selectQueue.shift() ?? []));
@@ -111,6 +128,8 @@ const baseAssignment = (overrides: Partial<AssignmentRow> = {}): AssignmentRow =
   status: 'asignado',
   driverUserId: null,
   tripId: TRIP_ID,
+  vehicleId: VEHICLE_ID,
+  unidadArrastreId: null,
   ...overrides,
 });
 
@@ -118,6 +137,16 @@ const baseDriver = (overrides: Partial<DriverRow> = {}): DriverRow => ({
   userId: DRIVER_USER_ID,
   userFullName: 'Pedro González (Demo)',
   conductorId: '00000000-0000-0000-0000-000000000a06',
+  firebaseUid: 'firebase-real',
+  email: 'conductor@example.com',
+  ...overrides,
+});
+
+const baseVehicle = (overrides: Partial<VehicleRow> = {}): VehicleRow => ({
+  id: OTHER_VEHICLE_ID,
+  empresaId: EMPRESA_ID,
+  vehicleStatus: 'activo',
+  unitCategory: 'motriz',
   ...overrides,
 });
 
@@ -288,4 +317,150 @@ describe('asignarConductorAAssignment', () => {
       }),
     );
   });
+
+  it('conductor pendiente de activación (RUT 11.111.111-1) se asigna y queda marcado', async () => {
+    const stub = makeDbStub({
+      assignmentRow: baseAssignment(),
+      driverRow: baseDriver({
+        firebaseUid: 'pending-rut:11111111-1',
+        email: 'pendiente@example.com',
+      }),
+    });
+    const result = await asignarConductorAAssignment({
+      db: stub.db,
+      logger: noopLogger,
+      assignmentId: ASSIGNMENT_ID,
+      driverUserId: DRIVER_USER_ID,
+      empresaId: EMPRESA_ID,
+      actingUserId: ACTING_USER_ID,
+    });
+    expect(result.newDriverUserId).toBe(DRIVER_USER_ID);
+    expect(result.driverPending).toBe(true);
+  });
+
+  it('vehiculo_id de la flota motriz activa reemplaza el camión del assignment', async () => {
+    const stub = makeDbStub({
+      assignmentRow: baseAssignment(),
+      driverRow: baseDriver(),
+      vehicleRow: baseVehicle(),
+    });
+    const result = await asignarConductorAAssignment({
+      db: stub.db,
+      logger: noopLogger,
+      assignmentId: ASSIGNMENT_ID,
+      driverUserId: DRIVER_USER_ID,
+      empresaId: EMPRESA_ID,
+      actingUserId: ACTING_USER_ID,
+      vehiculoId: OTHER_VEHICLE_ID,
+    });
+    expect(result.previousVehicleId).toBe(VEHICLE_ID);
+    expect(result.newVehicleId).toBe(OTHER_VEHICLE_ID);
+    expect(stub.spies.updateSetFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        driverUserId: DRIVER_USER_ID,
+        vehicleId: OTHER_VEHICLE_ID,
+      }),
+    );
+  });
+
+  it('vehiculo de otra empresa → no se asigna', async () => {
+    const stub = makeDbStub({
+      assignmentRow: baseAssignment(),
+      driverRow: baseDriver(),
+      vehicleRow: baseVehicle({ empresaId: 'otra-empresa' }),
+    });
+    await expect(
+      asignarConductorAAssignment({
+        db: stub.db,
+        logger: noopLogger,
+        assignmentId: ASSIGNMENT_ID,
+        driverUserId: DRIVER_USER_ID,
+        empresaId: EMPRESA_ID,
+        actingUserId: ACTING_USER_ID,
+        vehiculoId: OTHER_VEHICLE_ID,
+      }),
+    ).rejects.toThrow(/not_in_fleet/);
+  });
+
+  it('vehiculo retirado o de arrastre → no se asigna', async () => {
+    const retirado = makeDbStub({
+      assignmentRow: baseAssignment(),
+      driverRow: baseDriver(),
+      vehicleRow: baseVehicle({ vehicleStatus: 'retirado' }),
+    });
+    await expect(
+      asignarConductorAAssignment({
+        db: retirado.db,
+        logger: noopLogger,
+        assignmentId: ASSIGNMENT_ID,
+        driverUserId: DRIVER_USER_ID,
+        empresaId: EMPRESA_ID,
+        actingUserId: ACTING_USER_ID,
+        vehiculoId: OTHER_VEHICLE_ID,
+      }),
+    ).rejects.toThrow(/not_active/);
+
+    const arrastre = makeDbStub({
+      assignmentRow: baseAssignment(),
+      driverRow: baseDriver(),
+      vehicleRow: baseVehicle({ unitCategory: 'arrastre' }),
+    });
+    await expect(
+      asignarConductorAAssignment({
+        db: arrastre.db,
+        logger: noopLogger,
+        assignmentId: ASSIGNMENT_ID,
+        driverUserId: DRIVER_USER_ID,
+        empresaId: EMPRESA_ID,
+        actingUserId: ACTING_USER_ID,
+        vehiculoId: OTHER_VEHICLE_ID,
+      }),
+    ).rejects.toThrow(/not_motriz/);
+  });
+
+  it('el camión no puede ser la unidad de arrastre de la misma asignación', async () => {
+    const stub = makeDbStub({
+      assignmentRow: baseAssignment({ unidadArrastreId: OTHER_VEHICLE_ID }),
+      driverRow: baseDriver(),
+      vehicleRow: baseVehicle(),
+    });
+    await expect(
+      asignarConductorAAssignment({
+        db: stub.db,
+        logger: noopLogger,
+        assignmentId: ASSIGNMENT_ID,
+        driverUserId: DRIVER_USER_ID,
+        empresaId: EMPRESA_ID,
+        actingUserId: ACTING_USER_ID,
+        vehiculoId: OTHER_VEHICLE_ID,
+      }),
+    ).rejects.toThrow(/es_el_arrastre/);
+  });
+
+  it('el filtro del conductor no mira firebase_uid ni la activación', () => {
+    const nombres = nombresDeColumna(condicionesConductorAsignable(EMPRESA_ID, DRIVER_USER_ID));
+    expect(nombres).toEqual(expect.arrayContaining(['usuario_id', 'empresa_id', 'eliminado_en']));
+    expect(nombres).not.toContain('firebase_uid');
+  });
 });
+
+function nombresDeColumna(value: unknown, seen = new Set<unknown>()): string[] {
+  if (value == null || typeof value !== 'object') {
+    return [];
+  }
+  if (seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+  const rec = value as Record<string, unknown>;
+  const out: string[] = [];
+  if (typeof rec.name === 'string') {
+    out.push(rec.name);
+  }
+  for (const child of Object.values(rec)) {
+    if (child && typeof child === 'object') {
+      out.push(...nombresDeColumna(child, seen));
+    }
+  }
+  return out;
+}

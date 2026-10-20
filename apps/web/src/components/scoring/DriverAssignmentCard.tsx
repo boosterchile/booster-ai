@@ -12,10 +12,9 @@ import { useEmpresaScope } from '../../lib/empresa-activa.js';
  * `/assignments/:id/driver-position` era inalcanzable y la UI
  * /app/conductor exigía pegar el UUID manualmente.
  *
- * Ahora el carrier (rol dueno/admin/despachador) elige uno de sus
- * conductores activos del dropdown y lo asocia con un click. El backend
- * valida que el conductor sea efectivamente del mismo carrier
- * (defensa anti-cross-tenant).
+ * Ahora el carrier (rol dueno/admin/despachador) elige un camión de su
+ * flota y un conductor —incluido el que todavía no activó su cuenta—
+ * y los confirma. El backend valida que ambos sean de la misma empresa.
  *
  * Visible mientras el assignment esté en estado mutable
  * (`asignado` | `recogido`). Permite reasignar (caso de uso: relevo de
@@ -34,18 +33,30 @@ interface ConductorListItem {
   status: string;
 }
 
+interface VehiculoListItem {
+  id: string;
+  plate: string;
+  type: string;
+  unit_category: string;
+  status: string;
+}
+
 interface AsignarResponse {
   ok: true;
   assignment_id: string;
   previous_driver_user_id: string | null;
   new_driver_user_id: string;
   driver_name: string | null;
+  driver_pending?: boolean;
+  new_vehicle_id?: string;
 }
 
 export interface DriverAssignmentCardProps {
   assignmentId: string;
   /** Nombre del conductor actualmente asignado, si hay. */
   currentDriverName: string | null;
+  /** Camión que quedó en la oferta, para preseleccionarlo. */
+  currentVehicleId?: string | null;
   /** Estado actual del assignment — solo permitimos asignar en mutables. */
   assignmentStatus: string;
 }
@@ -55,10 +66,12 @@ const MUTABLE_ASSIGNMENT_STATUSES = new Set(['asignado', 'recogido']);
 export function DriverAssignmentCard({
   assignmentId,
   currentDriverName,
+  currentVehicleId = null,
   assignmentStatus,
 }: DriverAssignmentCardProps) {
   const queryClient = useQueryClient();
   const [selectedDriverUserId, setSelectedDriverUserId] = useState('');
+  const [selectedVehicleId, setSelectedVehicleId] = useState(currentVehicleId ?? '');
   const [submitState, setSubmitState] = useState<
     | { kind: 'idle' }
     | { kind: 'submitting' }
@@ -71,6 +84,10 @@ export function DriverAssignmentCard({
     queryKey: scope.key('conductores-list-for-assignment'),
     queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores', scope.init),
   });
+  const vehiculosQ = useQuery<{ vehicles: VehiculoListItem[] }>({
+    queryKey: scope.key('vehiculos'),
+    queryFn: () => api.get<{ vehicles: VehiculoListItem[] }>('/vehiculos', scope.init),
+  });
 
   const isMutable = MUTABLE_ASSIGNMENT_STATUSES.has(assignmentStatus);
   if (!isMutable) {
@@ -78,20 +95,32 @@ export function DriverAssignmentCard({
     return null;
   }
 
-  const conductoresActivos = (conductoresQ.data?.conductores ?? []).filter(
-    (c) => c.status !== 'baja' && !c.user.is_pending,
+  // `baja` no está en el enum, pero el soft-delete histórico se seguía
+  // escondiendo acá. La activación pendiente NO se esconde: el despachador
+  // tiene que poder asignar a quien todavía no creó su clave.
+  const conductoresAsignables = (conductoresQ.data?.conductores ?? []).filter(
+    (c) => c.status !== 'baja',
   );
+  const camiones = (vehiculosQ.data?.vehicles ?? []).filter(
+    (v) => v.status === 'activo' && v.unit_category !== 'arrastre',
+  );
+  const listasListas =
+    !conductoresQ.isLoading &&
+    !vehiculosQ.isLoading &&
+    !conductoresQ.isError &&
+    !vehiculosQ.isError;
+  const puedeConfirmar = selectedDriverUserId !== '' && selectedVehicleId !== '';
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!selectedDriverUserId) {
+    if (!selectedDriverUserId || !selectedVehicleId) {
       return;
     }
     setSubmitState({ kind: 'submitting' });
     try {
       const res = await api.post<AsignarResponse>(
         `/assignments/${assignmentId}/asignar-conductor`,
-        { driver_user_id: selectedDriverUserId },
+        { driver_user_id: selectedDriverUserId, vehiculo_id: selectedVehicleId },
       );
       setSubmitState({ kind: 'success', driverName: res.driver_name });
       // Invalidar el query del detalle del assignment para refrescar
@@ -107,7 +136,7 @@ export function DriverAssignmentCard({
 
   return (
     <section
-      aria-label="Asignar conductor"
+      aria-label="Asignar camión y conductor"
       className="border-neutral-200 border-b bg-white px-4 py-3"
       data-testid="driver-assignment-card"
     >
@@ -115,33 +144,28 @@ export function DriverAssignmentCard({
         <User className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
         <div className="flex-1">
           <h2 className="font-semibold text-neutral-900 text-sm">
-            {currentDriverName ? 'Conductor asignado' : 'Asignar conductor'}
+            {currentDriverName ? 'Camión y conductor' : 'Asignar camión y conductor'}
           </h2>
           {currentDriverName ? (
             <p className="mt-1 text-neutral-700 text-sm">
               Conductor actual: <strong>{currentDriverName}</strong>
             </p>
-          ) : (
-            <p className="mt-1 text-neutral-600 text-sm">
-              Elige el conductor que va a hacer este viaje. Una vez asignado, podrá ver la
-              asignación en su Modo Conductor y reportar su posición GPS.
-            </p>
-          )}
+          ) : null}
 
-          {conductoresQ.isLoading && (
+          {(conductoresQ.isLoading || vehiculosQ.isLoading) && (
             <div className="mt-3 inline-flex items-center gap-2 text-neutral-500 text-sm">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              Cargando conductores…
+              Cargando flota y conductores…
             </div>
           )}
 
-          {conductoresQ.isError && (
+          {(conductoresQ.isError || vehiculosQ.isError) && (
             <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
-              No pudimos cargar la lista de conductores. Recarga la página.
+              No pudimos cargar la flota o los conductores. Recarga la página.
             </div>
           )}
 
-          {!conductoresQ.isLoading && !conductoresQ.isError && conductoresActivos.length === 0 && (
+          {listasListas && conductoresAsignables.length === 0 && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
               No tienes conductores activos. Crea uno en{' '}
               <a href="/app/conductores/nuevo" className="underline">
@@ -151,25 +175,59 @@ export function DriverAssignmentCard({
             </div>
           )}
 
-          {conductoresActivos.length > 0 && (
-            <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <select
-                value={selectedDriverUserId}
-                onChange={(e) => setSelectedDriverUserId(e.target.value)}
-                disabled={submitState.kind === 'submitting'}
-                className="flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-                data-testid="driver-assignment-select"
+          {listasListas && conductoresAsignables.length > 0 && camiones.length === 0 && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
+              No tienes camiones activos en la flota. Agrega uno en Vehículos antes de confirmar.
+            </div>
+          )}
+
+          {listasListas && conductoresAsignables.length > 0 && camiones.length > 0 && (
+            <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-2">
+              <label
+                className="flex flex-col gap-1 text-neutral-700 text-sm"
+                htmlFor="vehicle-assignment-select"
               >
-                <option value="">— Elige un conductor —</option>
-                {conductoresActivos.map((c) => (
-                  <option key={c.user_id} value={c.user_id}>
-                    {c.user.full_name ?? '(sin nombre)'} · {c.user.rut ?? 'sin RUT'}
-                  </option>
-                ))}
-              </select>
+                Camión
+                <select
+                  id="vehicle-assignment-select"
+                  value={selectedVehicleId}
+                  onChange={(e) => setSelectedVehicleId(e.target.value)}
+                  disabled={submitState.kind === 'submitting'}
+                  className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                  data-testid="vehicle-assignment-select"
+                >
+                  <option value="">— Elige un camión —</option>
+                  {camiones.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.plate}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label
+                className="flex flex-col gap-1 text-neutral-700 text-sm"
+                htmlFor="driver-assignment-select"
+              >
+                Conductor
+                <select
+                  id="driver-assignment-select"
+                  value={selectedDriverUserId}
+                  onChange={(e) => setSelectedDriverUserId(e.target.value)}
+                  disabled={submitState.kind === 'submitting'}
+                  className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                  data-testid="driver-assignment-select"
+                >
+                  <option value="">— Elige un conductor —</option>
+                  {conductoresAsignables.map((c) => (
+                    <option key={c.user_id} value={c.user_id}>
+                      {etiquetaConductor(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="submit"
-                disabled={!selectedDriverUserId || submitState.kind === 'submitting'}
+                disabled={!puedeConfirmar || submitState.kind === 'submitting'}
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 data-testid="driver-assignment-submit"
               >
@@ -181,7 +239,7 @@ export function DriverAssignmentCard({
                 ) : (
                   <>
                     <UserPlus className="h-4 w-4" aria-hidden />
-                    {currentDriverName ? 'Cambiar conductor' : 'Asignar'}
+                    Confirmar
                   </>
                 )}
               </button>
@@ -210,6 +268,11 @@ export function DriverAssignmentCard({
 /**
  * Traduce errores del API a mensajes operacionales sin códigos crudos.
  */
+function etiquetaConductor(c: ConductorListItem): string {
+  const base = `${c.user.full_name ?? '(sin nombre)'} · ${c.user.rut ?? 'sin RUT'}`;
+  return c.user.is_pending ? `${base} · pendiente de activación` : base;
+}
+
 function humanizeAsignarError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === 'forbidden_role') {
@@ -220,6 +283,9 @@ function humanizeAsignarError(err: unknown): string {
     }
     if (err.code === 'assignment_not_mutable') {
       return 'No se puede asignar conductor: este viaje ya terminó (entregado o cancelado).';
+    }
+    if (err.code === 'vehicle_not_assignable') {
+      return 'Ese camión no está disponible en la flota de tu empresa.';
     }
     if (err.code === 'assignment_not_found') {
       return 'La asignación no existe.';
