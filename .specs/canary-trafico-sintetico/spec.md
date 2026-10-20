@@ -111,6 +111,10 @@ abortando por esos umbrales.
 - [x] El Job resuelve el host del tag a `199.36.153.8`. Si el objeto
       desaparece antes de leer los logs, el gate sale distinto de 0 y no
       dice que promueve.
+- [x] Un log del Job con HTTP 200 que cubre el piso cuenta como llegada
+      aunque no traiga el objeto `resumen` (el exit code del contenedor no
+      se lee). Un 404 que no llegó a la app, o un 5xx, sigue en exit
+      distinto de 0.
 - [x] La imagen del Job va por digest. El CI corre los unittest de
       `scripts/deploy`.
 - [x] El bloque Python de `canary-verify` no introduce `$` sin escapar, y el

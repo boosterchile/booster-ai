@@ -506,7 +506,11 @@ steps:
               TERMINAL="sin_credenciales"
             fi
             tail -n 3 /tmp/canary-probe-job.log || true
-            if [ -s /tmp/canary-probe-job.log ] && grep -q '"resumen"' /tmp/canary-probe-job.log; then
+            # No exigir la clave "resumen". El exit code del contenedor no se
+            # lee (solo Complete/Failed). Si el resumen no llegó al log pero
+            # las líneas traen HTTP 200, el parser las cuenta. Un 404 que no
+            # llegó a la app, o un 5xx, sigue siendo fallo.
+            if [ -s /tmp/canary-probe-job.log ]; then
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --aplicar-log-job "$$RESULT" \
                 --log-file /tmp/canary-probe-job.log

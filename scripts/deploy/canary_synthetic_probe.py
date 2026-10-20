@@ -36,6 +36,10 @@ RUTAS_SEGURAS = ('/health', '/health/signup-flow')
 USER_AGENT = 'booster-canary-probe'
 RUTA_RESULTADO = '/workspace/canary-probe.json'
 EXTRA_SONDA = 5
+# Mismo piso que _CANARY_MIN_REQUESTS. Unos 200 sueltos, por debajo, no
+# cuentan como llegada: el gate los vería como muestra corta y revertiría
+# el tag. Un 5xx se reporta igual aunque sean pocos.
+PISO_RESPUESTAS_EN_LOG = 30
 # private.googleapis.com (199.36.153.8/30). La subnet booster-ai-private tiene
 # Private Google Access: estos VIP no salen por Cloud NAT. El DNS público
 # de *.run.app sí.
@@ -413,23 +417,104 @@ def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[
     return resultado
 
 
+def _json_de_linea(linea: str) -> dict[str, Any] | None:
+    """Objeto JSON de la línea, aunque kubectl le haya puesto un prefijo."""
+    texto = linea.strip()
+    inicio = texto.find('{')
+    if inicio < 0:
+        return None
+    try:
+        payload, _fin = json.JSONDecoder().raw_decode(texto[inicio:])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    return None
+
+
 def _extraer_resumen(log: str) -> dict[str, Any] | None:
     for linea in reversed(log.splitlines()):
-        linea = linea.strip()
-        if not linea.startswith('{'):
+        payload = _json_de_linea(linea)
+        if payload is None:
             continue
-        try:
-            payload = json.loads(linea)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict) and isinstance(payload.get('resumen'), dict):
-            return payload['resumen']
+        resumen = payload.get('resumen')
+        if isinstance(resumen, dict):
+            return resumen
     return None
+
+
+def _ms(valor: object) -> float | None:
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        return None
+    return float(valor)
+
+
+def _resumen_desde_eventos(log: str) -> dict[str, Any] | None:
+    """Si el objeto resumen no está, las líneas status=200/4xx/5xx deciden.
+
+    El step no lee el exit code del contenedor. Sin este conteo, un log con
+    HTTP 200 y sin el objeto resumen se marcaba como fallo. Un 404 que no
+    llegó a la app, o un 5xx, siguen siendo fallo.
+    """
+    respuestas = 0
+    cinco = 0
+    cuatro = 0
+    transporte = 0
+    latencias: list[float] = []
+    vio = False
+    for linea in log.splitlines():
+        payload = _json_de_linea(linea)
+        if payload is None or isinstance(payload.get('resumen'), dict):
+            continue
+        status = payload.get('status')
+        if isinstance(status, bool) or not isinstance(status, int):
+            if 'error' in payload:
+                transporte += 1
+                vio = True
+            continue
+        vio = True
+        demora = _ms(payload.get('ms'))
+        if status >= 500:
+            cinco += 1
+            respuestas += 1
+            if demora is not None:
+                latencias.append(demora)
+        elif 200 <= status < 300:
+            respuestas += 1
+            if demora is not None:
+                latencias.append(demora)
+        elif 400 <= status < 500:
+            cuatro += 1
+    if not vio:
+        return None
+    # Por debajo del piso y sin 5xx no hay llegada: si no, el gate revierte
+    # el tag por muestra corta. El 5xx se entrega siempre.
+    if cinco == 0 and respuestas < PISO_RESPUESTAS_EN_LOG:
+        return {
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': cuatro,
+            'errores_transporte': transporte,
+            'respuestas_app': 0,
+            'latencias_ms': [],
+            'p95_ms': None,
+        }
+    return {
+        'llego_a_la_app': respuestas > 0,
+        'cinco_xx': cinco,
+        'cuatro_xx': cuatro,
+        'errores_transporte': transporte,
+        'respuestas_app': respuestas,
+        'latencias_ms': latencias,
+        'p95_ms': percentil_95(latencias),
+    }
 
 
 def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
     """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló."""
     resumen = _extraer_resumen(log)
+    if resumen is None:
+        resumen = _resumen_desde_eventos(log)
     if resumen is None:
         resultado['job'] = 'fallo'
         return resultado
