@@ -46,11 +46,15 @@ import { driverSyntheticEmail } from './auth-driver.js';
  *   El carrier provee RUT del conductor. El backend:
  *   1. Normaliza el RUT.
  *   2. Busca user con ese RUT.
- *      - Si existe: chequea que no haya conductor activo asociado (UNIQUE
- *        usuario_id). Si lo hay → 409 user_already_driver.
+ *      - Si existe: busca la fila de conductor (UNIQUE usuario_id, también
+ *        con soft delete).
+ *        - Activo → 409 user_already_driver.
+ *        - Retirado de otra empresa → 409 conductor_retirado_otra_empresa.
+ *        - Retirado de esta empresa → reactiva esa fila (UPDATE). Si la
+ *          identidad está compartida → 409 identidad_vinculada, sin escribir.
  *      - Si no existe: crea user "pendiente" con firebase_uid placeholder
  *        `pending-rut:<RUT>` (idempotente — mismo RUT → mismo placeholder).
- *   3. Inserta el conductor.
+ *   3. Inserta el conductor, o actualiza la fila retirada de esta empresa.
  *
  *   El placeholder firebase_uid se reemplaza cuando el conductor completa
  *   el flujo de login por RUT (D9). Hasta entonces el user no puede
@@ -174,6 +178,10 @@ function phoneSiEstaVacio(
 }
 
 const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
+
+/** El alta no mueve un conductor que otra empresa ya retiró. */
+const MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA =
+  'Este conductor fue retirado de otra empresa. No lo puedes reactivar desde aquí.';
 
 /** WhatsApp de activación: solo móvil. El fijo `+562…` no recibe la plantilla. */
 const telefonoMovilConductorSchema = chileanPhoneSchema.refine(
@@ -385,12 +393,13 @@ export function createConductoresRoutes(opts: {
 
     // D9/D10 — PIN de activación de 6 dígitos.
     //
-    // El PIN se genera **solo si** el conductor que se está creando es un
-    // user nuevo o un user-placeholder (firebase_uid `pending-rut:...`). Si
-    // ya es un user real activado (e.g. el dueño de la empresa que también
-    // se registra como conductor — flujo D10), NO generamos PIN: el dueño
-    // ya tiene su email/password y puede entrar a `/app/conductor`
-    // directamente sin re-autenticarse.
+    // Alta nueva: el PIN se genera si el user es nuevo o un placeholder sin
+    // código (`provisoria_sin_codigo`). Una cuenta ya activada (dueño que
+    // también se registra como conductor) no recibe PIN.
+    //
+    // Reactivación en la misma empresa: si la cuenta no está activa, el PIN
+    // se regenera siempre — el anterior deja de servir — y el envío de
+    // WhatsApp y correo es el de un alta normal.
     //
     // El plaintext del PIN NUNCA persiste; sólo se devuelve UNA vez en la
     // respuesta del POST para que el carrier lo muestre al conductor.
@@ -418,6 +427,7 @@ export function createConductoresRoutes(opts: {
           emailAnterior: string;
           accionFirebase: AccionFirebaseConductor;
         } | null = null;
+        let reactivacion: { conductorId: string } | null = null;
 
         if (existingUsers.length > 0) {
           const existingUser = existingUsers[0];
@@ -426,25 +436,45 @@ export function createConductoresRoutes(opts: {
           }
           userId = existingUser.id;
 
-          // Si ya hay conductor (no eliminado) para este user → conflicto.
-          // rls-allowlist: chequeo global de unicidad user→conductor cross-empresa
+          // rls-allowlist: chequeo global de unicidad user→conductor cross-empresa.
+          // El UNIQUE de usuario_id incluye la fila retirada: reactivar es un
+          // UPDATE, no un INSERT.
           const existingDriver = await tx
-            .select({ id: conductores.id, deletedAt: conductores.deletedAt })
+            .select({
+              id: conductores.id,
+              deletedAt: conductores.deletedAt,
+              empresaId: conductores.empresaId,
+            })
             .from(conductores)
             .where(eq(conductores.userId, userId))
             .limit(1);
-          if (existingDriver.length > 0 && existingDriver[0]?.deletedAt == null) {
+          const filaExistente = existingDriver[0];
+          if (filaExistente && filaExistente.deletedAt == null) {
             return { ok: false as const, code: 'user_already_driver' as const };
+          }
+          if (filaExistente && filaExistente.empresaId !== empresaId) {
+            return {
+              ok: false as const,
+              code: 'conductor_retirado_otra_empresa' as const,
+              message: MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA,
+            };
+          }
+          if (filaExistente) {
+            if (await emailIdentidadCompartida(tx, userId, empresaId)) {
+              return { ok: false as const, code: 'identidad_vinculada' as const };
+            }
+            reactivacion = { conductorId: filaExistente.id };
           }
 
           if (await emailOcupadoPorOtro(tx, body.email, userId)) {
             return { ok: false as const, code: 'email_already_registered' as const };
           }
 
-          const pendiente = !cuentaYaActivada({
+          const cuentaActiva = cuentaYaActivada({
             firebaseUid: existingUser.firebaseUid,
             claveNumericaHash: existingUser.claveNumericaHash,
           });
+          const pendiente = !cuentaActiva;
           const emailActual =
             typeof existingUser.email === 'string' ? existingUser.email.trim().toLowerCase() : '';
           const reemplazaRelleno =
@@ -452,9 +482,12 @@ export function createConductoresRoutes(opts: {
             pendiente &&
             esEmailDeRelleno(emailActual) &&
             emailActual !== body.email;
+          const telefono = reactivacion
+            ? { phone: body.phone }
+            : phoneSiEstaVacio(existingUser.phone, body.phone);
 
           if (reemplazaRelleno) {
-            if (await emailIdentidadCompartida(tx, userId, empresaId)) {
+            if (!reactivacion && (await emailIdentidadCompartida(tx, userId, empresaId))) {
               return { ok: false as const, code: 'identidad_vinculada' as const };
             }
             const accionFirebase = await reconciliarIdentidadFirebaseConductor({
@@ -471,10 +504,26 @@ export function createConductoresRoutes(opts: {
                 email: body.email,
                 activationPinHash: hashActivationPin(activationPin),
                 updatedAt: sql`now()`,
-                ...phoneSiEstaVacio(existingUser.phone, body.phone),
+                ...telefono,
               })
               .where(eq(users.id, userId));
             reemplazoRelleno = { emailAnterior: emailActual, accionFirebase };
+          } else if (reactivacion) {
+            // En el alta normal un placeholder que ya tiene PIN no se reescribe.
+            // Acá la cuenta pendiente siempre recibe uno nuevo: el anterior deja de servir.
+            if (!cuentaActiva) {
+              activationPin = generateActivationPin();
+            }
+            await tx
+              .update(users)
+              .set({
+                ...(activationPin !== null
+                  ? { activationPinHash: hashActivationPin(activationPin) }
+                  : {}),
+                phone: body.phone,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(users.id, userId));
           } else if (clasificarVinculoPersona(existingUser) === 'provisoria_sin_codigo') {
             // Solo el primer código. Una cuenta viva o un placeholder que ya
             // tiene pin no se reescribe: otra empresa no elige su clave.
@@ -518,22 +567,39 @@ export function createConductoresRoutes(opts: {
           userId = newUser.id;
         }
 
-        // 3. Insertar conductor.
-        const insertedDrivers = await tx
-          .insert(conductores)
-          .values({
-            userId,
-            empresaId,
-            licenseClass: body.license_class,
-            licenseNumber: body.license_number,
-            licenseExpiry: body.license_expiry,
-            isExtranjero: body.is_extranjero,
-            driverStatus: 'activo',
-          })
-          .returning();
-        const newDriver = insertedDrivers[0];
+        // 3. Alta nueva, o reactivación de la fila retirada de esta empresa.
+        // El INSERT chocaría con UNIQUE(usuario_id) si la fila sigue ahí.
+        const filasConductor = reactivacion
+          ? await tx
+              .update(conductores)
+              .set({
+                licenseClass: body.license_class,
+                licenseNumber: body.license_number,
+                licenseExpiry: body.license_expiry,
+                isExtranjero: body.is_extranjero,
+                driverStatus: 'activo',
+                deletedAt: null,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(conductores.id, reactivacion.conductorId))
+              .returning()
+          : await tx
+              .insert(conductores)
+              .values({
+                userId,
+                empresaId,
+                licenseClass: body.license_class,
+                licenseNumber: body.license_number,
+                licenseExpiry: body.license_expiry,
+                isExtranjero: body.is_extranjero,
+                driverStatus: 'activo',
+              })
+              .returning();
+        const newDriver = filasConductor[0];
         if (!newDriver) {
-          throw new Error('Conductor insert returned no row');
+          throw new Error(
+            reactivacion ? 'Conductor update returned no row' : 'Conductor insert returned no row',
+          );
         }
         if (reemplazoRelleno) {
           const auditoria = await tx
@@ -554,11 +620,34 @@ export function createConductoresRoutes(opts: {
           }
         }
 
-        return { ok: true as const, driver: newDriver, userId };
+        return {
+          ok: true as const,
+          driver: newDriver,
+          userId,
+          reactivado: reactivacion !== null,
+        };
       });
 
       if (!result.ok) {
-        return c.json({ error: result.code, code: result.code }, 409);
+        return c.json(
+          {
+            error: result.code,
+            code: result.code,
+            ...('message' in result ? { message: result.message } : {}),
+          },
+          409,
+        );
+      }
+
+      if (result.reactivado) {
+        opts.logger.info(
+          {
+            conductorId: result.driver.id,
+            userId: result.userId,
+            empresaId,
+          },
+          'conductor retirado reactivado',
+        );
       }
 
       // El conductor se entera por su propio correo, no por el WhatsApp de su
@@ -623,8 +712,9 @@ export function createConductoresRoutes(opts: {
            * email/password y no necesita PIN.
            */
           ...(activationPin !== null ? { activation_pin: activationPin } : {}),
+          ...(result.reactivado ? { reactivado: true as const } : {}),
         },
-        201,
+        result.reactivado ? 200 : 201,
       );
     } catch (err) {
       if (err instanceof IdentidadFirebaseEnConflicto) {
