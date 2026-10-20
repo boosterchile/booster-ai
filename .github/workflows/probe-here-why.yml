@@ -1,0 +1,46 @@
+# Sonda puntual, solo en rama de trabajo (no se mergea a main): ¿por qué HERE evita
+# Camino La Pirámide para el camión y modela la ventana horaria del D.S. 18/2001?
+# Workflow aparte para no relanzar cobertura ni OSRM. Coordenadas fijas: las que Nominatim
+# devolvió en las corridas 39460619831/39461320020 para el mismo par.
+name: Probe HERE — causa y ventana horaria La Pirámide
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-here-why.yml
+      - scripts/probes/probe-here-why.py
+
+permissions:
+  contents: read
+
+jobs:
+  why:
+    name: camión forzado por via, truckAttributes y departureTime
+    runs-on: ubuntu-latest
+    env:
+      HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+      ORIGIN_LAT: "-33.389802"
+      ORIGIN_LON: "-70.618360"
+      DEST_LAT: "-33.400576"
+      DEST_LON: "-70.602485"
+      # miércoles 2026-10-21, hora de Chile (UTC−3): dentro de la ventana AM, fuera, dentro de la PM
+      DEPARTURE_TIMES: "2026-10-21T08:30:00-03:00,2026-10-21T15:00:00-03:00,2026-10-21T19:00:00-03:00"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sin secreto → omitido
+        if: env.HERE_API_KEY == ''
+        run: echo "::warning::HERE_API_KEY no está cargado; se omite."
+      - name: Rutas base (auto y camión, con y sin peajes)
+        if: env.HERE_API_KEY != ''
+        run: bash scripts/probes/probe-here-truck.sh
+      - name: Causa y ventanas horarias
+        if: env.HERE_API_KEY != ''
+        run: python3 -I scripts/probes/probe-here-why.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-here-why
+          path: probe-out/
+          if-no-files-found: ignore

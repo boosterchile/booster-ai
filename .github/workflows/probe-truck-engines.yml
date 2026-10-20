@@ -19,7 +19,6 @@ on:
       - scripts/probes/osrm-truck-profile.sh
       - scripts/probes/osm-inject-hgv-no.py
       - scripts/probes/probe-here-coverage.py
-      - scripts/probes/probe-here-why.py
       - scripts/probes/flexpolyline.py
 
 permissions:

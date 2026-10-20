@@ -9,6 +9,12 @@ La sonda anterior midió el efecto; esta pide la causa:
    los atributos de camión del tramo. Se imprimen crudos: la causa es lo que HERE diga,
    no una inferencia nuestra.
 3. Control: misma petición con transportMode=car (no debería traer notices de camión).
+4. Ventanas horarias: el D.S. 18/2001 del MTT prohíbe camiones ≥ 3 860 kg en La Pirámide
+   de lunes a viernes 08:00–09:30 (ambos sentidos) y 18:30–20:00 (poniente→oriente).
+   Con DEPARTURE_TIMES (ISO 8601 separados por coma) se repite la petición de camión
+   forzada por via y la de camión sin peajes para cada hora: si HERE modela la ventana,
+   dentro de ella debe aparecer un notice de restricción o un truckAttributes distinto
+   de "open", y fuera de ella no.
 
 Requiere HERE_API_KEY y $OUT_DIR/here-car_notolls.resp.json (probe-here-truck.sh).
 """
@@ -38,11 +44,18 @@ TRUCK = {
 PATRON = re.compile(r"pir[aá]mide", re.I)
 
 
-def pedir(api_key: str, mode: str, o: str, d: str, via: str, spans: str) -> tuple[int, dict]:
+def pedir(api_key: str, mode: str, o: str, d: str, via: str | None, spans: str,
+          departure: str | None = None, avoid_tolls: bool = False) -> tuple[int, dict]:
     params = {
-        "transportMode": mode, "origin": o, "destination": d, "via": via,
+        "transportMode": mode, "origin": o, "destination": d,
         "return": "polyline,summary", "spans": spans, "lang": "es-CL", "apiKey": api_key,
     }
+    if via:
+        params["via"] = via
+    if departure:
+        params["departureTime"] = departure
+    if avoid_tolls:
+        params["avoid[features]"] = "tollRoad"
     if mode == "truck":
         params.update(TRUCK)
     req = urllib.request.Request(HERE_URL + "?" + urllib.parse.urlencode(params), headers={"User-Agent": UA})
@@ -110,6 +123,38 @@ def main() -> int:
             for n in notices:
                 print("   ", json.dumps(n, ensure_ascii=False))
             break
+
+    horas = [h.strip() for h in os.environ.get("DEPARTURE_TIMES", "").split(",") if h.strip()]
+    for hora in horas:
+        print(f"\n#### departureTime={hora} ####")
+        for etiqueta, via_arg, sin_peajes in (("camión forzado por via", via, False), ("camión sin peajes, libre", None, True)):
+            code, resp = pedir(api_key, "truck", o, d, via_arg, "names,truckAttributes", departure=hora, avoid_tolls=sin_peajes)
+            print(f"== {etiqueta} → HTTP {code} ==")
+            if code != 200:
+                print("  error:", json.dumps(resp, ensure_ascii=False)[:600])
+                continue
+            tag = f"here-why-{hora.replace(':', '').replace('+', 'p')}-{'via' if via_arg else 'libre'}"
+            with open(os.path.join(out, tag + ".resp.json"), "w", encoding="utf-8") as f:
+                json.dump(resp, f, ensure_ascii=False, indent=1)
+            routes = resp.get("routes") or []
+            notices = list(resp.get("notices", []))
+            km = 0.0
+            piramide_spans = []
+            salida = None
+            for sec in (routes[0].get("sections", []) if routes else []):
+                notices.extend(sec.get("notices", []))
+                km += sec.get("summary", {}).get("length", 0) / 1000
+                salida = salida or sec.get("departure", {}).get("time")
+                for sp in sec.get("spans", []):
+                    nombres = [n.get("value", "") for n in sp.get("names", [])]
+                    if any(PATRON.search(n) for n in nombres):
+                        piramide_spans.append({"nombres": nombres, **{k: v for k, v in sp.items() if k not in ("names",)}})
+            print(f"  salida={salida}  distancia={km:.2f} km  pasa_por_Piramide={bool(piramide_spans)}")
+            for sp in piramide_spans:
+                print("  span:", json.dumps(sp, ensure_ascii=False))
+            print(f"  notices ({len(notices)}):")
+            for n in notices:
+                print("   ", json.dumps(n, ensure_ascii=False))
     return 0
 
 
