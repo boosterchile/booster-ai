@@ -721,10 +721,10 @@ describe('ConductoresNuevoRoute — teléfono obligatorio (canal WhatsApp)', () 
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresNuevoRoute />);
 
-    await userEvent.type(screen.getByLabelText(/^RUT/), '5.864.136-7');
-    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Javier Poblete');
+    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
     await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56221234567');
-    await userEvent.type(screen.getByLabelText(/^Email/), 'fvp@live.cl');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@example.com');
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
 
