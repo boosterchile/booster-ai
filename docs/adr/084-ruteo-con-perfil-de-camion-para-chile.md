@@ -110,6 +110,59 @@ Mientras la capa normativa y el adaptador no estén en producción, la tarjeta d
 - **Doble proveedor durante la transición** (§4), deliberado y acotado.
 - La capa normativa nace con la Región Metropolitana; regiones entran a medida que el PO confirme sus resoluciones.
 
+## Costo
+
+Medido antes de implementar, a pedido del PO (2026-10-20).
+
+### Volumen real (Cloud Monitoring, `serviceruntime.googleapis.com/api/request_count`, run 39482660961, SA `terraform-drift` de solo lectura)
+
+| Servicio Google | Últimos 30 d | 30 d anteriores | Promedio mensual |
+|---|---|---|---|
+| `routes.googleapis.com` (computeRoutes) | 156 (91 2xx, 65 4xx; 11 de ellas son las sondas de este PR) | 6 | ~80 |
+| `geocoding-backend` | 116 (107 4xx) | 7 | ~38 |
+| `maps-backend` (mapas en la web) | 306 | 12 | ~146 |
+| `places-backend` | 36 | 6 | ~13 |
+| `addressvalidation` | 0 | 0 | 0 |
+
+Antes de agosto de 2026 no hay series de Routes API. El volumen de ruteo es del orden de **10² llamadas por mes**.
+
+### Precio por transacción (lista pública, octubre de 2026; cada fuente se cita porque difieren)
+
+| Proveedor | Gratis por mes | Después | Nota |
+|---|---|---|---|
+| Google Routes, Compute Routes Pro (lo que prod usa hoy: `TRAFFIC_AWARE_OPTIMAL` + `FUEL_CONSUMPTION`) | 5 000 | USD 10 / 1 000 | Desde marzo de 2025 el gratis es por SKU, sin crédito común. |
+| HERE Routing v8, plan Base | 5 000 según una fuente, 30 000 según otras | USD 0,83 / 1 000 (términos comerciales, ruteo estándar) a USD 1,50 / 1 000 (fuente secundaria); USD 2,75 / 1 000 si HERE clasifica camión como *advanced* | Sin cuota fija. Alza de ~6 % desde abril de 2026 para contratos nuevos. **El PO confirma en la consola de HERE** en qué bucket cae `transportMode=truck` y el gratis vigente. |
+| Valhalla auto-alojado | — | ~USD 47 / mes fijos en GKE Autopilot (1 vCPU + 4 GiB: 730 h × (0,0445 + 4 × 0,0049225)) más un job semanal de tiles, despreciable | Sin tráfico. Precio de lista sin recargo regional verificado. |
+
+### Lectura
+
+- **Hoy**: costo por transacción **cero** en Google y en HERE; ambos quedan dentro del gratis. El cambio de proveedor no se justifica por ahorro, se justifica por legalidad de ruta.
+- **Escenarios** (HERE a USD 0,83–2,75 / 1 000 tras el gratis; Google Pro a USD 10 / 1 000 tras 5 000):
+
+| Llamadas de ruteo / mes | Google Pro | HERE estándar | HERE si camión = advanced | Valhalla |
+|---|---|---|---|---|
+| 1 000 | 0 | 0 | 0 | 47 |
+| 10 000 | 50 | 0–4 | 0–14 | 47 |
+| 100 000 | 950 | 58–79 | 190–261 | 47 + escalado |
+
+- Valhalla solo compensa a HERE por encima de ~17 000 (advanced) a ~57 000 (estándar) llamadas mensuales tras el gratis, y sigue sin tráfico. A escala actual y a 10× la actual, **HERE es la opción más barata**; a 100×, Valhalla entra en el umbral que §2 fija para reconsiderar.
+- El costo dominante de este ADR no es el proveedor: es la **implementación** (abajo) y la **responsabilidad de mantener la capa normativa** (revisión trimestral del PO).
+
+### Implementación (estimación en días de agente, con revisión del PO entre PRs)
+
+| PR | Alcance | Días |
+|---|---|---|
+| 1 | Aviso en la tarjeta de ruta eco (mitigación) | 0,5 |
+| 2 | `packages/ruteo-normativo` + dominio `restriccion-camion` + 3 reglas RM con cita + tests con rojo exhibido | 2 |
+| 3 | Migración expand `vehiculos` (peso, ejes, dimensiones, año) + defectos por tipología + alta de vehículo (contratos del PO) | 2 |
+| 4 | Puerto `RoutingEngine` + adaptador HERE con Zod, timeout, span, métrica + validador + degradación + tests | 2–3 |
+| 5 | Migración de los 5 llamadores de rutas; `fuelL` fuera; Google queda en 2 usos | 1–2 |
+| 6 | `here-api-key` en Secret Manager, `config.ts`, clave restringida; retiro del secreto de Actions y de los workflows de sonda | 0,5 (apply del PO) |
+| 7 | Sonda de validación con la capa activa y verify final | 0,5 |
+| | **Total** | **9–11 días de agente**, ~2 semanas calendario con revisiones |
+
+Tiempo del PO: verificar las tres reglas en la fuente oficial (~2 h), aprobar contratos de schema, API y UI, `terraform apply` del secreto, y ~1 h por trimestre de revisión normativa.
+
 ## Validación
 
 - [ ] Spec de implementación `.specs/ruteo-camion-normativo/spec.md` con criterios de salida y contratos (schema `vehiculos`, API, UI) aprobados por el PO.

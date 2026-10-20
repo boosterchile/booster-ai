@@ -87,6 +87,18 @@ Caveats: muestra chica; el oráculo OSM tiene calidad desconocida; 9 pares no fu
 
 Transporte Informa (Seremitt RM), con remisión al D.S. 18/2001 del MTT: La Pirámide (Vespucio entre El Salto y Santa María) prohibida a camiones L–V 08:00–09:30 ambos sentidos y 18:30–20:00 poniente→oriente. Interior del anillo Vespucio: camiones > 2 ejes y/o PBV > 18 000 kg, L–V 07:30–10:00 y 18:00–20:30, salvo zonas industriales exclusivas (Cerro Navia, Conchalí, Pudahuel, Quilicura, Renca) y las autopistas Ruta 5 Norte/Sur y el eje Cerrillos–General Velázquez–Walker Martínez–Apóstol Santiago; además PBV > 3 860 kg con más de 12 años. MTT (nota de prensa, cámaras OCR): PBV ≥ 3 860 kg. Ley Chile: timeout. Subtrans: no disponible. No existe dataset abierto (datos.gob.cl, UOCT); Vialidad sin listado de gálibos/pesos.
 
+### Volumen real de APIs de Google (run 39482660961, Cloud Monitoring, SA terraform-drift)
+
+| Servicio | 30 d al 2026-10-20 | 30 d anteriores | Promedio mensual |
+|---|---|---|---|
+| routes.googleapis.com | 156 (91 2xx, 65 4xx) | 6 | ~80 |
+| geocoding-backend | 116 (107 4xx) | 7 | ~38 |
+| maps-backend | 306 | 12 | ~146 |
+| places-backend | 36 | 6 | ~13 |
+| addressvalidation | 0 | 0 | 0 |
+
+Sin series de Routes API antes de agosto de 2026. Costo por transacción hoy: cero en Google y en HERE (dentro del gratis). Detalle y escenarios en ADR-084 §Costo.
+
 ## Conclusión de la fase
 
 1. Google Routes API no conoce restricciones de camión en Chile (sonda 1). Descartado como motor de legalidad de ruta; sigue siendo la fuente de tráfico y ETA.
