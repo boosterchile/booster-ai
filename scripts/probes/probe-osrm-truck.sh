@@ -2,7 +2,9 @@
 # Sonda OSRM (spec .specs/ruteo-camion-chile): auto vs camión, con y sin peajes, contra
 # dos osrm-routed locales (perfil car.lua y truck.lua) sobre el recorte de Santiago.
 # Lee coordenadas de $OUT/coords.env o de ORIGIN_LAT/ORIGIN_LON/DEST_LAT/DEST_LON.
-# Env: OSRM_CAR_URL (default http://localhost:5000), OSRM_TRUCK_URL (http://localhost:5001)
+# Env: OSRM_CAR_URL (default http://localhost:5000), OSRM_TRUCK_URL (http://localhost:5001),
+#      OSRM_TRUCK_INJ_URL (http://localhost:5002: perfil truck sobre el recorte con hgv=no
+#      inyectado en Camino La Pirámide — C4, prueba de mecanismo).
 set -euo pipefail
 
 OUT="${OUT_DIR:-./probe-out}"
@@ -14,6 +16,7 @@ fi
 : "${ORIGIN_LAT:?falta ORIGIN_LAT}" "${ORIGIN_LON:?}" "${DEST_LAT:?}" "${DEST_LON:?}"
 CAR_URL="${OSRM_CAR_URL:-http://localhost:5000}"
 TRUCK_URL="${OSRM_TRUCK_URL:-http://localhost:5001}"
+TRUCK_INJ_URL="${OSRM_TRUCK_INJ_URL:-http://localhost:5002}"
 
 run() {
   local tag="$1" base="$2" exclude="$3"
@@ -53,4 +56,6 @@ run car_tolls     "$CAR_URL"   ""
 run car_notolls   "$CAR_URL"   toll
 run truck_tolls   "$TRUCK_URL" ""
 run truck_notolls "$TRUCK_URL" toll
+run truckinj_tolls   "$TRUCK_INJ_URL" ""
+run truckinj_notolls "$TRUCK_INJ_URL" toll
 echo "Respuestas en $OUT/osrm-*.resp.json"

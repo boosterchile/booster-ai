@@ -17,6 +17,7 @@ on:
       - scripts/probes/probe-here-truck.sh
       - scripts/probes/probe-osrm-truck.sh
       - scripts/probes/osrm-truck-profile.sh
+      - scripts/probes/osm-inject-hgv-no.py
 
 permissions:
   contents: read
@@ -92,35 +93,41 @@ jobs:
           ls -la osm/santiago.osm.pbf
           osmium fileinfo -e osm/santiago.osm.pbf | sed -n '1,40p'
 
+      - name: C4 — recorte con hgv=no inyectado en Camino La Pirámide
+        run: |
+          # venv: el python del runner es «externally managed» (PEP 668) y rechaza pip install global
+          python3 -m venv .venv-osm && .venv-osm/bin/pip install -q osmium
+          .venv-osm/bin/python -I scripts/probes/osm-inject-hgv-no.py osm/santiago.osm.pbf osm/santiago-inj.osm.pbf 'Camino La Pir[áa]mide'
+
       - name: Perfiles car.lua (del contenedor) y truck.lua (derivado)
         run: |
-          mkdir -p build/car build/truck
+          mkdir -p build/car build/truck build/truck_inj
           docker run --rm -v "$PWD/build:/out" --entrypoint sh "$OSRM_IMAGE" -c 'cp /opt/car.lua /out/car.lua && cp -r /opt/lib /out/lib'
           bash scripts/probes/osrm-truck-profile.sh build/car.lua build/truck.lua
-          for p in car truck; do
-            cp osm/santiago.osm.pbf "build/$p/santiago.osm.pbf"
-            cp "build/$p.lua" "build/$p/profile.lua"
-            cp -r build/lib "build/$p/lib"
-          done
+          cp osm/santiago.osm.pbf build/car/santiago.osm.pbf;       cp build/car.lua   build/car/profile.lua
+          cp osm/santiago.osm.pbf build/truck/santiago.osm.pbf;     cp build/truck.lua build/truck/profile.lua
+          cp osm/santiago-inj.osm.pbf build/truck_inj/santiago.osm.pbf; cp build/truck.lua build/truck_inj/profile.lua
+          for p in car truck truck_inj; do cp -r build/lib "build/$p/lib"; done
 
       - name: Build OSRM (car y truck)
         run: |
-          for p in car truck; do
+          for p in car truck truck_inj; do
             echo "== osrm-extract/partition/customize ($p) =="
             docker run --rm -v "$PWD/build/$p:/data" "$OSRM_IMAGE" osrm-extract -p /data/profile.lua /data/santiago.osm.pbf
             docker run --rm -v "$PWD/build/$p:/data" "$OSRM_IMAGE" osrm-partition /data/santiago.osrm
             docker run --rm -v "$PWD/build/$p:/data" "$OSRM_IMAGE" osrm-customize /data/santiago.osrm
           done
 
-      - name: Levantar osrm-routed (car :5000, truck :5001)
+      - name: Levantar osrm-routed (car :5000, truck :5001, truck+hgv=no :5002)
         run: |
-          docker run -d --name osrm-car   -p 5000:5000 -v "$PWD/build/car:/data"   "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
-          docker run -d --name osrm-truck -p 5001:5000 -v "$PWD/build/truck:/data" "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
-          for port in 5000 5001; do
+          docker run -d --name osrm-car       -p 5000:5000 -v "$PWD/build/car:/data"       "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
+          docker run -d --name osrm-truck     -p 5001:5000 -v "$PWD/build/truck:/data"     "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
+          docker run -d --name osrm-truck-inj -p 5002:5000 -v "$PWD/build/truck_inj:/data" "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
+          for port in 5000 5001 5002; do
             for i in $(seq 1 30); do
               if curl -sf "http://localhost:$port/nearest/v1/driving/-70.60,-33.40" >/dev/null; then echo "osrm :$port listo"; break; fi
               sleep 2
-              [[ $i -eq 30 ]] && { echo "osrm :$port no respondió"; docker logs osrm-car; docker logs osrm-truck; exit 1; }
+              [[ $i -eq 30 ]] && { echo "osrm :$port no respondió"; docker logs osrm-car; docker logs osrm-truck; docker logs osrm-truck-inj; exit 1; }
             done
           done
 
