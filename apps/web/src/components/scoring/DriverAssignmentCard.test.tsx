@@ -158,6 +158,42 @@ describe('DriverAssignmentCard', () => {
     expect(await screen.findByRole('button', { name: 'Confirmar' })).toBeInTheDocument();
   });
 
+  it('viaje recogido → oculta el camión y confirma solo el conductor', async () => {
+    mockListas();
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      assignment_id: 'a1',
+      previous_driver_user_id: 'u-driver-1',
+      new_driver_user_id: 'u-driver-2',
+      driver_name: 'Ana Martínez',
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName="Pedro González"
+          currentVehicleId="v-1"
+          assignmentStatus="recogido"
+        />
+      </Wrapper>,
+    );
+
+    expect(await screen.findByTestId('driver-assignment-select')).toBeInTheDocument();
+    expect(screen.queryByTestId('vehicle-assignment-select')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('driver-assignment-select'), {
+      target: { value: 'u-driver-2' },
+    });
+    fireEvent.click(screen.getByTestId('driver-assignment-submit'));
+
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith('/assignments/a1/asignar-conductor', {
+        driver_user_id: 'u-driver-2',
+      });
+    });
+  });
+
   it('asignar exitoso → muestra confirmación', async () => {
     mockListas();
     const postSpy = vi.spyOn(api, 'post').mockResolvedValue({

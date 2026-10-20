@@ -194,6 +194,27 @@ describe('asignarConductorAAssignment', () => {
     expect(result.newDriverUserId).toBe(DRIVER_USER_ID);
   });
 
+  it('recogido con vehiculo_id → en_transito y no escribe', async () => {
+    const stub = makeDbStub({
+      assignmentRow: baseAssignment({ status: 'recogido' }),
+      driverRow: baseDriver(),
+      vehicleRow: baseVehicle(),
+    });
+    await expect(
+      asignarConductorAAssignment({
+        db: stub.db,
+        logger: noopLogger,
+        assignmentId: ASSIGNMENT_ID,
+        driverUserId: DRIVER_USER_ID,
+        empresaId: EMPRESA_ID,
+        actingUserId: ACTING_USER_ID,
+        vehiculoId: OTHER_VEHICLE_ID,
+      }),
+    ).rejects.toThrow(/en_transito/);
+    expect(stub.spies.updateFn).not.toHaveBeenCalled();
+    expect(stub.spies.insertFn).not.toHaveBeenCalled();
+  });
+
   it('estado recogido: permite reasignación mid-trip (caso relevo de chofer)', async () => {
     const stub = makeDbStub({
       assignmentRow: baseAssignment({ status: 'recogido' }),

@@ -75,7 +75,8 @@ export type VehicleNotAssignableReason =
   | 'not_in_fleet'
   | 'not_active'
   | 'not_motriz'
-  | 'es_el_arrastre';
+  | 'es_el_arrastre'
+  | 'en_transito';
 
 export class VehicleNotAssignableError extends Error {
   constructor(
@@ -104,8 +105,9 @@ export interface AsignarConductorInput {
   driverUserId: string;
   /**
    * Camión de la flota. Ausente → se conserva el `vehiculo_id` que dejó
-   * la oferta aceptada. Presente → tiene que ser motriz y activo de la
-   * misma empresa.
+   * la oferta aceptada. Presente → solo si el viaje sigue `asignado`, y
+   * tiene que ser motriz y activo de la misma empresa. Con otro estado
+   * (recogido) se rechaza `en_transito` sin escribir.
    */
   vehiculoId?: string;
   /** Empresa carrier que está haciendo la asignación. */
@@ -179,6 +181,12 @@ export async function asignarConductorAAssignment(
     }
     if (!(MUTABLE_STATUSES as readonly string[]).includes(assignment.status)) {
       throw new AssignmentNotMutableError(assignmentId, assignment.status);
+    }
+
+    // El camión solo se elige antes de salir. En `recogido` se puede
+    // cambiar el conductor, pero un vehiculo_id no se persiste.
+    if (vehiculoId && assignment.status !== 'asignado') {
+      throw new VehicleNotAssignableError(vehiculoId, 'en_transito');
     }
 
     // 2. Conductor de la misma empresa y no eliminado. La activación
