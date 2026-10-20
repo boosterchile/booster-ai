@@ -124,11 +124,17 @@ describe('AsignacionDetalleRoute', () => {
         cargo_weight_kg: 5000,
         shipper_legal_name: 'ACME',
       },
-      assignment: { id: 'a1', status: 'asignado' } as never,
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        driver_user_id: 'u-driver',
+        vehicle_id: 'v-1',
+      } as never,
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
     await waitFor(() => expect(screen.getByTestId('delivery-confirm')).toBeInTheDocument());
+    expect(screen.getByTestId('asignacion-ejecucion')).toBeInTheDocument();
     expect(screen.queryByTestId('behavior-score')).not.toBeInTheDocument();
     expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-trip-id', 't1');
     expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-can-write', 'true');
@@ -168,7 +174,12 @@ describe('AsignacionDetalleRoute', () => {
         cargo_weight_kg: 5000,
         shipper_legal_name: null,
       },
-      assignment: { id: 'a1', status: 'asignado' } as never,
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        driver_user_id: 'u-driver',
+        vehicle_id: 'v-1',
+      } as never,
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
@@ -178,6 +189,74 @@ describe('AsignacionDetalleRoute', () => {
         'Chat con generador de carga',
       ),
     );
+  });
+
+  it('paso de asignación sin conductor → solo el formulario, sin ejecución del viaje', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (String(path).startsWith('/assignments/')) {
+        return {
+          trip_request: {
+            id: 't1',
+            tracking_code: 'BOO-HC7DJX',
+            status: 'asignado',
+            origin: { address_raw: 'A', region_code: 'XIII' },
+            destination: { address_raw: 'B', region_code: 'V' },
+            cargo_type: 'carga_seca',
+            cargo_weight_kg: 5000,
+            shipper_legal_name: 'ACME',
+          },
+          assignment: {
+            id: 'a1',
+            status: 'asignado',
+            driver_user_id: null,
+            driver_name: null,
+            vehicle_id: 'v-1',
+          },
+        };
+      }
+      if (path === '/conductores') {
+        return {
+          conductores: [
+            {
+              id: 'c-pend',
+              user_id: 'u-pend',
+              status: 'activo',
+              user: {
+                id: 'u-pend',
+                full_name: 'Conductor pendiente',
+                rut: '11.111.111-1',
+                email: 'pendiente@example.com',
+                is_pending: true,
+              },
+            },
+          ],
+        };
+      }
+      if (path === '/vehiculos') {
+        return {
+          vehicles: [
+            {
+              id: 'v-1',
+              plate: 'ABCD12',
+              type: 'camion_pesado',
+              unit_category: 'motriz',
+              status: 'activo',
+            },
+          ],
+        };
+      }
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    expect(await screen.findByTestId('driver-assignment-card')).toBeInTheDocument();
+    expect(await screen.findByTestId('vehicle-assignment-select')).toBeInTheDocument();
+    expect(screen.getByTestId('driver-assignment-select')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeInTheDocument();
+    expect(screen.queryByTestId('asignacion-ejecucion')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('transport-docs-panel')).not.toBeInTheDocument();
   });
 
   it('sin data (loading) → tracking code es slice del assignment id y aún no monta docs', () => {
