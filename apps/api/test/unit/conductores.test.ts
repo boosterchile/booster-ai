@@ -301,6 +301,30 @@ describe('conductores routes', () => {
       expect(body.code).toBe('rut_invalido');
     });
 
+    it('fijo +56221234567 en el alta → 400 y no crea ni reactiva', async () => {
+      const stub = makeDbStub({});
+      const app = await buildApp(stub.db);
+      const res = await app.request('/conductores', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rut: VALID_RUT,
+          full_name: 'Juan',
+          phone: '+56221234567',
+          email: 'juan.conductor@empresa.cl',
+          license_class: 'A5',
+          license_number: 'LIC-1',
+          license_expiry: '2027-12-31',
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; message: string };
+      expect(body.error).toBe('telefono_invalido');
+      expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+      expect(stub.spies.insert).not.toHaveBeenCalled();
+      expect(stub.spies.update).not.toHaveBeenCalled();
+    });
+
     it('body inválido (sin license_class) → 400 zod', async () => {
       const stub = makeDbStub({});
       const app = await buildApp(stub.db);

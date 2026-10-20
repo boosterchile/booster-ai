@@ -1,10 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import {
-  chileanPhoneSchema,
+  MENSAJE_TELEFONO_CONDUCTOR,
   corregirEmailConductorBodySchema,
   createDriverBodySchema,
   esEmailDeRelleno,
   rutSchema,
+  telefonoMovilConductorSchema,
   updateDriverBodySchema,
 } from '@booster-ai/shared-schemas';
 import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
@@ -177,19 +178,9 @@ function phoneSiEstaVacio(
   return { phone: incoming };
 }
 
-const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
-
 /** El alta no mueve un conductor que otra empresa ya retiró. */
 const MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA =
   'Este conductor fue retirado de otra empresa. No lo puedes reactivar desde aquí.';
-
-/** WhatsApp de activación: solo móvil. El fijo `+562…` no recibe la plantilla. */
-const telefonoMovilConductorSchema = chileanPhoneSchema.refine(
-  (value) => value.startsWith('+569'),
-  {
-    message: MENSAJE_TELEFONO_INVALIDO,
-  },
-);
 
 const corregirTelefonoConductorBodySchema = z.object({
   phone: telefonoMovilConductorSchema,
@@ -375,8 +366,20 @@ export function createConductoresRoutes(opts: {
 
   // ---------------------------------------------------------------------
   // POST / — crear conductor (lookup-or-create user por RUT).
+  // La reactivación de un retirado de esta empresa pasa por el mismo POST.
   // ---------------------------------------------------------------------
-  app.post('/', zValidator('json', createDriverBodySchema), async (c) => {
+  const validarAltaConductor = zValidator('json', createDriverBodySchema, (result, c) => {
+    if (!result.success) {
+      const issues = result.error.issues;
+      const soloTelefono = issues.length > 0 && issues.every((issue) => issue.path[0] === 'phone');
+      if (soloTelefono) {
+        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
+      }
+    }
+    return undefined;
+  });
+
+  app.post('/', validarAltaConductor, async (c) => {
     const auth = requireWriteRole(c);
     if (!auth.ok) {
       return auth.response;
@@ -1014,7 +1017,7 @@ export function createConductoresRoutes(opts: {
     '/:id/telefono',
     zValidator('json', corregirTelefonoConductorBodySchema, (result, c) => {
       if (!result.success) {
-        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_INVALIDO }, 400);
+        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
       }
       return undefined;
     }),
