@@ -7,6 +7,13 @@ name: Probe Routes API modo camión
 
 on:
   workflow_dispatch: {}
+  # Disparo por push: un workflow_dispatch solo se registra en la API cuando el
+  # archivo existe en main, y este no va a main. Acotado a esta rama y a sus 2 archivos.
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-routes-truck.yml
+      - scripts/probes/probe-routes-truck-la-piramide.sh
 
 permissions:
   contents: read
