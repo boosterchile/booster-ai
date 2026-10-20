@@ -36,6 +36,16 @@ describe('createDriverBodySchema — teléfono obligatorio (canal WhatsApp)', ()
     }
   });
 
+  it('rechaza un fijo +562: WhatsApp no llega a ese número', () => {
+    const r = createDriverBodySchema.safeParse({ ...base, phone: '+56221234567' });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(
+        r.error.issues.some((issue) => issue.message === 'Ingresa un teléfono válido (+569...)'),
+      ).toBe(true);
+    }
+  });
+
   it('null explícito tampoco pasa', () => {
     expect(createDriverBodySchema.safeParse({ ...base, phone: null }).success).toBe(false);
   });
