@@ -121,8 +121,9 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100">
-      {/* Header global */}
-      <div className="border-neutral-200 border-b bg-white">
+      {/* Header global. Si el banner no está, este bloque reserva el inset
+          superior: si no, la flecha queda bajo la barra de estado de iOS. */}
+      <div className="border-neutral-200 border-b bg-white [&:not(:has([data-push-banner]))]:pt-safe">
         <PushSubscribeBanner />
         <div className="flex items-center gap-3 px-4 py-3">
           <Link
