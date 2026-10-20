@@ -4,7 +4,7 @@
 |---|---|
 | **Feature slug** | `ruteo-camion-chile` |
 | **Fecha** | 2026-10-20 |
-| **Estado** | Sonda en curso (fase 1). El ADR de proveedor se escribe con el resultado. |
+| **Estado** | Sonda cerrada el 2026-10-20 (C1–C4 resueltos en [`verify.md`](verify.md)). Decisión en [ADR-084](../../docs/adr/084-ruteo-con-perfil-de-camion-para-chile.md). |
 | **Owner (PO)** | Felipe Vicencio — `dev@boosterchile.com` |
 | **Origen** | Reporte del PO: la ruta eco-eficiente sugerida al conductor manda camiones por calles con restricción (caso: Camino La Pirámide). |
 | **Rama** | `claude/focused-brown-peeabb` · PR #820 |
