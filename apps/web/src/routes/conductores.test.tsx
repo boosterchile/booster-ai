@@ -716,6 +716,23 @@ describe('ConductoresNuevoRoute — teléfono obligatorio (canal WhatsApp)', () 
     expect(screen.getByText(/WhatsApp/i)).toBeInTheDocument();
   });
 
+  it('un fijo +562 no habilita el alta y muestra el mismo aviso', async () => {
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.type(screen.getByLabelText(/^RUT/), '5.864.136-7');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Javier Poblete');
+    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56221234567');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'fvp@live.cl');
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+
+    expect(screen.getByText('Ingresa un teléfono válido (+569...)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('manda el teléfono en el body', async () => {
     const post = vi.spyOn(api, 'post').mockResolvedValueOnce({
       conductor: buildConductor(),
