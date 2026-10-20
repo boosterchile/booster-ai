@@ -358,6 +358,8 @@ function mensajeDeCierre(err: unknown): string {
         return 'El documento del viaje se está procesando. Intenta de nuevo en unos minutos.';
       case 'invalid_status':
         return 'Este viaje ya está entregado o cerrado. No hay nada más que confirmar.';
+      case 'not_assigned_driver':
+        return 'Solo el conductor asignado puede confirmar esta entrega.';
       case 'forbidden_owner_mismatch':
       case 'no_active_empresa':
         return 'Tu cuenta no tiene permiso para cerrar este viaje. Avísale a tu empresa.';
@@ -588,6 +590,7 @@ export function AssignmentCard({
   const [entregando, setEntregando] = useState(false);
   const [entregada, setEntregada] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
+  const [soloConductorAsignado, setSoloConductorAsignado] = useState(false);
   // Acción pendiente de confirmar. Recogida y entrega son irreversibles en
   // la operación: se confirman antes, para que no las dispare un toque
   // accidental con el celular en el bolsillo. La confirmación es una franja
@@ -663,6 +666,7 @@ export function AssignmentCard({
 
   async function entregar() {
     setEntregaError(null);
+    setSoloConductorAsignado(false);
     setEntregando(true);
     try {
       if (!hasTeltonika) {
@@ -680,6 +684,7 @@ export function AssignmentCard({
       }
     } catch (err) {
       setEntregaError(mensajeDeCierre(err));
+      setSoloConductorAsignado(err instanceof ApiError && err.code === 'not_assigned_driver');
     } finally {
       setEntregando(false);
     }
@@ -883,25 +888,27 @@ export function AssignmentCard({
             {/* La entrega NO exige recogida previa: la tabla de transiciones
                 permite `asignado → entregado` y bloquearla castigaría al conductor
                 que olvidó apretar el botón anterior. Pero va como enlace discreto,
-                no como botón grande al lado de la recogida. */}
-            {confirmando === 'entrega' ? (
-              <ConfirmacionInline
-                pregunta="¿Confirmas que entregaste esta carga?"
-                onConfirmar={() => void ejecutarConfirmacion()}
-                onCancelar={() => setConfirmando(null)}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmando('entrega')}
-                disabled={entregando}
-                aria-label="Confirmar entrega sin haber confirmado la recogida"
-                data-testid="entrega-sin-recogida"
-                className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
-              </button>
-            )}
+                no como botón grande al lado de la recogida. Si el API dice que
+                no es el conductor asignado, no se vuelve a ofrecer. */}
+            {!soloConductorAsignado &&
+              (confirmando === 'entrega' ? (
+                <ConfirmacionInline
+                  pregunta="¿Confirmas que entregaste esta carga?"
+                  onConfirmar={() => void ejecutarConfirmacion()}
+                  onCancelar={() => setConfirmando(null)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmando('entrega')}
+                  disabled={entregando}
+                  aria-label="Confirmar entrega sin haber confirmado la recogida"
+                  data-testid="entrega-sin-recogida"
+                  className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
+                </button>
+              ))}
           </>
         )}
 
@@ -919,24 +926,25 @@ export function AssignmentCard({
                 respuestaDesdeNotificacion={respuestaNotificacion}
               />
             )}
-            {confirmando === 'entrega' ? (
-              <ConfirmacionInline
-                pregunta="¿Confirmas que entregaste esta carga?"
-                onConfirmar={() => void ejecutarConfirmacion()}
-                onCancelar={() => setConfirmando(null)}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmando('entrega')}
-                disabled={entregando}
-                data-testid="confirmar-entrega"
-                className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
-              >
-                <CheckCircle2 className="h-4 w-4" aria-hidden />
-                {entregando ? 'Confirmando…' : 'Confirmar entrega'}
-              </button>
-            )}
+            {!soloConductorAsignado &&
+              (confirmando === 'entrega' ? (
+                <ConfirmacionInline
+                  pregunta="¿Confirmas que entregaste esta carga?"
+                  onConfirmar={() => void ejecutarConfirmacion()}
+                  onCancelar={() => setConfirmando(null)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmando('entrega')}
+                  disabled={entregando}
+                  data-testid="confirmar-entrega"
+                  className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
+                >
+                  <CheckCircle2 className="h-4 w-4" aria-hidden />
+                  {entregando ? 'Confirmando…' : 'Confirmar entrega'}
+                </button>
+              ))}
             <NavegacionEnPantalla
               etiqueta="Ir al destino"
               testId="navegar-destino"

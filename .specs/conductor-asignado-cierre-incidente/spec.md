@@ -32,3 +32,6 @@ y reportar un incidente son actos del conductor que está en el viaje.
 - `driver_user_id` null recibe el mismo 403.
 - Tests con datos sintéticos: RUT `11.111.111-1`, correos `@example.com`,
   patente `TEST01`.
+- Ante `403 not_assigned_driver`, `DeliveryConfirmCard` y `/app/conductor`
+  dicen que solo el conductor asignado puede confirmar la entrega y no
+  ofrecen reintentar.
