@@ -19,6 +19,8 @@
 | false | true | api directo | **Sombra**: arma el request con su config, compara el hash con el del api, **nunca envía** |
 | true | — | **este servicio** | Entrega real |
 
+**El mínimo de instancias sigue a los flags** (`compute.tf`, `local.notification_service_min_instances`): con los dos en `false` el servicio escala a cero y no hay instancia viva; con cualquiera en `true`, `min_instances = 1`. Por eso los flags se cambian **siempre con `terraform apply -var=…`** (o en el tfvars), nunca con `gcloud run services update --update-env-vars` sobre el api: por fuera de Terraform el flag se encendería con el consumidor en cero. El deploy de Cloud Build no toca el mínimo.
+
 Si un WhatsApp no llega, revisa primero los flags.
 
 - **Si el api envía directo**, sigue aplicando `service-api.md`.

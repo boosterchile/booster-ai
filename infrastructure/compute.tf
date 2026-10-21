@@ -483,15 +483,23 @@ module "service_matching_engine" {
   service_account_email = google_service_account.cloud_run_runtime.email
 
   # T10-21: servicio HTTP request-driven (POST /ranking desde el api, dentro de
-  # la transacción del matching). min_instances=1 evita el cold start en ese
-  # camino síncrono; cpu_idle=true (default) porque no hay trabajo de fondo.
+  # la transacción del matching). Con un flag encendido, min_instances=1 evita
+  # el cold start en ese camino síncrono; cpu_idle=true (default) porque no hay
+  # trabajo de fondo.
+  #
+  # Con matching_shadow y matching_via_microservice en false nadie lo llama: el
+  # api rankea en proceso (modo `local` de matching-ranking.ts). Auditoría de
+  # costos 2026-10-21: 0 requests en 30 días y ~USD 11/mes por la instancia
+  # mínima. Por eso el mínimo se deriva de los flags: el mismo apply que prende
+  # uno lo sube a 1. El deploy de Cloud Build ya no pasa --min-instances
+  # (cloudbuild.production.yaml), así que este valor es el que manda.
   #
   # Decisión del PO (2026-10-19): el ingress queda INTERNAL_ONLY, como en vivo.
   # No se aplica el INGRESS_TRAFFIC_ALL de #765. VPC, DATABASE_URL y Redis se
   # mantienen: es la conectividad que el servicio tiene hoy; sacarla en este
   # apply le quitaría la red a la revisión viva. El binario nuevo no las usa
   # (cómputo puro); quedan montadas a propósito.
-  min_instances = 1
+  min_instances = local.matching_engine_min_instances
   max_instances = 10
   cpu           = "1"
   memory        = "512Mi"
@@ -519,6 +527,14 @@ module "service_matching_engine" {
   secret_versions_ready = local.all_secret_versions_ready
 
   labels = { app = "matching-engine", env = var.environment }
+}
+
+locals {
+  # Mínimo de instancias de los microservicios de T10-21 según sus flags: 1 si
+  # el api los usa (sombra o corte), 0 si no. Ver los comentarios de
+  # service_matching_engine y service_notification.
+  matching_engine_min_instances      = (var.matching_shadow || var.matching_via_microservice) ? 1 : 0
+  notification_service_min_instances = (var.notifications_shadow || var.notifications_via_microservice) ? 1 : 0
 }
 
 # --- apps/telemetry-processor (Pub/Sub PULL consumer / StreamingPull) ---
@@ -592,13 +608,24 @@ module "service_notification" {
   service_account_email = google_service_account.cloud_run_runtime.email
 
   # T10-21: consumer Pub/Sub PULL de `notification-events` (StreamingPull en
-  # main.ts). min_instances=1 + cpu_idle=false son obligatorios: con min=0 la
-  # instancia escala a cero y nadie consume; con cpu_idle=true el pull queda
-  # CPU-throttled (incidente telemetry-processor 2026-06-07). Emisor sin
-  # estado (sin DB ni Redis): 512 Mi alcanzan.
+  # main.ts). Con un flag encendido, min_instances=1 + cpu_idle=false son
+  # obligatorios: con min=0 la instancia escala a cero y nadie consume; con
+  # cpu_idle=true el pull queda CPU-throttled (incidente telemetry-processor
+  # 2026-06-07). Emisor sin estado (sin DB ni Redis): 512 Mi alcanzan.
+  #
+  # Con notifications_shadow y notifications_via_microservice en false no hay
+  # nada que consumir: el api envía directo por Twilio (modo `directo` de
+  # whatsapp-enrutado.ts) y no publica en notification-events. Auditoría de
+  # costos 2026-10-21: 0 mensajes en 30 días y ~USD 45–60/mes por una
+  # instancia con CPU siempre asignada. Por eso el mínimo se deriva de los
+  # flags: el mismo apply que prende uno lo sube a 1 antes de que haya
+  # mensajes (la suscripción los retiene 1 día). cpu_idle=false se queda: con
+  # min=0 y sin trabajo la instancia no existe y no se cobra. El deploy de
+  # Cloud Build ya no pasa --min-instances (cloudbuild.production.yaml).
+  #
   # max_instances=20 es lo que tiene el servicio en vivo. #764 lo bajó a 5
   # en código, pero ese apply no corrió; este reconcile no lo escala hacia abajo.
-  min_instances = 1
+  min_instances = local.notification_service_min_instances
   max_instances = 20
   cpu_idle      = false
   cpu           = "1"

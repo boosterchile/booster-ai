@@ -19,6 +19,8 @@
 | false | true | api | **Sombra**: tras el commit, el api le pide el mismo ranking y compara hashes. Sin efecto en el usuario |
 | true | — | **este servicio** | Decide. Si falla (timeout 3 s, 401/403, 5xx, contrato), el api cae al **cálculo local**: el viaje igual recibe ofertas |
 
+**El mínimo de instancias sigue a los flags** (`compute.tf`, `local.matching_engine_min_instances`): con los dos en `false` el servicio escala a cero; con cualquiera en `true`, `min_instances = 1` contra el cold start. Cambiá los flags **siempre con `terraform apply -var=…`** (o en el tfvars), no con `gcloud run services update --update-env-vars` sobre el api. El deploy de Cloud Build no toca el mínimo.
+
 **El matching del usuario nunca depende solo de este servicio.** Ante cualquier falla hay fallback local con la misma función. Un incidente de matching (no salen ofertas) sigue siendo de `service-api.md`.
 
 ## Señales
