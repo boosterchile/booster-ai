@@ -118,6 +118,15 @@ module "service_api" {
   cpu           = "1"
   memory        = "1Gi"
 
+  # El api enciende los flags MATCHING_* y NOTIFICATIONS_* (env de abajo), y el
+  # mínimo de matching-engine y notification-service sale de esos mismos flags
+  # (locals junto a service_matching_engine). Con este depends_on, Terraform
+  # actualiza el api después de los dos servicios: si la revisión nueva de uno
+  # no queda lista, el apply corta antes de prender el flag. Además, un
+  # `-target=module.service_api` arrastra a los dos módulos, así que prender
+  # un flag solo en el api también sube el mínimo del servicio.
+  depends_on = [module.service_matching_engine, module.service_notification]
+
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
@@ -491,7 +500,8 @@ module "service_matching_engine" {
   # api rankea en proceso (modo `local` de matching-ranking.ts). Auditoría de
   # costos 2026-10-21: 0 requests en 30 días y ~USD 11/mes por la instancia
   # mínima. Por eso el mínimo se deriva de los flags: el mismo apply que prende
-  # uno lo sube a 1. El deploy de Cloud Build ya no pasa --min-instances
+  # uno lo sube a 1, antes de tocar el api (depends_on de service_api). El
+  # deploy de Cloud Build ya no pasa --min-instances
   # (cloudbuild.production.yaml), así que este valor es el que manda.
   #
   # Decisión del PO (2026-10-19): el ingress queda INTERNAL_ONLY, como en vivo.
@@ -618,10 +628,14 @@ module "service_notification" {
   # whatsapp-enrutado.ts) y no publica en notification-events. Auditoría de
   # costos 2026-10-21: 0 mensajes en 30 días y ~USD 45–60/mes por una
   # instancia con CPU siempre asignada. Por eso el mínimo se deriva de los
-  # flags: el mismo apply que prende uno lo sube a 1 antes de que haya
-  # mensajes (la suscripción los retiene 1 día). cpu_idle=false se queda: con
-  # min=0 y sin trabajo la instancia no existe y no se cobra. El deploy de
-  # Cloud Build ya no pasa --min-instances (cloudbuild.production.yaml).
+  # flags: el mismo apply que prende uno lo sube a 1, y el depends_on de
+  # service_api hace que el api cambie después, solo si este servicio quedó
+  # listo (la suscripción retiene 1 día). Si igual se prendiera un flag por
+  # fuera de Terraform, lo detecta la alerta wave2_consumer_stalled
+  # ["notification_events"] (telemetry-monitoring.tf). cpu_idle=false se
+  # queda: con min=0 y sin trabajo no hay instancia; cada deploy o apply
+  # levanta una por ≤15 min (costo despreciable). El deploy de Cloud Build ya
+  # no pasa --min-instances (cloudbuild.production.yaml).
   #
   # max_instances=20 es lo que tiene el servicio en vivo. #764 lo bajó a 5
   # en código, pero ese apply no corrió; este reconcile no lo escala hacia abajo.
