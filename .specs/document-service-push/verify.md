@@ -158,7 +158,10 @@ Después del apply con el flag apagado, el encendido es entonces **0 to add, 2 t
 
 ### Plan completo (`terraform-drift.yml` sobre la rama, cuenta de solo lectura `terraform-drift@`, `-lock=false`)
 
-Run [39625346040](https://github.com/boosterchile/booster-ai/actions/runs/39625346040), commit `e72562fd`, flag en su default (`false`): **Plan: 7 to add, 2 to change, 0 to destroy.**
+Flag en su default (`false`). Dos corridas, las dos con **Plan: 7 to add, 2 to change, 0 to destroy**:
+
+- run [39625346040](https://github.com/boosterchile/booster-ai/actions/runs/39625346040), primer commit (`e72562fd`);
+- run [39627709286](https://github.com/boosterchile/booster-ai/actions/runs/39627709286), después de la revisión (`097defa3`), con `document_uploaded_stalled` en lugar de la entrada del mapa de telemetría.
 
 - Los 7 recursos nuevos y el cambio de `module.service_document` son los mismos del plan acotado.
 - El segundo cambio es `module.service_api`, que quita la env `RESEND_API_KEY`. **No es de este PR**: es el artefacto conocido del workflow, que no define `resend_api_key_ready`. La corrida programada de `main` del 2026-10-20 (run 39450315380) ya falla igual (`.specs/microservicios-min-segun-flags/verify.md` §4). Por eso el apply va con `-target`.
