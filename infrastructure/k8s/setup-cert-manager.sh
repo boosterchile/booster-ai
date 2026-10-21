@@ -12,6 +12,9 @@
 # La vista previa renderiza los Deployments con Helm y los manda a la API del
 # clúster con `kubectl apply --dry-run=server`: pasan por la admisión de
 # Autopilot sin persistirse. Muestra los requests que quedarían de verdad.
+# En una instalación nueva el namespace todavía no existe y la API rechazaría
+# los Deployments; en ese caso la vista previa usa `--dry-run=client` (valida
+# y muestra lo renderizado, sin la admisión de Autopilot) y lo avisa.
 #
 # Qué pasa al aplicar: Helm reinicia los 3 pods de cert-manager (rolling).
 # Mientras el webhook se reinicia (segundos), crear o editar recursos de
@@ -41,7 +44,8 @@ RELEASE="cert-manager"
 CHART="jetstack/cert-manager"
 # Fijada a la versión que corre hoy. Subirla es un cambio aparte, con su PR.
 CHART_VERSION="v1.20.2"
-WI_ANNOTATION="iam.gke.io/gcp-service-account=cert-manager-cloud-dns@${PROJECT}.iam.gserviceaccount.com"
+WI_SA_EMAIL="cert-manager-cloud-dns@${PROJECT}.iam.gserviceaccount.com"
+WI_ANNOTATION="iam.gke.io/gcp-service-account=${WI_SA_EMAIL}"
 MANIFEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VALUES="${MANIFEST_DIR}/cert-manager-values.yaml"
 
@@ -98,7 +102,17 @@ helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null
 helm repo update jetstack >/dev/null
 
 if [ "${APPLY}" = false ]; then
-  echo "==> Vista previa: requests e imagen que dejaría Autopilot (dry-run del servidor, no persiste)..."
+  # --ignore-not-found: vacío si el namespace no existe; un error de red o de
+  # permisos corta el script en vez de pasar por "no existe".
+  if [ -n "$(kc get namespace "${NAMESPACE}" --ignore-not-found -o name)" ]; then
+    DRY_RUN="server"
+    echo "==> Vista previa: requests e imagen que dejaría Autopilot (dry-run del servidor, no persiste)..."
+  else
+    DRY_RUN="client"
+    echo "==> Vista previa (instalación nueva): el namespace ${NAMESPACE} no existe todavía,"
+    echo "    así que se valida del lado del cliente. Muestra lo renderizado, sin la admisión"
+    echo "    de Autopilot; los requests ya cumplen sus mínimos (ver cert-manager-values.yaml)."
+  fi
   # Con varios documentos, `kubectl apply -o jsonpath` recibe una List: el
   # jsonpath recorre .items (probado con kubectl 1.35 contra el clúster).
   helm template "${RELEASE}" "${CHART}" \
@@ -108,7 +122,7 @@ if [ "${APPLY}" = false ]; then
     --show-only templates/deployment.yaml \
     --show-only templates/cainjector-deployment.yaml \
     --show-only templates/webhook-deployment.yaml |
-    kc apply --dry-run=server -f - \
+    kc apply --dry-run="${DRY_RUN}" -f - \
       -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.template.spec.containers[0].resources}{"\t"}{.spec.template.spec.containers[0].image}{"\n"}{end}'
   echo ""
   echo "Nada cambió en el clúster. Para aplicar: $0 --apply"
@@ -140,9 +154,20 @@ done
 echo "==> Requests después del cambio:"
 kc get deployment -n "${NAMESPACE}" -o jsonpath="${REQUESTS_JSONPATH}"
 
-echo "==> Anotación de Workload Identity del ServiceAccount:"
-kc get serviceaccount cert-manager -n "${NAMESPACE}" \
-  -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}{"\n"}'
+echo "==> Anotación de Workload Identity del ServiceAccount..."
+# Un jsonpath sobre una clave ausente no es error en kubectl (devuelve vacío),
+# y el ClusterIssuer y el Certificate pueden seguir Ready sin usar Cloud DNS.
+# Sin esta comparación, el script terminaría en "✅" aunque la renovación por
+# DNS-01 vaya a fallar.
+ACTUAL_SA="$(kc get serviceaccount cert-manager -n "${NAMESPACE}" \
+  -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}')"
+if [ "${ACTUAL_SA}" != "${WI_SA_EMAIL}" ]; then
+  echo "ERROR: el ServiceAccount cert-manager tiene iam.gke.io/gcp-service-account='${ACTUAL_SA}'" >&2
+  echo "  y se esperaba '${WI_SA_EMAIL}'. Sin esa anotación falla el DNS-01 de la renovación." >&2
+  echo "  Corrección: kubectl annotate serviceaccount cert-manager -n ${NAMESPACE} ${WI_ANNOTATION} --overwrite" >&2
+  exit 1
+fi
+echo "    ${ACTUAL_SA}"
 
 echo "==> ClusterIssuer y Certificate del gateway (deben seguir Ready)..."
 kc wait clusterissuer/letsencrypt-prod --for=condition=Ready --timeout=120s

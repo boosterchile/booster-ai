@@ -163,7 +163,8 @@ Helm (chart `jetstack/cert-manager`, versión fijada `v1.20.2`).
 
 ```bash
 # 1. Vista previa: no cambia nada. Muestra los requests que dejaría Autopilot
-#    (dry-run del servidor sobre los Deployments renderizados).
+#    (dry-run del servidor sobre los Deployments renderizados; en una
+#    instalación nueva, sin namespace todavía, dry-run del cliente).
 ./infrastructure/k8s/setup-cert-manager.sh
 
 # 2. Aplicar. Reinicia los 3 pods (rolling); el certificado ya emitido no se toca.
