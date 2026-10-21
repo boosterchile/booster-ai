@@ -1,6 +1,6 @@
 # Sonda puntual, solo en rama de trabajo (no se mergea a main): experimento de facturación
 # HERE (¿doble cobro Truck + Time Aware?). Corre solo en un día UTC limpio (≥ FECHA_MINIMA):
-# el push de hoy la registra y sale sin llamar a HERE; mañana un push trivial la ejecuta.
+# Registrado el 2026-10-20 con un push sin llamadas; ejecutado el 2026-10-21 UTC con este push trivial.
 name: Probe HERE — facturación Truck vs Time Aware
 
 on:
