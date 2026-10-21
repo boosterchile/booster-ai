@@ -12,10 +12,29 @@ import { PUSH_PATH, createHttpHandler } from './http-server.js';
 import { createPushTokenVerifier } from './push-auth.js';
 
 /**
- * Cloud Run da 10 s entre SIGTERM y SIGKILL. Se espera a los push en curso
- * hasta este tope para no dejar una fila en `procesando` a mitad de decode.
+ * Cloud Run da 10 s entre SIGTERM y SIGKILL. Se espera a los mensajes en curso
+ * (requests push y handlers pull) hasta este tope antes de cerrar el pool, para
+ * no dejar una fila en `procesando` a mitad de decode. Si el tope se cumple, la
+ * fila la libera el cron documentos-pendientes a los 30 min.
  */
 const SHUTDOWN_DRAIN_MS = 8_000;
+
+/** Espera `work` hasta `ms`; `true` si terminó a tiempo. */
+function withinDeadline(work: Promise<unknown>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    work.then(
+      () => {
+        clearTimeout(timer);
+        resolve(true);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(true);
+      },
+    );
+  });
+}
 
 /**
  * document-service: worker Cloud Run que consume `document.uploaded` (frente
@@ -78,13 +97,15 @@ async function main(): Promise<void> {
   });
 
   let subscription: Subscription | null = null;
+  // `subscription.close()` no espera a los handlers en curso: se llevan acá.
+  const pullInFlight = new Set<Promise<void>>();
   if (config.DOCUMENT_CONSUMER_MODE === 'pull') {
     const pubsub = new PubSub({ projectId: config.GOOGLE_CLOUD_PROJECT });
     const pullSubscription = pubsub.subscription(config.PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED, {
       flowControl: { maxMessages: config.MAX_MESSAGES_IN_FLIGHT },
     });
     pullSubscription.on('message', (message: Message) => {
-      handleMessage({
+      const work = handleMessage({
         data: message.data,
         messageId: message.id,
         deliveryAttempt: message.deliveryAttempt,
@@ -96,7 +117,11 @@ async function main(): Promise<void> {
             'error procesando document.uploaded, nack para reintento',
           );
           message.nack();
+        })
+        .finally(() => {
+          pullInFlight.delete(work);
         });
+      pullInFlight.add(work);
     });
     pullSubscription.on('error', (err) => {
       logger.error({ err }, 'subscription error');
@@ -104,17 +129,19 @@ async function main(): Promise<void> {
     subscription = pullSubscription;
   }
 
+  // config.ts exige PUSH_CALLER_SA y PUSH_OIDC_AUDIENCE juntos.
+  const pushAuth =
+    config.PUSH_CALLER_SA !== undefined && config.PUSH_OIDC_AUDIENCE !== undefined
+      ? { allowedCallerSa: config.PUSH_CALLER_SA, audience: config.PUSH_OIDC_AUDIENCE }
+      : null;
   const server = http.createServer(
     createHttpHandler({
       logger,
-      ...(config.PUSH_CALLER_SA === undefined
+      ...(pushAuth === null
         ? {}
         : {
             push: {
-              verifyToken: createPushTokenVerifier({
-                allowedCallerSa: config.PUSH_CALLER_SA,
-                logger,
-              }),
+              verifyToken: createPushTokenVerifier({ ...pushAuth, logger }),
               handleMessage,
             },
           }),
@@ -123,19 +150,6 @@ async function main(): Promise<void> {
   server.listen(config.HEALTH_PORT, () => {
     logger.info({ port: config.HEALTH_PORT }, 'http listening (health + push)');
   });
-
-  const closeServer = (): Promise<void> =>
-    new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        logger.warn({ drainMs: SHUTDOWN_DRAIN_MS }, 'shutdown: requests en curso sin terminar');
-        resolve();
-      }, SHUTDOWN_DRAIN_MS);
-      server.close(() => {
-        clearTimeout(timer);
-        resolve();
-      });
-      server.closeIdleConnections();
-    });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'shutdown requested');
@@ -147,7 +161,22 @@ async function main(): Promise<void> {
         logger.error({ err: e }, 'error closing subscription');
       }
     }
-    await closeServer();
+    // Un solo tope para los dos transportes: deja de aceptar requests y espera
+    // a los push y a los handlers pull en curso.
+    const httpClosed = new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeIdleConnections();
+    });
+    const drained = await withinDeadline(
+      Promise.all([httpClosed, Promise.allSettled([...pullInFlight])]),
+      SHUTDOWN_DRAIN_MS,
+    );
+    if (!drained) {
+      logger.warn(
+        { drainMs: SHUTDOWN_DRAIN_MS, pullInFlight: pullInFlight.size },
+        'shutdown: mensajes en curso sin terminar',
+      );
+    }
     try {
       await pool.end();
       logger.info('pg pool closed');

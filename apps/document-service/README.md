@@ -27,8 +27,8 @@ instancias:
 - `pull` (default): StreamingPull dentro del container. Necesita
   `min_instances=1` y CPU siempre asignada.
 - `push`: Pub/Sub hace `POST /pubsub/document-uploaded` con un OIDC de
-  `PUSH_CALLER_SA`. El servicio escala a cero. 204 = ack, 500 = nack,
-  401 = token rechazado.
+  `PUSH_CALLER_SA` para la audience `PUSH_OIDC_AUDIENCE`. El servicio escala a
+  cero. 204 = ack, 500 = nack, 401 = token rechazado.
 
 `/health` y el endpoint push corren en los dos modos. La decisión ack/nack es
 la misma en los dos (`src/handle-document-uploaded.ts`); los adapters son

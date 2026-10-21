@@ -263,20 +263,23 @@ resource "google_pubsub_subscription" "document_uploaded_processor" {
   # request del servicio (300 s, default del módulo).
   ack_deadline_seconds = 120
 
-  # ADR-085 — push al worker. Endpoint y audience = URL run.app por defecto del
-  # servicio: con ingress INTERNAL_ONLY el push del mismo proyecto solo entra
-  # por esa URL, y Cloud Run IAM acepta esa URL como `aud`. La audience va sin
-  # path (si se omite, Pub/Sub usaría el endpoint con path y Cloud Run lo
-  # rechazaría). Referenciar el módulo además ordena el apply: la revisión
-  # nueva (con DOCUMENT_CONSUMER_MODE) queda lista antes de cambiar la
-  # suscripción.
+  # ADR-085 — push al worker.
+  #   - Endpoint = URL run.app por defecto del servicio (`uri`): con ingress
+  #     INTERNAL_ONLY, el push del mismo proyecto solo entra por una URL run.app
+  #     por defecto. Referenciar el módulo además ordena el apply: la revisión
+  #     nueva (con DOCUMENT_CONSUMER_MODE) queda lista antes de cambiar la
+  #     suscripción.
+  #   - Audience = local.cloud_run_document_url, sin path. El servicio la
+  #     declara como custom audience (Cloud Run IAM la acepta) y el worker la
+  #     exige (PUSH_OIDC_AUDIENCE). Si se omite, Pub/Sub usaría el endpoint con
+  #     path.
   dynamic "push_config" {
     for_each = var.document_service_push ? [1] : []
     content {
       push_endpoint = "${module.service_document.url}/pubsub/document-uploaded"
       oidc_token {
         service_account_email = google_service_account.document_push_invoker.email
-        audience              = module.service_document.url
+        audience              = local.cloud_run_document_url
       }
     }
   }
@@ -330,12 +333,13 @@ resource "google_service_account" "document_push_invoker" {
 }
 
 # El service agent de Pub/Sub emite los tokens OIDC como `document_push_invoker`.
-# Mismo patrón que pubsub_safety_push_token_creator. Hoy el rol
-# roles/pubsub.serviceAgent del proyecto ya trae iam.serviceAccounts.getOpenIdToken;
-# el binding explícito no depende de ese rol administrado por Google.
+# Rol acotado a getOpenIdToken (no el Token Creator completo de safety-push, que
+# también da access tokens y signBlob/signJwt). Hoy roles/pubsub.serviceAgent
+# del proyecto ya trae getOpenIdToken; el binding explícito no depende de ese
+# rol administrado por Google.
 resource "google_service_account_iam_member" "pubsub_document_push_token_creator" {
   service_account_id = google_service_account.document_push_invoker.name
-  role               = "roles/iam.serviceAccountTokenCreator"
+  role               = "roles/iam.serviceAccountOpenIdTokenCreator"
   member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }
 

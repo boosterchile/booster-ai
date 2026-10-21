@@ -92,6 +92,10 @@ locals {
   # T10-21: matching-engine recibe POST /ranking del api con ID token (aud =
   # esta URL) + Cloud Run IAM.
   cloud_run_matching_url = "https://booster-ai-matching-engine-${google_project.booster_ai.number}.${var.region}.run.app"
+  # ADR-085: `aud` del OIDC del push de document.uploaded. Se declara además como
+  # custom audience del servicio, así Cloud Run IAM la acepta sin depender de
+  # qué URLs run.app acepta por defecto, y el worker la exige (PUSH_OIDC_AUDIENCE).
+  cloud_run_document_url = "https://booster-ai-document-service-${google_project.booster_ai.number}.${var.region}.run.app"
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -800,10 +804,12 @@ module "service_document" {
     UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
     SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
     # ADR-085: pull abre StreamingPull; push no. El endpoint push queda activo
-    # en los dos modos (solo acepta el OIDC de PUSH_CALLER_SA), así el orden en
-    # que se actualizan la suscripción y la revisión no deja mensajes en 404.
+    # en los dos modos (solo acepta el OIDC de PUSH_CALLER_SA con aud =
+    # PUSH_OIDC_AUDIENCE), así el orden en que se actualizan la suscripción y la
+    # revisión no deja mensajes en 404.
     DOCUMENT_CONSUMER_MODE = var.document_service_push ? "push" : "pull"
     PUSH_CALLER_SA         = google_service_account.document_push_invoker.email
+    PUSH_OIDC_AUDIENCE     = local.cloud_run_document_url
   })
   # DTE_PROVIDER_* removidos (ADR-069): Booster ya no emite DTE. El skeleton de
   # document-service nunca leyó estos secretos; se elimina el binding para
@@ -817,8 +823,9 @@ module "service_document" {
 
   # public=false: Cloud Run IAM exige el OIDC del push (run.invoker solo para
   # document-push-invoker, messaging.tf) antes de que el request llegue al
-  # container. La app repite la verificación del emisor (src/push-auth.ts).
-  public = false
+  # container. La app repite la verificación de emisor y aud (src/push-auth.ts).
+  public           = false
+  custom_audiences = [local.cloud_run_document_url]
 
   # ADR-063 (completa ADR-062): sin NEG en el GCLB ni callers HTTP de
   # internet. INTERNAL_ONLY cierra el run.app a nivel de red → un token de

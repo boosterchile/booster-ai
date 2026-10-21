@@ -34,7 +34,7 @@ Hay además un hueco previo: el service agent de Pub/Sub no tiene `pubsub.publis
 La suscripción `document-uploaded-processor-sub` recibe un `push_config`:
 
 - endpoint `POST <url run.app del servicio>/pubsub/document-uploaded`;
-- OIDC firmado como `document-push-invoker@`, con `audience` igual a la URL run.app, sin path.
+- OIDC firmado como `document-push-invoker@`, con `audience` igual a la URL run.app determinista (`https://booster-ai-document-service-<número de proyecto>.<región>.run.app`), sin path.
 
 Es la misma suscripción: el cambio es in-place y los mensajes retenidos se quedan en ella.
 
@@ -44,13 +44,14 @@ Cada mensaje llega como un request HTTP, así que el servicio puede escalar a ce
 
 - `public = false`. Cloud Run IAM exige el OIDC antes de que el request llegue al container.
 - SA dedicado `document-push-invoker@`, con `roles/run.invoker` **solo** sobre `booster-ai-document-service`.
-- El service agent de Pub/Sub tiene Token Creator sobre ese SA. Es el mismo patrón que `safety-push-invoker@`.
-- La app repite la verificación en `src/push-auth.ts`, como defensa en profundidad: firma contra las claves de Google, `email` igual a `PUSH_CALLER_SA` y `email_verified`. Así un principal con `run.invoker` heredado del proyecto (owners, el deployer) no puede inyectar mensajes.
-- `aud` lo exige Cloud Run; la app no lo repite, porque Terraform no puede pasarle al servicio su propia URL sin un ciclo.
+- El service agent de Pub/Sub tiene `roles/iam.serviceAccountOpenIdTokenCreator` sobre ese SA: solo `getOpenIdToken`, no el Token Creator completo que usa `safety-push-invoker@`.
+- La `audience` del push se declara además como *custom audience* del servicio. Así Cloud Run IAM la acepta sin depender de qué URLs `run.app` acepta por defecto, y Terraform la conoce antes de crear el servicio, sin el ciclo de leer su `uri`.
+- La app repite la verificación en `src/push-auth.ts`, como defensa en profundidad y con el mismo criterio que matching-engine: firma contra las claves de Google, `aud` igual a `PUSH_OIDC_AUDIENCE`, `email` igual a `PUSH_CALLER_SA` y `email_verified`. Así no entra un principal con `run.invoker` heredado del proyecto (owners, el deployer), ni un token del SA emitido para otro destino, aunque alguien dejara el servicio público por error.
+- Los rechazos se registran como `error`, porque el único emisor legítimo es Pub/Sub.
 
 ### 3. El ingress se queda en `INTERNAL_ONLY`
 
-La documentación de Cloud Run trata como interno el tráfico de las suscripciones de Pub/Sub del mismo proyecto que usan la URL `run.app` por defecto. Por eso el endpoint es la URL `run.app` y no un dominio propio.
+La documentación de Cloud Run trata como interno el tráfico de las suscripciones de Pub/Sub del mismo proyecto que usan la URL `run.app` por defecto. Por eso el endpoint es la URL `run.app` (`uri` del servicio) y no un dominio propio.
 
 Consecuencia: el servicio no puede tener un dominio propio como endpoint del push, ni deshabilitar su URL `run.app` por defecto.
 
@@ -60,7 +61,7 @@ Consecuencia: el servicio no puede tener un dominio propio como endpoint del pus
 |---|---|---|---|
 | `min_instances` | 1 | **0** | Cada mensaje despierta una instancia |
 | `cpu_idle` | false | **true** | Todo el trabajo ocurre dentro del request: se responde después de persistir |
-| concurrencia por instancia | 80 (sin gestionar) | **4** | Medido con el ingestor real: 4 fotos de 12 MP en paralelo llegan a ~670 MB de RSS (memoria de 1 GiB). Más requests no aceleran el decode (WASM en un hilo) |
+| concurrencia por instancia | 80 (sin gestionar) | **4** | Medido con el ingestor real y entradas normales: 4 fotos de 12 MP en paralelo llegan a ~670 MB de RSS (memoria de 1 GiB). Más requests no aceleran el decode (WASM en un hilo). No protege contra una imagen hostil (ver Consecuencias) |
 | `ack_deadline_seconds` | 120 | 120 | En push es lo que Pub/Sub espera la respuesta, sin extensión de lease. Un decode medido toma 0,05–0,2 s y el arranque en frío segundos |
 | timeout del request | 300 s | 300 s | Mayor que el ack deadline |
 | `max_instances` | 10 | 10 | Sin cambio |
@@ -83,7 +84,12 @@ La concurrencia se fija con una variable nueva del módulo `cloud-run-service` (
 - `DOCUMENT_CONSUMER_MODE` (`pull` o `push`);
 - `min_instances` y `cpu_idle`.
 
-La imagen sirve los dos modos. El endpoint push existe también en pull (solo acepta el OIDC de `PUSH_CALLER_SA`), así que el orden en que se actualizan la suscripción y la revisión no deja mensajes en 404. El rollback es apagar el flag y aplicar, sin redeploy.
+La imagen sirve los dos modos. El endpoint push existe también en pull (solo acepta el OIDC de `PUSH_CALLER_SA`), así que el orden en que se actualizan la suscripción y la revisión no deja mensajes en 404. El rollback no necesita redeploy y va en dos pasos:
+
+1. Poner la suscripción en pull (`modify-push-config --push-endpoint=""`).
+2. Apagar el flag y aplicar.
+
+Hay que hacerlo en ese orden porque Terraform actualiza el servicio antes que la suscripción, y el cliente de Pub/Sub no reintenta un StreamingPull rechazado con un código no transitorio. No está documentado si Pub/Sub acepta StreamingPull sobre una suscripción push.
 
 Cuando el push lleve dos semanas estable, el camino pull y el flag se eliminan en un commit aparte (mismo criterio que ADR-083 §2 paso 6).
 
@@ -93,8 +99,10 @@ Cuando el push lleve dos semanas estable, el camino pull y el flag se eliminan e
 
 ### 8. Observabilidad
 
-- Alerta ERROR si un mensaje de esta suscripción se reenvía a la DLQ (`subscription/dead_letter_message_count`). Cubre los fallos persistentes del push: 401, 403, 404 o 5xx.
-- Alerta ERROR si un mensaje queda más de 30 min sin confirmar (`oldest_unacked_message_age`, mismo patrón que las demás suscripciones). Cubre los fallos que no llegan a la DLQ.
+Dos alertas propias en `document-service.tf`, con el runbook del servicio:
+
+- **ERROR si un mensaje de esta suscripción se reenvía a la DLQ** (`subscription/dead_letter_message_count`). Cubre los fallos persistentes del push: 401, 403, 404 o 5xx.
+- **ERROR si un mensaje queda más de 30 min sin confirmar** (`oldest_unacked_message_age`, el mismo patrón que las demás suscripciones). Cubre los fallos que no llegan a la DLQ.
 
 La alerta general `pubsub_dlq` no sirve para esto: mira un topic sin suscripción.
 
@@ -121,11 +129,19 @@ La alerta general `pubsub_dlq` no sirve para esto: mira un topic sin suscripció
 - **Ack deadline duro**: en push no hay extensión de lease. Si un decode pasara de 120 s, Pub/Sub reentregaría el mensaje mientras el primero sigue. El segundo intento ve `procesando`, se saltea y se confirma; si después el primero fallara, el documento quedaría en `fallido` sin reintento automático, disponible para ingreso manual. Lo medido (0,2 s) deja margen de sobra; el riesgo se registra en la spec.
 - **Dependencia de la URL `run.app`**: no se puede deshabilitar mientras el push la use.
 - **Código de transición**: el worker mantiene los dos modos hasta que se retire el pull.
-- **IAM nuevo**: un SA y cuatro bindings (token creator, `run.invoker` sobre el servicio, y publisher/subscriber para la DLQ). Ninguno es IAM humana.
+- **IAM nuevo**: un SA y cuatro bindings. Ninguno es IAM humana:
+  - el OpenID Token Creator del service agent;
+  - `run.invoker` sobre el servicio;
+  - publisher y subscriber para la DLQ.
+- **Riesgos previos que el push no resuelve** (follow-up aparte):
+  - sharp corre sin `limitInputPixels` propio. Una imagen de 16000×16000 que pesa 1,5 MB llevó el RSS a ~1,6 GB en local, más que el 1 GiB del servicio, y tumba la instancia junto con los requests vecinos.
+  - el claim se ata solo a `documentId`, no al `file_path` ni al `viaje_id` de la fila.
+
+  Los dos existen igual en pull.
 
 ## Validación
 
-- [x] Tests del worker: 51/51, cobertura 100 % líneas y 90,5 % ramas. Typecheck, Biome y build OK.
+- [x] Tests del worker: 55/55, cobertura 100 % líneas y 92 % ramas. Typecheck, Biome y build OK.
 - [x] `terraform validate` y `fmt`. Plan acotado contra prod con `-lock=false`: con el flag apagado, 7 to add y 1 to change; encendido, 7 to add y 2 to change; 0 to destroy en los dos (`verify.md`).
 - [ ] PO: apply con el flag apagado, release, encendido del flag y prueba de humo (spec §10).
 - [ ] PO: a las 48 h del encendido, el costo diario del servicio en el export por recurso está en ~0.

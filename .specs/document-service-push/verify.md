@@ -79,6 +79,9 @@ La documentación de Pub/Sub (*Handling message failures*) dice que el reenvío 
 | ¿Cloud Run quita la firma del token? | *Authenticating service-to-service* lo describe solo para `X-Serverless-Authorization`. Pub/Sub manda `Authorization`. No se encontró documentación explícita para `Authorization`: lo cubre la prueba de humo (spec §10) |
 | Leer la DLQ sin suscripción previa | Con retención en el topic (30 días en `pubsub-dead-letter`), una suscripción nueva puede inicializarse con mensajes ya retenidos (*Replay and purge with seek*) |
 | `max_instance_request_concurrency` | provider 6.50.0: `optional` + `computed`. `null` no genera diff |
+| Custom audiences | *Configure custom audiences*: se suman a la URL run.app por defecto, que «siempre» sigue aceptada. Provider 6.50.0: `custom_audiences` es `optional`; con `null` no genera diff |
+| Rol mínimo para firmar el OIDC | `roles/iam.serviceAccountOpenIdTokenCreator` = solo `iam.serviceAccounts.getOpenIdToken` (`gcloud iam roles describe`) |
+| ¿Pub/Sub acepta StreamingPull sobre una suscripción push? | sin documentación. El cliente 4.11.0 solo reintenta `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `ABORTED`, `INTERNAL`, `UNAVAILABLE` y `CANCELLED` (`build/src/pull-retry.js`). Por eso el rollback pone primero la suscripción en pull (spec §10) |
 
 ## 4. Medición del decode (local, no Cloud Run)
 
@@ -104,16 +107,19 @@ Fotos de 12 MP en paralelo (RSS base ~400 MB tras calentar):
 
 La concurrencia apenas acelera: 4 en paralelo tardan 3 veces lo de 1. Se fija **4**, con margen bajo 1 GiB.
 
+**Solo entradas normales.** La revisión de seguridad midió en local una entrada hostil: un JPEG de 16000×16000 que pesa 1,5 MB lleva el RSS a ~1.646 MB, porque sharp corre con su `limitInputPixels` por defecto (~268 Mpx). Eso tumba la instancia de 1 GiB con cualquier concurrencia. Es un riesgo previo, que existe igual en pull, y queda como follow-up (spec §5, `review.md`).
+
 ## 5. Gates del código
 
 | Gate | Resultado |
 |---|---|
-| `pnpm --filter @booster-ai/document-service test:coverage` | 6 archivos, **51/51**. Cobertura: statements 100 %, branches 90,47 %, functions 100 %, lines 100 % (umbral 80) |
+| `pnpm --filter @booster-ai/document-service test:coverage` | 6 archivos, **55/55**. Cobertura: statements 100 %, branches 92 %, functions 100 %, lines 100 % (umbral 80) |
 | `pnpm --filter @booster-ai/document-service typecheck` | OK |
 | `pnpm exec biome check apps/document-service` | OK, tras `--write` de formato |
 | `pnpm --filter @booster-ai/document-service build` | OK (`dist/main.js` 111 KB) |
 | `node scripts/lint-rls.mjs` | 0 queries fuera de allowlist |
-| Humo local del bundle en modo push (sin base ni GCS) | `/health` 200; push sin token 401; token basura 401 (`ID token inválido`); no abre StreamingPull; SIGTERM cierra HTTP y pool |
+| Humo local del bundle en modo push (sin base ni GCS) | `/health` 200; push sin token 401; token basura 401 (`ID token inválido`, nivel `error`); no abre StreamingPull; SIGTERM cierra HTTP y pool. En push sin `PUSH_OIDC_AUDIENCE` no arranca (`Fatal startup error`) |
+| `pnpm lint` (repo completo) | 0 errores. Los 16 avisos son previos y en archivos que este PR no toca |
 
 ## 6. Terraform
 
@@ -125,18 +131,20 @@ La concurrencia apenas acelera: 4 en paralelo tardan 3 veces lo de 1. Se fija **
 
 ### Plan acotado contra prod (`-lock=false`, `TF_VAR_billing_account=""`, con los `-target` de la spec §10)
 
+Corrido de nuevo después de la revisión (commit 2).
+
 **Flag apagado (default): `Plan: 7 to add, 1 to change, 0 to destroy`.**
 
 | Recurso | Cambio |
 |---|---|
 | `google_service_account.document_push_invoker` | + crea `document-push-invoker@` |
-| `google_service_account_iam_member.pubsub_document_push_token_creator` | + Token Creator para el service agent |
-| `google_cloud_run_v2_service_iam_member.document_push_invoker` | + `run.invoker` sobre el servicio |
-| `google_pubsub_topic_iam_member.dlq_publisher_pubsub_agent` | + publisher sobre `pubsub-dead-letter` |
-| `google_pubsub_subscription_iam_member.document_uploaded_dlq_subscriber` | + subscriber sobre la suscripción |
+| `google_service_account_iam_member.pubsub_document_push_token_creator` | + `roles/iam.serviceAccountOpenIdTokenCreator` para el service agent |
+| `google_cloud_run_v2_service_iam_member.document_push_invoker` | + `roles/run.invoker` sobre el servicio |
+| `google_pubsub_topic_iam_member.dlq_publisher_pubsub_agent` | + `roles/pubsub.publisher` sobre `pubsub-dead-letter` |
+| `google_pubsub_subscription_iam_member.document_uploaded_dlq_subscriber` | + `roles/pubsub.subscriber` sobre la suscripción |
 | `google_monitoring_alert_policy.document_uploaded_dead_lettered` | + alerta |
-| `google_monitoring_alert_policy.wave2_consumer_stalled["document_uploaded"]` | + alerta |
-| `module.service_document…service` | `max_instance_request_concurrency: 80 -> 4`; + env `DOCUMENT_CONSUMER_MODE=pull` y `PUSH_CALLER_SA`. Nada más |
+| `google_monitoring_alert_policy.document_uploaded_stalled` | + alerta |
+| `module.service_document…service` | + `custom_audiences = ["https://booster-ai-document-service-469283083998.southamerica-west1.run.app"]`; `max_instance_request_concurrency: 80 -> 4`; + env `DOCUMENT_CONSUMER_MODE=pull`, `PUSH_CALLER_SA`, `PUSH_OIDC_AUDIENCE`. Nada más |
 | `google_pubsub_subscription.document_uploaded_processor` | sin cambios |
 
 **Flag encendido (`-var=document_service_push=true`): `Plan: 7 to add, 2 to change, 0 to destroy`.** Son los mismos 7 recursos nuevos, más:
@@ -144,9 +152,17 @@ La concurrencia apenas acelera: 4 en paralelo tardan 3 veces lo de 1. Se fija **
 | Recurso | Cambio |
 |---|---|
 | `module.service_document…service` | lo anterior, con `DOCUMENT_CONSUMER_MODE=push`, más `cpu_idle: false -> true` y `min_instance_count: 1 -> 0` |
-| `google_pubsub_subscription.document_uploaded_processor` | `+ push_config`: endpoint `https://booster-ai-document-service-wbfevjot4q-tl.a.run.app/pubsub/document-uploaded`; `oidc_token`: audience `https://booster-ai-document-service-wbfevjot4q-tl.a.run.app`, SA `document-push-invoker@…` |
+| `google_pubsub_subscription.document_uploaded_processor` | `+ push_config`: endpoint `https://booster-ai-document-service-wbfevjot4q-tl.a.run.app/pubsub/document-uploaded`; `oidc_token`: audience `https://booster-ai-document-service-469283083998.southamerica-west1.run.app` (la custom audience), SA `document-push-invoker@…` |
 
 Después del apply con el flag apagado, el encendido es entonces **0 to add, 2 to change**.
+
+### Plan completo (`terraform-drift.yml` sobre la rama, cuenta de solo lectura `terraform-drift@`, `-lock=false`)
+
+Run [39625346040](https://github.com/boosterchile/booster-ai/actions/runs/39625346040), commit `e72562fd`, flag en su default (`false`): **Plan: 7 to add, 2 to change, 0 to destroy.**
+
+- Los 7 recursos nuevos y el cambio de `module.service_document` son los mismos del plan acotado.
+- El segundo cambio es `module.service_api`, que quita la env `RESEND_API_KEY`. **No es de este PR**: es el artefacto conocido del workflow, que no define `resend_api_key_ready`. La corrida programada de `main` del 2026-10-20 (run 39450315380) ya falla igual (`.specs/microservicios-min-segun-flags/verify.md` §4). Por eso el apply va con `-target`.
+- Sin ciclos ni errores. El job termina en `failure` porque hay diff (exit 2), que es lo esperado.
 
 No verificado aquí:
 

@@ -27,14 +27,14 @@ El gasto está en ~USD 700/mes y el techo realista de ahorro es ~USD 340/mes. Es
 
 ## 3. Success criteria
 
-- [ ] SC-1: con `document_service_push=false` (default de este PR), un apply no cambia el comportamiento. La suscripción sigue en pull y el servicio en `min=1` con CPU siempre asignada. Solo se suman el SA, los bindings, dos alertas, dos env (`DOCUMENT_CONSUMER_MODE=pull`, `PUSH_CALLER_SA`) y la concurrencia 4.
-- [ ] SC-2: con `document_service_push=true`, el mismo apply pone la suscripción en push hacia `<url run.app>/pubsub/document-uploaded`, con OIDC de `document-push-invoker@` y `audience` igual a la URL run.app. El servicio queda en `min=0`, `cpu_idle=true` y `DOCUMENT_CONSUMER_MODE=push`.
+- [ ] SC-1: con `document_service_push=false` (default de este PR), un apply no cambia el comportamiento. La suscripción sigue en pull y el servicio en `min=1` con CPU siempre asignada. Solo se suman el SA, los bindings, dos alertas, tres env (`DOCUMENT_CONSUMER_MODE=pull`, `PUSH_CALLER_SA`, `PUSH_OIDC_AUDIENCE`), la custom audience y la concurrencia 4.
+- [ ] SC-2: con `document_service_push=true`, el mismo apply pone la suscripción en push hacia `<url run.app>/pubsub/document-uploaded`, con OIDC de `document-push-invoker@` y `audience` igual a la URL run.app determinista (`local.cloud_run_document_url`). El servicio queda en `min=0`, `cpu_idle=true` y `DOCUMENT_CONSUMER_MODE=push`.
 - [ ] SC-3: el worker atiende el push con la misma decisión ack/nack que el pull (`src/handle-document-uploaded.ts`): 204 = ack, 500 = nack, 401 = token rechazado. Un sobre o un mensaje fuera de contrato se confirma y se registra como error.
-- [ ] SC-4: el endpoint push solo acepta un OIDC firmado por Google, con `email` = `PUSH_CALLER_SA` y `email_verified`. Cloud Run IAM exige además `aud` = URL del servicio y `run.invoker`, que solo tiene el SA del push.
+- [ ] SC-4: el endpoint push solo acepta un OIDC firmado por Google, con `aud` = `PUSH_OIDC_AUDIENCE`, `email` = `PUSH_CALLER_SA` y `email_verified`. Cloud Run IAM exige además una audience aceptada (la del push está declarada como custom audience) y `run.invoker`, que solo tiene el SA del push.
 - [ ] SC-5: el ingress sigue en `INTERNAL_ONLY` (ADR-063).
 - [ ] SC-6: `cloudbuild.production.yaml` deja de fijar `--min-instances=1` y `--no-cpu-throttling` en `deploy-document-service`.
 - [ ] SC-7: el service agent de Pub/Sub puede reenviar a la DLQ desde esta suscripción: publisher sobre `pubsub-dead-letter` y subscriber sobre la suscripción.
-- [ ] SC-8: dos alertas: mensaje reenviado a la DLQ (> 0), y mensaje sin confirmar por más de 30 min.
+- [ ] SC-8: dos alertas propias en `document-service.tf`, con el runbook del servicio: mensaje reenviado a la DLQ (> 0), y mensaje sin confirmar por más de 30 min.
 - [ ] SC-9: tests del worker con cobertura ≥ 80/80/80/80. Typecheck, Biome, build y `terraform validate` OK.
 - [ ] SC-10 (PO): después del encendido, la prueba de humo del runbook da `document.uploaded malformado, ack para descartar`, y a las 48 h el costo diario del servicio está en ~0.
 - [ ] SC-11: este PR no ejecuta `terraform apply`, `gcloud` con efectos ni deploys.
@@ -45,10 +45,13 @@ Ninguno mientras el flag esté apagado. Con el flag encendido, el primer documen
 
 ## 5. Out of scope
 
-- **La DLQ del resto del proyecto.** El topic `pubsub-dead-letter` no tiene suscripción. La alerta `pubsub_dlq` mira `num_unacked_messages_by_region` del topic, que sin suscripción no se mueve, y el service agent no tiene permisos de reenvío para ninguna suscripción. Este PR solo habilita el reenvío de `document-uploaded-processor-sub` y le da una alerta propia. El resto es un PR aparte (pregunta 3 al PO).
+- **La DLQ del resto del proyecto.** El topic `pubsub-dead-letter` no tiene suscripción. La alerta `pubsub_dlq` mira `num_unacked_messages_by_region` del topic, que sin suscripción no se mueve, y el service agent no tiene permisos de reenvío para ninguna suscripción. Este PR solo habilita el reenvío de `document-uploaded-processor-sub` y le da una alerta propia. El resto es un PR aparte (pregunta 2 al PO).
 - **Unificar la variable `concurrency` del módulo**, que nunca estuvo conectada (telemetry-processor declara 10 y corre con 160). Se documenta en `variables.tf` y no se toca.
 - **Retirar el modo pull**: va en un commit aparte cuando el push lleve dos semanas estable (ADR-085 §6).
 - `telemetry-processor` sigue en pull: tiene tráfico real.
+- **Dos riesgos previos del worker**, que el push no crea ni resuelve (follow-up aparte; los encontró la revisión de seguridad, `review.md`):
+  - sharp sin `limitInputPixels` propio: una imagen hostil de 1,5 MB tumba la instancia por OOM;
+  - el claim atado solo a `documentId`.
 
 ## 6. Constraints
 
@@ -64,19 +67,18 @@ Ninguno mientras el flag esté apagado. Con el flag encendido, el primer documen
 - `src/config.ts`: `DOCUMENT_CONSUMER_MODE` (`pull` por defecto) y `PUSH_CALLER_SA`, obligatorio en push.
 - `src/handle-document-uploaded.ts`: la decisión ack/nack sale de `main.ts` y la comparten los dos transportes. También corrige un caso: un JSON inválido ahora se descarta (antes se reintentaba).
 - `src/http-server.ts`: `/health` y `POST /pubsub/document-uploaded`. Autentica antes de leer el body, valida el sobre con Zod y lee hasta 64 KiB.
-- `src/push-auth.ts`: verificación del OIDC (`google-auth-library`, igual que matching-engine).
-- `src/main.ts`: StreamingPull solo en modo pull. El HTTP corre siempre. Al apagarse espera hasta 8 s a los requests en curso.
+- `src/push-auth.ts`: verificación del OIDC (`google-auth-library`, igual que matching-engine): firma, `aud`, emisor y `email_verified`. Los rechazos se registran como `error`.
+- `src/main.ts`: StreamingPull solo en modo pull. El HTTP corre siempre. Al apagarse espera hasta 8 s a los mensajes en curso, push o pull.
 
 **Infra**
-- `modules/cloud-run-service`: variable `max_instance_request_concurrency` (`null` = sin gestionar).
-- `compute.tf` (`service_document`): `min_instances`, `cpu_idle` y `DOCUMENT_CONSUMER_MODE` derivados de `var.document_service_push`; `PUSH_CALLER_SA`; concurrencia 4.
+- `modules/cloud-run-service`: variables `max_instance_request_concurrency` y `custom_audiences` (`null` = sin gestionar).
+- `compute.tf`: `local.cloud_run_document_url`. En `service_document`: `min_instances`, `cpu_idle` y `DOCUMENT_CONSUMER_MODE` derivados de `var.document_service_push`; `PUSH_CALLER_SA`, `PUSH_OIDC_AUDIENCE` y la custom audience; concurrencia 4.
 - `messaging.tf`:
   - `push_config` dinámico en `document_uploaded_processor`;
-  - SA `document_push_invoker`, Token Creator del service agent y `run.invoker` sobre el servicio;
+  - SA `document_push_invoker`, OpenID Token Creator del service agent y `run.invoker` sobre el servicio;
   - publisher y subscriber para la DLQ.
 - `variables.tf`: `document_service_push` (default `false`).
-- `telemetry-monitoring.tf`: entrada `document_uploaded` en `wave2_stall_alerts`, al inicio del mapa para no chocar con el #822.
-- `document-service.tf`: alerta `document_uploaded_dead_lettered`.
+- `document-service.tf`: alertas `document_uploaded_dead_lettered` y `document_uploaded_stalled`. Son propias para que apunten al runbook del servicio, y así no se toca el mapa `wave2_stall_alerts` que también edita el #822.
 - `cloudbuild.production.yaml`: sin `--min-instances` ni `--no-cpu-throttling` en `deploy-document-service`.
 
 **Docs**: ADR-085; runbooks `service-document-service.md` (modos, diagnóstico del push, prueba de humo, DLQ real y rollback del modo), `README.md` y `rollback-drill-microservicios.md`; README del worker.
@@ -93,10 +95,11 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 | Riesgo | Prob. | Impacto | Mitigación |
 |---|---|---|---|
 | El flag se enciende antes de que el release traiga el endpoint: la revisión vieja responde 404 | B | M | Default `false`; el runbook exige release primero. Si pasa, los mensajes van a la DLQ en minutos (alerta), los documentos quedan en `pendiente` y el cron los republica cuando el endpoint exista. No se pierde ningún documento |
-| Cloud Run no deja la firma del `Authorization` intacta y el OIDC falla en la app: todo da 401 | B | M | La documentación de Cloud Run describe quitar la firma solo para `X-Serverless-Authorization`, y Pub/Sub usa `Authorization`. matching-engine usa la misma verificación. La prueba de humo lo detecta en ~1 min y el rollback es apagar el flag |
+| Cloud Run no deja la firma del `Authorization` intacta y el OIDC falla en la app: todo da 401 | B | M | La documentación de Cloud Run describe quitar la firma solo para `X-Serverless-Authorization`, y Pub/Sub usa `Authorization`. matching-engine usa la misma verificación. La prueba de humo lo detecta en ~1 min y el rollback no exige redeploy |
+| En el rollback, el StreamingPull de la revisión pull arranca mientras la suscripción sigue en push y Pub/Sub lo rechaza con un código que el cliente no reintenta: el pull queda muerto | B | M | No hay documentación de qué hace Pub/Sub. El rollback va en dos pasos: primero la suscripción a pull (`modify-push-config`), después el apply. Luego se verifica `open_streaming_pulls > 0` y la prueba de humo |
 | El push no entra por `INTERNAL_ONLY` | MB | M | La documentación lo admite para el mismo proyecto con la URL `run.app`, que es la que usa Terraform. La prueba de humo lo detecta |
 | Un decode supera los 120 s del ack, Pub/Sub reentrega, el duplicado se saltea y el primero falla después | MB | B | Medido: 0,05–0,2 s por documento. Si pasara, el documento queda en `fallido`, conservado y con ingreso manual |
-| OOM con varios documentos grandes en una instancia | B | B | Concurrencia 4 (pico medido ~670 MB con fotos de 12 MP). Un OOM deja la fila en `procesando`; el cron la libera a los 30 min |
+| OOM con varios documentos grandes en una instancia | B | B | Concurrencia 4 (pico medido ~670 MB con fotos normales de 12 MP). Un OOM deja la fila en `procesando`; el cron la libera a los 30 min. Una imagen **hostil** (16000×16000 en 1,5 MB) sí tumba la instancia: es un riesgo previo, que existe igual en pull (§5, follow-up) |
 | Un mensaje que falla siempre despierta instancias en cada reintento | B | B | 5 intentos y DLQ (SC-7), más la alerta |
 | Arranque en frío en el primer documento | A | B | El decode es asíncrono; la subida no espera |
 | Un release vuelve a fijar el mínimo | MB | B | SC-6; ningún otro pipeline despliega este servicio (verificado) |
@@ -104,7 +107,7 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 ## 10. Rollout (PO)
 
 1. **Mergear.** El release que sale del merge trae la imagen con los dos modos. Sin `DOCUMENT_CONSUMER_MODE`, la imagen se comporta igual que hoy (pull), y el release ya no toca el mínimo ni la CPU.
-2. **Apply con el flag apagado**, antes o después del release: la imagen vieja ignora las env nuevas (su schema Zod no es estricto) y sigue en pull. Debe dar **7 to add, 1 to change, 0 to destroy**: en el servicio, solo las dos env y `max_instance_request_concurrency: 80 -> 4`; la suscripción no cambia.
+2. **Apply con el flag apagado**, antes o después del release: la imagen vieja ignora las env nuevas (su schema Zod no es estricto) y sigue en pull. Debe dar **7 to add, 1 to change, 0 to destroy**: en el servicio, solo las tres env, la custom audience y `max_instance_request_concurrency: 80 -> 4`; la suscripción no cambia.
    ```bash
    terraform plan \
      -target=module.service_document \
@@ -115,7 +118,7 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
      -target=google_pubsub_topic_iam_member.dlq_publisher_pubsub_agent \
      -target=google_pubsub_subscription_iam_member.document_uploaded_dlq_subscriber \
      -target=google_monitoring_alert_policy.document_uploaded_dead_lettered \
-     -target='google_monitoring_alert_policy.wave2_consumer_stalled["document_uploaded"]'
+     -target=google_monitoring_alert_policy.document_uploaded_stalled
    ```
 3. **Encender**: `document_service_push = true` (PR de una línea en `variables.tf`, pregunta 1). Con el mismo `-target`, el plan debe dar **0 to add, 2 to change**:
    - servicio: `min_instance_count 1 -> 0`, `cpu_idle false -> true`, `DOCUMENT_CONSUMER_MODE pull -> push`;
@@ -127,7 +130,16 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 6. A las 48 h: el costo diario del servicio en el export por recurso, en ~0 (SC-10).
 7. A las dos semanas estable: commit aparte que retira el modo pull y el flag.
 
-**Rollback**: `document_service_push = false` y apply con el mismo `-target`. La imagen no cambia. Si el apply no puede correr, el corte manual es `gcloud pubsub subscriptions modify-push-config document-uploaded-processor-sub --push-endpoint=""`; después, igual hay que aplicar.
+**Rollback** (la imagen no cambia), en este orden:
+
+1. `gcloud pubsub subscriptions modify-push-config document-uploaded-processor-sub --push-endpoint=""`. La suscripción vuelve a pull y los mensajes quedan retenidos.
+2. `document_service_push = false` y apply con el mismo `-target`. El plan ya no muestra cambios en la suscripción, porque la refresca en pull.
+3. Verificar:
+   - `pushConfig` vacío;
+   - `subscription/open_streaming_pulls > 0`;
+   - la prueba de humo, que ahora consume el pull.
+
+El orden importa: Terraform actualiza el servicio antes que la suscripción, y un StreamingPull rechazado contra una suscripción todavía en push podría no reintentarse (§9).
 
 ## 11. Preguntas para el PO
 

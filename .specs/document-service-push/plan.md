@@ -20,8 +20,8 @@ Tiempo y memoria del ingestor real, en serie y en paralelo. Fija la concurrencia
 - `variables.tf`: `document_service_push`.
 - `compute.tf`: `service_document`.
 - `messaging.tf`: `push_config`, SA e IAM del push y de la DLQ.
-- Módulo `cloud-run-service`: `max_instance_request_concurrency`.
-- Alertas en `telemetry-monitoring.tf` y `document-service.tf`.
+- Módulo `cloud-run-service`: `max_instance_request_concurrency` y `custom_audiences`.
+- Alertas propias en `document-service.tf`.
 
 ### T6 [DONE]: que el deploy no lo deshaga
 `cloudbuild.production.yaml`: sin `--min-instances` ni `--no-cpu-throttling` en `deploy-document-service`.
@@ -32,5 +32,13 @@ ADR-085, runbooks (`service-document-service.md`, `README.md`, `rollback-drill-m
 ### T8 [DONE]: gates
 Tests, cobertura, typecheck, Biome, build, lint-rls, humo local, `terraform fmt`/`validate`, plan acotado con el flag apagado y encendido, y check-adr-numbering (`verify.md` §5–6).
 
-### T9: revisión
-code-reviewer y security-auditor sobre el diff. Hallazgos y respuesta en `review.md`.
+### T9 [DONE]: revisión
+code-reviewer y security-auditor sobre el primer commit. Sin hallazgos críticos ni altos. Corregidos en el segundo commit:
+- `aud` verificado en la app (custom audience);
+- logs de auth en `error`;
+- drain del pull;
+- alertas propias;
+- rollback en dos pasos;
+- rol OpenID Token Creator.
+
+Dos riesgos previos del worker quedan como follow-up: imagen hostil en sharp y claim atado solo a `documentId`. Detalle en `review.md`.

@@ -7,6 +7,9 @@ resource "google_cloud_run_v2_service" "service" {
   # servicios servidos vía GCLB lo restringen a internal-and-cloud-LB.
   ingress = var.ingress
 
+  # null = sin custom audiences (lo de siempre). Ver variables.tf.
+  custom_audiences = var.custom_audiences
+
   deletion_protection = var.deletion_protection
 
   template {

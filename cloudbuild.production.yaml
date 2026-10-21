@@ -175,7 +175,7 @@ steps:
       - .
     waitFor: ['-']
 
-  # apps/document-service — worker TED (consumer Pub/Sub pull). T10-21.
+  # apps/document-service — worker TED (consumer Pub/Sub, pull o push según ADR-085). T10-21.
   - id: build-document-service
     name: gcr.io/cloud-builders/docker
     args:

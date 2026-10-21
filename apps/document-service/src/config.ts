@@ -32,6 +32,13 @@ const envSchema = z
      */
     PUSH_CALLER_SA: z.string().email().optional(),
 
+    /**
+     * `aud` que debe traer el OIDC del push: `local.cloud_run_document_url`
+     * (compute.tf), que la suscripción usa como audience y el servicio declara
+     * como custom audience. Va junto con PUSH_CALLER_SA.
+     */
+    PUSH_OIDC_AUDIENCE: z.string().url().optional(),
+
     /** Subscription del topic `document.uploaded` (messaging.tf). Solo la usa el modo pull. */
     PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED: z.string().default('document-uploaded-processor-sub'),
 
@@ -66,13 +73,26 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
   })
   .superRefine((env, ctx) => {
-    // En modo push, sin el SA esperado no hay forma de autenticar a Pub/Sub:
-    // el worker no arranca en vez de rechazar cada mensaje con 404.
-    if (env.DOCUMENT_CONSUMER_MODE === 'push' && env.PUSH_CALLER_SA === undefined) {
+    const hasSa = env.PUSH_CALLER_SA !== undefined;
+    const hasAudience = env.PUSH_OIDC_AUDIENCE !== undefined;
+    // En modo push, sin el emisor y el aud esperados no hay forma de
+    // autenticar a Pub/Sub: el worker no arranca en vez de rechazar cada
+    // mensaje.
+    if (env.DOCUMENT_CONSUMER_MODE === 'push' && !(hasSa && hasAudience)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['PUSH_CALLER_SA'],
-        message: 'PUSH_CALLER_SA es obligatorio con DOCUMENT_CONSUMER_MODE=push',
+        path: [hasSa ? 'PUSH_OIDC_AUDIENCE' : 'PUSH_CALLER_SA'],
+        message:
+          'PUSH_CALLER_SA y PUSH_OIDC_AUDIENCE son obligatorios con DOCUMENT_CONSUMER_MODE=push',
+      });
+      return;
+    }
+    // Uno sin el otro dejaría el endpoint push a medio configurar.
+    if (hasSa !== hasAudience) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [hasSa ? 'PUSH_OIDC_AUDIENCE' : 'PUSH_CALLER_SA'],
+        message: 'PUSH_CALLER_SA y PUSH_OIDC_AUDIENCE van juntos',
       });
     }
   });

@@ -85,6 +85,18 @@ variable "max_instance_request_concurrency" {
   EOT
 }
 
+variable "custom_audiences" {
+  type        = list(string)
+  default     = null
+  description = <<-EOT
+    Audiences extra que Cloud Run IAM acepta en el `aud` del ID token, además de
+    la URL run.app que el servicio ya acepta. `null` (default) no las gestiona.
+    Sirve para que el caller y el servicio compartan un `aud` que Terraform
+    conoce antes de crear el servicio, sin el ciclo de leer `uri` (ADR-085,
+    push de document-service).
+  EOT
+}
+
 variable "timeout_seconds" {
   type    = number
   default = 300

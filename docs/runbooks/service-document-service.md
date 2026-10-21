@@ -20,11 +20,11 @@
 | Recurso | Detalle |
 |---|---|
 | **Pub/Sub** | sub `document-uploaded-processor-sub` (ack deadline 120 s, **DLQ `pubsub-dead-letter` tras 5 intentos**, retry 10 s–600 s). En push, ack = respuesta 204 y nack = 500/401/403/404. El reenvío a la DLQ necesita que el service agent de Pub/Sub tenga `pubsub.publisher` sobre `pubsub-dead-letter` y `pubsub.subscriber` sobre esta sub (`messaging.tf`). |
-| **IAM del push** | SA `document-push-invoker@` (`messaging.tf`): `run.invoker` solo sobre este servicio; el service agent de Pub/Sub tiene Token Creator sobre él. |
+| **IAM del push** | SA `document-push-invoker@` (`messaging.tf`): `run.invoker` solo sobre este servicio; el service agent de Pub/Sub tiene `serviceAccountOpenIdTokenCreator` sobre él. El servicio declara la audience del push (`PUSH_OIDC_AUDIENCE`, URL run.app determinista) como custom audience. |
 | **GCS bucket `documents`** | `{project}-documents-{env}` (env `DOCUMENTS_BUCKET`). **Retención SII 6 años**, CMEK key `documents`. Objetos en `transport-documents/<tripId>/<uuid>.<ext>`. El worker **nunca borra ni reescribe** el objeto original (retención legal, O-3). |
 | **Postgres** | tabla `documentos_transporte` (`extraction_status`, `decodificado` JSONB, `ted_raw`, `retention_until`). |
 
-Env vars (`apps/document-service/src/config.ts`, Zod): `DATABASE_URL` (secret), `GOOGLE_CLOUD_PROJECT`, `DOCUMENTS_BUCKET` (required), `DOCUMENT_CONSUMER_MODE` (`pull`|`push`, default `pull`), `PUSH_CALLER_SA` (obligatorio en push), `PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED` (default `document-uploaded-processor-sub`, solo pull), `MAX_MESSAGES_IN_FLIGHT` (default 5, solo pull).
+Env vars (`apps/document-service/src/config.ts`, Zod): `DATABASE_URL` (secret), `GOOGLE_CLOUD_PROJECT`, `DOCUMENTS_BUCKET` (required), `DOCUMENT_CONSUMER_MODE` (`pull`|`push`, default `pull`), `PUSH_CALLER_SA` y `PUSH_OIDC_AUDIENCE` (juntos; obligatorios en push), `PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED` (default `document-uploaded-processor-sub`, solo pull), `MAX_MESSAGES_IN_FLIGHT` (default 5, solo pull).
 
 > La lógica de dominio (parser `<DD>`, cálculo de retención) vive en `packages/transport-documents`, no inline (C-4).
 
@@ -35,7 +35,7 @@ Env vars (`apps/document-service/src/config.ts`, Zod): `DATABASE_URL` (secret), 
 | Alerta (policy) | Significado |
 |---|---|
 | `document-service: mensajes de document.uploaded enviados a la DLQ (ERROR)` (`document-service.tf`) | un mensaje agotó sus 5 intentos. En push, casi siempre OIDC/IAM/endpoint mal aplicados (ver §Push) o GCS/DB caídos |
-| `Wave2 document_uploaded consumer stalled — oldest unacked > 30min (ERROR)` (`telemetry-monitoring.tf`) | hay un mensaje sin confirmar hace 30 min: en pull, no hay instancia consumiendo; en push, Pub/Sub no logra entregar ni reenviar a la DLQ |
+| `document-service: document.uploaded sin confirmar > 30 min (ERROR)` (`document-service.tf`) | hay un mensaje sin confirmar hace 30 min: en pull, no hay instancia consumiendo; en push, Pub/Sub no logra entregar ni reenviar a la DLQ |
 | `Pub/Sub DLQ has messages` (`monitoring.tf:194`) | **no se dispara hoy**: mira `num_unacked_messages_by_region` del topic `pubsub-dead-letter`, que no tiene suscripción. Usar la alerta de DLQ propia (primera fila) |
 | (operacional) documentos quedan en `extraction_status='pendiente'` o `'procesando'` y no avanzan | el consumer no consume, o falla la decodificación/GCS/DB |
 | (operacional) muchos `extraction_status='fallido'` | TED ilegible (PDF malo) o regresión del decoder |
@@ -60,9 +60,10 @@ gcloud logging read 'resource.type="cloud_run_revision"
   resource.labels.service_name="booster-ai-document-service"' \
   --project=$PROJECT --limit=50 --freshness=1h
 
-# 3. Errores
+# 3. Errores y rechazos. WARNING incluye los 4xx que registra Cloud Run
+#    (p. ej. el 403 de IAM, que no llega a la app).
 gcloud logging read 'resource.type="cloud_run_revision"
-  resource.labels.service_name="booster-ai-document-service" severity>=ERROR' \
+  resource.labels.service_name="booster-ai-document-service" severity>=WARNING' \
   --project=$PROJECT --limit=40 --freshness=1h
 
 # 4. Backlog de la subscription (¿se está acumulando?)
@@ -81,7 +82,7 @@ gcloud pubsub subscriptions describe document-uploaded-processor-sub --project=$
   --format='value(pushConfig.pushEndpoint)'          # vacío = pull
 gcloud run services describe $SVC --region=$REGION --project=$PROJECT \
   --format='yaml(spec.template.metadata.annotations,spec.template.spec.containers[0].env)' \
-  | grep -E 'minScale|cpu-throttling|DOCUMENT_CONSUMER_MODE'
+  | grep -E -A1 'minScale|cpu-throttling|DOCUMENT_CONSUMER_MODE'   # -A1: el value va en la línea siguiente
 ```
 
 ---
@@ -101,13 +102,13 @@ gcloud run services describe $SVC --region=$REGION --project=$PROJECT \
 
 ## Push: Pub/Sub no logra entregar (ADR-085)
 
-Los rechazos del endpoint se ven en los logs de la revisión y en el `request_count` del servicio por código de respuesta.
+Los rechazos del endpoint se ven en los logs de la revisión (`severity>=WARNING`: la app registra los 401 como ERROR y Cloud Run registra los 4xx como WARNING) y en el `request_count` del servicio por código de respuesta.
 
 | Código / log | Causa | Arreglo |
 |---|---|---|
 | `403` en `request_count`, sin log de la app | `document-push-invoker@` sin `run.invoker` sobre el servicio | reaplicar Terraform (`google_cloud_run_v2_service_iam_member.document_push_invoker`) |
-| `401` + `push document.uploaded: emisor no autorizado` | el OIDC no es de `PUSH_CALLER_SA` (sub con otro SA, o env mal seteada) | `gcloud pubsub subscriptions describe … --format='value(pushConfig.oidcToken)'` debe mostrar `document-push-invoker@`; reaplicar Terraform |
-| `401` + `push document.uploaded: ID token inválido` | firma o vencimiento del token | si es sistemático, ver el mensaje del error en el log; rollback a pull (abajo) mientras se investiga |
+| `401` + `push document.uploaded: emisor no autorizado` | el OIDC no es de `PUSH_CALLER_SA` (sub con otro SA, o env mal seteada). El log trae `emailDomain`, no el email | `gcloud pubsub subscriptions describe … --format='value(pushConfig.oidcToken)'` debe mostrar `document-push-invoker@`; reaplicar Terraform |
+| `401` + `push document.uploaded: ID token inválido` | `aud` distinto de `PUSH_OIDC_AUDIENCE` (`Wrong recipient` en el error), firma o vencimiento | la `audience` del `oidcToken` de la sub debe ser igual a `PUSH_OIDC_AUDIENCE` del servicio; si no es eso y es sistemático, rollback a pull (abajo) mientras se investiga |
 | `404` | la revisión viva no tiene el endpoint (imagen anterior a ADR-085) | desplegar el release con el endpoint, o rollback a pull |
 | `500` + `error procesando document.uploaded, nack para reintento` | GCS o la base fallan | igual que en pull (sección anterior, paso 3) |
 | sin requests y backlog creciendo | Pub/Sub no llega al servicio (ingress, URL) | el `pushEndpoint` debe ser la URL `run.app` del servicio, no un dominio propio: con `INTERNAL_ONLY` solo esa URL cuenta como tráfico interno |
@@ -166,7 +167,25 @@ gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT \
 >
 > Con la sub en push, volver a una revisión anterior a ADR-085 deja el endpoint en 404: primero el rollback del modo.
 
-**Rollback del modo (push → pull, ADR-085)**: `document_service_push = false` y `terraform apply` con el mismo `-target` del rollout (`.specs/document-service-push/spec.md` §10). Un solo apply vuelve la sub a pull, el modo a `pull`, `min=1` y la CPU siempre asignada; la imagen no cambia (sirve los dos modos). Si el apply no puede correr, el corte manual de la entrega es `gcloud pubsub subscriptions modify-push-config document-uploaded-processor-sub --project=$PROJECT --push-endpoint=""` (endpoint vacío = pull): los mensajes quedan retenidos hasta que haya un consumidor pull. Después igual hay que aplicar Terraform para que el servicio vuelva a `min=1` y modo `pull`.
+**Rollback del modo (push → pull, ADR-085)**. La imagen no cambia: sirve los dos modos. Va en dos pasos y **en este orden**, porque Terraform actualiza el servicio antes que la suscripción, y un StreamingPull rechazado contra una suscripción todavía en push podría no reintentarse:
+
+```bash
+# 1. La suscripción a pull (endpoint vacío). Los mensajes quedan retenidos.
+gcloud pubsub subscriptions modify-push-config document-uploaded-processor-sub \
+  --project=$PROJECT --push-endpoint=""
+# 2. document_service_push = false y terraform apply con el mismo -target del
+#    rollout (.specs/document-service-push/spec.md §10). El servicio vuelve a
+#    min=1, CPU siempre asignada y modo pull. El plan ya no muestra cambios en
+#    la suscripción.
+# 3. Verificar: pushConfig vacío (diagnóstico 5), StreamingPull abierto y la
+#    prueba de humo del push, ahora consumida por el pull.
+gcloud monitoring time-series list --project=$PROJECT \
+  --filter='metric.type="pubsub.googleapis.com/subscription/open_streaming_pulls" AND resource.labels.subscription_id="document-uploaded-processor-sub"' \
+  --interval-start-time=$(date -u -v-10M +%Y-%m-%dT%H:%M:%SZ) --interval-end-time=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --format='value(points[0].value.int64Value)'   # > 0
+```
+
+Si `open_streaming_pulls` queda en 0 con la sub ya en pull, el cliente se cerró: los logs dicen `subscription error`. Forzar una revisión nueva con un cambio de env, que siempre crea revisión: `gcloud run services update $SVC --region=$REGION --project=$PROJECT --update-env-vars=REINICIO=<timestamp>`. El siguiente `terraform apply` quita esa env.
 
 ---
 
