@@ -631,6 +631,19 @@ resource "google_monitoring_dashboard" "telemetry_overview" {
 # no se está entregando.
 locals {
   wave2_stall_alerts = {
+    # ADR-085: en push un mensaje que nadie confirma (endpoint caído, IAM o
+    # ingress mal aplicados, reenvío a la DLQ que no anda) envejece en la
+    # suscripción. Un documento se decodifica en segundos y el cron
+    # documentos-pendientes republica cada 15 min, así que 30 min sin ack es
+    # una falla, no un documento lento. Los errores que sí agotan los 5 intentos
+    # los avisa `document_uploaded_dead_lettered` (document-service.tf).
+    document_uploaded = {
+      subscription_id = "document-uploaded-processor-sub"
+      threshold_s     = 1800 # 30 min
+      severity        = "ERROR"
+      consumer        = "document-service (pull o push según var.document_service_push)"
+      detail          = "Los documentos subidos no se están decodificando: el TED queda sin extraer y el documento en `pendiente`. Runbook: docs/runbooks/service-document-service.md."
+    }
     safety_p0 = {
       subscription_id = "telemetry-events-safety-p0-notification-sub"
       threshold_s     = 600 # 10 min — fan-out de eventos panic, debe ackear en <30s

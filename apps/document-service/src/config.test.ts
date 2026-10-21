@@ -52,4 +52,55 @@ describe('loadConfig — boundary Zod del worker TED', () => {
     process.env = { ...process.env, ...minimal, MAX_MESSAGES_IN_FLIGHT: '0' };
     expect(() => loadConfig()).toThrow(InvalidConfigError);
   });
+
+  // ADR-085: el modo de consumo lo fija Terraform junto con la suscripción.
+  describe('DOCUMENT_CONSUMER_MODE', () => {
+    const SA = 'document-push-invoker@booster-ai-494222.iam.gserviceaccount.com';
+
+    it('por defecto es pull y sin SA de push (imagen nueva antes del apply = comportamiento de hoy)', () => {
+      process.env = { ...process.env, ...minimal };
+      const config = loadConfig();
+      expect(config.DOCUMENT_CONSUMER_MODE).toBe('pull');
+      expect(config.PUSH_CALLER_SA).toBeUndefined();
+    });
+
+    it('acepta push con el SA del push', () => {
+      process.env = {
+        ...process.env,
+        ...minimal,
+        DOCUMENT_CONSUMER_MODE: 'push',
+        PUSH_CALLER_SA: SA,
+      };
+      const config = loadConfig();
+      expect(config.DOCUMENT_CONSUMER_MODE).toBe('push');
+      expect(config.PUSH_CALLER_SA).toBe(SA);
+    });
+
+    it('no arranca en push sin PUSH_CALLER_SA', () => {
+      process.env = { ...process.env, ...minimal, DOCUMENT_CONSUMER_MODE: 'push' };
+      expect(() => loadConfig()).toThrow(InvalidConfigError);
+      try {
+        loadConfig();
+      } catch (err) {
+        expect((err as InvalidConfigError).issues).toEqual([
+          {
+            path: 'PUSH_CALLER_SA',
+            message: 'PUSH_CALLER_SA es obligatorio con DOCUMENT_CONSUMER_MODE=push',
+          },
+        ]);
+      }
+    });
+
+    it('rechaza un modo desconocido o un SA que no es email', () => {
+      process.env = { ...process.env, ...minimal, DOCUMENT_CONSUMER_MODE: 'eventarc' };
+      expect(() => loadConfig()).toThrow(InvalidConfigError);
+      process.env = {
+        ...process.env,
+        ...minimal,
+        DOCUMENT_CONSUMER_MODE: 'pull',
+        PUSH_CALLER_SA: 'x',
+      };
+      expect(() => loadConfig()).toThrow(InvalidConfigError);
+    });
+  });
 });

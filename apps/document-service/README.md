@@ -18,6 +18,22 @@ del `<DD>` + `ted_raw` + `retention_until`) o `fallido` en
 (retención legal 6 años, O-3). ack/nack con DLQ tras 5 intentos
 (`messaging.tf`).
 
+## Pull o push (ADR-085)
+
+`DOCUMENT_CONSUMER_MODE` elige el transporte; lo fija Terraform con
+`var.document_service_push`, junto con la suscripción y el mínimo de
+instancias:
+
+- `pull` (default): StreamingPull dentro del container. Necesita
+  `min_instances=1` y CPU siempre asignada.
+- `push`: Pub/Sub hace `POST /pubsub/document-uploaded` con un OIDC de
+  `PUSH_CALLER_SA`. El servicio escala a cero. 204 = ack, 500 = nack,
+  401 = token rechazado.
+
+`/health` y el endpoint push corren en los dos modos. La decisión ack/nack es
+la misma en los dos (`src/handle-document-uploaded.ts`); los adapters son
+`src/main.ts` (pull) y `src/http-server.ts` + `src/push-auth.ts` (push).
+
 > La lógica de dominio (parser `<DD>`, cálculo de retención, ingestor) vive en
 > `packages/transport-documents`, no inline acá (C-4). La verificación
 > criptográfica de la firma `<FRMT>` está fuera de alcance de 4b (gate C-7 §6).

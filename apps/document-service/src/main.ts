@@ -7,10 +7,15 @@ import pg from 'pg';
 import { loadConfig } from './config.js';
 import { createDrizzleDocumentStore } from './document-store.js';
 import { createGcsDownloader } from './gcs-downloader.js';
-import {
-  documentUploadedMessageSchema,
-  processDocumentUploaded,
-} from './process-document-uploaded.js';
+import { createDocumentUploadedHandler } from './handle-document-uploaded.js';
+import { PUSH_PATH, createHttpHandler } from './http-server.js';
+import { createPushTokenVerifier } from './push-auth.js';
+
+/**
+ * Cloud Run da 10 s entre SIGTERM y SIGKILL. Se espera a los push en curso
+ * hasta este tope para no dejar una fila en `procesando` a mitad de decode.
+ */
+const SHUTDOWN_DRAIN_MS = 8_000;
 
 /**
  * document-service: worker Cloud Run que consume `document.uploaded` (frente
@@ -22,10 +27,17 @@ import {
  *   - ack si procesó (o skip idempotente); nack si error transitorio (GCS/DB)
  *     → reintento → DLQ tras `max_delivery_attempts` (messaging.tf, =5).
  *
+ * Dos transportes (ADR-085), elegidos por `DOCUMENT_CONSUMER_MODE`:
+ *
+ *   - `pull`: StreamingPull dentro del container (`min_instances=1`, CPU
+ *     siempre asignada).
+ *   - `push`: Pub/Sub hace POST a `/pubsub/document-uploaded` y el servicio
+ *     escala a cero.
+ *
+ * El HTTP (`/health` y el endpoint push) corre en los dos modos.
+ *
  * El worker NO emite DTE ni toca el SII (ADR-069); solo extrae el <DD> del TED
  * y lo archiva. No borra ni reescribe el objeto GCS original (O-3, retención).
- *
- * Health probe HTTP /health para Cloud Run liveness.
  */
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -39,6 +51,8 @@ async function main(): Promise<void> {
   logger.info(
     {
       project: config.GOOGLE_CLOUD_PROJECT,
+      mode: config.DOCUMENT_CONSUMER_MODE,
+      pushEndpoint: config.PUSH_CALLER_SA === undefined ? null : PUSH_PATH,
       subscription: config.PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED,
       bucket: config.DOCUMENTS_BUCKET,
       maxInFlight: config.MAX_MESSAGES_IN_FLIGHT,
@@ -53,92 +67,87 @@ async function main(): Promise<void> {
   });
   const db = drizzle(pool);
 
-  const store = createDrizzleDocumentStore({ db, logger });
-  const downloader = createGcsDownloader({
-    bucket: config.DOCUMENTS_BUCKET,
-    projectId: config.GOOGLE_CLOUD_PROJECT,
+  const handleMessage = createDocumentUploadedHandler({
+    store: createDrizzleDocumentStore({ db, logger }),
+    downloader: createGcsDownloader({
+      bucket: config.DOCUMENTS_BUCKET,
+      projectId: config.GOOGLE_CLOUD_PROJECT,
+    }),
+    ingestor: createPdfTedIngestor(),
+    logger,
   });
-  const ingestor = createPdfTedIngestor();
 
-  const pubsub = new PubSub({ projectId: config.GOOGLE_CLOUD_PROJECT });
-  const subscription: Subscription = pubsub.subscription(
-    config.PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED,
-    { flowControl: { maxMessages: config.MAX_MESSAGES_IN_FLIGHT } },
+  let subscription: Subscription | null = null;
+  if (config.DOCUMENT_CONSUMER_MODE === 'pull') {
+    const pubsub = new PubSub({ projectId: config.GOOGLE_CLOUD_PROJECT });
+    const pullSubscription = pubsub.subscription(config.PUBSUB_SUBSCRIPTION_DOCUMENT_UPLOADED, {
+      flowControl: { maxMessages: config.MAX_MESSAGES_IN_FLIGHT },
+    });
+    pullSubscription.on('message', (message: Message) => {
+      handleMessage({
+        data: message.data,
+        messageId: message.id,
+        deliveryAttempt: message.deliveryAttempt,
+      })
+        .then((decision) => (decision === 'ack' ? message.ack() : message.nack()))
+        .catch((err: unknown) => {
+          logger.error(
+            { err, messageId: message.id },
+            'error procesando document.uploaded, nack para reintento',
+          );
+          message.nack();
+        });
+    });
+    pullSubscription.on('error', (err) => {
+      logger.error({ err }, 'subscription error');
+    });
+    subscription = pullSubscription;
+  }
+
+  const server = http.createServer(
+    createHttpHandler({
+      logger,
+      ...(config.PUSH_CALLER_SA === undefined
+        ? {}
+        : {
+            push: {
+              verifyToken: createPushTokenVerifier({
+                allowedCallerSa: config.PUSH_CALLER_SA,
+                logger,
+              }),
+              handleMessage,
+            },
+          }),
+    }),
   );
+  server.listen(config.HEALTH_PORT, () => {
+    logger.info({ port: config.HEALTH_PORT }, 'http listening (health + push)');
+  });
 
-  const messageHandler = async (message: Message): Promise<void> => {
-    const start = Date.now();
-    try {
-      const body = JSON.parse(message.data.toString('utf-8'));
-      const parsed = documentUploadedMessageSchema.safeParse(body);
-      if (!parsed.success) {
-        logger.error(
-          {
-            messageId: message.id,
-            errors: parsed.error.issues,
-            bodyPreview: message.data.toString('utf-8').slice(0, 200),
-          },
-          'document.uploaded malformado, ack para descartar (no reintentar)',
-        );
-        message.ack();
-        return;
-      }
-
-      const outcome = await processDocumentUploaded({
-        message: parsed.data,
-        store,
-        downloader,
-        ingestor,
+  const closeServer = (): Promise<void> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        logger.warn({ drainMs: SHUTDOWN_DRAIN_MS }, 'shutdown: requests en curso sin terminar');
+        resolve();
+      }, SHUTDOWN_DRAIN_MS);
+      server.close(() => {
+        clearTimeout(timer);
+        resolve();
       });
-
-      message.ack();
-      logger.info(
-        {
-          messageId: message.id,
-          documentId: parsed.data.documentId,
-          viajeId: parsed.data.viajeId,
-          outcome,
-          latencyMs: Date.now() - start,
-        },
-        'document.uploaded procesado',
-      );
-    } catch (err) {
-      // Error transitorio (GCS/DB): nack → reintento → DLQ tras 5 intentos.
-      logger.error(
-        { err, messageId: message.id },
-        'error procesando document.uploaded, nack para reintento',
-      );
-      message.nack();
-    }
-  };
-
-  subscription.on('message', (m) => void messageHandler(m));
-  subscription.on('error', (err) => {
-    logger.error({ err }, 'subscription error');
-  });
-
-  const healthServer = http.createServer((req, res) => {
-    if (req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'document-service' }));
-      return;
-    }
-    res.writeHead(404);
-    res.end();
-  });
-  healthServer.listen(config.HEALTH_PORT, () => {
-    logger.info({ port: config.HEALTH_PORT }, 'health probe listening');
-  });
+      server.closeIdleConnections();
+    });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'shutdown requested');
-    try {
-      await subscription.close();
-      logger.info('subscription closed');
-    } catch (e) {
-      logger.error({ err: e }, 'error closing subscription');
+    if (subscription !== null) {
+      try {
+        await subscription.close();
+        logger.info('subscription closed');
+      } catch (e) {
+        logger.error({ err: e }, 'error closing subscription');
+      }
     }
-    healthServer.close();
+    await closeServer();
     try {
       await pool.end();
       logger.info('pg pool closed');
