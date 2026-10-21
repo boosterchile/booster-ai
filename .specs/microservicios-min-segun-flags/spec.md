@@ -2,10 +2,21 @@
 
 - Author: Felipe Vicencio (con Claude)
 - Date: 2026-10-21
-- Status: Draft — el PO pidió preparar el PR (2026-10-21); se aprueba con la revisión del PR
+- Status: **Propuesta, pendiente de aceptación explícita del PO.** El PO pidió preparar el PR (2026-10-21) a partir de la recomendación de la auditoría, pero este cambio **contradice dos specs aceptadas** (ver §0). No se mergea hasta que el PO acepte la enmienda y quede registrada aquí
 - Origen: auditoría de costos GCP del 2026-10-21 (`.specs/recorte-logs-gke-cert-manager/verify.md` en el PR #821 tiene la línea base de costo).
 - Relacionado: ADR-083 (extracción con shadow en prod), T10-21 (`.specs/notification-service-t10-21/`, `.specs/matching-engine-t10-21/`), runbooks `service-notification-service.md` y `service-matching-engine.md`.
 - El `terraform apply` lo ejecuta el PO. Este PR no aplica nada.
+
+## 0. Conflicto con specs aceptadas (requiere decisión del PO)
+
+| Spec aceptada | Qué fija hoy | Qué propone este PR |
+|---|---|---|
+| `.specs/notification-service-t10-21/spec.md` (aceptada 2026-10-08), línea 60 | `min_instances = 1`, `cpu_idle = false` (consumer pull) | `min_instances = 1` **solo con un flag `notifications_*` encendido**; 0 con los dos apagados. `cpu_idle = false` no cambia |
+| `.specs/matching-engine-t10-21/spec.md` (aceptada 2026-10-08), sección «Costo» | `min_instances = 1` contra el cold start, «del orden de USD 10/mes en idle» | `min_instances = 1` **solo con un flag `matching_*` encendido**; 0 con los dos apagados |
+
+Las dos specs justifican el mínimo con el trabajo que el servicio hace cuando está en el camino (consumir la cola, evitar el cold start del matching síncrono). Con los flags apagados ese trabajo no existe (§1), así que la enmienda conserva la regla mientras haya un flag encendido y solo la quita mientras no lo haya. Igual es un cambio a una decisión cerrada: el contrato del repo pide escalarla, no resolverla. Las dos specs llevan una nota que apunta a esta enmienda como pendiente.
+
+**Registro de aceptación:** _(pendiente — se completa con la fecha y la frase del PO cuando acepte)_
 
 ## 1. Objective
 
@@ -72,11 +83,22 @@ Ninguno. Con los flags apagados ningún usuario pasa por estos servicios.
 | El rollback del canal apaga los dos flags juntos y deja mensajes sin consumidor | M | M | El runbook ahora hace el rollback a sombra (`min=1`), espera `num_undelivered_messages = 0` y recién ahí apaga la sombra. Los mensajes `modo: 'enviar'` se entregan igual en sombra (`procesar-evento.ts`) |
 | Alguien publica en `notification-events` con el servicio en cero | MB | M | El único publicador es el api, y solo con un flag encendido (código + 0 mensajes en 30 días). La suscripción retiene 1 día: los mensajes esperan al consumidor |
 | Primer request a matching-engine con arranque en frío cuando se encienda la sombra | B | B | El mismo apply sube el mínimo a 1. En sombra la llamada es fire-and-forget; en modo microservicio el timeout de 3 s cae al ranking local |
-| El apply muestra drift previo en esos módulos | M | B | Plan con `-target` a los dos módulos y revisar que solo cambie `min_instance_count` (SC-4) |
+| Al apagar el último flag, el `depends_on` baja el mínimo del servicio antes de cambiar el api; lo que el api publique en esa ventana puede quedar sin consumir (Codex, PR #822) | M | B | El orden fijo protege el encendido, que es el caso con impacto. Al apagar, el runbook obliga a pasar por la sombra: en el último apply (`shadow=false`) el api solo publica eventos `modo: 'sombra'`, que comparan hashes y nunca envían, así que lo que quede varado no le llega a nadie. La instancia de la revisión nueva suele seguir viva unos minutos y consume la ventana; si después quedan mensajes, son de sombra y se purgan (runbook). Apagar `via_microservice` y `shadow` en un solo apply sí dejaría `modo: 'enviar'` varados: el runbook lo prohíbe |
+| El apply muestra drift previo en esos módulos | M | B | Plan con `-target` a los dos módulos guardado con `-out` y aplicado desde ese archivo (§10) |
 
 ## 10. Rollout (PO)
 
 1. Mergear. El release que sale del merge ya no fija `--min-instances`, y los servicios conservan su `min=1` vivo hasta el apply.
-2. `terraform plan -target=module.service_matching_engine -target=module.service_notification -target='google_monitoring_alert_policy.wave2_consumer_stalled["notification_events"]'`: revisar que en los dos servicios solo cambie `min_instance_count: 1 → 0` y que la alerta sea 1 to add. Luego, apply. (Un plan completo también muestra el `RESEND_API_KEY` del api si el tfvars no trae `resend_api_key_ready = true`; ver `verify.md` §4.)
+2. Guardar el plan acotado y aplicar **ese archivo**, no un `apply` sin argumentos (un `apply` nuevo recalcula un plan completo, y sin `resend_api_key_ready = true` en el tfvars le quita `RESEND_API_KEY` al api: los correos de activación y de PIN dejarían de salir; ver `verify.md` §4):
+
+   ```bash
+   cd infrastructure
+   terraform plan -out=pr822.tfplan \
+     -target=module.service_matching_engine \
+     -target=module.service_notification \
+     -target='google_monitoring_alert_policy.wave2_consumer_stalled["notification_events"]'
+   terraform show pr822.tfplan   # 1 to add, 2 to change, 0 to destroy; solo min_instance_count 1 -> 0
+   terraform apply pr822.tfplan
+   ```
 3. Después del apply y después del siguiente release: `gcloud run services describe` de los dos servicios debe mostrar `minScale` 0 (o ausente) en el template. Un release que haya leído el template antes del apply podría reescribirlo.
 4. A las 48 h, revisar SC-6.

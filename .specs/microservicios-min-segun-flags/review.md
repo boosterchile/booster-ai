@@ -29,3 +29,11 @@ Sin hallazgos críticos.
 | Info | `telemetry-events-security-p1-notification-sub` no tiene consumidor ni publicador en el código (telemetry-processor solo publica en safety-p0), y su alerta nombra a notification-service. Los eventos antirrobo P1 no se notifican a nadie | **Fuera de alcance**: es un hueco previo que este PR no cambia. Se reporta al PO |
 
 Confirmado: el cambio no toca IAM, ingress, secretos ni la verificación de identidad entre el api y matching-engine.
+
+## Codex (revisión automática del PR, commit c2cf748)
+
+| Severidad | Hallazgo | Respuesta |
+|---|---|---|
+| P1 | El cambio contradice dos specs aceptadas (`notification-service-t10-21` y `matching-engine-t10-21` fijan `min_instances = 1`); el contrato pide escalar, no resolver | **Escalado al PO.** La spec queda como «Propuesta, pendiente de aceptación explícita» con el conflicto en §0, las dos specs T10-21 llevan una nota de enmienda pendiente, y el PR no se mergea hasta la aceptación registrada |
+| P1 | Un `terraform plan -target` seguido de un `apply` sin argumentos recalcula un plan completo y, sin `resend_api_key_ready = true`, quita `RESEND_API_KEY` del api (se caen los correos de activación y PIN) | **Corregido.** El rollout guarda el plan con `-out=pr822.tfplan` y aplica ese archivo |
+| P2 | Al apagar el último flag, el `depends_on` baja el mínimo del servicio antes de cambiar el api | **Documentado.** Con el rollback del runbook (pasa por la sombra), en el último apply el api solo publica `modo: 'sombra'`, que nunca envía: no hay impacto en usuarios. Chequeo de `num_undelivered_messages` a los ~15 min y purga si quedan. Apagar los dos flags en un apply sigue prohibido. Un orden distinto para encender y apagar no se puede expresar con un `depends_on` fijo; el que hay protege el encendido, que es el caso con impacto |

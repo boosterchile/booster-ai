@@ -79,6 +79,8 @@ terraform apply -var=notifications_via_microservice=false -var=notifications_sha
 
 El api vuelve a llamar a Twilio en la revisión nueva. Se distingue en los logs de los emisores: `twilioSid` empieza con `SM` (directo) o `pubsub:` (vía servicio). Los mensajes que quedaron en la subscription traen `modo: 'enviar'` y el servicio los entrega igual aunque el api esté en sombra. Cuando `num_undelivered_messages` de `notification-events-sub` llegue a 0, apagar también la sombra (`-var=notifications_shadow=false`); recién ahí el servicio baja a cero instancias. **No apagues los dos flags en un solo apply**: el mínimo bajaría a 0 en ese mismo apply y lo pendiente quedaría sin consumidor hasta vencer (1 día).
 
+En ese último apply, Terraform baja el mínimo del servicio antes de cambiar el api (`depends_on`), así que el api todavía puede publicar unos segundos en sombra. Esos eventos son `modo: 'sombra'`: solo comparan hashes y nunca envían, de modo que si quedan sin consumir no le falta un WhatsApp a nadie. Unos 15 min después del apply, revisar `num_undelivered_messages`. Si no es 0, son eventos de sombra y se purgan con `gcloud pubsub subscriptions seek notification-events-sub --time=$(date -u +%FT%TZ)`.
+
 Si este servicio es la causa del problema, conviene **purgar** la subscription para no duplicar los reintentos (`gcloud pubsub subscriptions seek notification-events-sub --time=$(date -u +%FT%TZ)`), aceptando que esos mensajes se pierden. En ese caso sí se pueden apagar los dos flags juntos.
 
 **Del servicio (imagen mala)**:
