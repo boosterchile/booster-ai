@@ -54,4 +54,4 @@ La config se rechaza al arrancar si un flag está activo sin `MATCHING_ENGINE_UR
 
 `min_instances = 1` (sin cold start en el camino síncrono), con `cpu_idle = true` porque es request-driven: del orden de USD 10/mes en idle.
 
-> **Enmienda propuesta, pendiente de aceptación del PO** (2026-10-21, PR #822, `.specs/microservicios-min-segun-flags/spec.md` §0): `min_instances = 1` solo mientras `matching_shadow` o `matching_via_microservice` estén encendidos; 0 con los dos apagados (0 requests en 30 días; medido ~USD 11/mes). Hasta que el PO la acepte, rige lo de arriba.
+> **Enmienda aceptada por el PO el 2026-10-21** (PR #822, `.specs/microservicios-min-segun-flags/spec.md` §0): `min_instances = 1` solo mientras `matching_shadow` o `matching_via_microservice` estén encendidos; 0 con los dos apagados (0 requests en 30 días; medido ~USD 11/mes). Reemplaza el `min_instances = 1` fijo de arriba.

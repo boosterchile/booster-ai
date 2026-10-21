@@ -58,7 +58,7 @@ La config se rechaza al arrancar si un flag está activo y falta `NOTIFICATION_E
      - Twilio 4xx (número inválido, template rechazado): ack y log `error`. Reintentar no lo arregla.
      - 5xx o red: nack, reintento y DLQ.
 - Health en `/health`, `min_instances = 1`, `cpu_idle = false` (consumer pull). No usa base ni Redis: queda como un emisor sin estado que tiene las credenciales de Twilio.
-  > **Enmienda propuesta, pendiente de aceptación del PO** (2026-10-21, PR #822, `.specs/microservicios-min-segun-flags/spec.md` §0): `min_instances = 1` solo mientras `notifications_shadow` o `notifications_via_microservice` estén encendidos; 0 con los dos apagados. Hasta que el PO la acepte, rige lo de arriba.
+  > **Enmienda aceptada por el PO el 2026-10-21** (PR #822, `.specs/microservicios-min-segun-flags/spec.md` §0): `min_instances = 1` solo mientras `notifications_shadow` o `notifications_via_microservice` estén encendidos; 0 con los dos apagados. `cpu_idle = false` no cambia. Reemplaza el `min_instances = 1` fijo de arriba.
 
 ## Criterios de éxito
 

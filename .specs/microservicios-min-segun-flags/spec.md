@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (con Claude)
 - Date: 2026-10-21
-- Status: **Propuesta, pendiente de aceptación explícita del PO.** El PO pidió preparar el PR (2026-10-21) a partir de la recomendación de la auditoría, pero este cambio **contradice dos specs aceptadas** (ver §0). No se mergea hasta que el PO acepte la enmienda y quede registrada aquí
+- Status: **Aceptada por el PO el 2026-10-21**, incluida la enmienda a las specs T10-21 (§0). Falta la revisión del PR y el apply, que hace el PO
 - Origen: auditoría de costos GCP del 2026-10-21 (`.specs/recorte-logs-gke-cert-manager/verify.md` en el PR #821 tiene la línea base de costo).
 - Relacionado: ADR-083 (extracción con shadow en prod), T10-21 (`.specs/notification-service-t10-21/`, `.specs/matching-engine-t10-21/`), runbooks `service-notification-service.md` y `service-matching-engine.md`.
 - El `terraform apply` lo ejecuta el PO. Este PR no aplica nada.
@@ -14,9 +14,9 @@
 | `.specs/notification-service-t10-21/spec.md` (aceptada 2026-10-08), línea 60 | `min_instances = 1`, `cpu_idle = false` (consumer pull) | `min_instances = 1` **solo con un flag `notifications_*` encendido**; 0 con los dos apagados. `cpu_idle = false` no cambia |
 | `.specs/matching-engine-t10-21/spec.md` (aceptada 2026-10-08), sección «Costo» | `min_instances = 1` contra el cold start, «del orden de USD 10/mes en idle» | `min_instances = 1` **solo con un flag `matching_*` encendido**; 0 con los dos apagados |
 
-Las dos specs justifican el mínimo con el trabajo que el servicio hace cuando está en el camino (consumir la cola, evitar el cold start del matching síncrono). Con los flags apagados ese trabajo no existe (§1), así que la enmienda conserva la regla mientras haya un flag encendido y solo la quita mientras no lo haya. Igual es un cambio a una decisión cerrada: el contrato del repo pide escalarla, no resolverla. Las dos specs llevan una nota que apunta a esta enmienda como pendiente.
+Las dos specs justifican el mínimo con el trabajo que el servicio hace cuando está en el camino (consumir la cola, evitar el cold start del matching síncrono). Con los flags apagados ese trabajo no existe (§1), así que la enmienda conserva la regla mientras haya un flag encendido y solo la quita mientras no lo haya. Igual es un cambio a una decisión cerrada: el contrato del repo pide escalarla, no resolverla. Se escaló al PO el 2026-10-21 y las dos specs llevan una nota que apunta a esta enmienda.
 
-**Registro de aceptación:** _(pendiente — se completa con la fecha y la frase del PO cuando acepte)_
+**Registro de aceptación:** aceptada por el PO el 2026-10-21, en el chat de la sesión: «Acepto la enmienda: min_instances = 1 solo mientras haya un flag encendido, 0 con los dos apagados, para matching-engine y notification-service.» Desde esa fecha, la regla de `min_instances` de las specs T10-21 es la de esta tabla.
 
 ## 1. Objective
 
