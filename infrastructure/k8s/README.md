@@ -142,3 +142,55 @@ open https://app.us5.datadoghq.com/infrastructure
 | Traces del gateway | OTel + `RedactingSpanExporter` | Cloud Trace (no Datadog) |
 
 Otros workloads de Booster corren en Cloud Run (no GKE) — el Agent del Operator no los cubre.
+
+## cert-manager
+
+Emite el certificado de Let's Encrypt del puerto TLS del gateway (5061,
+`telemetry-tls.boosterchile.com`) por DNS-01 contra Cloud DNS. Se instala con
+Helm (chart `jetstack/cert-manager`, versión fijada `v1.20.2`).
+
+### Archivos
+
+- `cert-manager-values.yaml` — valores de Helm: CRDs, namespace de leader
+  election (Autopilot no deja usar kube-system), anotación de Workload Identity
+  y **requests explícitos**. Sin requests, Autopilot pone 500m CPU / 2 GiB a
+  cada pod, y en Autopilot se paga lo que el pod pide: eran ~USD 100/mes por
+  3 pods que usan 0,001 vCPU y < 30 MiB cada uno (medición en el archivo).
+- `setup-cert-manager.sh` — aplica esos valores con `helm upgrade --install`.
+- `cert-manager-issuers.yaml`, `cert-primary.yaml` — ClusterIssuer y Certificate.
+
+### Aplicar
+
+```bash
+# 1. Vista previa: no cambia nada. Muestra los requests que dejaría Autopilot
+#    (dry-run del servidor sobre los Deployments renderizados).
+./infrastructure/k8s/setup-cert-manager.sh
+
+# 2. Aplicar. Reinicia los 3 pods (rolling); el certificado ya emitido no se toca.
+./infrastructure/k8s/setup-cert-manager.sh --apply
+```
+
+El script corta si la versión instalada no es la fijada: subir cert-manager es
+otro cambio. Usa un kubeconfig temporal (no cambia tu contexto actual) y las
+imágenes van fijadas por digest en el archivo de valores.
+
+**Rollback** (el script imprime los comandos con la revisión previa antes de
+aplicar). Son dos pasos: la revisión 1 no trae la anotación de Workload
+Identity en sus valores, así que `helm rollback` la borra, y sin ella falla el
+DNS-01 de la próxima renovación.
+
+```bash
+helm rollback cert-manager <revisión previa> -n cert-manager --wait
+kubectl annotate serviceaccount cert-manager -n cert-manager \
+  iam.gke.io/gcp-service-account=cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com \
+  --overwrite
+```
+
+### Verificar
+
+```bash
+kubectl get deploy -n cert-manager \
+  -o custom-columns='NAME:.metadata.name,CPU:.spec.template.spec.containers[0].resources.requests.cpu,MEM:.spec.template.spec.containers[0].resources.requests.memory'
+kubectl get clusterissuer letsencrypt-prod
+kubectl get certificate -n telemetry telemetry-tls-cert
+```

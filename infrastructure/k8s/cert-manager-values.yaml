@@ -1,0 +1,98 @@
+# Valores de Helm de cert-manager en el clúster `booster-ai-telemetry` (Santiago).
+#
+# Chart: jetstack/cert-manager v1.20.2. Es la versión que corre hoy (release
+# Helm revisión 1, instalado el 2026-05-08). La versión del chart va fijada en
+# `setup-cert-manager.sh` y en `cloudbuild-primary-deploy.yaml`, y las
+# imágenes van fijadas por digest más abajo: subir de versión es un cambio
+# aparte, con su propio PR.
+#
+# Por qué existe este archivo: cert-manager se instaló sin `resources`, y GKE
+# Autopilot les pone sus valores por defecto (500m CPU / 2 GiB) a los tres
+# pods. En Autopilot se paga lo que el pod pide, no lo que usa: eran 1,5 vCPU
+# y 6 GiB facturados, ~USD 100/mes, el 75 % del costo de pods del clúster.
+#
+# Consumo medido del 2026-09-21 al 2026-10-21, por pod (Cloud Monitoring,
+# `kubernetes.io/container/memory/used_bytes` non-evictable y
+# `cpu/core_usage_time`), sin reinicios en esos 30 días:
+#
+#   contenedor   memoria pico   memoria mediana   CPU pico (por hora)
+#   controller       24,2 MiB          23,1 MiB         0,001 vCPU
+#   cainjector       29,2 MiB          24,2 MiB         0,001 vCPU
+#   webhook          11,8 MiB          11,2 MiB         0,001 vCPU
+#
+# Los requests dejan ≥4× de margen sobre el pico de memoria. 50m CPU es el
+# mínimo de Autopilot para la clase general-purpose. La razón memoria/CPU
+# (1,25–2,5 GiB por vCPU) queda dentro del rango que Autopilot acepta
+# (1–6,5). Los límites de memoria dan otro 2× para picos al renovar
+# certificados. Si Autopilot no admite bursting en el nodo, iguala el límite
+# al request, y el margen de 4× sigue cubriendo el pico.
+#
+# Para aplicar: `setup-cert-manager.sh` (ver README de esta carpeta).
+
+crds:
+  enabled: true
+
+# Imágenes fijadas por digest: el controller lee todos los Secrets del clúster
+# y, vía Workload Identity, tiene roles/dns.admin sobre la zona del dominio.
+# Un tag movido en el registro no debe poder cambiar lo que corre. Son los
+# digests de los índices multi-arquitectura v1.20.2 en quay.io, iguales a los
+# imageID de los pods que corren hoy (verificado el 2026-10-21).
+image:
+  tag: v1.20.2
+  digest: sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5
+
+global:
+  leaderElection:
+    # Autopilot no deja escribir leases en kube-system.
+    namespace: cert-manager
+
+serviceAccount:
+  annotations:
+    # Workload Identity para el DNS-01 de Let's Encrypt (wave-3-tls.tf).
+    # Hasta ahora se ponía con `kubectl annotate` después del install; con el
+    # valor aquí, un `helm upgrade` no lo pierde.
+    iam.gke.io/gcp-service-account: cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+cainjector:
+  image:
+    tag: v1.20.2
+    digest: sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+webhook:
+  image:
+    tag: v1.20.2
+    digest: sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# Job que verifica que la API de cert-manager responde. En v1.20.2 es un hook
+# `post-install` solamente: no corre en un `helm upgrade`, así que estos
+# valores solo cuentan en una instalación nueva (re-bootstrap). Dura segundos,
+# pero sin requests Autopilot también le pondría 2 GiB.
+startupapicheck:
+  image:
+    tag: v1.20.2
+    digest: sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
