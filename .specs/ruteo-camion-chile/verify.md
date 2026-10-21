@@ -111,6 +111,17 @@ Sin series de Routes API antes de agosto de 2026. Costo por transacción hoy: ce
 
 Ninguna llamada envió `departureTime=any`; por defecto HERE calcula sensible al tiempo (docs Routing v8) y Usage del portal mostró 31 Routing Truck y 70 Time Aware Routing. Contrato del PO (Base Plan A-S00091723): Truck y Time Aware 5 000 gratis cada uno y USD 2,92 / 1 000 hasta 200 000; Car 30 000 gratis y USD 0,88 / 1 000. Experimento de conteo exacto en día limpio: `probe-here-billing.yml` (7 truck `any`, 5 truck con hora, 3 car `any`); el PO contrasta con Usage.
 
+### Experimento de facturación ejecutado (run [39524511285](https://github.com/boosterchile/booster-ai/actions/runs/39524511285), 2026-10-21 00:58 UTC = 2026-10-20 21:58 Chile)
+
+| Grupo | transportMode | departureTime | pedidas | con ruta (HTTP 200) |
+|---|---|---|---|---|
+| TRUCK_ANY | truck | `any` | 7 | 7 |
+| TRUCK_TIME | truck | `2026-10-22T10:00:00-03:00` | 5 | 5 |
+| CAR_ANY | car | `any` | 3 | 3 |
+| **Total** | | | **15** | **15** |
+
+Esperado en Usage si la hipótesis es cierta, en el día UTC 2026-10-21: **Routing Truck 12, Time Aware Routing 5, Routing Car 3**. Si Usage agrupara por hora local, los mismos incrementos aparecen sobre el 2026-10-20 (sobre los 31 / 70 ya vistos). Comparación programada para el 2026-10-23 (Usage tarda hasta 2 días): automática con `probe-here-usage.yml` si el PO cargó `HERE_ACCESS_KEY_ID` y `HERE_ACCESS_KEY_SECRET` en el repo; si no, con los números del portal. Hasta cerrar la comparación, ningún push toca `probe-here-billing.yml` ni `probe-here-billing.py`, para no contaminar el conteo.
+
 ## Conclusión de la fase
 
 1. Google Routes API no conoce restricciones de camión en Chile (sonda 1). Descartado como motor de legalidad de ruta; sigue siendo la fuente de tráfico y ETA.
