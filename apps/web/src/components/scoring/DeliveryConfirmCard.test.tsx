@@ -229,6 +229,27 @@ describe('DeliveryConfirmCard', () => {
     expect(screen.getByRole('button', { name: /reintentar/i })).toBeInTheDocument();
   });
 
+  it('403 not_assigned_driver → solo el conductor asignado, sin reintentar', async () => {
+    vi.spyOn(api, 'patch').mockRejectedValue(
+      new ApiError(403, 'not_assigned_driver', { code: 'not_assigned_driver' }),
+    );
+    const Wrapper = makeWrapper();
+    const r = makeRecognizer();
+    render(
+      <Wrapper>
+        <DeliveryConfirmCard assignmentId="a1" recognizer={r.ctrl} />
+      </Wrapper>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /sí, ya entregué/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar entrega/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/solo el conductor asignado puede confirmar/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /reintentar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sí, ya entregué/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('voice-command-button')).not.toBeInTheDocument();
+  });
+
   it('error forbidden_owner_mismatch → mensaje específico', async () => {
     vi.spyOn(api, 'patch').mockRejectedValue(
       new ApiError(403, 'forbidden_owner_mismatch', { code: 'forbidden_owner_mismatch' }),

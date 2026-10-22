@@ -12,6 +12,13 @@ beforeAll(() => {
 vi.mock('../../src/services/confirmar-entrega-viaje.js', () => ({
   confirmarEntregaViaje: vi.fn(),
 }));
+vi.mock('../../src/services/reportar-incidente.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/reportar-incidente.js')>();
+  return {
+    ...actual,
+    reportarIncidente: vi.fn(),
+  };
+});
 vi.mock('../../src/services/confirmar-recogida-viaje.js', () => ({
   confirmarRecogidaViaje: vi.fn(),
 }));
@@ -53,6 +60,7 @@ vi.mock('../../src/observability/business-span.js', () => ({
 const { withBusinessSpan } = await import('../../src/observability/business-span.js');
 
 const { confirmarEntregaViaje } = await import('../../src/services/confirmar-entrega-viaje.js');
+const { reportarIncidente } = await import('../../src/services/reportar-incidente.js');
 const { confirmarRecogidaViaje } = await import('../../src/services/confirmar-recogida-viaje.js');
 const {
   asignarConductorAAssignment,
@@ -336,6 +344,11 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       headers: { 'x-test-userctx': VALID_CTX },
     });
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'forbidden_owner_mismatch',
+      code: 'forbidden_owner_mismatch',
+    });
+    expect(confirmarEntregaViaje).not.toHaveBeenCalled();
   });
 
   it('happy path: confirmarEntregaViaje retorna ok=true → 200 con delivered_at', async () => {
@@ -346,7 +359,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       deliveredAt,
     });
     const db = makeDb({
-      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP }]],
+      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP, driverUserId: USER_ID }]],
     });
     const app = await buildApp({ db });
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-entrega`, {
@@ -365,7 +378,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       currentStatus: 'cancelado',
     });
     const db = makeDb({
-      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP }]],
+      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP, driverUserId: USER_ID }]],
     });
     const app = await buildApp({ db });
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-entrega`, {
@@ -383,7 +396,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       code: 'trip_not_found',
     });
     const db = makeDb({
-      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP }]],
+      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP, driverUserId: USER_ID }]],
     });
     const app = await buildApp({ db });
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-entrega`, {
@@ -391,6 +404,201 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       headers: { 'x-test-userctx': VALID_CTX },
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('entrega e incidente: solo el conductor asignado', () => {
+  const RUT_SINTETICO = '11.111.111-1';
+  const PATENTE_SINTETICA = 'TEST01';
+  const CONDUCTOR_ID = '11111111-1111-4111-8111-111111111111';
+  const DUENO_ID = '22222222-2222-4222-8222-222222222222';
+  const ADMIN_ID = '33333333-3333-4333-8333-333333333333';
+
+  function ctxSintetico(userId: string, role: 'conductor' | 'dueno' | 'admin', email: string) {
+    return JSON.stringify({
+      user: {
+        id: userId,
+        email,
+        rut: RUT_SINTETICO,
+        fullName: 'Usuario Sintetico',
+      },
+      activeMembership: {
+        empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+        membership: { role },
+      },
+    });
+  }
+
+  function fila(driverUserId: string | null) {
+    return {
+      tripId: TRIP_ID,
+      empresaId: CARRIER_EMP,
+      driverUserId,
+      vehiclePlate: PATENTE_SINTETICA,
+    };
+  }
+
+  async function pedir(
+    path: 'confirmar-entrega' | 'incidents',
+    userId: string,
+    role: 'conductor' | 'dueno' | 'admin',
+    email: string,
+    driverUserId: string | null,
+  ) {
+    (confirmarEntregaViaje as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      alreadyDelivered: false,
+      deliveredAt: new Date('2026-10-20T12:00:00Z'),
+    });
+    (reportarIncidente as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      tripEventId: 'evt-sintetico',
+      recordedAt: new Date('2026-10-20T12:00:00Z'),
+    });
+    const db = makeDb({ selects: [[fila(driverUserId)]] });
+    const app = await buildApp({ db });
+    const esIncidente = path === 'incidents';
+    return app.request(`/assignments/${ASSIGNMENT_ID}/${path}`, {
+      method: esIncidente ? 'POST' : 'PATCH',
+      headers: {
+        'x-test-userctx': ctxSintetico(userId, role, email),
+        ...(esIncidente ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(esIncidente ? { body: JSON.stringify({ incident_type: 'demora' }) } : {}),
+    });
+  }
+
+  it('el conductor asignado confirma la entrega', async () => {
+    const res = await pedir(
+      'confirmar-entrega',
+      CONDUCTOR_ID,
+      'conductor',
+      'conductor@example.com',
+      CONDUCTOR_ID,
+    );
+    expect(res.status).toBe(200);
+    expect(confirmarEntregaViaje).toHaveBeenCalledOnce();
+  });
+
+  it('el dueño asignado a sí mismo confirma la entrega', async () => {
+    const res = await pedir('confirmar-entrega', DUENO_ID, 'dueno', 'dueno@example.com', DUENO_ID);
+    expect(res.status).toBe(200);
+    expect(confirmarEntregaViaje).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['admin', ADMIN_ID, 'admin@example.com'],
+    ['dueno', DUENO_ID, 'dueno@example.com'],
+  ] as const)(
+    'el %s que no es el conductor no confirma la entrega',
+    async (role, userId, email) => {
+      const res = await pedir('confirmar-entrega', userId, role, email, CONDUCTOR_ID);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: 'not_assigned_driver',
+        code: 'not_assigned_driver',
+      });
+      expect(confirmarEntregaViaje).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sin conductor asignado no se confirma la entrega', async () => {
+    const res = await pedir('confirmar-entrega', DUENO_ID, 'dueno', 'dueno@example.com', null);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'not_assigned_driver',
+      code: 'not_assigned_driver',
+    });
+    expect(confirmarEntregaViaje).not.toHaveBeenCalled();
+  });
+
+  it('el conductor asignado reporta un incidente', async () => {
+    const res = await pedir(
+      'incidents',
+      CONDUCTOR_ID,
+      'conductor',
+      'conductor@example.com',
+      CONDUCTOR_ID,
+    );
+    expect(res.status).toBe(201);
+    expect(reportarIncidente).toHaveBeenCalledOnce();
+  });
+
+  it('el dueño asignado a sí mismo reporta un incidente', async () => {
+    const res = await pedir('incidents', DUENO_ID, 'dueno', 'dueno@example.com', DUENO_ID);
+    expect(res.status).toBe(201);
+    expect(reportarIncidente).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['admin', ADMIN_ID, 'admin@example.com'],
+    ['dueno', DUENO_ID, 'dueno@example.com'],
+  ] as const)(
+    'el %s que no es el conductor no reporta el incidente',
+    async (role, userId, email) => {
+      const res = await pedir('incidents', userId, role, email, CONDUCTOR_ID);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: 'not_assigned_driver',
+        code: 'not_assigned_driver',
+      });
+      expect(reportarIncidente).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sin conductor asignado no se reporta el incidente', async () => {
+    const res = await pedir('incidents', ADMIN_ID, 'admin', 'admin@example.com', null);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'not_assigned_driver',
+      code: 'not_assigned_driver',
+    });
+    expect(reportarIncidente).not.toHaveBeenCalled();
+  });
+
+  it('un incidente de una asignación inexistente responde 404', async () => {
+    const db = makeDb({ selects: [[]] });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/incidents`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-userctx': ctxSintetico(CONDUCTOR_ID, 'conductor', 'conductor@example.com'),
+      },
+      body: JSON.stringify({ incident_type: 'demora' }),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      error: 'assignment_not_found',
+      code: 'assignment_not_found',
+    });
+    expect(reportarIncidente).not.toHaveBeenCalled();
+  });
+
+  it('un incidente de otra empresa sigue en forbidden_owner_mismatch', async () => {
+    (reportarIncidente as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      tripEventId: 'evt-sintetico',
+      recordedAt: new Date('2026-10-20T12:00:00Z'),
+    });
+    const db = makeDb({
+      selects: [[{ empresaId: 'OTRA', driverUserId: null, vehiclePlate: PATENTE_SINTETICA }]],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/incidents`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-userctx': ctxSintetico(ADMIN_ID, 'admin', 'admin@example.com'),
+      },
+      body: JSON.stringify({ incident_type: 'demora' }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'forbidden_owner_mismatch',
+      code: 'forbidden_owner_mismatch',
+    });
+    expect(reportarIncidente).not.toHaveBeenCalled();
   });
 });
 
