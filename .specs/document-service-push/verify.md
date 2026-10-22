@@ -169,6 +169,14 @@ Flag en su default (`false`). Dos corridas, las dos con **Plan: 7 to add, 2 to c
 - El segundo cambio es `module.service_api`, que quita la env `RESEND_API_KEY`. **No es de este PR**: es el artefacto conocido del workflow, que no define `resend_api_key_ready`. La corrida programada de `main` del 2026-10-20 (run 39450315380) ya falla igual (`.specs/microservicios-min-segun-flags/verify.md` §4). Por eso el apply va con `-target`.
 - Sin ciclos ni errores. El job termina en `failure` porque hay diff (exit 2), que es lo esperado.
 
+**Después del merge de `main` con el #822 y de los fixes de Codex** (run [39712338864](https://github.com/boosterchile/booster-ai/actions/runs/39712338864), commit `848bf1ee`): **Plan: 8 to add, 5 to change, 0 to destroy.**
+
+- **De este PR: 7 to add, 2 to change.** Son los 7 recursos de §6, el servicio y la suscripción (`ack_deadline_seconds 120 -> 300`).
+- **Del #822, mergeado pero sin aplicar: 1 to add, 2 to change.** `wave2_consumer_stalled["notification_events"]`, más `min_instance_count 1 -> 0` en matching-engine y notification-service.
+- **El artefacto `RESEND_API_KEY -> null` en el api.**
+
+El #821, que entró después (`bffad0ba`), no comparte archivos con este PR.
+
 No verificado aquí:
 
 - el apply mismo;
