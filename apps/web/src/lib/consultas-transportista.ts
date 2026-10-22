@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { api } from './api-client.js';
+import { ApiError, api } from './api-client.js';
+import { reportError } from './error-reporting.js';
 
 /**
  * Lecturas que comparten clave de TanStack Query con la pantalla dueña.
@@ -124,4 +125,41 @@ export async function fetchFlota(init: RequestInit): Promise<FlotaCache[]> {
 export async function fetchConductores(init: RequestInit): Promise<ConductorCache[]> {
   const raw = await api.get<unknown>('/conductores', init);
   return parsear(conductoresSchema, raw, 'respuesta de conductores inválida').conductores;
+}
+
+/**
+ * Estado de Cobra hoy para el Inicio. No comparte la clave ni la forma del
+ * historial: un 503 o un cuerpo inválido no pueden tumbar el resto.
+ * `enabled: false` (flag apagado, 200) y el 503 histórico significan lo mismo.
+ */
+export type CobraHoyLeido = 'apagado' | 'error' | 'disponible';
+
+const cobraHoyApagadoSchema = z.object({ enabled: z.literal(false) }).passthrough();
+const cobraHoyActivoSchema = z.union([
+  z.object({ enabled: z.literal(true) }).passthrough(),
+  z.object({ adelantos: z.array(z.unknown()) }).passthrough(),
+]);
+
+export function interpretarCobraHoy(raw: unknown): CobraHoyLeido {
+  if (cobraHoyApagadoSchema.safeParse(raw).success) {
+    return 'apagado';
+  }
+  if (cobraHoyActivoSchema.safeParse(raw).success) {
+    return 'disponible';
+  }
+  reportError(new Error('respuesta de cobra hoy inválida'));
+  return 'error';
+}
+
+export async function fetchEstadoCobraHoy(init: RequestInit): Promise<CobraHoyLeido> {
+  try {
+    const raw = await api.get<unknown>('/me/cobra-hoy/historial', init);
+    return interpretarCobraHoy(raw);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 503) {
+      return 'apagado';
+    }
+    reportError(error);
+    return 'error';
+  }
 }
