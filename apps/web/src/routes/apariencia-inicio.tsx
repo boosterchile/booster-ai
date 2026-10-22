@@ -202,6 +202,7 @@ export function vistaDePreview(estado: string): InicioVista | null {
     nombreCompleto: 'Felipe',
     legalName: LEGAL,
     esAdmin: false,
+    veFinanzas: false,
     ahora: AHORA,
   });
 }

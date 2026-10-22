@@ -13,8 +13,44 @@ import { api } from '../lib/api-client.js';
  */
 
 vi.mock('../components/ProtectedRoute.js', () => ({
-  ProtectedRoute: ({ children }: { children: (ctx: { kind: 'unmanaged' }) => ReactNode }) => (
-    <>{children({ kind: 'unmanaged' })}</>
+  ProtectedRoute: ({
+    children,
+  }: {
+    children: (ctx: { kind: 'onboarded'; me: unknown }) => ReactNode;
+  }) => (
+    <>
+      {children({
+        kind: 'onboarded',
+        me: {
+          needs_onboarding: false,
+          user: {
+            id: 'u',
+            email: 'dueno@example.com',
+            full_name: 'Dueño Ejemplo',
+            phone: null,
+            whatsapp_e164: null,
+            rut: '11.111.111-1',
+            is_platform_admin: false,
+            status: 'activo',
+          },
+          memberships: [],
+          active_membership: {
+            id: 'm-dueno',
+            role: 'dueno',
+            status: 'activa',
+            joined_at: null,
+            empresa: {
+              id: 'e',
+              legal_name: 'Transporte Ejemplo',
+              rut: '11.111.111-1',
+              is_generador_carga: false,
+              is_transportista: true,
+              status: 'activa',
+            },
+          },
+        },
+      })}
+    </>
   ),
 }));
 

@@ -5,6 +5,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -38,8 +39,8 @@ export function EmpresaRoute() {
 
 function EmpresaPage({ me }: { me: MeOnboarded }) {
   const empresa = me.active_membership?.empresa;
-  const role = me.active_membership?.role;
-  const canManage = Boolean(empresa) && (role === 'dueno' || role === 'admin');
+  // CHEQUEOS_REEMPLAZADOS empresa: antes role === dueno || role === admin.
+  const canManage = Boolean(empresa) && flagsDe(me).administrar;
 
   const [huella, setHuella] = useState<EmpresaHuella | null>(null);
   const [loading, setLoading] = useState(canManage);

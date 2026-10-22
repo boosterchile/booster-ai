@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { denegarAceptarOferta } from '../auth/capacidades.js';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
 import { offers, trips } from '../db/schema.js';
@@ -125,6 +126,11 @@ export function createOfferRoutes(opts: {
     }
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
+    }
+    // CHEQUEOS_REEMPLAZADOS offers-api: antes el POST solo exigía isTransportista.
+    const sinOferta = denegarAceptarOferta(c, userContext);
+    if (sinOferta) {
+      return sinOferta;
     }
 
     const offerId = c.req.param('id');
@@ -268,6 +274,11 @@ export function createOfferRoutes(opts: {
     }
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
+    }
+    // CHEQUEOS_REEMPLAZADOS offers-api: antes el POST solo exigía isTransportista.
+    const sinOferta = denegarAceptarOferta(c, userContext);
+    if (sinOferta) {
+      return sinOferta;
     }
 
     const offerId = c.req.param('id');

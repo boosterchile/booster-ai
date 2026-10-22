@@ -41,6 +41,7 @@ const ctx = {
   nombreCompleto: 'Felipe Vicencio',
   legalName: 'Transportes Van Oosterwyk',
   esAdmin: false,
+  veFinanzas: false,
   ahora: new Date('2026-10-19T15:00:00.000Z'),
 };
 
@@ -197,13 +198,14 @@ describe('buildInicioVista', () => {
     expect(vista.atencion).toEqual({ tipo: 'calmo' });
     expect(vista.saludo).toMatch(/Felipe$/);
     expect(vista.accesos.map((acceso) => acceso.label).join(' ')).not.toMatch(/por cobrar/i);
-    expect(vista.accesos.some((acceso) => acceso.label === 'Cobra hoy')).toBe(true);
+    expect(vista.accesos.some((acceso) => acceso.label === 'Cobra hoy')).toBe(false);
     expect(vista.accesos.some((acceso) => acceso.id === 'dispositivos')).toBe(false);
     expect(vista.enRuta).toEqual({ estado: 'listo', enRuta: 0, porRetirar: 0 });
   });
 
   it('dueño ve trayectos y dispositivos', () => {
-    const vista = buildInicioVista(datosVacios(), { ...ctx, esAdmin: true });
+    const vista = buildInicioVista(datosVacios(), { ...ctx, esAdmin: true, veFinanzas: true });
+    expect(vista.accesos.some((acceso) => acceso.label === 'Cobra hoy')).toBe(true);
     expect(vista.accesos.map((acceso) => acceso.to)).toEqual(
       expect.arrayContaining(['/app/trayectos', '/app/admin/dispositivos']),
     );
