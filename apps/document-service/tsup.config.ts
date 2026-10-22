@@ -37,6 +37,7 @@ export default defineConfig({
     'zod',
     '@google-cloud/pubsub',
     '@google-cloud/storage',
+    'google-auth-library',
     '@hyzyla/pdfium',
     'zxing-wasm',
     'fast-xml-parser',

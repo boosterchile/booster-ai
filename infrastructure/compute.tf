@@ -92,6 +92,16 @@ locals {
   # T10-21: matching-engine recibe POST /ranking del api con ID token (aud =
   # esta URL) + Cloud Run IAM.
   cloud_run_matching_url = "https://booster-ai-matching-engine-${google_project.booster_ai.number}.${var.region}.run.app"
+  # ADR-085: `aud` del OIDC del push de document.uploaded. Se declara además como
+  # custom audience del servicio, así Cloud Run IAM la acepta sin depender de
+  # qué URLs run.app acepta por defecto, y el worker la exige (PUSH_OIDC_AUDIENCE).
+  cloud_run_document_url = "https://booster-ai-document-service-${google_project.booster_ai.number}.${var.region}.run.app"
+  # ADR-085: timeout del request de document-service y ack deadline de su
+  # suscripción, del mismo valor. En push el ack no se extiende por mensaje:
+  # si fuera menor que el timeout, Pub/Sub reentregaría mientras el request
+  # original sigue vivo, el duplicado vería `procesando`, se saltearía y se
+  # confirmaría, y un fallo posterior del original ya no tendría reintento.
+  document_service_request_timeout_s = 300
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -815,22 +825,40 @@ module "service_document" {
   service_name          = "booster-ai-document-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  # T10-21: consumer Pub/Sub PULL (StreamingPull en main.ts), igual que
-  # telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios: con
-  # min=0 la instancia escala a cero y nadie consume (no hay requests que la
-  # despierten), y con cpu_idle=true el pull queda CPU-throttled (incidente
-  # 2026-06-07). 1 GiB porque rasterizar el PDF ocupa RAM.
-  min_instances = 1
-  max_instances = 10
-  cpu_idle      = false
-  cpu           = "1"
-  memory        = "1Gi"
+  # ADR-085: el modo de consumo lo decide var.document_service_push, junto con
+  # la suscripción `document_uploaded_processor` (messaging.tf).
+  #   - false (pull, T10-21): StreamingPull en main.ts, igual que
+  #     telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios:
+  #     con min=0 nadie consume (no hay requests que despierten la instancia) y
+  #     con cpu_idle=true el pull queda CPU-throttled (incidente 2026-06-07).
+  #   - true (push): Pub/Sub hace POST a /pubsub/document-uploaded. Cada mensaje
+  #     es un request, así que min=0 y CPU solo durante el request bastan: el
+  #     servicio escala a cero sin dejar mensajes sin procesar.
+  # 1 GiB porque rasterizar el PDF ocupa RAM. Concurrencia 4: medido con el
+  # ingestor real, 4 fotos de 12 MP en paralelo llegan a ~670 MB de RSS
+  # (`.specs/document-service-push/verify.md`); más requests por instancia no
+  # aceleran el decode (WASM en un hilo) y acercan el OOM.
+  min_instances                    = var.document_service_push ? 0 : 1
+  max_instances                    = 10
+  cpu_idle                         = var.document_service_push
+  cpu                              = "1"
+  memory                           = "1Gi"
+  max_instance_request_concurrency = 4
+  # = ack_deadline_seconds de document_uploaded_processor (messaging.tf).
+  timeout_seconds = local.document_service_request_timeout_s
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME     = "booster-ai-document-service"
     DOCUMENTS_BUCKET = google_storage_bucket.documents.name
     UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
     SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
+    # ADR-085: pull abre StreamingPull; push no. El endpoint push queda activo
+    # en los dos modos (solo acepta el OIDC de PUSH_CALLER_SA con aud =
+    # PUSH_OIDC_AUDIENCE), así el orden en que se actualizan la suscripción y la
+    # revisión no deja mensajes en 404.
+    DOCUMENT_CONSUMER_MODE = var.document_service_push ? "push" : "pull"
+    PUSH_CALLER_SA         = google_service_account.document_push_invoker.email
+    PUSH_OIDC_AUDIENCE     = local.cloud_run_document_url
   })
   # DTE_PROVIDER_* removidos (ADR-069): Booster ya no emite DTE. El skeleton de
   # document-service nunca leyó estos secretos; se elimina el binding para
@@ -842,13 +870,18 @@ module "service_document" {
   # persiste ninguna fila (mismo connector que api y telemetry-processor).
   vpc_connector = google_vpc_access_connector.serverless.id
 
-  public = false
+  # public=false: Cloud Run IAM exige el OIDC del push (run.invoker solo para
+  # document-push-invoker, messaging.tf) antes de que el request llegue al
+  # container. La app repite la verificación de emisor y aud (src/push-auth.ts).
+  public           = false
+  custom_audiences = [local.cloud_run_document_url]
 
-  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
-  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
-  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
-  # run.app a nivel de red → un token de invoker robado deja de ser explotable
-  # desde internet (contención de blast-radius; IAM era la única barrera).
+  # ADR-063 (completa ADR-062): sin NEG en el GCLB ni callers HTTP de
+  # internet. INTERNAL_ONLY cierra el run.app a nivel de red → un token de
+  # invoker robado deja de ser explotable desde internet. ADR-085: el push
+  # entra igual, porque Cloud Run trata como interno el push de una
+  # suscripción del mismo proyecto que apunta a la URL run.app por defecto
+  # (no a un dominio propio). Por eso push_endpoint usa module.service_document.url.
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   secret_versions_ready = local.all_secret_versions_ready

@@ -724,3 +724,15 @@ variable "matching_via_microservice" {
   type        = bool
   default     = false
 }
+
+# ADR-085 — document-service consume `document.uploaded` por push en vez de
+# StreamingPull (.specs/document-service-push/spec.md). Un solo flag mueve
+# juntos la suscripción (push_config), el modo del worker
+# (DOCUMENT_CONSUMER_MODE), min_instances y cpu_idle. OFF = pull como hoy
+# (min=1, CPU siempre asignada). Encenderlo solo después del release que trae
+# el endpoint push; rollback: apagar y re-aplicar.
+variable "document_service_push" {
+  description = "document-service recibe document.uploaded por push (Pub/Sub → POST /pubsub/document-uploaded) y escala a cero. false = StreamingPull con min_instances=1."
+  type        = bool
+  default     = false
+}

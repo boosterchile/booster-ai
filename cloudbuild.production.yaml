@@ -14,7 +14,7 @@
 #     apps/telemetry-tcp-gateway (GKE), apps/telemetry-processor,
 #     apps/sms-fallback-gateway.
 #   - apps/document-service (worker TED, consumer de `document.uploaded`;
-#     T10-21, ADR-083).
+#     T10-21, ADR-083; pull o push según ADR-085).
 #   - apps/notification-service (canal WhatsApp extraído; consumer de
 #     `notification-events`. T10-21, ADR-083).
 #   - apps/matching-engine (POST /ranking, ranking de matching; T10-21,
@@ -175,7 +175,7 @@ steps:
       - .
     waitFor: ['-']
 
-  # apps/document-service — worker TED (consumer Pub/Sub pull). T10-21.
+  # apps/document-service — worker TED (consumer Pub/Sub, pull o push según ADR-085). T10-21.
   - id: build-document-service
     name: gcr.io/cloud-builders/docker
     args:
@@ -919,9 +919,12 @@ steps:
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-sms-fallback-gateway]
 
-  # apps/document-service — Cloud Run PULL consumer de `document.uploaded`.
-  # min-instances=1 + no-cpu-throttling son obligatorios para un consumer pull
-  # (mismo motivo que telemetry-processor; ver compute.tf `service_document`).
+  # apps/document-service — consumer de `document.uploaded`, pull o push según
+  # `var.document_service_push` (ADR-085). --min-instances y
+  # --[no-]cpu-throttling NO van aquí: Terraform los fija junto con el modo
+  # (pull: min=1 + CPU siempre asignada; push: min=0 + CPU solo en requests;
+  # compute.tf `service_document`), y `services update` conserva el valor vivo
+  # cuando no se le pasa. Fijarlos acá devolvía min=1 en cada release.
   # Rollback: `gcloud run services update-traffic booster-ai-document-service
   # --to-revisions=<anterior>=100` (docs/runbooks/rollback-drill-microservicios.md).
   - id: deploy-document-service
@@ -935,8 +938,6 @@ steps:
       - --image=${_REGISTRY}/document-service:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --min-instances=1
-      - --no-cpu-throttling
       - --cpu=1
       - --memory=1Gi
       - --update-labels=commit=${_COMMIT_SHA}
