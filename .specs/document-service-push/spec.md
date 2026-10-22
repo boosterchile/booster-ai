@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (con Claude)
 - Date: 2026-10-21
-- Status: Draft. Se aprueba junto con ADR-085 (Propuesto) en la revisión del PR.
+- Status: Aprobada por el PO el 2026-10-22, junto con ADR-085 (Aceptado). Las tres preguntas de §11 tienen respuesta.
 - Origen: auditoría de costos GCP del 2026-10-21. Es el servicio que el PR #822 (`.specs/microservicios-min-segun-flags/`) dejó fuera de alcance, porque pedía un ADR.
 - Relacionado: [ADR-085](../../docs/adr/085-document-service-consumidor-push.md), ADR-063 (ingress), ADR-083 (extracción T10-21), `.specs/document-service-t10-21/`, runbook `docs/runbooks/service-document-service.md`.
 - El `terraform apply` lo ejecuta el PO. Este PR no aplica nada.
@@ -45,7 +45,7 @@ Ninguno mientras el flag esté apagado. Con el flag encendido, el primer documen
 
 ## 5. Out of scope
 
-- **La DLQ del resto del proyecto.** El topic `pubsub-dead-letter` no tiene suscripción. La alerta `pubsub_dlq` mira `num_unacked_messages_by_region` del topic, que sin suscripción no se mueve, y el service agent no tiene permisos de reenvío para ninguna suscripción. Este PR solo habilita el reenvío de `document-uploaded-processor-sub` y le da una alerta propia. El resto es un PR aparte (pregunta 2 al PO).
+- **La DLQ del resto del proyecto.** El topic `pubsub-dead-letter` no tiene suscripción. La alerta `pubsub_dlq` mira `num_unacked_messages_by_region` del topic, que sin suscripción no se mueve, y el service agent no tiene permisos de reenvío para ninguna suscripción. Este PR solo habilita el reenvío de `document-uploaded-processor-sub` y le da una alerta propia. El resto va en otro PR (decisión del PO, §11.2): `.specs/_followups/pubsub-dlq-proyecto.md`.
 - **Unificar la variable `concurrency` del módulo**, que nunca estuvo conectada (telemetry-processor declara 10 y corre con 160). Se documenta en `variables.tf` y no se toca.
 - **Retirar el modo pull**: va en un commit aparte cuando el push lleve dos semanas estable (ADR-085 §6).
 - `telemetry-processor` sigue en pull: tiene tráfico real.
@@ -88,7 +88,7 @@ Ninguno mientras el flag esté apagado. Con el flag encendido, el primer documen
 Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida) y Eventarc. Dos variantes de la elegida, también descartadas:
 
 - **Imagen solo push (sin modo pull)**: menos código, pero el rollback exigiría volver a la imagen anterior y a la vez revertir Terraform. Con los dos modos, el rollback es un apply.
-- **Flag encendido por defecto en este PR**: un solo apply en vez de dos. Pero un apply completo antes del release (por ejemplo, el del #821 o el #822) mandaría el push a una imagen sin endpoint. Pregunta 1 al PO.
+- **Flag encendido por defecto en este PR**: un solo apply en vez de dos. Pero un apply completo antes del release (por ejemplo, el del #821 o el #822) mandaría el push a una imagen sin endpoint. Descartada por el PO (§11.1).
 
 ## 9. Risks and mitigations
 
@@ -120,7 +120,7 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
      -target=google_monitoring_alert_policy.document_uploaded_dead_lettered \
      -target=google_monitoring_alert_policy.document_uploaded_stalled
    ```
-3. **Encender**: `document_service_push = true` (PR de una línea en `variables.tf`, pregunta 1). Con el mismo `-target`, el plan debe dar **0 to add, 2 to change**:
+3. **Encender**: `document_service_push = true` (PR aparte de una línea en `variables.tf`, decisión del PO §11.1). Con el mismo `-target`, el plan debe dar **0 to add, 2 to change**:
    - servicio: `min_instance_count 1 -> 0`, `cpu_idle false -> true`, `DOCUMENT_CONSUMER_MODE pull -> push`;
    - suscripción: `+ push_config` hacia la URL run.app.
 
@@ -128,7 +128,7 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 4. **Prueba de humo** (runbook, §Push): publicar `{"smoke":"adr-085"}` y ver en ~1 min el log `document.uploaded malformado, ack para descartar`. Un 401/403/404 → tabla del runbook, o rollback.
 5. Después del siguiente release: `gcloud run services describe` debe mostrar `minScale` 0 (o ausente) y `cpu-throttling` en `true` (o ausente).
 6. A las 48 h: el costo diario del servicio en el export por recurso, en ~0 (SC-10).
-7. A las dos semanas estable: commit aparte que retira el modo pull y el flag.
+7. A las dos semanas estable: commit aparte que retira el modo pull y el flag (decisión del PO §11.3; `.specs/_followups/document-service-retiro-modo-pull.md`).
 
 **Rollback** (la imagen no cambia), en este orden:
 
@@ -141,8 +141,12 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 
 El orden importa: Terraform actualiza el servicio antes que la suscripción, y un StreamingPull rechazado contra una suscripción todavía en push podría no reintentarse (§9).
 
-## 11. Preguntas para el PO
+## 11. Decisiones del PO
 
-1. **¿El encendido va en un PR de una línea después del release (recomendado) o con `default = true` en este mismo PR?** Separado son dos applies, pero ningún apply previo al release puede romper nada. Junto es un apply, pero exige que nadie aplique Terraform completo entre el merge y el release.
-2. **¿La DLQ del proyecto se arregla en un PR aparte?** Sería la suscripción del topic `pubsub-dead-letter`, el IAM de reenvío para las demás suscripciones con DLQ y la alerta `pubsub_dlq`. Este PR solo cubre document-service. Según la documentación de Pub/Sub, sin esos permisos no se cuentan intentos, así que hoy un mensaje de telemetry-processor que falla siempre no llegaría a la DLQ.
-3. **¿Retiramos el modo pull a las dos semanas estables en push, o lo dejamos como rollback permanente?** Retirarlo quita código y el flag. Dejarlo mantiene un rollback sin redeploy, a cambio de dos caminos que testear.
+Respondidas el 2026-10-22. Sus palabras: «Responde las 3 preguntas del #823 con lo recomendado: encendido en un PR aparte de una línea, DLQ en otro PR, y modo pull como rollback dos semanas y luego se retira. Marca el ADR-085 como aceptado y déjalo listo para mergear después del #822.»
+
+1. **Encendido: en un PR aparte de una línea, después del release.** Este PR deja `document_service_push = false`. Se descartó `default = true` en este PR: un apply completo entre el merge y el release (el del #821 o el #822) mandaría el push a una imagen sin endpoint.
+2. **La DLQ del resto del proyecto va en otro PR**: la suscripción del topic `pubsub-dead-letter`, el IAM de reenvío de las demás suscripciones y la alerta `pubsub_dlq`. Este PR solo cubre `document-uploaded-processor-sub`. Seguimiento: `.specs/_followups/pubsub-dlq-proyecto.md`.
+3. **Modo pull: rollback durante dos semanas estables en push; después se retira**, junto con el flag, en un commit aparte. Seguimiento: `.specs/_followups/document-service-retiro-modo-pull.md`.
+
+Orden de merge: este PR entra a `main` después del #822. Los dos tocan `infrastructure/compute.tf` y `cloudbuild.production.yaml`.

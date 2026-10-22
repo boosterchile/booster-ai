@@ -1,8 +1,8 @@
 # ADR-085 — document-service consume `document.uploaded` por push
 
-**Estado**: Propuesto
-**Fecha**: 2026-10-21
-**Decider**: Felipe Vicencio (Product Owner). Pendiente de aprobación en el PR.
+**Estado**: Aceptado (2026-10-22)
+**Fecha**: propuesto el 2026-10-21; aceptado el 2026-10-22
+**Decider**: Felipe Vicencio (Product Owner). Aceptó el ADR y respondió las tres preguntas abiertas el 2026-10-22 (§Decisiones del PO).
 **Se desvía de**:
 - [ADR-063](./063-cloud-run-ingress-posture-round-2.md): su tabla clasifica a document-service como servicio «sin Pub/Sub push (todas las subscriptions son pull)». Su §Re-evaluación ya preveía este caso: «push del mismo proyecto funciona con INTERNAL_ONLY». El ingress se mantiene; cambia el supuesto de que el servicio no recibe inbound.
 - [ADR-083](./083-staging-gemelo-y-extraccion-con-shadow.md) §3: un servicio que se desvía del patrón de extracción lleva su ADR. Este es el de document-service.
@@ -91,7 +91,7 @@ La imagen sirve los dos modos. El endpoint push existe también en pull (solo ac
 
 Hay que hacerlo en ese orden porque Terraform actualiza el servicio antes que la suscripción, y el cliente de Pub/Sub no reintenta un StreamingPull rechazado con un código no transitorio. No está documentado si Pub/Sub acepta StreamingPull sobre una suscripción push.
 
-Cuando el push lleve dos semanas estable, el camino pull y el flag se eliminan en un commit aparte (mismo criterio que ADR-083 §2 paso 6).
+Cuando el push lleve dos semanas estable, el camino pull y el flag se eliminan en un commit aparte (mismo criterio que ADR-083 §2 paso 6). Lo confirmó el PO (§9).
 
 ### 7. El deploy deja de fijar mínimo y CPU
 
@@ -105,6 +105,14 @@ Dos alertas propias en `document-service.tf`, con el runbook del servicio:
 - **ERROR si un mensaje queda más de 30 min sin confirmar** (`oldest_unacked_message_age`, el mismo patrón que las demás suscripciones). Cubre los fallos que no llegan a la DLQ.
 
 La alerta general `pubsub_dlq` no sirve para esto: mira un topic sin suscripción.
+
+### 9. Decisiones del PO (2026-10-22)
+
+El PO respondió las tres preguntas abiertas con la opción recomendada: «encendido en un PR aparte de una línea, DLQ en otro PR, y modo pull como rollback dos semanas y luego se retira».
+
+1. **Encendido en un PR aparte.** Este cambio deja `document_service_push = false`. Encenderlo es un PR de una línea en `infrastructure/variables.tf`, después del release que trae el endpoint push, seguido del apply acotado y de la prueba de humo (spec §10).
+2. **La DLQ del resto del proyecto va en otro PR.** Este cambio solo habilita el reenvío y la alerta de `document-uploaded-processor-sub`. El resto queda en `.specs/_followups/pubsub-dlq-proyecto.md`: el topic `pubsub-dead-letter` sin suscripción, la alerta `pubsub_dlq` que no se mueve y los permisos de reenvío de las demás suscripciones.
+3. **El modo pull queda como rollback durante dos semanas estables en push, y después se retira** en un commit aparte (§6). Criterio y pasos en `.specs/_followups/document-service-retiro-modo-pull.md`.
 
 ## Alternativas consideradas
 
@@ -143,6 +151,8 @@ La alerta general `pubsub_dlq` no sirve para esto: mira un topic sin suscripció
 
 - [x] Tests del worker: 55/55, cobertura 100 % líneas y 92 % ramas. Typecheck, Biome y build OK.
 - [x] `terraform validate` y `fmt`. Plan acotado contra prod con `-lock=false`: con el flag apagado, 7 to add y 1 to change; encendido, 7 to add y 2 to change; 0 to destroy en los dos (`verify.md`).
-- [ ] PO: apply con el flag apagado, release, encendido del flag y prueba de humo (spec §10).
+- [x] PO: ADR aceptado y preguntas abiertas respondidas (2026-10-22, §9).
+- [ ] PO: apply con el flag apagado y release; después, el PR de una línea que enciende el flag, su apply y la prueba de humo (spec §10).
 - [ ] PO: a las 48 h del encendido, el costo diario del servicio en el export por recurso está en ~0.
-- [ ] Dos semanas estable en push: retirar el modo pull y el flag (commit aparte).
+- [ ] Dos semanas estable en push: retirar el modo pull y el flag (`.specs/_followups/document-service-retiro-modo-pull.md`).
+- [ ] DLQ del resto del proyecto en su propio PR (`.specs/_followups/pubsub-dlq-proyecto.md`).

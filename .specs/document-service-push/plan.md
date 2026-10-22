@@ -1,8 +1,8 @@
 # Plan: document-service-push
 
 - Spec: .specs/document-service-push/spec.md
-- ADR: docs/adr/085-document-service-consumidor-push.md (Propuesto)
-- Status: Build completo. Apply y encendido pendientes del PO (spec §10).
+- ADR: docs/adr/085-document-service-consumidor-push.md (Aceptado el 2026-10-22)
+- Status: Build completo y decisiones del PO registradas (spec §11). Faltan el merge (después del #822), el apply y el PR de encendido (spec §10).
 
 ### T1 [DONE]: revalidar la situación con evidencia
 Billing export por recurso, Cloud Monitoring (con controles positivos), Cloud Logging, revisiones de Cloud Run, IAM y DLQ en vivo. Todo de solo lectura. Resultados en `verify.md` §1–2.
