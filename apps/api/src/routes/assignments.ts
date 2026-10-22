@@ -22,6 +22,12 @@ import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import {
+  ctxDeUserContext,
+  esGestor,
+  puedeAsignarViaje,
+  veSoloSuViaje,
+} from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import {
   assignments,
@@ -181,6 +187,19 @@ export function createAssignmentsRoutes(opts: {
     // Estados operacionales. Los terminales (entregado, cancelado) quedan
     // fuera: esta pantalla es para despachar, no para consultar histórico.
     const ACTIVE_STATUSES = ['asignado', 'recogido'] as const;
+    // CHEQUEOS_REEMPLAZADOS assignments-lista: el listado no tenía rol.
+    // Sin contexto se niega: no se entrega la lista completa.
+    const ctxLista = ctxDeUserContext(auth.userContext);
+    if (!ctxLista) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
+    const filtrosLista = [
+      eq(assignments.empresaId, auth.activeMembership.empresa.id),
+      inArray(assignments.status, ACTIVE_STATUSES),
+    ];
+    if (veSoloSuViaje(ctxLista)) {
+      filtrosLista.push(eq(assignments.driverUserId, auth.userContext.user.id));
+    }
     const rows = await opts.db
       .select({
         assignmentId: assignments.id,
@@ -208,12 +227,7 @@ export function createAssignmentsRoutes(opts: {
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
       .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
-      .where(
-        and(
-          eq(assignments.empresaId, auth.activeMembership.empresa.id),
-          inArray(assignments.status, ACTIVE_STATUSES),
-        ),
-      )
+      .where(and(...filtrosLista))
       .orderBy(desc(assignments.acceptedAt));
 
     return c.json({
@@ -266,6 +280,11 @@ export function createAssignmentsRoutes(opts: {
     const auth = requireCarrierAuth(c);
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS assignments-lista: sin contexto no se abre el detalle.
+    const ctxDetalle = ctxDeUserContext(auth.userContext);
+    if (!ctxDetalle) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
     }
     const assignmentId = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
@@ -330,6 +349,10 @@ export function createAssignmentsRoutes(opts: {
     }
     if (row.empresaIdAssign !== empresaId) {
       return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
+    }
+    // CHEQUEOS_REEMPLAZADOS assignments-lista: el detalle incluye ubicación.
+    if (veSoloSuViaje(ctxDetalle) && row.driverUserId !== auth.userContext.user.id) {
+      return c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403);
     }
 
     // Última ubicación del vehículo asignado (si tiene Teltonika emitiendo).
@@ -513,9 +536,9 @@ export function createAssignmentsRoutes(opts: {
             .limit(1);
           const esConductorAsignado = rows[0]?.driverUserId === auth.userContext.user.id;
 
-          const role = auth.activeMembership.membership.role;
-          const esCarrierConEscritura =
-            role === 'dueno' || role === 'admin' || role === 'despachador';
+          // CHEQUEOS_REEMPLAZADOS asignar-api: antes role === dueno|admin|despachador.
+          const ctxRecogida = ctxDeUserContext(auth.userContext);
+          const esCarrierConEscritura = ctxRecogida !== null && esGestor(ctxRecogida);
           const via = esConductorAsignado ? 'conductor' : 'carrier';
 
           const result = await confirmarRecogidaViaje({
@@ -753,10 +776,12 @@ export function createAssignmentsRoutes(opts: {
     auth: ReturnType<typeof requireCarrierAuth> & { ok: true },
   ): boolean {
     const esConductorAsignado = row.driverUserId === auth.userContext.user.id;
-    const role = auth.activeMembership.membership.role;
+    // CHEQUEOS_REEMPLAZADOS asignar-api: mismo trío de roles, ahora esGestor.
+    const ctxResultado = ctxDeUserContext(auth.userContext);
     const esCarrierConEscritura =
       row.empresaId === auth.activeMembership.empresa.id &&
-      (role === 'dueno' || role === 'admin' || role === 'despachador');
+      ctxResultado !== null &&
+      esGestor(ctxResultado);
     return esConductorAsignado || esCarrierConEscritura;
   }
 
@@ -1216,11 +1241,10 @@ export function createAssignmentsRoutes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
-    // Rol-gate: dueno/admin/despachador. Los roles 'operador',
-    // 'visualizador', 'conductor' o 'stakeholder_*' no pueden asignar.
+    // CHEQUEOS_REEMPLAZADOS asignar-api: antes allowedRoles dueno|admin|despachador.
     const role = auth.activeMembership.membership.role;
-    const allowedRoles = ['dueno', 'admin', 'despachador'] as const;
-    if (!(allowedRoles as readonly string[]).includes(role)) {
+    const ctxAsignar = ctxDeUserContext(auth.userContext);
+    if (!ctxAsignar || !puedeAsignarViaje(ctxAsignar)) {
       return c.json({ error: 'forbidden_role', code: 'forbidden_role', role }, 403);
     }
 

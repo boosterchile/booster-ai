@@ -42,9 +42,12 @@ const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
 const USER_CTX: UserContext = {
   user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
   activeMembership: {
-    id: 'm1',
-    role: 'dueno',
-    status: 'activa',
+    membership: {
+      id: 'm1',
+      role: 'dueno',
+      status: 'activa',
+      puedeAceptarOfertas: false,
+    },
     empresa: {
       id: EMPRESA_ID,
       legalName: 'E',
