@@ -27,7 +27,8 @@
 | `crash_trace_persistence_failures` (`crash-traces.tf`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) §Crash trace |
 | `telemetry_gateway_down_p1`, `gateway_enrollment_rate_limited_p1`, `gateway_connection_cap_reached_p2`, `parser_errors_p1` (`telemetry-monitoring.tf`) | [`service-telemetry-tcp-gateway.md`](service-telemetry-tcp-gateway.md) + [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) |
 | crash/unplug/jamming P0 (`telemetry-monitoring.tf`) | [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) (respuesta a evento de seguridad física) |
-| `Pub/Sub DLQ has messages` (`monitoring.tf`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) / [`service-document-service.md`](service-document-service.md) (según el origen del mensaje) |
+| `Pub/Sub DLQ has messages` (`monitoring.tf`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) / [`service-document-service.md`](service-document-service.md) (según el origen del mensaje). **Hoy no se dispara**: mira un topic sin suscripción (`.specs/_followups/pubsub-dlq-proyecto.md`) |
+| `document_uploaded_dead_lettered`, `document_uploaded_stalled` (`document-service.tf`) | [`service-document-service.md`](service-document-service.md) §Push y §Los documentos no se procesan |
 | `signup_probe_failure` (`signup-probe.tf`) | [`service-api.md`](service-api.md) (`/health/signup-flow`) |
 
 ## Runbooks de procedimiento (no por servicio)

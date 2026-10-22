@@ -14,6 +14,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import type { Logger } from '@booster-ai/logger';
 import { z } from 'zod';
+import type { RegistrarEntrega } from './business-metrics.js';
 import type { DocumentUploadedHandler } from './handle-document-uploaded.js';
 import type { PushTokenVerifier } from './push-auth.js';
 
@@ -46,6 +47,8 @@ export interface HttpHandlerOptions {
   push?: {
     verifyToken: PushTokenVerifier;
     handleMessage: DocumentUploadedHandler;
+    /** Rechazos previos al handler (auth, sobre); el resto lo registra el handler. */
+    registrarEntrega: RegistrarEntrega;
   };
 }
 
@@ -91,6 +94,7 @@ async function handlePush(
 ): Promise<void> {
   // Autenticar antes de leer el body: un request ajeno no consume memoria.
   if (!(await push.verifyToken(req.headers.authorization))) {
+    push.registrarEntrega({ transporte: 'push', resultado: 'no_autorizado' });
     send(res, 401, { error: 'unauthorized' });
     return;
   }
@@ -101,6 +105,7 @@ async function handlePush(
       { bytes: read.bytes, maxBytes: MAX_PUSH_BODY_BYTES },
       'push document.uploaded excede el tope, ack para descartar (no reintentar)',
     );
+    push.registrarEntrega({ transporte: 'push', resultado: 'sobre_invalido' });
     send(res, 204);
     return;
   }
@@ -117,6 +122,7 @@ async function handlePush(
       { errors: envelope.error.issues, bodyPreview: read.body.slice(0, 200) },
       'push document.uploaded con sobre inválido, ack para descartar (no reintentar)',
     );
+    push.registrarEntrega({ transporte: 'push', resultado: 'sobre_invalido' });
     send(res, 204);
     return;
   }
@@ -125,6 +131,7 @@ async function handlePush(
     data: Buffer.from(envelope.data.message.data, 'base64'),
     messageId: envelope.data.message.messageId,
     deliveryAttempt: envelope.data.deliveryAttempt,
+    transporte: 'push',
   });
   send(res, decision === 'ack' ? 204 : 500);
 }

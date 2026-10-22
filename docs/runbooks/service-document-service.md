@@ -19,7 +19,7 @@
 
 | Recurso | Detalle |
 |---|---|
-| **Pub/Sub** | sub `document-uploaded-processor-sub` (ack deadline 120 s, **DLQ `pubsub-dead-letter` tras 5 intentos**, retry 10 s–600 s). En push, ack = respuesta 204 y nack = 500/401/403/404. El reenvío a la DLQ necesita que el service agent de Pub/Sub tenga `pubsub.publisher` sobre `pubsub-dead-letter` y `pubsub.subscriber` sobre esta sub (`messaging.tf`). |
+| **Pub/Sub** | sub `document-uploaded-processor-sub` (ack deadline 300 s, igual al timeout del request del servicio, **DLQ `pubsub-dead-letter` tras 5 intentos**, retry 10 s–600 s). En push, ack = respuesta 204 y nack = 500/401/403/404. El reenvío a la DLQ necesita que el service agent de Pub/Sub tenga `pubsub.publisher` sobre `pubsub-dead-letter` y `pubsub.subscriber` sobre esta sub (`messaging.tf`). |
 | **IAM del push** | SA `document-push-invoker@` (`messaging.tf`): `run.invoker` solo sobre este servicio; el service agent de Pub/Sub tiene `serviceAccountOpenIdTokenCreator` sobre él. El servicio declara la audience del push (`PUSH_OIDC_AUDIENCE`, URL run.app determinista) como custom audience. |
 | **GCS bucket `documents`** | `{project}-documents-{env}` (env `DOCUMENTS_BUCKET`). **Retención SII 6 años**, CMEK key `documents`. Objetos en `transport-documents/<tripId>/<uuid>.<ext>`. El worker **nunca borra ni reescribe** el objeto original (retención legal, O-3). |
 | **Postgres** | tabla `documentos_transporte` (`extraction_status`, `decodificado` JSONB, `ted_raw`, `retention_until`). |
@@ -84,6 +84,8 @@ gcloud run services describe $SVC --region=$REGION --project=$PROJECT \
   --format='yaml(spec.template.metadata.annotations,spec.template.spec.containers[0].env)' \
   | grep -E -A1 'minScale|cpu-throttling|DOCUMENT_CONSUMER_MODE'   # -A1: el value va en la línea siguiente
 ```
+
+> **Métrica de negocio**: `workload.googleapis.com/documentos_entregas_total` (Metrics Explorer), por `transporte` (`pull`/`push`) y `resultado`: `decodificado`, `fallido`, `skipped`, `malformado`, `sobre_invalido`, `error_transitorio` y `no_autorizado`. Muchos `no_autorizado` = OIDC mal configurado; `error_transitorio` sostenido = GCS o la base. Con CPU solo en requests, los puntos pueden llegar con atraso: se vacían al apagarse la instancia.
 
 ---
 

@@ -51,7 +51,8 @@ afterEach(async () => {
 function pushDeps(decision: 'ack' | 'nack' = 'ack', authorized = true) {
   const verifyToken = vi.fn(async () => authorized);
   const handleMessage = vi.fn<DocumentUploadedHandler>(async () => decision);
-  return { verifyToken, handleMessage };
+  const registrarEntrega = vi.fn();
+  return { verifyToken, handleMessage, registrarEntrega };
 }
 
 const post = (base: string, body: string, headers: Record<string, string> = {}) =>
@@ -91,6 +92,9 @@ describe('createHttpHandler — push de document.uploaded', () => {
     const delivery = deps.handleMessage.mock.calls[0]?.[0];
     expect(delivery?.messageId).toBe('1234567890');
     expect(delivery?.deliveryAttempt).toBe(3);
+    expect(delivery?.transporte).toBe('push');
+    // El resultado del procesamiento lo registra el handler, no el transporte.
+    expect(deps.registrarEntrega).not.toHaveBeenCalled();
     expect(JSON.parse(delivery?.data.toString('utf-8') ?? '')).toEqual(PAYLOAD);
   });
 
@@ -104,6 +108,10 @@ describe('createHttpHandler — push de document.uploaded', () => {
     const base = await start({ logger: makeLogger() as never as Logger, push: deps });
     expect((await post(base, JSON.stringify(envelope()))).status).toBe(401);
     expect(deps.handleMessage).not.toHaveBeenCalled();
+    expect(deps.registrarEntrega).toHaveBeenCalledWith({
+      transporte: 'push',
+      resultado: 'no_autorizado',
+    });
   });
 
   it('descarta (204) un body que no es JSON o un sobre fuera de contrato', async () => {
@@ -113,6 +121,11 @@ describe('createHttpHandler — push de document.uploaded', () => {
     expect((await post(base, 'no es json')).status).toBe(204);
     expect((await post(base, JSON.stringify({ message: { data: 'x' } }))).status).toBe(204);
     expect(deps.handleMessage).not.toHaveBeenCalled();
+    expect(deps.registrarEntrega).toHaveBeenCalledTimes(2);
+    expect(deps.registrarEntrega).toHaveBeenCalledWith({
+      transporte: 'push',
+      resultado: 'sobre_invalido',
+    });
     expect(logger.error).toHaveBeenCalledWith(
       expect.anything(),
       'push document.uploaded con sobre inválido, ack para descartar (no reintentar)',
@@ -126,6 +139,10 @@ describe('createHttpHandler — push de document.uploaded', () => {
     const res = await post(base, 'x'.repeat(MAX_PUSH_BODY_BYTES + 1));
     expect(res.status).toBe(204);
     expect(deps.handleMessage).not.toHaveBeenCalled();
+    expect(deps.registrarEntrega).toHaveBeenCalledWith({
+      transporte: 'push',
+      resultado: 'sobre_invalido',
+    });
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ bytes: MAX_PUSH_BODY_BYTES + 1 }),
       'push document.uploaded excede el tope, ack para descartar (no reintentar)',
@@ -139,6 +156,7 @@ describe('createHttpHandler — push de document.uploaded', () => {
         throw new Error('jwks caído');
       }),
       handleMessage: vi.fn<DocumentUploadedHandler>(async () => 'ack'),
+      registrarEntrega: vi.fn(),
     };
     const base = await start({ logger: logger as never as Logger, push: deps });
     expect((await post(base, JSON.stringify(envelope()))).status).toBe(500);

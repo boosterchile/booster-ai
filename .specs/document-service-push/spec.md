@@ -27,7 +27,7 @@ El gasto está en ~USD 700/mes y el techo realista de ahorro es ~USD 340/mes. Es
 
 ## 3. Success criteria
 
-- [ ] SC-1: con `document_service_push=false` (default de este PR), un apply no cambia el comportamiento. La suscripción sigue en pull y el servicio en `min=1` con CPU siempre asignada. Solo se suman el SA, los bindings, dos alertas, tres env (`DOCUMENT_CONSUMER_MODE=pull`, `PUSH_CALLER_SA`, `PUSH_OIDC_AUDIENCE`), la custom audience y la concurrencia 4.
+- [ ] SC-1: con `document_service_push=false` (default de este PR), un apply no cambia el comportamiento. La suscripción sigue en pull y el servicio en `min=1` con CPU siempre asignada. Solo se suman el SA, los bindings, dos alertas, tres env (`DOCUMENT_CONSUMER_MODE=pull`, `PUSH_CALLER_SA`, `PUSH_OIDC_AUDIENCE`), la custom audience, la concurrencia 4 y el ack deadline de 300 s (igual al timeout del request; en pull no cambia nada porque el cliente extiende el lease).
 - [ ] SC-2: con `document_service_push=true`, el mismo apply pone la suscripción en push hacia `<url run.app>/pubsub/document-uploaded`, con OIDC de `document-push-invoker@` y `audience` igual a la URL run.app determinista (`local.cloud_run_document_url`). El servicio queda en `min=0`, `cpu_idle=true` y `DOCUMENT_CONSUMER_MODE=push`.
 - [ ] SC-3: el worker atiende el push con la misma decisión ack/nack que el pull (`src/handle-document-uploaded.ts`): 204 = ack, 500 = nack, 401 = token rechazado. Un sobre o un mensaje fuera de contrato se confirma y se registra como error.
 - [ ] SC-4: el endpoint push solo acepta un OIDC firmado por Google, con `aud` = `PUSH_OIDC_AUDIENCE`, `email` = `PUSH_CALLER_SA` y `email_verified`. Cloud Run IAM exige además una audience aceptada (la del push está declarada como custom audience) y `run.invoker`, que solo tiene el SA del push.
@@ -35,6 +35,7 @@ El gasto está en ~USD 700/mes y el techo realista de ahorro es ~USD 340/mes. Es
 - [ ] SC-6: `cloudbuild.production.yaml` deja de fijar `--min-instances=1` y `--no-cpu-throttling` en `deploy-document-service`.
 - [ ] SC-7: el service agent de Pub/Sub puede reenviar a la DLQ desde esta suscripción: publisher sobre `pubsub-dead-letter` y subscriber sobre la suscripción.
 - [ ] SC-8: dos alertas propias en `document-service.tf`, con el runbook del servicio: mensaje reenviado a la DLQ (> 0), y mensaje sin confirmar por más de 30 min.
+- [ ] SC-8b: métrica de negocio `documentos_entregas_total{transporte, resultado}`, exportada por `otel-bootstrap` (meter `/business`). Cubre cada resultado de una entrega, en pull y en push (comentario de Codex en el PR).
 - [ ] SC-9: tests del worker con cobertura ≥ 80/80/80/80. Typecheck, Biome, build y `terraform validate` OK.
 - [ ] SC-10 (PO): después del encendido, la prueba de humo del runbook da `document.uploaded malformado, ack para descartar`, y a las 48 h el costo diario del servicio está en ~0.
 - [ ] SC-11: este PR no ejecuta `terraform apply`, `gcloud` con efectos ni deploys.
@@ -98,7 +99,7 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 | Cloud Run no deja la firma del `Authorization` intacta y el OIDC falla en la app: todo da 401 | B | M | La documentación de Cloud Run describe quitar la firma solo para `X-Serverless-Authorization`, y Pub/Sub usa `Authorization`. matching-engine usa la misma verificación. La prueba de humo lo detecta en ~1 min y el rollback no exige redeploy |
 | En el rollback, el StreamingPull de la revisión pull arranca mientras la suscripción sigue en push y Pub/Sub lo rechaza con un código que el cliente no reintenta: el pull queda muerto | B | M | No hay documentación de qué hace Pub/Sub. El rollback va en dos pasos: primero la suscripción a pull (`modify-push-config`), después el apply. Luego se verifica `open_streaming_pulls > 0` y la prueba de humo |
 | El push no entra por `INTERNAL_ONLY` | MB | M | La documentación lo admite para el mismo proyecto con la URL `run.app`, que es la que usa Terraform. La prueba de humo lo detecta |
-| Un decode supera los 120 s del ack, Pub/Sub reentrega, el duplicado se saltea y el primero falla después | MB | B | Medido: 0,05–0,2 s por documento. Si pasara, el documento queda en `fallido`, conservado y con ingreso manual |
+| Un request llega al timeout de 300 s, Cloud Run responde 504, el reintento ve `procesando` y se confirma, y el trabajo original falla después en segundo plano | MB | B | El ack deadline es igual al timeout del request (300 s), así que Pub/Sub no reentrega mientras el original corre (comentario de Codex en el PR). Medido: 0,05–0,2 s por documento. Si pasara, el documento queda en `fallido`, conservado y con ingreso manual |
 | OOM con varios documentos grandes en una instancia | B | B | Concurrencia 4 (pico medido ~670 MB con fotos normales de 12 MP). Un OOM deja la fila en `procesando`; el cron la libera a los 30 min. Una imagen **hostil** (16000×16000 en 1,5 MB) sí tumba la instancia: es un riesgo previo, que existe igual en pull (§5, follow-up) |
 | Un mensaje que falla siempre despierta instancias en cada reintento | B | B | 5 intentos y DLQ (SC-7), más la alerta |
 | Arranque en frío en el primer documento | A | B | El decode es asíncrono; la subida no espera |
@@ -107,7 +108,7 @@ Ver ADR-085 §Alternativas: dejarlo como está, pull con `min=0`, push (elegida)
 ## 10. Rollout (PO)
 
 1. **Mergear.** El release que sale del merge trae la imagen con los dos modos. Sin `DOCUMENT_CONSUMER_MODE`, la imagen se comporta igual que hoy (pull), y el release ya no toca el mínimo ni la CPU.
-2. **Apply con el flag apagado**, antes o después del release: la imagen vieja ignora las env nuevas (su schema Zod no es estricto) y sigue en pull. Debe dar **7 to add, 1 to change, 0 to destroy**: en el servicio, solo las tres env, la custom audience y `max_instance_request_concurrency: 80 -> 4`; la suscripción no cambia.
+2. **Apply con el flag apagado**, antes o después del release: la imagen vieja ignora las env nuevas (su schema Zod no es estricto) y sigue en pull. Debe dar **7 to add, 2 to change, 0 to destroy**: en el servicio, solo las tres env, la custom audience y `max_instance_request_concurrency: 80 -> 4`; en la suscripción, solo `ack_deadline_seconds: 120 -> 300` (sigue en pull).
    ```bash
    terraform plan \
      -target=module.service_document \

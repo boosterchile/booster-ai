@@ -16,6 +16,7 @@
 
 import type { Logger } from '@booster-ai/logger';
 import type { DocumentIngestor } from '@booster-ai/transport-documents';
+import type { RegistrarEntrega, Transporte } from './business-metrics.js';
 import {
   type DocumentStore,
   type ObjectDownloader,
@@ -31,6 +32,8 @@ export interface DocumentUploadedDelivery {
   messageId: string;
   /** Intento de entrega según Pub/Sub (solo viene con DLQ configurada). */
   deliveryAttempt?: number | undefined;
+  /** Por dónde llegó: etiqueta de la métrica `documentos_entregas_total`. */
+  transporte: Transporte;
 }
 
 export interface DocumentUploadedDeps {
@@ -38,6 +41,7 @@ export interface DocumentUploadedDeps {
   downloader: ObjectDownloader;
   ingestor: DocumentIngestor;
   logger: Logger;
+  registrarEntrega: RegistrarEntrega;
 }
 
 export type DocumentUploadedHandler = (delivery: DocumentUploadedDelivery) => Promise<AckDecision>;
@@ -52,9 +56,9 @@ function parseJson(raw: string): { ok: true; value: unknown } | { ok: false } {
 }
 
 export function createDocumentUploadedHandler(deps: DocumentUploadedDeps): DocumentUploadedHandler {
-  const { store, downloader, ingestor, logger } = deps;
+  const { store, downloader, ingestor, logger, registrarEntrega } = deps;
 
-  return async ({ data, messageId, deliveryAttempt }) => {
+  return async ({ data, messageId, deliveryAttempt, transporte }) => {
     const start = Date.now();
     const raw = data.toString('utf-8');
 
@@ -70,6 +74,7 @@ export function createDocumentUploadedHandler(deps: DocumentUploadedDeps): Docum
         },
         'document.uploaded malformado, ack para descartar (no reintentar)',
       );
+      registrarEntrega({ transporte, resultado: 'malformado' });
       return 'ack';
     }
 
@@ -91,12 +96,14 @@ export function createDocumentUploadedHandler(deps: DocumentUploadedDeps): Docum
         },
         'document.uploaded procesado',
       );
+      registrarEntrega({ transporte, resultado: outcome });
       return 'ack';
     } catch (err) {
       logger.error(
         { err, messageId, deliveryAttempt, documentId: parsed.data.documentId },
         'error procesando document.uploaded, nack para reintento',
       );
+      registrarEntrega({ transporte, resultado: 'error_transitorio' });
       return 'nack';
     }
   };

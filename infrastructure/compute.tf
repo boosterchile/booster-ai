@@ -96,6 +96,12 @@ locals {
   # custom audience del servicio, así Cloud Run IAM la acepta sin depender de
   # qué URLs run.app acepta por defecto, y el worker la exige (PUSH_OIDC_AUDIENCE).
   cloud_run_document_url = "https://booster-ai-document-service-${google_project.booster_ai.number}.${var.region}.run.app"
+  # ADR-085: timeout del request de document-service y ack deadline de su
+  # suscripción, del mismo valor. En push el ack no se extiende por mensaje:
+  # si fuera menor que el timeout, Pub/Sub reentregaría mientras el request
+  # original sigue vivo, el duplicado vería `procesando`, se saltearía y se
+  # confirmaría, y un fallo posterior del original ya no tendría reintento.
+  document_service_request_timeout_s = 300
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -838,6 +844,8 @@ module "service_document" {
   cpu                              = "1"
   memory                           = "1Gi"
   max_instance_request_concurrency = 4
+  # = ack_deadline_seconds de document_uploaded_processor (messaging.tf).
+  timeout_seconds = local.document_service_request_timeout_s
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME     = "booster-ai-document-service"

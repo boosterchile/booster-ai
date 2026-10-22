@@ -256,12 +256,14 @@ resource "google_pubsub_subscription" "document_uploaded_processor" {
   topic   = google_pubsub_topic.document_uploaded.name
   project = google_project.booster_ai.project_id
 
-  # 120s: rasterizar PDF + decodificar PDF417 + parsear TED puede tardar. En
-  # push es lo que Pub/Sub espera la respuesta HTTP (no hay extensión de
-  # lease): medido, un decode toma 0,05–0,2 s y el arranque en frío segundos
-  # (`.specs/document-service-push/verify.md`). Queda bajo el timeout de
-  # request del servicio (300 s, default del módulo).
-  ack_deadline_seconds = 120
+  # En push es lo que Pub/Sub espera la respuesta HTTP, sin extensión de lease.
+  # Igual al timeout del request del servicio (compute.tf,
+  # local.document_service_request_timeout_s): Pub/Sub no reentrega mientras
+  # Cloud Run todavía deja correr el request original. Medido, un decode toma
+  # 0,05–0,2 s y el arranque en frío segundos
+  # (`.specs/document-service-push/verify.md`). En pull el cliente extiende el
+  # lease solo, así que el valor no cambia nada.
+  ack_deadline_seconds = local.document_service_request_timeout_s
 
   # ADR-085 — push al worker.
   #   - Endpoint = URL run.app por defecto del servicio (`uri`): con ingress

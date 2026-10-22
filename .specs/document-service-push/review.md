@@ -38,3 +38,10 @@ Confirmado por la revisión:
 - Los logs son JSON, con redacción por valor (JWT y emails incluidos).
 - `cloudbuild.production.yaml` conserva ingress, IAM y SA.
 - Sin `any`, sin `console.*`, sin `catch` que trague errores en silencio.
+
+## Codex (comentarios en el PR, sobre `98520e3f`)
+
+| Severidad | Hallazgo | Respuesta |
+|---|---|---|
+| P2 | El endpoint push solo registraba logs; faltaba una métrica de negocio por resultado (principio 6 de CLAUDE.md) | **Corregido.** `documentos_entregas_total{transporte, resultado}` (`src/business-metrics.ts`) en el meter `booster-ai-document-service/business`, que `otel-bootstrap` exporta. Cubre pull y push: los resultados del procesamiento, los descartes, los reintentos y los 401. Probado con tests y de punta a punta con `initOtel` y un exporter en memoria (`verify.md` §5) |
+| P2 | `ack_deadline_seconds = 120` con timeout de request de 300 s: Pub/Sub podía reentregar mientras el request original seguía. El duplicado se salteaba y confirmaba, y un fallo posterior del original quedaba sin reintento | **Corregido.** `local.document_service_request_timeout_s = 300` fija el timeout del servicio y el ack deadline de la suscripción. Plan: la suscripción cambia solo `ack 120 -> 300`; el timeout del servicio no tiene diff. El residual (request cortado a los 300 s con el trabajo siguiendo en segundo plano) está en el ADR §Consecuencias |

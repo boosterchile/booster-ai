@@ -40,27 +40,31 @@ function makeDeps(overrides?: { store?: Partial<DocumentStore>; downloader?: Obj
     download: vi.fn(async () => Uint8Array.from([0x25, 0x50, 0x44, 0x46])),
   };
   const ingestor = { ingest: vi.fn(async () => FAILED) };
+  const registrarEntrega = vi.fn();
   const handle = createDocumentUploadedHandler({
     store,
     downloader,
     ingestor,
     logger: logger as never as Logger,
+    registrarEntrega,
   });
-  return { handle, logger, store, ingestor };
+  return { handle, logger, store, ingestor, registrarEntrega };
 }
 
 const delivery = (body: unknown) => ({
   data: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)),
   messageId: 'msg-1',
   deliveryAttempt: 2,
+  transporte: 'push' as const,
 });
 
 describe('createDocumentUploadedHandler — decisión ack/nack común a pull y push', () => {
   it('procesa un mensaje válido y confirma (ack)', async () => {
-    const { handle, logger, store, ingestor } = makeDeps();
+    const { handle, logger, store, ingestor, registrarEntrega } = makeDeps();
     await expect(handle(delivery(VALID_MESSAGE))).resolves.toBe('ack');
     expect(store.claimForProcessing).toHaveBeenCalledWith(VALID_MESSAGE.documentId);
     expect(ingestor.ingest).toHaveBeenCalledTimes(1);
+    expect(registrarEntrega).toHaveBeenCalledWith({ transporte: 'push', resultado: 'fallido' });
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ messageId: 'msg-1', deliveryAttempt: 2, outcome: 'fallido' }),
       'document.uploaded procesado',
@@ -69,18 +73,20 @@ describe('createDocumentUploadedHandler — decisión ack/nack común a pull y p
 
   it('confirma el skip idempotente sin tocar GCS', async () => {
     const download = vi.fn(async () => new Uint8Array());
-    const { handle } = makeDeps({
+    const { handle, registrarEntrega } = makeDeps({
       store: { claimForProcessing: vi.fn(async () => false) },
       downloader: { download },
     });
-    await expect(handle(delivery(VALID_MESSAGE))).resolves.toBe('ack');
+    await expect(handle({ ...delivery(VALID_MESSAGE), transporte: 'pull' })).resolves.toBe('ack');
     expect(download).not.toHaveBeenCalled();
+    expect(registrarEntrega).toHaveBeenCalledWith({ transporte: 'pull', resultado: 'skipped' });
   });
 
   it('descarta (ack) un body que no es JSON, sin reintentar ni tocar la base', async () => {
-    const { handle, logger, store } = makeDeps();
+    const { handle, logger, store, registrarEntrega } = makeDeps();
     await expect(handle(delivery('no es json {'))).resolves.toBe('ack');
     expect(store.claimForProcessing).not.toHaveBeenCalled();
+    expect(registrarEntrega).toHaveBeenCalledWith({ transporte: 'push', resultado: 'malformado' });
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ errors: [{ message: 'JSON inválido' }] }),
       'document.uploaded malformado, ack para descartar (no reintentar)',
@@ -96,7 +102,7 @@ describe('createDocumentUploadedHandler — decisión ack/nack común a pull y p
   });
 
   it('pide reintento (nack) ante un error transitorio de GCS', async () => {
-    const { handle, logger, store } = makeDeps({
+    const { handle, logger, store, registrarEntrega } = makeDeps({
       downloader: {
         download: vi.fn(async () => {
           throw new Error('ECONNRESET');
@@ -104,6 +110,10 @@ describe('createDocumentUploadedHandler — decisión ack/nack común a pull y p
       },
     });
     await expect(handle(delivery(VALID_MESSAGE))).resolves.toBe('nack');
+    expect(registrarEntrega).toHaveBeenCalledWith({
+      transporte: 'push',
+      resultado: 'error_transitorio',
+    });
     // processDocumentUploaded revierte el claim antes de propagar.
     expect(store.markFailed).toHaveBeenCalledWith(
       VALID_MESSAGE.documentId,

@@ -62,8 +62,8 @@ Consecuencia: el servicio no puede tener un dominio propio como endpoint del pus
 | `min_instances` | 1 | **0** | Cada mensaje despierta una instancia |
 | `cpu_idle` | false | **true** | Todo el trabajo ocurre dentro del request: se responde después de persistir |
 | concurrencia por instancia | 80 (sin gestionar) | **4** | Medido con el ingestor real y entradas normales: 4 fotos de 12 MP en paralelo llegan a ~670 MB de RSS (memoria de 1 GiB). Más requests no aceleran el decode (WASM en un hilo). No protege contra una imagen hostil (ver Consecuencias) |
-| `ack_deadline_seconds` | 120 | 120 | En push es lo que Pub/Sub espera la respuesta, sin extensión de lease. Un decode medido toma 0,05–0,2 s y el arranque en frío segundos |
-| timeout del request | 300 s | 300 s | Mayor que el ack deadline |
+| `ack_deadline_seconds` | 120 | **300** | En push es lo que Pub/Sub espera la respuesta, sin extensión de lease. Va igual al timeout del request, así Pub/Sub no reentrega mientras el request original puede seguir corriendo. Un decode medido toma 0,05–0,2 s y el arranque en frío segundos. En pull el cliente extiende el lease solo |
+| timeout del request | 300 s | 300 s | Mismo valor que el ack deadline (`local.document_service_request_timeout_s`) |
 | `max_instances` | 10 | 10 | Sin cambio |
 
 La concurrencia se fija con una variable nueva del módulo `cloud-run-service` (`max_instance_request_concurrency`, `null` por defecto: no genera diff en los demás servicios). La variable vieja `concurrency` nunca estuvo conectada; se documenta y se deja para un cambio aparte.
@@ -106,6 +106,15 @@ Dos alertas propias en `document-service.tf`, con el runbook del servicio:
 
 La alerta general `pubsub_dlq` no sirve para esto: mira un topic sin suscripción.
 
+Métrica de negocio `documentos_entregas_total{transporte, resultado}`, en el meter `booster-ai-document-service/business` que `otel-bootstrap` exporta a Cloud Monitoring (`workload.googleapis.com/`). Cuenta cada entrega por resultado:
+
+- `decodificado`, `fallido` y `skipped`, del procesamiento;
+- `malformado` y `sobre_invalido`, que se descartan;
+- `error_transitorio`, que se reintenta;
+- `no_autorizado`, el 401.
+
+Las métricas de Pub/Sub ven el estado de la entrega, pero no distinguen estos resultados.
+
 ### 9. Decisiones del PO (2026-10-22)
 
 El PO respondió las tres preguntas abiertas con la opción recomendada: «encendido en un PR aparte de una línea, DLQ en otro PR, y modo pull como rollback dos semanas y luego se retira».
@@ -134,7 +143,7 @@ El PO respondió las tres preguntas abiertas con la opción recomendada: «encen
 ### Negativas
 
 - **Arranque en frío**: el primer documento después de un rato sin uso espera unos segundos. El procesamiento es offline (el documento queda en `pendiente` mientras tanto), así que no se ve en la subida.
-- **Ack deadline duro**: en push no hay extensión de lease. Si un decode pasara de 120 s, Pub/Sub reentregaría el mensaje mientras el primero sigue. El segundo intento ve `procesando`, se saltea y se confirma; si después el primero fallara, el documento quedaría en `fallido` sin reintento automático, disponible para ingreso manual. Lo medido (0,2 s) deja margen de sobra; el riesgo se registra en la spec.
+- **Ack deadline duro**: en push no hay extensión de lease. Por eso el ack deadline es igual al timeout del request (300 s): Pub/Sub no reentrega mientras Cloud Run deja correr el request original. Queda un caso residual. Si un request llega a los 300 s, Cloud Run responde 504 y Pub/Sub reintenta; si el trabajo original sigue en segundo plano, el reintento ve `procesando`, se saltea y se confirma. Si después ese trabajo fallara, el documento quedaría en `fallido`, conservado y disponible para ingreso manual. Lo medido (0,2 s) deja más de 1.000 veces de margen.
 - **Dependencia de la URL `run.app`**: no se puede deshabilitar mientras el push la use.
 - **Código de transición**: el worker mantiene los dos modos hasta que se retire el pull.
 - **IAM nuevo**: un SA y cuatro bindings. Ninguno es IAM humana:
@@ -149,8 +158,8 @@ El PO respondió las tres preguntas abiertas con la opción recomendada: «encen
 
 ## Validación
 
-- [x] Tests del worker: 55/55, cobertura 100 % líneas y 92 % ramas. Typecheck, Biome y build OK.
-- [x] `terraform validate` y `fmt`. Plan acotado contra prod con `-lock=false`: con el flag apagado, 7 to add y 1 to change; encendido, 7 to add y 2 to change; 0 to destroy en los dos (`verify.md`).
+- [x] Tests del worker: 57/57, cobertura 100 % líneas y 92 % ramas. Typecheck, Biome y build OK.
+- [x] `terraform validate` y `fmt`. Plan acotado contra prod con `-lock=false`, 7 to add, 2 to change y 0 to destroy en los dos casos (`verify.md`). Con el flag apagado la suscripción solo cambia el ack deadline de 120 a 300 s.
 - [x] PO: ADR aceptado y preguntas abiertas respondidas (2026-10-22, §9).
 - [ ] PO: apply con el flag apagado y release; después, el PR de una línea que enciende el flag, su apply y la prueba de humo (spec §10).
 - [ ] PO: a las 48 h del encendido, el costo diario del servicio en el export por recurso está en ~0.

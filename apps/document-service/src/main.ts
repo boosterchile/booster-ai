@@ -4,6 +4,7 @@ import { createPdfTedIngestor } from '@booster-ai/transport-documents';
 import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import { createRegistrarEntrega } from './business-metrics.js';
 import { loadConfig } from './config.js';
 import { createDrizzleDocumentStore } from './document-store.js';
 import { createGcsDownloader } from './gcs-downloader.js';
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
   });
   const db = drizzle(pool);
 
+  const registrarEntrega = createRegistrarEntrega();
   const handleMessage = createDocumentUploadedHandler({
     store: createDrizzleDocumentStore({ db, logger }),
     downloader: createGcsDownloader({
@@ -94,6 +96,7 @@ async function main(): Promise<void> {
     }),
     ingestor: createPdfTedIngestor(),
     logger,
+    registrarEntrega,
   });
 
   let subscription: Subscription | null = null;
@@ -109,6 +112,7 @@ async function main(): Promise<void> {
         data: message.data,
         messageId: message.id,
         deliveryAttempt: message.deliveryAttempt,
+        transporte: 'pull',
       })
         .then((decision) => (decision === 'ack' ? message.ack() : message.nack()))
         .catch((err: unknown) => {
@@ -143,6 +147,7 @@ async function main(): Promise<void> {
             push: {
               verifyToken: createPushTokenVerifier({ ...pushAuth, logger }),
               handleMessage,
+              registrarEntrega,
             },
           }),
     }),

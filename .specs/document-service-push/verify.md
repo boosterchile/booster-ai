@@ -113,7 +113,8 @@ La concurrencia apenas acelera: 4 en paralelo tardan 3 veces lo de 1. Se fija **
 
 | Gate | Resultado |
 |---|---|
-| `pnpm --filter @booster-ai/document-service test:coverage` | 6 archivos, **55/55**. Cobertura: statements 100 %, branches 92 %, functions 100 %, lines 100 % (umbral 80) |
+| `pnpm --filter @booster-ai/document-service test:coverage` | 7 archivos, **57/57**. Cobertura: statements 100 %, branches 92,1 %, functions 100 %, lines 100 % (umbral 80) |
+| Métrica de punta a punta (`initOtel` real con exporter en memoria) | `booster-ai-document-service/business` → `documentos_entregas_total`, con los puntos `{transporte: push, resultado: decodificado} = 2` y `{transporte: pull, resultado: malformado} = 1`. El filtro `/business` la deja pasar |
 | `pnpm --filter @booster-ai/document-service typecheck` | OK |
 | `pnpm exec biome check apps/document-service` | OK, tras `--write` de formato |
 | `pnpm --filter @booster-ai/document-service build` | OK (`dist/main.js` 111 KB) |
@@ -131,9 +132,9 @@ La concurrencia apenas acelera: 4 en paralelo tardan 3 veces lo de 1. Se fija **
 
 ### Plan acotado contra prod (`-lock=false`, `TF_VAR_billing_account=""`, con los `-target` de la spec §10)
 
-Corrido de nuevo después de la revisión (commit 2).
+Corrido de nuevo después del merge de `main` (#822) y de los comentarios de Codex: ack deadline igual al timeout del request.
 
-**Flag apagado (default): `Plan: 7 to add, 1 to change, 0 to destroy`.**
+**Flag apagado (default): `Plan: 7 to add, 2 to change, 0 to destroy`.**
 
 | Recurso | Cambio |
 |---|---|
@@ -145,14 +146,15 @@ Corrido de nuevo después de la revisión (commit 2).
 | `google_monitoring_alert_policy.document_uploaded_dead_lettered` | + alerta |
 | `google_monitoring_alert_policy.document_uploaded_stalled` | + alerta |
 | `module.service_document…service` | + `custom_audiences = ["https://booster-ai-document-service-469283083998.southamerica-west1.run.app"]`; `max_instance_request_concurrency: 80 -> 4`; + env `DOCUMENT_CONSUMER_MODE=pull`, `PUSH_CALLER_SA`, `PUSH_OIDC_AUDIENCE`. Nada más |
-| `google_pubsub_subscription.document_uploaded_processor` | sin cambios |
+| `google_pubsub_subscription.document_uploaded_processor` | solo `ack_deadline_seconds: 120 -> 300`; sigue en pull |
+| `module.service_document…service`, timeout | sin diff: `timeout_seconds = local.document_service_request_timeout_s` (300) coincide con el valor vivo |
 
 **Flag encendido (`-var=document_service_push=true`): `Plan: 7 to add, 2 to change, 0 to destroy`.** Son los mismos 7 recursos nuevos, más:
 
 | Recurso | Cambio |
 |---|---|
 | `module.service_document…service` | lo anterior, con `DOCUMENT_CONSUMER_MODE=push`, más `cpu_idle: false -> true` y `min_instance_count: 1 -> 0` |
-| `google_pubsub_subscription.document_uploaded_processor` | `+ push_config`: endpoint `https://booster-ai-document-service-wbfevjot4q-tl.a.run.app/pubsub/document-uploaded`; `oidc_token`: audience `https://booster-ai-document-service-469283083998.southamerica-west1.run.app` (la custom audience), SA `document-push-invoker@…` |
+| `google_pubsub_subscription.document_uploaded_processor` | `ack_deadline_seconds: 120 -> 300` y `+ push_config`: endpoint `https://booster-ai-document-service-wbfevjot4q-tl.a.run.app/pubsub/document-uploaded`; `oidc_token`: audience `https://booster-ai-document-service-469283083998.southamerica-west1.run.app` (la custom audience), SA `document-push-invoker@…` |
 
 Después del apply con el flag apagado, el encendido es entonces **0 to add, 2 to change**.
 
