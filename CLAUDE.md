@@ -1,6 +1,8 @@
 # CLAUDE.md — Contrato de trabajo del agente en Booster AI
 
-Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / ISO 14064). Owner: Felipe Vicencio (`dev@boosterchile.com`). Monorepo pnpm/Turborepo: apps en `apps/`, packages en `packages/`, Terraform (`infrastructure/`), GCP Cloud Run + GKE. El índice cross-tool (stack, comandos) vive en `AGENTS.md`. Este archivo es el contrato normativo para cualquier agente.
+Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / ISO 14064). Owner: Felipe Vicencio (`dev@boosterchile.com`). Monorepo pnpm/Turborepo: apps en `apps/`, packages en `packages/`, Terraform (`infrastructure/`), GCP Cloud Run + GKE. El índice cross-tool (stack, comandos) vive en `AGENTS.md` y se importa en la línea siguiente; los comandos no se repiten aquí. Este archivo es el contrato normativo para cualquier agente.
+
+@AGENTS.md
 
 ## Fuente de verdad
 
