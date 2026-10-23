@@ -122,6 +122,8 @@ Ninguna llamada envió `departureTime=any`; por defecto HERE calcula sensible al
 
 Esperado en Usage si la hipótesis es cierta, en el día UTC 2026-10-21: **Routing Truck 12, Time Aware Routing 5, Routing Car 3**. Si Usage agrupara por hora local, los mismos incrementos aparecen sobre el 2026-10-20 (sobre los 31 / 70 ya vistos). Comparación programada para el 2026-10-23 (Usage tarda hasta 2 días): automática con `probe-here-usage.yml` si el PO cargó `HERE_ACCESS_KEY_ID` y `HERE_ACCESS_KEY_SECRET` en el repo; si no, con los números del portal. Hasta cerrar la comparación, ningún push toca `probe-here-billing.yml` ni `probe-here-billing.py`, para no contaminar el conteo.
 
+Intento de lectura automática del 2026-10-23 14:02 UTC (run [39966281303](https://github.com/boosterchile/booster-ai/actions/runs/39966281303)): los secretos `HERE_ACCESS_KEY_ID` / `HERE_ACCESS_KEY_SECRET` no estaban cargados y el paso de Usage se omitió. **Comparación pendiente** de los tres números del portal (Routing Truck, Time Aware Routing, Routing Car del 2026-10-21) que aporte el PO; la checklist del ADR-084 sigue abierta.
+
 ## Conclusión de la fase
 
 1. Google Routes API no conoce restricciones de camión en Chile (sonda 1). Descartado como motor de legalidad de ruta; sigue siendo la fuente de tráfico y ETA.
