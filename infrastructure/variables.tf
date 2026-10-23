@@ -731,8 +731,10 @@ variable "matching_via_microservice" {
 # (DOCUMENT_CONSUMER_MODE), min_instances y cpu_idle. OFF = pull como hoy
 # (min=1, CPU siempre asignada). Encenderlo solo después del release que trae
 # el endpoint push; rollback: apagar y re-aplicar.
+# Encendido 2026-10-23 (decisión del PO, ADR-085 §11.1): el release
+# 39875352139 de main 18ce8e22 ya trae el endpoint push. Rollback: spec §10.
 variable "document_service_push" {
   description = "document-service recibe document.uploaded por push (Pub/Sub → POST /pubsub/document-uploaded) y escala a cero. false = StreamingPull con min_instances=1."
   type        = bool
-  default     = false
+  default     = true
 }
