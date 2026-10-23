@@ -198,9 +198,10 @@ variable "strict_migration_ordering" {
 # Budget alert
 # -----------------------------------------------------------------------------
 variable "monthly_budget_usd" {
-  description = "Límite de budget mensual en USD. Alertas a 50/75/90/100%."
+  description = "Equivalente en USD del budget mensual de la cuenta de facturación (CLP 450.000, gestionado fuera de Terraform: ver project.tf). Solo alimenta la pestaña Forecast del dashboard (MONTHLY_BUDGET_USD × dólar del día)."
   type        = number
-  default     = 500
+  # CLP 450.000 / 964 CLP por USD (dólar observado del 2026-09-28) ≈ 467.
+  default = 467
 }
 
 variable "alert_email" {
