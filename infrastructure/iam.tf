@@ -376,3 +376,38 @@ resource "google_service_account_iam_member" "wif_to_drift" {
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
 }
+
+# -----------------------------------------------------------------------------
+# Sesiones de Claude Code en la nube — SA READ-ONLY (spec acceso-gcp-sesiones-nube)
+# -----------------------------------------------------------------------------
+# Identidad con la que las sesiones en la nube leen GCP (gcloud, bq, REST).
+# Su llave JSON se crea a mano y se carga como Network secret del entorno de
+# Claude: el proxy de Anthropic firma cada request y el contenedor nunca ve la
+# llave. La llave NO se gestiona en Terraform (quedaría en el state). Es el
+# único SA del proyecto con llave; la excepción de org policy está en
+# org-policies.tf (allow_sa_keys).
+#
+# roles/billing.viewer sobre la cuenta de facturación se otorga por gcloud
+# (runbook de la spec §4): el SA de drift no lee IAM de facturación.
+resource "google_service_account" "claude_cloud_readonly" {
+  account_id   = "claude-cloud-readonly"
+  display_name = "Claude Code cloud sessions (read-only)"
+  description  = "Lectura de GCP para sesiones de Claude Code en la nube. Llave solo en el proxy de Anthropic. Spec .specs/acceso-gcp-sesiones-nube."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+# Solo lectura. Ninguno otorga write ni lee payloads de Secret Manager:
+#   - viewer: get/list de recursos, logs y datasets (incluye el billing export)
+#   - bigquery.jobUser: correr queries (bq query) en el proyecto
+#   - serviceusage.serviceUsageConsumer: serviceusage.services.use (API calls)
+resource "google_project_iam_member" "claude_cloud_readonly_roles" {
+  for_each = toset([
+    "roles/viewer",
+    "roles/bigquery.jobUser",
+    "roles/serviceusage.serviceUsageConsumer",
+  ])
+  project = google_project.booster_ai.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.claude_cloud_readonly.email}"
+}
