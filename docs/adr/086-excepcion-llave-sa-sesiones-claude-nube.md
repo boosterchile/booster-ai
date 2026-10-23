@@ -1,6 +1,6 @@
 # ADR-086 — Una llave de SA de solo lectura para las sesiones de Claude en la nube
 
-**Estado**: Propuesto (2026-10-23). Pasa a Aceptado con el merge del PR #833.
+**Estado**: Vigente (aceptado por el PO el 2026-10-23 con el merge del PR #833; aplicado y verificado el mismo día, `.specs/acceso-gcp-sesiones-nube/ship.md`).
 **Fecha**: 2026-10-23
 **Decider**: Felipe Vicencio (Product Owner). Aceptó el riesgo en la spec §6 («opción B») y pidió este ADR el 2026-10-23.
 **Acota a**:
