@@ -39,8 +39,9 @@ resource "google_org_policy_policy" "allow_public_iam" {
 # org siguen bloqueados.
 #
 # Excepción deliberada a la lección SEC-2026-04-01 (ADR-001: nunca descargar SA
-# keys), aceptada por el PO en la spec §6. Las demás llaves del proyecto no se
-# crean: CI sigue por WIF y los SA de runtime por identidad nativa.
+# keys), decidida en ADR-086. Las demás llaves del proyecto no se crean: CI
+# sigue por WIF y los SA de runtime por identidad nativa. ADR-086 §5 tiene el
+# control para detectar cualquier otra llave.
 resource "google_org_policy_policy" "allow_sa_keys" {
   name   = "projects/${google_project.booster_ai.project_id}/policies/iam.disableServiceAccountKeyCreation"
   parent = "projects/${google_project.booster_ai.project_id}"

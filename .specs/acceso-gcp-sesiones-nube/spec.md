@@ -3,6 +3,7 @@
 - Author: Felipe Vicencio (con Claude)
 - Date: 2026-10-23
 - Status: **Pedida por el PO el 2026-10-23** («Opción B») tras la auditoría de costos. Toca `org-policies.tf` e `iam.tf` (archivos protegidos: política de organización y service account); el merge y el apply necesitan su visto.
+- ADR: [ADR-086](../../docs/adr/086-excepcion-llave-sa-sesiones-claude-nube.md) acota ADR-001 («nunca descargar SA keys») para esta excepción.
 - Origen: la auditoría de costos (`.specs/presupuesto-clp/`) no pudo leer GCP desde la nube. Se probaron tres caminos y los tres fallaron: el token del proxy (sin credencial configurada), una llave de SA (bloqueada por `iam.disableServiceAccountKeyCreation`) y el conector BigQuery (OAuth roto, ref. `ofid_8d7b76dd8ee1ce99`).
 
 ## 1. Objetivo

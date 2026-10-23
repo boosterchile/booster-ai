@@ -378,7 +378,7 @@ resource "google_service_account_iam_member" "wif_to_drift" {
 }
 
 # -----------------------------------------------------------------------------
-# Sesiones de Claude Code en la nube — SA READ-ONLY (spec acceso-gcp-sesiones-nube)
+# Sesiones de Claude Code en la nube — SA READ-ONLY (ADR-086, spec acceso-gcp-sesiones-nube)
 # -----------------------------------------------------------------------------
 # Identidad con la que las sesiones en la nube leen GCP (gcloud, bq, REST).
 # Su llave JSON se crea a mano y se carga como Network secret del entorno de
