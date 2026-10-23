@@ -184,6 +184,13 @@ const MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA =
 
 const corregirTelefonoConductorBodySchema = z.object({
   phone: telefonoMovilConductorSchema,
+  /**
+   * Guardar el número no reenvía la invitación: el PIN que la empresa ya
+   * entregó sigue sirviendo. Solo con `true`, y si la cuenta sigue pendiente,
+   * se genera un PIN nuevo y se manda el WhatsApp (spec
+   * `conductor-telefono-sin-reenvio`).
+   */
+  reenviar_invitacion: z.boolean().optional().default(false),
 });
 
 export function createConductoresRoutes(opts: {
@@ -1010,14 +1017,20 @@ export function createConductoresRoutes(opts: {
   });
 
   // ---------------------------------------------------------------------
-  // POST /:id/telefono — WhatsApp + reenvío si el conductor sigue pendiente.
-  // Separado de PATCH /:id: guardar el número puede regenerar el PIN.
+  // POST /:id/telefono — guarda el WhatsApp; reenvía la invitación solo si
+  // se pide y el conductor sigue pendiente.
+  // Separado de PATCH /:id: con reenvío, guardar el número regenera el PIN.
   // ---------------------------------------------------------------------
   app.post(
     '/:id/telefono',
     zValidator('json', corregirTelefonoConductorBodySchema, (result, c) => {
       if (!result.success) {
-        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
+        const issues = result.error.issues;
+        const soloTelefono =
+          issues.length > 0 && issues.every((issue) => issue.path[0] === 'phone');
+        if (soloTelefono) {
+          return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
+        }
       }
       return undefined;
     }),
@@ -1076,7 +1089,8 @@ export function createConductoresRoutes(opts: {
             firebaseUid: fila.firebaseUid,
             claveNumericaHash: fila.claveNumericaHash,
           });
-          const activationPin = cuentaActiva ? null : generateActivationPin();
+          const activationPin =
+            body.reenviar_invitacion && !cuentaActiva ? generateActivationPin() : null;
           const invitacionReenviada = activationPin !== null;
 
           const actualizado = await opts.db
