@@ -17,6 +17,12 @@
 #    vacía no genera falso diff ni intenta desvincular billing.
 #  - Ruido perpetuo: resuelto (multi_tenant/phone_number declarados en
 #    identity-platform.tf + ignore_changes del dashboard_json). Plan = "No changes".
+#  - Variables con valor de prod distinto del default: el check no lee ningún
+#    tfvars (está gitignored), así que toda variable cuyo valor real en prod no
+#    sea su default se fija abajo como TF_VAR_* con su motivo. Si no, el plan
+#    propone "devolver" prod al default y el job queda en rojo para siempre.
+#    No se cambia el default en variables.tf porque staging usa el mismo
+#    módulo raíz y depende de esos defaults.
 #
 # Estado: una vez aplicado el IaC del SA drift (iam.tf), el check corre verde
 # (plan = "No changes"). Disparable por cron diario o workflow_dispatch.
@@ -64,6 +70,12 @@ jobs:
         id: plan
         env:
           TF_VAR_billing_account: ${{ vars.TF_BILLING_ACCOUNT }}
+          # Valor real de prod (default = false). La key de Resend está cargada en
+          # el secreto `resend-api-key` y el api la monta como RESEND_API_KEY
+          # (email.tf, compute.tf). Con el default el plan propone desmontarla
+          # (`RESEND_API_KEY -> null`): falso drift. Si prod vuelve a false, quitar
+          # esta línea en el mismo PR que desmonta la key.
+          TF_VAR_resend_api_key_ready: "true"
         run: |
           set +e
           terraform plan -input=false -lock=false -detailed-exitcode -no-color -out=drift.plan 2>&1 | tee plan.out
