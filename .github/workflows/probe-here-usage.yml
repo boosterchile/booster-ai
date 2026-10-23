@@ -3,6 +3,7 @@
 # Requiere las dos credenciales OAuth 2.0 de la app en secretos del repo (HERE_REALM_ID es
 # opcional: se deriva de la cuenta); si faltan, se omite con aviso y la revisión vuelve a
 # pedir los números al PO.
+# Ejecutado el 2026-10-23 UTC por la revisión programada del experimento del 21-10.
 name: Probe HERE — Usage API (consumo facturable)
 
 on:
