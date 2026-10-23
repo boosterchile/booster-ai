@@ -1,0 +1,42 @@
+# Sonda puntual, solo en rama de trabajo (no se mergea a main): volumen real de llamadas
+# a las APIs de Google Maps Platform (Cloud Monitoring, solo lectura) para dimensionar el
+# costo del ADR-084. Usa el SA terraform-drift (roles/viewer) vía WIF, igual que
+# terraform-drift.yml. No toca nada.
+name: Probe volumen APIs Google (Cloud Monitoring)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-volumen-apis.yml
+      - scripts/probes/probe-volumen-apis-google.sh
+
+permissions:
+  contents: read
+  id-token: write # OIDC para Workload Identity Federation con GCP
+
+jobs:
+  volumen:
+    name: request_count por servicio y mes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Auth a GCP (WIF, SA read-only)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: terraform-drift@booster-ai-494222.iam.gserviceaccount.com
+          token_format: access_token
+      - name: Cloud Monitoring
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          GOOGLE_CLOUD_PROJECT: booster-ai-494222
+        run: bash scripts/probes/probe-volumen-apis-google.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-volumen
+          path: probe-out/
+          if-no-files-found: ignore

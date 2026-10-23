@@ -1,0 +1,180 @@
+# Sonda puntual, solo en rama de trabajo (no se mergea a main). Spec:
+# .specs/ruteo-camion-chile/spec.md. Tres jobs: datos OSM (Nominatim + Overpass),
+# HERE Routing v8 (requiere el secreto HERE_API_KEY; si falta se omite con mensaje) y
+# OSRM auto-alojado sobre un recorte de Santiago con perfil car y perfil truck.
+# No despliega nada ni toca GCP.
+name: Probe motores de ruteo camión (HERE + OSRM)
+
+on:
+  workflow_dispatch: {}
+  # Disparo por push: un workflow_dispatch solo se registra en la API cuando el
+  # archivo existe en main. Acotado a esta rama y a los archivos de la sonda.
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-truck-engines.yml
+      - scripts/probes/probe-osm-data.sh
+      - scripts/probes/probe-here-truck.sh
+      - scripts/probes/probe-osrm-truck.sh
+      - scripts/probes/osrm-truck-profile.sh
+      - scripts/probes/osm-inject-hgv-no.py
+      - scripts/probes/probe-here-coverage.py
+      - scripts/probes/flexpolyline.py
+
+permissions:
+  contents: read
+
+jobs:
+  osm-data:
+    name: OSM — geocodificación y etiquetas de camión (Overpass)
+    runs-on: ubuntu-latest
+    outputs:
+      origin_lat: ${{ steps.osm.outputs.origin_lat }}
+      origin_lon: ${{ steps.osm.outputs.origin_lon }}
+      dest_lat: ${{ steps.osm.outputs.dest_lat }}
+      dest_lon: ${{ steps.osm.outputs.dest_lon }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nominatim + Overpass
+        id: osm
+        run: bash scripts/probes/probe-osm-data.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-osm
+          path: probe-out/
+          if-no-files-found: ignore
+
+  here:
+    name: HERE Routing v8 — auto vs camión
+    needs: osm-data
+    runs-on: ubuntu-latest
+    env:
+      HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sin secreto → omitido
+        if: env.HERE_API_KEY == ''
+        run: echo "::warning::HERE_API_KEY no está cargado como secreto del repo; el job de HERE se omite. Cargarlo y relanzar (rerun) para cubrir C1 del spec."
+      - name: Sonda HERE
+        if: env.HERE_API_KEY != ''
+        env:
+          ORIGIN_LAT: ${{ needs.osm-data.outputs.origin_lat }}
+          ORIGIN_LON: ${{ needs.osm-data.outputs.origin_lon }}
+          DEST_LAT: ${{ needs.osm-data.outputs.dest_lat }}
+          DEST_LON: ${{ needs.osm-data.outputs.dest_lon }}
+        run: bash scripts/probes/probe-here-truck.sh
+      - name: ¿Por qué evita Camino La Pirámide? (camión forzado por via + truckAttributes)
+        if: env.HERE_API_KEY != ''
+        env:
+          ORIGIN_LAT: ${{ needs.osm-data.outputs.origin_lat }}
+          ORIGIN_LON: ${{ needs.osm-data.outputs.origin_lon }}
+          DEST_LAT: ${{ needs.osm-data.outputs.dest_lat }}
+          DEST_LON: ${{ needs.osm-data.outputs.dest_lon }}
+        run: python3 -I scripts/probes/probe-here-why.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-here
+          path: probe-out/
+          if-no-files-found: ignore
+
+  here-coverage:
+    name: HERE — cobertura de restricciones con oráculo OSM (validación ADR-084)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sin secreto → omitido
+        if: env.HERE_API_KEY == ''
+        run: echo "::warning::HERE_API_KEY no está cargado; la sonda de cobertura se omite."
+      - name: Sonda de cobertura (RM 10 vías, Valparaíso 3, Biobío 3; ≤ 64 transacciones HERE)
+        if: env.HERE_API_KEY != ''
+        run: python3 -I scripts/probes/probe-here-coverage.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-here-coverage
+          path: probe-out/
+          if-no-files-found: ignore
+
+  osrm:
+    name: OSRM — recorte Santiago, perfil car vs truck
+    needs: osm-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OSRM_IMAGE: ghcr.io/project-osrm/osrm-backend:v5.27.1
+      # bbox Santiago (oeste,sur,este,norte) para osmium
+      BBOX: -70.85,-33.65,-70.45,-33.25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar osmium-tool
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+
+      - name: Descargar chile-latest y recortar Santiago
+        run: |
+          mkdir -p osm
+          curl -sSL --retry 3 -o osm/chile-latest.osm.pbf https://download.geofabrik.de/south-america/chile-latest.osm.pbf
+          ls -la osm/chile-latest.osm.pbf
+          osmium extract -b "$BBOX" -s smart osm/chile-latest.osm.pbf -o osm/santiago.osm.pbf
+          ls -la osm/santiago.osm.pbf
+          osmium fileinfo -e osm/santiago.osm.pbf | sed -n '1,40p'
+
+      - name: C4 — recorte con hgv=no inyectado en Camino La Pirámide
+        run: |
+          # venv: el python del runner es «externally managed» (PEP 668) y rechaza pip install global
+          python3 -m venv .venv-osm && .venv-osm/bin/pip install -q osmium
+          .venv-osm/bin/python -I scripts/probes/osm-inject-hgv-no.py osm/santiago.osm.pbf osm/santiago-inj.osm.pbf 'Camino La Pir[áa]mide'
+
+      - name: Perfiles car.lua (del contenedor) y truck.lua (derivado)
+        run: |
+          mkdir -p build/car build/truck build/truck_inj
+          docker run --rm -v "$PWD/build:/out" --entrypoint sh "$OSRM_IMAGE" -c 'cp /opt/car.lua /out/car.lua && cp -r /opt/lib /out/lib'
+          bash scripts/probes/osrm-truck-profile.sh build/car.lua build/truck.lua
+          cp osm/santiago.osm.pbf build/car/santiago.osm.pbf;       cp build/car.lua   build/car/profile.lua
+          cp osm/santiago.osm.pbf build/truck/santiago.osm.pbf;     cp build/truck.lua build/truck/profile.lua
+          cp osm/santiago-inj.osm.pbf build/truck_inj/santiago.osm.pbf; cp build/truck.lua build/truck_inj/profile.lua
+          for p in car truck truck_inj; do cp -r build/lib "build/$p/lib"; done
+
+      - name: Build OSRM (car y truck)
+        run: |
+          for p in car truck truck_inj; do
+            echo "== osrm-extract/partition/customize ($p) =="
+            docker run --rm -v "$PWD/build/$p:/data" "$OSRM_IMAGE" osrm-extract -p /data/profile.lua /data/santiago.osm.pbf
+            docker run --rm -v "$PWD/build/$p:/data" "$OSRM_IMAGE" osrm-partition /data/santiago.osrm
+            docker run --rm -v "$PWD/build/$p:/data" "$OSRM_IMAGE" osrm-customize /data/santiago.osrm
+          done
+
+      - name: Levantar osrm-routed (car :5000, truck :5001, truck+hgv=no :5002)
+        run: |
+          docker run -d --name osrm-car       -p 5000:5000 -v "$PWD/build/car:/data"       "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
+          docker run -d --name osrm-truck     -p 5001:5000 -v "$PWD/build/truck:/data"     "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
+          docker run -d --name osrm-truck-inj -p 5002:5000 -v "$PWD/build/truck_inj:/data" "$OSRM_IMAGE" osrm-routed --algorithm mld /data/santiago.osrm
+          for port in 5000 5001 5002; do
+            for i in $(seq 1 30); do
+              if curl -sf "http://localhost:$port/nearest/v1/driving/-70.60,-33.40" >/dev/null; then echo "osrm :$port listo"; break; fi
+              sleep 2
+              [[ $i -eq 30 ]] && { echo "osrm :$port no respondió"; docker logs osrm-car; docker logs osrm-truck; docker logs osrm-truck-inj; exit 1; }
+            done
+          done
+
+      - name: Sonda OSRM
+        env:
+          ORIGIN_LAT: ${{ needs.osm-data.outputs.origin_lat }}
+          ORIGIN_LON: ${{ needs.osm-data.outputs.origin_lon }}
+          DEST_LAT: ${{ needs.osm-data.outputs.dest_lat }}
+          DEST_LON: ${{ needs.osm-data.outputs.dest_lon }}
+        run: bash scripts/probes/probe-osrm-truck.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-osrm
+          path: |
+            probe-out/
+            build/truck.lua
+          if-no-files-found: ignore
