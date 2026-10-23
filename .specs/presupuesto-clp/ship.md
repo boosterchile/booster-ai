@@ -39,7 +39,7 @@ El 100 % del tráfico quedó en la revisión nueva, así que la pestaña Forecas
 
 ## Próximo apply manual
 
-Mientras #824 no esté en `main`, planificar con:
+Un plan local no lee `terraform-drift.yml` ni un tfvars versionado, así que hay que pasarle cada variable cuyo valor en prod no sea su default. Hoy es una sola, `resend_api_key_ready = true`. Planificar con:
 
 ```
 terraform plan -input=false \
@@ -48,7 +48,7 @@ terraform plan -input=false \
   -out=<nombre>.plan
 ```
 
-El drift check diario sigue en rojo por el falso `RESEND_API_KEY` hasta que se mergee #824; `MONTHLY_BUDGET_USD` ya no aparece en su diff.
+Sin ese `-var`, el plan propone desmontar `RESEND_API_KEY` del api. #824 fija el mismo valor para el drift check de CI y no cambia los plan locales: el `-var` sigue haciendo falta después de su merge.
 
 ## Rollback
 
