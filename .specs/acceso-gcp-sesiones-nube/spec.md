@@ -23,10 +23,12 @@ Lo que NO se hace: guardar la llave en Terraform, en el repo, en variables de en
 
 ## 3. Criterios de éxito
 
-- [ ] SC-1: `terraform plan` muestra 1 política, 1 SA y 3 bindings a crear; nada que cambiar ni destruir.
-- [ ] SC-2: `gcloud iam service-accounts keys create` funciona para `claude-cloud-readonly` y sigue fallando para cualquier SA de otro proyecto de la org.
-- [ ] SC-3: desde una sesión nueva en la nube, `gcloud projects describe booster-ai-494222` y una consulta `bq` al billing export responden; `gcloud run services update …` falla con 403.
-- [ ] SC-4: la llave no aparece en el repo, en el state ni en el contenedor (`env | grep -i key` sin resultados).
+- [x] SC-1: `terraform plan` muestra 1 política, 1 SA y 3 bindings a crear; nada que cambiar ni destruir.
+- [x] SC-2: `gcloud iam service-accounts keys create` funciona para `claude-cloud-readonly` y sigue fallando para cualquier SA de otro proyecto de la org (lo segundo se deduce de la herencia; no se probó).
+- [x] SC-3: desde una sesión nueva en la nube, `gcloud projects describe booster-ai-494222` y una consulta `bq` al billing export responden; `gcloud run services update …` falla con 403.
+- [x] SC-4: la llave no aparece en el repo, en el state ni en el contenedor (`env | grep -i key` sin resultados).
+
+Evidencia en `ship.md` (2026-10-23).
 
 ## 4. Runbook (PO, después del merge)
 
