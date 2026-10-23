@@ -92,6 +92,16 @@ locals {
   # T10-21: matching-engine recibe POST /ranking del api con ID token (aud =
   # esta URL) + Cloud Run IAM.
   cloud_run_matching_url = "https://booster-ai-matching-engine-${google_project.booster_ai.number}.${var.region}.run.app"
+  # ADR-085: `aud` del OIDC del push de document.uploaded. Se declara además como
+  # custom audience del servicio, así Cloud Run IAM la acepta sin depender de
+  # qué URLs run.app acepta por defecto, y el worker la exige (PUSH_OIDC_AUDIENCE).
+  cloud_run_document_url = "https://booster-ai-document-service-${google_project.booster_ai.number}.${var.region}.run.app"
+  # ADR-085: timeout del request de document-service y ack deadline de su
+  # suscripción, del mismo valor. En push el ack no se extiende por mensaje:
+  # si fuera menor que el timeout, Pub/Sub reentregaría mientras el request
+  # original sigue vivo, el duplicado vería `procesando`, se saltearía y se
+  # confirmaría, y un fallo posterior del original ya no tendría reintento.
+  document_service_request_timeout_s = 300
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -117,6 +127,15 @@ module "service_api" {
   max_instances = 20
   cpu           = "1"
   memory        = "1Gi"
+
+  # El api enciende los flags MATCHING_* y NOTIFICATIONS_* (env de abajo), y el
+  # mínimo de matching-engine y notification-service sale de esos mismos flags
+  # (locals junto a service_matching_engine). Con este depends_on, Terraform
+  # actualiza el api después de los dos servicios: si la revisión nueva de uno
+  # no queda lista, el apply corta antes de prender el flag. Además, un
+  # `-target=module.service_api` arrastra a los dos módulos, así que prender
+  # un flag solo en el api también sube el mínimo del servicio.
+  depends_on = [module.service_matching_engine, module.service_notification]
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
@@ -483,15 +502,24 @@ module "service_matching_engine" {
   service_account_email = google_service_account.cloud_run_runtime.email
 
   # T10-21: servicio HTTP request-driven (POST /ranking desde el api, dentro de
-  # la transacción del matching). min_instances=1 evita el cold start en ese
-  # camino síncrono; cpu_idle=true (default) porque no hay trabajo de fondo.
+  # la transacción del matching). Con un flag encendido, min_instances=1 evita
+  # el cold start en ese camino síncrono; cpu_idle=true (default) porque no hay
+  # trabajo de fondo.
+  #
+  # Con matching_shadow y matching_via_microservice en false nadie lo llama: el
+  # api rankea en proceso (modo `local` de matching-ranking.ts). Auditoría de
+  # costos 2026-10-21: 0 requests en 30 días y ~USD 11/mes por la instancia
+  # mínima. Por eso el mínimo se deriva de los flags: el mismo apply que prende
+  # uno lo sube a 1, antes de tocar el api (depends_on de service_api). El
+  # deploy de Cloud Build ya no pasa --min-instances
+  # (cloudbuild.production.yaml), así que este valor es el que manda.
   #
   # Decisión del PO (2026-10-19): el ingress queda INTERNAL_ONLY, como en vivo.
   # No se aplica el INGRESS_TRAFFIC_ALL de #765. VPC, DATABASE_URL y Redis se
   # mantienen: es la conectividad que el servicio tiene hoy; sacarla en este
   # apply le quitaría la red a la revisión viva. El binario nuevo no las usa
   # (cómputo puro); quedan montadas a propósito.
-  min_instances = 1
+  min_instances = local.matching_engine_min_instances
   max_instances = 10
   cpu           = "1"
   memory        = "512Mi"
@@ -519,6 +547,14 @@ module "service_matching_engine" {
   secret_versions_ready = local.all_secret_versions_ready
 
   labels = { app = "matching-engine", env = var.environment }
+}
+
+locals {
+  # Mínimo de instancias de los microservicios de T10-21 según sus flags: 1 si
+  # el api los usa (sombra o corte), 0 si no. Ver los comentarios de
+  # service_matching_engine y service_notification.
+  matching_engine_min_instances      = (var.matching_shadow || var.matching_via_microservice) ? 1 : 0
+  notification_service_min_instances = (var.notifications_shadow || var.notifications_via_microservice) ? 1 : 0
 }
 
 # --- apps/telemetry-processor (Pub/Sub PULL consumer / StreamingPull) ---
@@ -592,13 +628,28 @@ module "service_notification" {
   service_account_email = google_service_account.cloud_run_runtime.email
 
   # T10-21: consumer Pub/Sub PULL de `notification-events` (StreamingPull en
-  # main.ts). min_instances=1 + cpu_idle=false son obligatorios: con min=0 la
-  # instancia escala a cero y nadie consume; con cpu_idle=true el pull queda
-  # CPU-throttled (incidente telemetry-processor 2026-06-07). Emisor sin
-  # estado (sin DB ni Redis): 512 Mi alcanzan.
+  # main.ts). Con un flag encendido, min_instances=1 + cpu_idle=false son
+  # obligatorios: con min=0 la instancia escala a cero y nadie consume; con
+  # cpu_idle=true el pull queda CPU-throttled (incidente telemetry-processor
+  # 2026-06-07). Emisor sin estado (sin DB ni Redis): 512 Mi alcanzan.
+  #
+  # Con notifications_shadow y notifications_via_microservice en false no hay
+  # nada que consumir: el api envía directo por Twilio (modo `directo` de
+  # whatsapp-enrutado.ts) y no publica en notification-events. Auditoría de
+  # costos 2026-10-21: 0 mensajes en 30 días y ~USD 45–60/mes por una
+  # instancia con CPU siempre asignada. Por eso el mínimo se deriva de los
+  # flags: el mismo apply que prende uno lo sube a 1, y el depends_on de
+  # service_api hace que el api cambie después, solo si este servicio quedó
+  # listo (la suscripción retiene 1 día). Si igual se prendiera un flag por
+  # fuera de Terraform, lo detecta la alerta wave2_consumer_stalled
+  # ["notification_events"] (telemetry-monitoring.tf). cpu_idle=false se
+  # queda: con min=0 y sin trabajo no hay instancia; cada deploy o apply
+  # levanta una por ≤15 min (costo despreciable). El deploy de Cloud Build ya
+  # no pasa --min-instances (cloudbuild.production.yaml).
+  #
   # max_instances=20 es lo que tiene el servicio en vivo. #764 lo bajó a 5
   # en código, pero ese apply no corrió; este reconcile no lo escala hacia abajo.
-  min_instances = 1
+  min_instances = local.notification_service_min_instances
   max_instances = 20
   cpu_idle      = false
   cpu           = "1"
@@ -774,22 +825,40 @@ module "service_document" {
   service_name          = "booster-ai-document-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  # T10-21: consumer Pub/Sub PULL (StreamingPull en main.ts), igual que
-  # telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios: con
-  # min=0 la instancia escala a cero y nadie consume (no hay requests que la
-  # despierten), y con cpu_idle=true el pull queda CPU-throttled (incidente
-  # 2026-06-07). 1 GiB porque rasterizar el PDF ocupa RAM.
-  min_instances = 1
-  max_instances = 10
-  cpu_idle      = false
-  cpu           = "1"
-  memory        = "1Gi"
+  # ADR-085: el modo de consumo lo decide var.document_service_push, junto con
+  # la suscripción `document_uploaded_processor` (messaging.tf).
+  #   - false (pull, T10-21): StreamingPull en main.ts, igual que
+  #     telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios:
+  #     con min=0 nadie consume (no hay requests que despierten la instancia) y
+  #     con cpu_idle=true el pull queda CPU-throttled (incidente 2026-06-07).
+  #   - true (push): Pub/Sub hace POST a /pubsub/document-uploaded. Cada mensaje
+  #     es un request, así que min=0 y CPU solo durante el request bastan: el
+  #     servicio escala a cero sin dejar mensajes sin procesar.
+  # 1 GiB porque rasterizar el PDF ocupa RAM. Concurrencia 4: medido con el
+  # ingestor real, 4 fotos de 12 MP en paralelo llegan a ~670 MB de RSS
+  # (`.specs/document-service-push/verify.md`); más requests por instancia no
+  # aceleran el decode (WASM en un hilo) y acercan el OOM.
+  min_instances                    = var.document_service_push ? 0 : 1
+  max_instances                    = 10
+  cpu_idle                         = var.document_service_push
+  cpu                              = "1"
+  memory                           = "1Gi"
+  max_instance_request_concurrency = 4
+  # = ack_deadline_seconds de document_uploaded_processor (messaging.tf).
+  timeout_seconds = local.document_service_request_timeout_s
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME     = "booster-ai-document-service"
     DOCUMENTS_BUCKET = google_storage_bucket.documents.name
     UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
     SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
+    # ADR-085: pull abre StreamingPull; push no. El endpoint push queda activo
+    # en los dos modos (solo acepta el OIDC de PUSH_CALLER_SA con aud =
+    # PUSH_OIDC_AUDIENCE), así el orden en que se actualizan la suscripción y la
+    # revisión no deja mensajes en 404.
+    DOCUMENT_CONSUMER_MODE = var.document_service_push ? "push" : "pull"
+    PUSH_CALLER_SA         = google_service_account.document_push_invoker.email
+    PUSH_OIDC_AUDIENCE     = local.cloud_run_document_url
   })
   # DTE_PROVIDER_* removidos (ADR-069): Booster ya no emite DTE. El skeleton de
   # document-service nunca leyó estos secretos; se elimina el binding para
@@ -801,13 +870,18 @@ module "service_document" {
   # persiste ninguna fila (mismo connector que api y telemetry-processor).
   vpc_connector = google_vpc_access_connector.serverless.id
 
-  public = false
+  # public=false: Cloud Run IAM exige el OIDC del push (run.invoker solo para
+  # document-push-invoker, messaging.tf) antes de que el request llegue al
+  # container. La app repite la verificación de emisor y aud (src/push-auth.ts).
+  public           = false
+  custom_audiences = [local.cloud_run_document_url]
 
-  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
-  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
-  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
-  # run.app a nivel de red → un token de invoker robado deja de ser explotable
-  # desde internet (contención de blast-radius; IAM era la única barrera).
+  # ADR-063 (completa ADR-062): sin NEG en el GCLB ni callers HTTP de
+  # internet. INTERNAL_ONLY cierra el run.app a nivel de red → un token de
+  # invoker robado deja de ser explotable desde internet. ADR-085: el push
+  # entra igual, porque Cloud Run trata como interno el push de una
+  # suscripción del mismo proyecto que apunta a la URL run.app por defecto
+  # (no a un dominio propio). Por eso push_endpoint usa module.service_document.url.
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   secret_versions_ready = local.all_secret_versions_ready

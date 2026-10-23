@@ -69,7 +69,8 @@ redis_memory_gb = 1
 # ALERTAS + BILLING
 # =============================================================================
 
-monthly_budget_usd = 500
+# Equivalente en USD del budget de la cuenta (CLP 450.000). Ver project.tf.
+monthly_budget_usd = 467
 alert_email        = "dev@boosterchile.com"
 
 # Segundo canal de alertas (Slack incoming webhook o Google Chat space

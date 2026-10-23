@@ -3,7 +3,7 @@
 - **Estado**: Vigente desde T10-21 (`.specs/notification-service-t10-21/spec.md`, [ADR-083](../adr/083-staging-gemelo-y-extraccion-con-shadow.md)).
 - **Servicio Cloud Run**: `booster-ai-notification-service` · región `southamerica-west1`.
   - Red y acceso: `ingress = INTERNAL_ONLY`, `public = false`.
-  - Escala: `min/max = 1/5`, `cpu_idle = false`, `cpu = 1`, `memory = 512Mi`.
+  - Escala: `min = 1` con algún flag `notifications_*` encendido y `0` con los dos apagados (ver abajo), `max = 20`, `cpu_idle = false`, `cpu = 1`, `memory = 512Mi`.
 - **Naturaleza**: consumer **Pub/Sub pull** de `notification-events-sub`, topic `notification-events`, con exactly-once delivery y DLQ tras 5 intentos.
   - Entrega WhatsApp (Twilio Content Templates) con sus propias credenciales.
   - Health en `/health`.
@@ -18,6 +18,8 @@
 | false | false | api directo | Ninguno (consume nada) |
 | false | true | api directo | **Sombra**: arma el request con su config, compara el hash con el del api, **nunca envía** |
 | true | — | **este servicio** | Entrega real |
+
+**El mínimo de instancias sigue a los flags** (`compute.tf`, `local.notification_service_min_instances`): con los dos en `false` el servicio escala a cero y no hay instancia viva; con cualquiera en `true`, `min_instances = 1`. Por eso los flags se cambian **siempre con `terraform apply -var=…`** (o en el tfvars), nunca con `gcloud run services update --update-env-vars` sobre el api ni con `--min` sobre el servicio: por fuera de Terraform el flag se encendería con el consumidor en cero. Terraform aplica el api después del servicio (`depends_on`) y corta si la revisión nueva del servicio no queda lista. El deploy de Cloud Build no toca el mínimo. Si igual pasa, avisa la alerta `Wave2 notification_events consumer stalled` (CRITICAL, mensaje sin confirmar > 10 min).
 
 Si un WhatsApp no llega, revisa primero los flags.
 
@@ -36,7 +38,7 @@ Si un WhatsApp no llega, revisa primero los flags.
 |---|---|
 | Alerta `notification-service: divergencia en sombra` | El request armado por el servicio difiere del que envió el api. No afecta a usuarios, pero **bloquea el corte** |
 | `Pub/Sub DLQ has messages` con mensajes de `notification-events` | 5 intentos fallidos: Twilio 429/5xx persistente o caída de red |
-| Backlog creciente en `notification-events-sub` | No hay instancia consumiendo. Revisar que no volvió a `min=0` o `cpu_idle=true` |
+| Alerta `Wave2 notification_events consumer stalled` o backlog creciente en `notification-events-sub` | No hay instancia consumiendo. Con un flag encendido, el servicio debe tener `min=1` y `cpu_idle=false`; si está en `min=0`, el flag se prendió por fuera de Terraform: aplicar los flags con `terraform apply` |
 | Log `notificacion rechazada por Twilio (no se reintenta)` | Error 4xx de Twilio: número inválido, template no aprobado o content SID mal cargado (`load-content-sids.md`) |
 | Log `ack fallido tras envío` | Posible WhatsApp duplicado (el mensaje se reentrega). Raro; si se repite, investigar la latencia del ack |
 
@@ -68,14 +70,18 @@ gcloud logging read "resource.type=\"cloud_run_revision\" resource.labels.servic
 
 ## Rollback
 
-**Del canal (el que importa).** Volver el WhatsApp al envío directo del api:
+**Del canal (el que importa).** Volver el WhatsApp al envío directo del api **dejando la sombra encendida**, para que el servicio siga con `min=1` y entregue lo que quedó en la subscription:
 
 ```bash
 cd infrastructure
-terraform apply -var=notifications_via_microservice=false   # o en el tfvars
+terraform apply -var=notifications_via_microservice=false -var=notifications_shadow=true   # o en el tfvars
 ```
 
-El api vuelve a llamar a Twilio en la revisión nueva. Se distingue en los logs de los emisores: `twilioSid` empieza con `SM` (directo) o `pubsub:` (vía servicio). Lo que quedó en la subscription lo entrega igual este servicio mientras siga vivo. Si este servicio es la causa del problema, conviene **purgar** la subscription para no duplicar los reintentos (`gcloud pubsub subscriptions seek notification-events-sub --time=$(date -u +%FT%TZ)`), aceptando que esos mensajes se pierden.
+El api vuelve a llamar a Twilio en la revisión nueva. Se distingue en los logs de los emisores: `twilioSid` empieza con `SM` (directo) o `pubsub:` (vía servicio). Los mensajes que quedaron en la subscription traen `modo: 'enviar'` y el servicio los entrega igual aunque el api esté en sombra. Cuando `num_undelivered_messages` de `notification-events-sub` llegue a 0, apagar también la sombra (`-var=notifications_shadow=false`); recién ahí el servicio baja a cero instancias. **No apagues los dos flags en un solo apply**: el mínimo bajaría a 0 en ese mismo apply y lo pendiente quedaría sin consumidor hasta vencer (1 día).
+
+En ese último apply, Terraform baja el mínimo del servicio antes de cambiar el api (`depends_on`), así que el api todavía puede publicar unos segundos en sombra. Esos eventos son `modo: 'sombra'`: solo comparan hashes y nunca envían, de modo que si quedan sin consumir no le falta un WhatsApp a nadie. Unos 15 min después del apply, revisar `num_undelivered_messages`. Si no es 0, son eventos de sombra y se purgan con `gcloud pubsub subscriptions seek notification-events-sub --time=$(date -u +%FT%TZ)`.
+
+Si este servicio es la causa del problema, conviene **purgar** la subscription para no duplicar los reintentos (`gcloud pubsub subscriptions seek notification-events-sub --time=$(date -u +%FT%TZ)`), aceptando que esos mensajes se pierden. En ese caso sí se pueden apagar los dos flags juntos.
 
 **Del servicio (imagen mala)**:
 
@@ -98,7 +104,7 @@ gcloud run services update $SVC --region=$REGION --project=booster-ai-stg-494222
 | # | Criterio | Cómo se mide |
 |---|---|---|
 | N1 | La falla se detecta | Log `subscription error` del servicio y `num_undelivered_messages` creciente en `notification-events-sub` tras disparar un WhatsApp de prueba (p. ej. un mensaje de chat no leído en staging) |
-| N2 | Rollback del canal en < 5 min | Desde `terraform apply -var=notifications_via_microservice=false` (staging) hasta el primer WhatsApp nuevo enviado directo: en los logs del emisor del api (p. ej. `notifyOfferToCarrier sent`), `twilioSid` vuelve a empezar con `SM` en vez de `pubsub:` |
+| N2 | Rollback del canal en < 5 min | Desde `terraform apply -var=notifications_via_microservice=false -var=notifications_shadow=true` (staging; la sombra mantiene `min=1` para N3) hasta el primer WhatsApp nuevo enviado directo: en los logs del emisor del api (p. ej. `notifyOfferToCarrier sent`), `twilioSid` vuelve a empezar con `SM` en vez de `pubsub:` |
 | N3 | Sin pérdida | Al restaurar la env del servicio (`--update-env-vars=PUBSUB_SUBSCRIPTION_NOTIFICATION_EVENTS=notification-events-sub`), el backlog se entrega una vez: log `notificacion enviada` con el `idempotencyKey` de cada mensaje acumulado |
 | N4 | Config igual a Terraform | `terraform plan` de staging sin cambios en `module.service_notification` tras restaurar la env |
 

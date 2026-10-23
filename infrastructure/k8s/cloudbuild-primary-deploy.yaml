@@ -67,10 +67,14 @@ steps:
     echo "Installing cert-manager via helm..."
     helm repo add jetstack https://charts.jetstack.io
     helm repo update
+    # Misma versión y valores que setup-cert-manager.sh: cert-manager-values.yaml
+    # trae crds.enabled, el namespace de leader election que exige Autopilot,
+    # la anotación de Workload Identity y los requests (sin ellos Autopilot
+    # pone 500m / 2 GiB por pod).
     helm install cert-manager jetstack/cert-manager \
       --namespace cert-manager --create-namespace \
-      --set crds.enabled=true \
-      --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com" \
+      --version v1.20.2 \
+      --values infrastructure/k8s/cert-manager-values.yaml \
       --wait --timeout=5m
 
     kubectl annotate serviceaccount cert-manager \
