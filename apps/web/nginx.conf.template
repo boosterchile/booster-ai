@@ -34,6 +34,15 @@ server {
         expires 0;
     }
 
+    # registerSW.js no tiene hash. Sin este location exacto cae en el
+    # regex de *.js (expires 1y + immutable, max-age=31536000) y la PWA
+    # instalada se queda con el script de registro viejo.
+    location = /registerSW.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        expires 0;
+    }
+
     location = /manifest.webmanifest {
         add_header Cache-Control "no-cache";
         expires 0;

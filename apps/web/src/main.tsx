@@ -4,6 +4,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { initAccent } from './hooks/use-accent-preset.js';
 import { initErrorReporting, reportError } from './lib/error-reporting.js';
+import { logger } from './lib/logger.js';
+import { installPwaUpdate } from './lib/pwa-update.js';
 import { router } from './router.js';
 import './styles.css';
 
@@ -15,6 +17,23 @@ initAccent();
 // Los listeners cubren lo que React NO atrapa (async/promesas fuera del
 // árbol); los errores de render/effect van por defaultOnCatch del router.
 initErrorReporting();
+// El SW hace skipWaiting + clients.claim. Esta pestaña se recarga una vez
+// en controllerchange y contesta el ping para que el SW no navegue además.
+// registerSW.js (vite-plugin-pwa, autoUpdate) sigue registrando el worker.
+if ('serviceWorker' in navigator) {
+  installPwaUpdate({
+    serviceWorker: navigator.serviceWorker,
+    reply: (message) => {
+      navigator.serviceWorker.controller?.postMessage(message);
+    },
+    location: window.location,
+    document,
+    session: window.sessionStorage,
+    report: (error) => {
+      logger.warn({ err: error }, 'No se pudo actualizar el service worker');
+    },
+  });
+}
 window.addEventListener('error', (e) => reportError(e.error ?? e.message));
 window.addEventListener('unhandledrejection', (e) => reportError(e.reason));
 

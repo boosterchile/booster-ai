@@ -73,6 +73,7 @@ function cargaVacia(): DatosInicio {
     flota: { estado: 'listo', valor: [] },
     vehiculos: { estado: 'listo', valor: 0 },
     conductores: { estado: 'listo', valor: 0 },
+    cobraHoy: 'disponible',
   };
 }
 
@@ -161,6 +162,7 @@ function datosOperacion(): DatosInicio {
     flota: flotaEjemplo(),
     vehiculos: { estado: 'listo', valor: 12 },
     conductores: { estado: 'listo', valor: 9 },
+    cobraHoy: 'disponible',
   };
 }
 
@@ -172,6 +174,7 @@ function datosError(): DatosInicio {
     flota: { estado: 'cargando' },
     vehiculos: { estado: 'listo', valor: 12 },
     conductores: { estado: 'listo', valor: 9 },
+    cobraHoy: 'disponible',
   };
 }
 
@@ -183,6 +186,7 @@ function datosCarga(): DatosInicio {
     flota: { estado: 'cargando' },
     vehiculos: { estado: 'listo', valor: 12 },
     conductores: { estado: 'listo', valor: 9 },
+    cobraHoy: 'disponible',
   };
 }
 
