@@ -4,6 +4,12 @@ import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { z } from 'zod';
+import {
+  ctxDeUserContext,
+  puedeAdministrarEmpresa,
+  puedeInvitarMiembro,
+} from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
@@ -39,9 +45,6 @@ import { type VinculoPersona, clasificarVinculoPersona } from '../services/vincu
 
 /** Vencimiento del código: 7 días (decisión del PO — lo entrega la empresa en mano). */
 const CODIGO_TTL_DIAS = 7;
-
-/** Roles que pueden gestionar el equipo. El resto solo mira. */
-const ROLES_QUE_GESTIONAN = new Set(['dueno', 'admin']);
 
 function placeholderFirebaseUid(rut: string): string {
   return `pending-rut:${rut}`;
@@ -102,6 +105,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         rut: users.rut,
         rol: memberships.role,
         estado: memberships.status,
+        puedeAceptarOfertas: memberships.puedeAceptarOfertas,
         invitadoEn: memberships.invitedAt,
       })
       .from(memberships)
@@ -119,6 +123,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         rut: f.rut,
         rol: f.rol,
         estado: f.estado,
+        puede_aceptar_ofertas: f.puedeAceptarOfertas === true,
         invitado_en: f.invitadoEn,
       })),
     });
@@ -129,7 +134,9 @@ export function createMeEmpresaMiembrosRoutes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
-    if (!ROLES_QUE_GESTIONAN.has(auth.rol)) {
+    // CHEQUEOS_REEMPLAZADOS invitar: antes ROLES_QUE_GESTIONAN (dueno|admin).
+    const ctxInvitar = ctxDeUserContext(c.get('userContext'));
+    if (!ctxInvitar || !puedeInvitarMiembro(ctxInvitar)) {
       opts.logger.warn(
         { empresaId: auth.empresaId, rol: auth.rol },
         'me-empresa-miembros: rol sin permiso para gestionar el equipo',
@@ -305,6 +312,50 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       },
       201,
     );
+  });
+
+  const permisoOfertasSchema = z.object({
+    puede_aceptar_ofertas: z.boolean(),
+  });
+
+  app.patch('/:membershipId', zValidator('json', permisoOfertasSchema), async (c) => {
+    const auth = requireEmpresa(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const ctx = ctxDeUserContext(c.get('userContext'));
+    if (!ctx || !puedeAdministrarEmpresa(ctx)) {
+      return c.json({ error: 'forbidden', code: 'rol_sin_permiso' }, 403);
+    }
+
+    const membershipId = c.req.param('membershipId');
+    const body = c.req.valid('json');
+    const [target] = await opts.db
+      .select({
+        id: memberships.id,
+        role: memberships.role,
+        empresaId: memberships.empresaId,
+      })
+      .from(memberships)
+      .where(eq(memberships.id, membershipId))
+      .limit(1);
+    if (!target || target.empresaId !== auth.empresaId) {
+      return c.json({ error: 'not_found', code: 'miembro_no_encontrado' }, 404);
+    }
+    if (target.role !== 'despachador') {
+      return c.json({ error: 'conflict', code: 'permiso_no_aplica' }, 409);
+    }
+
+    await opts.db
+      .update(memberships)
+      .set({ puedeAceptarOfertas: body.puede_aceptar_ofertas })
+      .where(eq(memberships.id, membershipId));
+
+    return c.json({
+      ok: true,
+      membership_id: membershipId,
+      puede_aceptar_ofertas: body.puede_aceptar_ofertas,
+    });
   });
 
   return app;

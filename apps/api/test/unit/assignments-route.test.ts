@@ -169,6 +169,7 @@ const VALID_CTX = JSON.stringify({
   user: { id: USER_ID },
   activeMembership: {
     empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+    membership: { role: 'dueno' },
   },
 });
 

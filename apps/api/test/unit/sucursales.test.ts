@@ -95,7 +95,7 @@ async function buildApp(
       memberships: [],
       activeMembership: {
         membership: { id: 'm-1', role: opts.role },
-        empresa: { id: EMPRESA_ID, legal_name: 'Test SA' },
+        empresa: { id: EMPRESA_ID, legal_name: 'Test SA', isGeneradorCarga: true },
       },
     });
     await next();

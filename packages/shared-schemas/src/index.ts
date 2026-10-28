@@ -20,6 +20,7 @@ export * from './domain/organizacion-stakeholder.js';
 export * from './domain/empresa.js';
 export * from './domain/plan.js';
 export * from './domain/membership.js';
+export * from './domain/capacidades.js';
 export * from './domain/zone.js';
 export * from './domain/zona-stakeholder.js';
 export * from './domain/offer.js';
