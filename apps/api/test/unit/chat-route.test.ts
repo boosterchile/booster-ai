@@ -121,15 +121,24 @@ const ACCESS_ROW_SHIPPER = {
 
 const SHIPPER_CTX = JSON.stringify({
   user: { id: USER_ID },
-  activeMembership: { empresa: { id: SHIPPER_EMP } },
+  activeMembership: {
+    empresa: { id: SHIPPER_EMP, isGeneradorCarga: true, isTransportista: false },
+    membership: { role: 'dueno' },
+  },
 });
 const CARRIER_CTX = JSON.stringify({
   user: { id: USER_ID },
-  activeMembership: { empresa: { id: CARRIER_EMP } },
+  activeMembership: {
+    empresa: { id: CARRIER_EMP, isTransportista: true, isGeneradorCarga: false },
+    membership: { role: 'dueno' },
+  },
 });
 const STRANGER_CTX = JSON.stringify({
   user: { id: USER_ID },
-  activeMembership: { empresa: { id: 'OTRA-empresa' } },
+  activeMembership: {
+    empresa: { id: 'OTRA-empresa', isTransportista: true },
+    membership: { role: 'dueno' },
+  },
 });
 
 async function buildApp(opts: {
@@ -395,7 +404,10 @@ describe('POST /chat/:id/messages/stream-ticket', () => {
       headers: {
         'x-test-userctx': JSON.stringify({
           user: { id: USER_ID, firebaseUid: 'fb-uid' },
-          activeMembership: { empresa: { id: SHIPPER_EMP } },
+          activeMembership: {
+            empresa: { id: SHIPPER_EMP, isGeneradorCarga: true },
+            membership: { role: 'dueno' },
+          },
         }),
         'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { rol: 'dueno' } }),
       },

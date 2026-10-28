@@ -851,6 +851,12 @@ export const memberships = pgTable(
       { onDelete: 'restrict' },
     ),
     role: membershipRoleEnum('rol').notNull(),
+    /**
+     * El despachador puede aceptar o rechazar ofertas solo con este flag.
+     * Dueño y admin no lo consultan: aceptan por rol. Default false para
+     * no abrir el contrato a membresías que ya existían (migración 0067).
+     */
+    puedeAceptarOfertas: boolean('puede_aceptar_ofertas').notNull().default(false),
     status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),
     invitedByUserId: uuid('invitado_por_id').references(() => users.id),
     invitedAt: timestamp('invitado_en', { withTimezone: true }).notNull().defaultNow(),

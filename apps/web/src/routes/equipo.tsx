@@ -2,7 +2,9 @@ import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 /**
  * `/app/equipo` — la empresa gestiona su propia gente
@@ -18,6 +20,8 @@ import { ApiError, api } from '../lib/api-client.js';
  * quien entrega el código tiene que entender qué está entregando.
  */
 
+type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
+
 interface Miembro {
   membership_id: string;
   user_id: string;
@@ -26,6 +30,7 @@ interface Miembro {
   rut: string | null;
   rol: string;
   estado: string;
+  puede_aceptar_ofertas?: boolean;
   invitado_en: string;
 }
 
@@ -56,10 +61,16 @@ const ROL_LABEL: Record<string, string> = {
 };
 
 export function EquipoRoute() {
-  return <ProtectedRoute meRequirement="require-onboarded">{() => <EquipoPage />}</ProtectedRoute>;
+  return (
+    <ProtectedRoute meRequirement="require-onboarded">
+      {(ctx) => (ctx.kind === 'onboarded' ? <EquipoPage me={ctx.me} /> : null)}
+    </ProtectedRoute>
+  );
 }
 
-function EquipoPage() {
+function EquipoPage({ me }: { me: MeOnboarded }) {
+  const puedeInvitar = flagsDe(me).invitar;
+  const puedeEditarOfertas = flagsDe(me).administrar;
   const [miembros, setMiembros] = useState<Miembro[]>([]);
   const [cargando, setCargando] = useState(true);
   const [errorLista, setErrorLista] = useState<string | null>(null);
@@ -102,7 +113,7 @@ function EquipoPage() {
             </p>
           </div>
         </div>
-        {!mostrarForm && (
+        {puedeInvitar && !mostrarForm && (
           <button
             type="button"
             onClick={() => setMostrarForm(true)}
@@ -151,6 +162,25 @@ function EquipoPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="text-neutral-600 text-sm">{ROL_LABEL[m.rol] ?? m.rol}</span>
+                  {puedeEditarOfertas && m.rol === 'despachador' && (
+                    <label className="inline-flex items-center gap-2 text-neutral-700 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={m.puede_aceptar_ofertas === true}
+                        onChange={(ev) => {
+                          void api
+                            .patch(`/me/empresa/miembros/${m.membership_id}`, {
+                              puede_aceptar_ofertas: ev.target.checked,
+                            })
+                            .then(() => cargar())
+                            .catch((err: unknown) => {
+                              setErrorLista(err instanceof Error ? err.message : String(err));
+                            });
+                        }}
+                      />
+                      Puede aceptar ofertas
+                    </label>
+                  )}
                   {m.estado === 'pendiente_invitacion' ? (
                     <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700 text-xs">
                       Pendiente de activar

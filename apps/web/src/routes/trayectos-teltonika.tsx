@@ -7,6 +7,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { EventoCombustibleMap } from '../components/map/EventoCombustibleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -82,9 +83,9 @@ export function TrayectosTeltonikaRoute() {
 }
 
 function puedeVer(me: MeOnboarded): boolean {
-  const role = me.active_membership?.role;
   const empresa = me.active_membership?.empresa;
-  return Boolean(empresa?.is_transportista && (role === 'dueno' || role === 'admin'));
+  // CHEQUEOS_REEMPLAZADOS trayectos: antes is_transportista && (dueno|admin).
+  return Boolean(empresa?.is_transportista && flagsDe(me).administrar);
 }
 
 export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {

@@ -18,6 +18,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { MeResponse } from '../hooks/use-me.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -47,14 +48,23 @@ const INICIO: NavItem = { label: 'Inicio', to: '/app', icon: Home };
 export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   const empresa = me.active_membership?.empresa;
   const role = me.active_membership?.role;
-  const isAdmin = role === 'dueno' || role === 'admin';
+  const flags = flagsDe(me);
+  const isAdmin = flags.administrar;
 
   // Stakeholder: membership sin empresa (XOR, ADR-034). Solo Inicio + Zonas.
   if (role === 'stakeholder_sostenibilidad') {
     return [{ items: [INICIO, { label: 'Zonas', to: '/app/stakeholder/zonas', icon: MapPinned }] }];
   }
 
+  // CHEQUEOS_REEMPLAZADOS nav-gestion: el conductor empleado solo ve su viaje.
+  if (flags.ctx && !flags.menuGestion) {
+    return [{ items: [{ label: 'Mi viaje', to: '/app/conductor', icon: Truck }] }];
+  }
+
   const inicioItems: NavItem[] = [INICIO];
+  if (flags.panelConductor && role === 'dueno') {
+    inicioItems.push({ label: 'Mi viaje', to: '/app/conductor', icon: Truck });
+  }
   if (empresa && isAdmin) {
     inicioItems.push({ label: 'Empresa', to: '/app/empresa', icon: Leaf });
   }
@@ -77,9 +87,14 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       // solo mira), así que el ítem es visible para todos los operadores.
       { label: 'Equipo', to: '/app/equipo', icon: UserCog },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
-      { label: 'Cobra hoy', to: '/app/cobra-hoy/historial', icon: Banknote },
-      { label: 'Liquidaciones', to: '/app/liquidaciones', icon: Receipt },
     ];
+    // CHEQUEOS_REEMPLAZADOS nav-gestion / inicio-plata: la plata es dueño y admin.
+    if (flags.verFinanzas) {
+      transporte.push(
+        { label: 'Cobra hoy', to: '/app/cobra-hoy/historial', icon: Banknote },
+        { label: 'Liquidaciones', to: '/app/liquidaciones', icon: Receipt },
+      );
+    }
     if (isAdmin) {
       transporte.splice(1, 0, {
         label: 'Trayectos',
@@ -95,14 +110,19 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   }
 
   if (empresa?.is_generador_carga) {
+    const generador: NavItem[] = [];
+    // CHEQUEOS_REEMPLAZADOS cargas: el visualizador no crea cargas.
+    if (flags.publicarCarga) {
+      generador.push({ label: 'Crear carga', to: '/app/cargas/nueva', icon: PackagePlus });
+    }
+    generador.push(
+      { label: 'Mis cargas', to: '/app/cargas', icon: Package },
+      { label: 'Sucursales', to: '/app/sucursales', icon: Building2 },
+      { label: 'Certificados', to: '/app/certificados', icon: Leaf },
+    );
     sections.push({
       heading: 'Generador',
-      items: [
-        { label: 'Crear carga', to: '/app/cargas/nueva', icon: PackagePlus },
-        { label: 'Mis cargas', to: '/app/cargas', icon: Package },
-        { label: 'Sucursales', to: '/app/sucursales', icon: Building2 },
-        { label: 'Certificados', to: '/app/certificados', icon: Leaf },
-      ],
+      items: generador,
     });
   }
 

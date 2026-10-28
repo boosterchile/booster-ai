@@ -96,6 +96,7 @@ export interface ContextoInicio {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
+  veFinanzas: boolean;
   ahora: Date;
 }
 
@@ -791,7 +792,7 @@ function acceso(parcial: {
   };
 }
 
-function buildAccesos(datos: DatosInicio, esAdmin: boolean): AccesoVista[] {
+function buildAccesos(datos: DatosInicio, ctx: ContextoInicio): AccesoVista[] {
   const ofertas = datos.ofertas.estado === 'listo' ? datos.ofertas.valor.length : null;
   const sinConductor =
     datos.servicios.estado === 'listo'
@@ -841,20 +842,25 @@ function buildAccesos(datos: DatosInicio, esAdmin: boolean): AccesoVista[] {
       badge: vencidos,
       badgeTono: 'danger',
     }),
-    acceso({
-      id: 'cobra-hoy',
-      label: 'Cobra hoy',
-      to: '/app/cobra-hoy/historial',
-      testId: 'dashboard-link-cobra-hoy',
-    }),
-    acceso({
-      id: 'liquidaciones',
-      label: 'Liquidaciones',
-      to: '/app/liquidaciones',
-      testId: 'dashboard-link-liquidaciones',
-    }),
   ];
-  if (esAdmin) {
+  // CHEQUEOS_REEMPLAZADOS inicio-plata: antes salían para todo transportista.
+  if (ctx.veFinanzas) {
+    accesos.push(
+      acceso({
+        id: 'cobra-hoy',
+        label: 'Cobra hoy',
+        to: '/app/cobra-hoy/historial',
+        testId: 'dashboard-link-cobra-hoy',
+      }),
+      acceso({
+        id: 'liquidaciones',
+        label: 'Liquidaciones',
+        to: '/app/liquidaciones',
+        testId: 'dashboard-link-liquidaciones',
+      }),
+    );
+  }
+  if (ctx.esAdmin) {
     accesos.push(
       acceso({
         id: 'trayectos',
@@ -895,7 +901,7 @@ export function buildInicioVista(datos: DatosInicio, ctx: ContextoInicio): Inici
     atencion: buildAtencion(datos, ctx.ahora),
     enRuta,
     conectados,
-    accesos: buildAccesos(datos, ctx.esAdmin),
+    accesos: buildAccesos(datos, ctx),
     pasos: empresaNueva ? pasosAlta({ vehiculos: 0, conductores: 0, documentos: 0 }) : null,
   };
 }

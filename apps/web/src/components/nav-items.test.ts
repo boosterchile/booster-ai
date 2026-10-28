@@ -10,6 +10,10 @@ function buildMe(opts: {
   transportista?: boolean;
   generador?: boolean;
   stakeholder?: boolean;
+  /** Ficha propia: usuario_id de la sesión y el mismo RUT. */
+  fichaPropia?: boolean;
+  /** Señal vieja de #814, solo por usuario_id, sin comprobar el RUT. */
+  tieneFichaConductor?: boolean;
 }): MeOnboarded {
   const membership = opts.stakeholder
     ? {
@@ -38,6 +42,10 @@ function buildMe(opts: {
     user: { id: 'u', email: 'a@b.cl', full_name: 'X', is_platform_admin: false, status: 'activo' },
     memberships: [membership],
     active_membership: membership,
+    ...(opts.fichaPropia === undefined ? {} : { ficha_conductor_mismo_rut: opts.fichaPropia }),
+    ...(opts.tieneFichaConductor === undefined
+      ? {}
+      : { tiene_ficha_conductor: opts.tieneFichaConductor }),
   } as MeOnboarded;
 }
 
@@ -56,6 +64,25 @@ describe('navSectionsForMe', () => {
       'Sucursales',
       'Certificados',
     ]);
+  });
+
+  it('el dueño ve «Mi viaje» solo si la ficha es suya (usuario_id y RUT)', () => {
+    const propia = labels(
+      navSectionsForMe(buildMe({ transportista: true, role: 'dueno', fichaPropia: true })),
+    );
+    expect(propia).toContain('Mi viaje');
+
+    const deOtro = labels(
+      navSectionsForMe(
+        buildMe({
+          transportista: true,
+          role: 'dueno',
+          fichaPropia: false,
+          tieneFichaConductor: true,
+        }),
+      ),
+    );
+    expect(deOtro).not.toContain('Mi viaje');
   });
 
   it('transportista dueño → Inicio + transporte + Zonas de matching + Dispositivos', () => {

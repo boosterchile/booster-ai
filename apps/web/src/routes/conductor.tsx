@@ -25,6 +25,7 @@ import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { respuestaDesdeUrl } from '../lib/eco-routing.js';
 import { type LatLng, decodePolyline } from '../lib/polyline.js';
 import {
@@ -98,7 +99,8 @@ export function ConductorDashboardRoute() {
         // Gate por rol: la pantalla es del conductor. Un dueño o despachador
         // que llegue acá (link viejo, URL a mano) vuelve a su shell; el API
         // igual respondería vacío, pero no tiene por qué ver el panel.
-        if (ctx.me.active_membership?.role !== 'conductor') {
+        // CHEQUEOS_REEMPLAZADOS panel-conductor: antes role !== 'conductor'.
+        if (!flagsDe(ctx.me).panelConductor) {
           return <Navigate to="/app" />;
         }
         return <ConductorDashboardPage me={ctx.me} />;

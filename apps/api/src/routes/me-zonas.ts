@@ -5,6 +5,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { ctxDeUserContext, puedeAdministrarEmpresa } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { type ZoneRow, zones } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
@@ -27,8 +28,6 @@ import type { UserContext } from '../services/user-context.js';
  * `codigo_region = origen` (romano) + `tipo_zona IN ('recogida','ambos')` +
  * `es_activa=true`.
  */
-
-const ROLES_QUE_GESTIONAN = new Set(['dueno', 'admin']);
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -60,7 +59,9 @@ export function createMeZonasRoutes(opts: { db: Db; logger: Logger }): Hono {
         response: c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403),
       };
     }
-    if (!ROLES_QUE_GESTIONAN.has(activa.membership.role)) {
+    // CHEQUEOS_REEMPLAZADOS zonas: antes ROLES_QUE_GESTIONAN (dueno|admin).
+    const ctx = ctxDeUserContext(userContext);
+    if (!ctx || !puedeAdministrarEmpresa(ctx)) {
       return {
         ok: false as const,
         response: c.json({ error: 'forbidden', code: 'admin_required' }, 403),

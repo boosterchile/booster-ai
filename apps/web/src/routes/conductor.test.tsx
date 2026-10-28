@@ -256,6 +256,16 @@ describe('ConductorDashboardRoute', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('dueño con ficha del mismo RUT sí ve el panel', () => {
+    const me = makeMe();
+    (me as unknown as { active_membership: { role: string } }).active_membership.role = 'dueno';
+    me.ficha_conductor_mismo_rut = true;
+    providedContext = { kind: 'onboarded', me };
+    render(<ConductorDashboardRoute />);
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(screen.getByText('Pedro Conductor')).toBeInTheDocument();
+  });
+
   it('gate por rol: un dueño onboarded NO ve el panel del conductor, va a /app', () => {
     const me = makeMe();
     (me as unknown as { active_membership: { role: string } }).active_membership.role = 'dueno';
