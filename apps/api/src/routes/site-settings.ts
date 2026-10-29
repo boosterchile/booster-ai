@@ -38,7 +38,7 @@ function getStorage(): Storage {
 }
 
 const ALLOWED_MIME_TYPES = ['image/svg+xml', 'image/png', 'image/jpeg'] as const;
-const MAX_ASSET_BYTES = 500 * 1024; // 500 KB
+export const MAX_ASSET_BYTES = 500 * 1024; // 500 KB
 
 const publishBodySchema = z.object({
   id: z.string().uuid(),

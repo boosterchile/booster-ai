@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { boundedArray } from '../primitives/bounded-array.js';
 import { regionCodeSchema } from '../primitives/chile.js';
+import { COMUNAS_CHILE } from '../primitives/comunas-chile.js';
 import { empresaIdSchema, zoneIdSchema } from '../primitives/ids.js';
 
 /**
@@ -33,13 +35,19 @@ export const zoneSchema = z.object({
 export type Zone = z.infer<typeof zoneSchema>;
 
 /**
+ * `comuna_codes` de entrada: a lo más tantas comunas como tiene el catálogo.
+ * El largo se comprueba antes que los elementos (ver `boundedArray`).
+ */
+const comunaCodesInputSchema = boundedArray(z.array(z.string().min(1)), COMUNAS_CHILE.length);
+
+/**
  * Alta de zona operativa. `region_code` es romano (`XIII`, no `13`).
  * `comuna_codes` null/omitido = toda la región (alcance 0→1).
  */
 export const zoneCreateBodySchema = z.object({
   region_code: regionCodeSchema,
   zone_type: zoneTypeSchema,
-  comuna_codes: z.array(z.string().min(1)).nullable().optional(),
+  comuna_codes: comunaCodesInputSchema.nullable().optional(),
   is_active: z.boolean().optional(),
 });
 export type ZoneCreateBody = z.infer<typeof zoneCreateBodySchema>;
@@ -51,7 +59,7 @@ export type ZoneCreateBody = z.infer<typeof zoneCreateBodySchema>;
 export const zoneUpdateBodySchema = z
   .object({
     zone_type: zoneTypeSchema.optional(),
-    comuna_codes: z.array(z.string().min(1)).nullable().optional(),
+    comuna_codes: comunaCodesInputSchema.nullable().optional(),
     is_active: z.boolean().optional(),
   })
   .refine(
