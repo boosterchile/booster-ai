@@ -22,7 +22,7 @@
 | Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Tiene código adelantado sin declarar |
 | Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo |
 
-**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO; #837 (abierto el 10-29) propone migrar a zod 4.
+**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO. #837 (mergeado el 10-29) migra a zod 4; si alcanza se verá en la semanal del 2026-11-02.
 
 **Gestiones de la fase E que arrancan ya** (acción del PO, no ocupan slot): enviar los RFP de `docs/compliance/glec-rfp.md` y `docs/audits/security-rfp.md`, contratar la revisión legal (la Ley 21.719 rige desde 2026-12-01) y buscar el primer cliente con contrato.
 
@@ -233,7 +233,7 @@ Desde el 2026-10-07 se mergearon 77 PRs (`gh pr list --state merged --search "me
   | CI | #824 |
   | Servicios | #788 |
 
-- **Abiertos fuera de slot**: 13 PRs de `fueradelabox`, entre ellos inicio por rol (#800–#804), capacidades (#816–#819) y la migración a zod 4 (#837).
+- **Abiertos fuera de slot**: 12 PRs de `fueradelabox`, entre ellos inicio por rol (#800–#804) y capacidades (#816–#819).
 - **PRs propios abiertos**: `boosterchile` tiene 6 (#836, #828, #826, #820, #748 y #726) más este, y el tope es 3.
 
 ## Congelados

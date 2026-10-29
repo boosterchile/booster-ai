@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-10-29 · `main` = `1b10cfa3` (#835) · prod = imagen `18ce8e22` en los 8 servicios de Cloud Run y en el gateway GKE (release `39875352139`, success, 2026-10-22T23:59Z → 10-23T00:38Z). Entre `18ce8e22` y `main` hay 8 commits y ninguno toca `apps/` ni `packages/`: solo `infrastructure/`, `terraform-drift.yml`, `docs/` y `.specs/` (`git diff --stat 18ce8e22 origin/main`). Horas en UTC; Santiago = UTC−3.
+**Última actualización**: 2026-10-29 · `main` = `1b10cfa3` (#835) · prod = imagen `18ce8e22` en los 8 servicios de Cloud Run y en el gateway GKE (release `39875352139`, success, 2026-10-22T23:59Z → 10-23T00:38Z). Al verificar, entre `18ce8e22` y `main` había 8 commits y ninguno tocaba `apps/` ni `packages/`: solo `infrastructure/`, `terraform-drift.yml`, `docs/` y `.specs/` (`git diff --stat 18ce8e22 1b10cfa3`). Después entró #837 (`1d285b70`, 2026-10-29 18:48Z): zod 4 en tres `package.json` y el lockfile, sin desplegar. Horas en UTC; Santiago = UTC−3.
 **Anterior**: el CURRENT del 2026-09-22 (con agregados del 09-27 y del 10-10), archivado en [`2026-10-29-snapshot-current-2026-09.md`](2026-10-29-snapshot-current-2026-09.md). Sus tablas de prod, CI y pendientes ya no valen.
 **Método**: solo lectura. GCP por REST con token ADC y `X-Goog-User-Project: booster-ai-494222`; BD con `scripts/db/agent-query.sh` (solo SELECT, sin `-y`, sin PII); GitHub con `gh`. Lo que no se re-verificó se dice explícitamente.
 **Documento vivo**: el detalle histórico está en los snapshots fechados. Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`. Término: `.specs/trl10/spec.md`. **Aquí no se declara cerrado ningún slot: eso lo hace el PO.**
@@ -101,14 +101,14 @@ Desde el 2026-10-07 se mergearon 77 PRs (`gh pr list --state merged --search "me
   - #726: entorno de Cloud Agent; draft desde el 09-27.
 
   Este PR es el séptimo; el PO autorizó abrirlo por encima del tope.
-- **De `fueradelabox` hay 13**: 11 ramas `cursor/*` (inicio por rol #800–#804, capacidades #817–#819, conductor asignado #816, rol generador #795 y ubicación #799), #825 (docs) y #837 (migración a zod 4 para que la semanal de Security vuelva a verde, abierto el 10-29 a las 18:26Z).
+- **De `fueradelabox` hay 12**: 11 ramas `cursor/*` (inicio por rol #800–#804, capacidades #817–#819, conductor asignado #816, rol generador #795 y ubicación #799) y #825 (docs). #837 (migración a zod 4 para la semanal de Security) se mergeó a `main` el 2026-10-29 a las 18:48Z (`1d285b70`).
 
 ## Pendientes del PO
 
-1. **WIP.** Decidir cuáles de #836, #828, #826, #820, #748 y #726 se cierran o esperan, y si los 13 de `fueradelabox` cuentan contra el tope.
+1. **WIP.** Decidir cuáles de #836, #828, #826, #820, #748 y #726 se cierran o esperan, y si los 12 de `fueradelabox` cuentan contra el tope.
 2. **Registro en `frentes-vivos.md`.** Decidir si los 30 adelantos de las fases B–E y los 39 PRs posteriores se declaran como excepciones o adelantos (regla de la fase activa).
 3. **T10-09 y T10-10.** La evidencia ya está en `main`: los dos packages se eliminaron en #750, y los 7 flujos tienen spec Playwright por PR desde #774. Son criterios de la fase B adelantados y sin declarar, así que marcarlos lo decide el PO.
-4. **T10-07.** El criterio pide dos semanas seguidas en verde y eso ocurrió el 10-12 y el 10-19. Decidir si eso lo cumple o si las corridas tienen que seguir en verde. En cualquier caso hay que resolver lo de `zod`; #837 propone migrar a zod 4. Sin ese merge, lo esperable es que la semanal del 2026-11-02 también falle (inferido, no verificado).
+4. **T10-07.** El criterio pide dos semanas seguidas en verde y eso ocurrió el 10-12 y el 10-19. Decidir si eso lo cumple o si las corridas tienen que seguir en verde. Lo de `zod` lo ataca #837, mergeado el 10-29 (`1d285b70`), que migra a zod 4. Si alcanza se verá en la semanal del 2026-11-02.
 5. **T10-01 y T10-02.** Decidir si cuentan los viajes de un generador de prueba. Falta un viaje sin FMC150 después de #747, y un viaje creado, aceptado y asignado por cuentas que no opere el PO.
 6. **Regla del hueco detenido** (T10-01 y T10-05): en `main` exige igualdad exacta. #836 propone tolerar 25 m de deriva y trae la enmienda de `.specs/distancia-real-hibrida/spec.md`; el visto es del PO.
 7. **T10-05.** Provisionar `fuente_combustible_can='83'` en los camiones que emiten el IO 83. Según la auditoría del 10-29 son cinco, y lo puede hacer el dueño desde la UI (no re-verificado aquí).
