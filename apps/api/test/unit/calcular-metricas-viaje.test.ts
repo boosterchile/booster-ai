@@ -875,6 +875,34 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     expect(res.recomputed).toBe(true);
   });
 
+  it('PARADA CON DERIVA (BOO-HC7DJX) — hueco de 183 s a 6,94 m: NO aborta con routes_error ni llama a Routes', async () => {
+    // Prod 2026-10-20: parada de 183 s con 6,94 m de deriva del GPS. Con la regla
+    // de igualdad exacta el hueco iba a Routes, Routes respondía 200 sin
+    // distancia (0 km) y el cierre abortaba con routes_error descartando 468 km
+    // medidos (.specs/hueco-detenido-deriva/, decisión del PO 2026-10-29).
+    const derivaLat = -33.41 + ((6.94 / 1000 / 6371) * 180) / Math.PI;
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce([
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.41, lng: -70.61 },
+      { tMs: 213_000, lat: derivaLat, lng: -70.61 },
+    ]);
+    (computeRoutes as Mock).mockResolvedValue(ruta(0));
+    const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
+
+    const res = await run(db);
+
+    expect(computeRoutes).not.toHaveBeenCalled();
+    expect(res.abortReason).toBeNull();
+    expect(res.recomputed).toBe(true);
+    expect(res.routeDataSource).toBe('teltonika_gps');
+    const setArg = (db.update as Mock).mock.results[0].value.set.mock.calls[0][0];
+    expect(Number(setArg.distanceKmActual)).toBeCloseTo(
+      haversineKm(-33.4, -70.6, -33.41, -70.61),
+      6,
+    );
+    expect(Number(setArg.coveragePct)).toBe(100);
+  });
+
   it('ABORT (Routes caído) — no-op, abortReason=routes_error, SIN UPDATE (cae a estimación)', async () => {
     (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(2));
     (computeRoutes as Mock).mockRejectedValue(new Error('Routes 503'));
