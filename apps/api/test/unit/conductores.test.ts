@@ -1425,7 +1425,82 @@ describe('POST /conductores — RUT existente guarda phone si estaba vacío', ()
 describe('POST /conductores/:id/telefono', () => {
   const TELEFONO_NUEVO = '+56987654321';
 
-  it('pendiente: guarda el número, regenera el PIN y avisa por WhatsApp', async () => {
+  it.each([
+    ['sin reenviar_invitacion', { phone: TELEFONO_NUEVO }],
+    ['con reenviar_invitacion: false', { phone: TELEFONO_NUEVO, reenviar_invitacion: false }],
+  ])('pendiente %s: guarda el número y conserva el PIN, sin WhatsApp', async (_caso, payload) => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      phone: string;
+      invitacion_reenviada: boolean;
+      cuenta_activa: boolean;
+      activation_pin?: string;
+    };
+    expect(body.phone).toBe(TELEFONO_NUEVO);
+    expect(body.invitacion_reenviada).toBe(false);
+    expect(body.cuenta_activa).toBe(false);
+    expect(body.activation_pin).toBeUndefined();
+    const payloads = payloadsDeUpdate(stub.spies.update);
+    expect(payloads.some((p) => p.phone === TELEFONO_NUEVO)).toBe(true);
+    expect(payloads.some((p) => 'activationPinHash' in p)).toBe(false);
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
+  it('reenviar_invitacion que no es booleano → 400 y no escribe', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO, reenviar_invitacion: 'si' }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('cuenta activa con reenviar_invitacion: true → solo guarda el número', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor({ firebaseUid: 'fb-real-uid', claveNumericaHash: 'hash-clave' })],
+      ],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO, reenviar_invitacion: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invitacion_reenviada: boolean; activation_pin?: string };
+    expect(body.invitacion_reenviada).toBe(false);
+    expect(body.activation_pin).toBeUndefined();
+    expect(payloadsDeUpdate(stub.spies.update).some((p) => 'activationPinHash' in p)).toBe(false);
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
+  it('pendiente con reenviar_invitacion: true: guarda, regenera el PIN y avisa por WhatsApp', async () => {
     const stub = makeDbStub({
       selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
       updateReturning: [[{ id: USER_ID }]],
@@ -1441,7 +1516,7 @@ describe('POST /conductores/:id/telefono', () => {
     const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+      body: JSON.stringify({ phone: TELEFONO_NUEVO, reenviar_invitacion: true }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
