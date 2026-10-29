@@ -1,0 +1,49 @@
+# Sonda puntual, solo en rama de trabajo (no se mergea a main): ¿Routes API respeta
+# restricciones de camión en Santiago? Corre scripts/probes/probe-routes-truck-la-piramide.sh
+# con el SA github-deployer vía WIF (tiene serviceusage.serviceUsageConsumer, que Routes
+# API exige para X-Goog-User-Project; terraform-drift es solo roles/viewer y no lo tiene).
+# No despliega nada: 4 POST a routes.googleapis.com (~USD 0.02).
+name: Probe Routes API modo camión
+
+on:
+  workflow_dispatch: {}
+  # Disparo por push: un workflow_dispatch solo se registra en la API cuando el
+  # archivo existe en main, y este no va a main. Acotado a esta rama y a sus 2 archivos.
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-routes-truck.yml
+      - scripts/probes/probe-routes-truck-la-piramide.sh
+
+permissions:
+  contents: read
+  id-token: write # OIDC para Workload Identity Federation con GCP
+
+jobs:
+  probe:
+    name: computeRoutes DRIVE vs TRUCK (La Pirámide)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth a GCP (WIF)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEPLOY }}
+          token_format: access_token
+
+      - name: Sonda Routes API
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          GOOGLE_CLOUD_PROJECT: booster-ai-494222
+        run: bash scripts/probes/probe-routes-truck-la-piramide.sh
+
+      - name: Guardar respuestas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-out
+          path: probe-out/
+          if-no-files-found: ignore
