@@ -145,7 +145,7 @@ jobs:
           category: trivy-fs
       - name: Upload Trivy config SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
@@ -220,8 +220,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Generate CycloneDX SBOM
-        # cdxgen es pnpm-workspace aware (cyclonedx-npm rompía con workspace:* protocol)
-        run: npx -y @cyclonedx/cdxgen@latest --type pnpm --output sbom.cyclonedx.json --spec-version 1.5
+        # cdxgen es pnpm-workspace aware (cyclonedx-npm rompía con workspace:* protocol).
+        # Versión fija: con @latest, una release nueva podía romper la corrida
+        # programada sin cambios en el repo. 12.9.0 es la que generó los SBOM de
+        # las corridas verdes del 2026-10-26 y 2026-10-29. Subirla a mano, en su PR.
+        run: npx -y @cyclonedx/cdxgen@12.9.0 --type pnpm --output sbom.cyclonedx.json --spec-version 1.5
       - name: Upload SBOM
         uses: actions/upload-artifact@v7
         with:
