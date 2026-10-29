@@ -87,6 +87,12 @@ Hasta #708 el relleno de huecos nunca corrió en prod: toda llamada terminaba en
 
   Para cualquier otro hueco, los criterios siguen vigentes sin cambio.
 
+## Enmienda 2026-10-29 — tolerancia de 25 m a la deriva del GPS (decisión del PO)
+
+Reemplaza «la igualdad es exacta, sin umbral» de la enmienda anterior. Un hueco (gap ≥ 60 s) cuenta como vehículo detenido cuando sus dos extremos están a **≤ 25 m** en línea recta (haversine). Las excepciones a los criterios 1, 2 y 6 se mantienen y ahora aplican a esos huecos.
+
+Motivo: BOO-HC7DJX (2026-10-20) perdió la reconstrucción entera de 468 km por una parada de 183 s con 6,94 m de deriva. En 14 días, el 99,5 % de los huecos ≥ 60 s de Teltonika tiene extremos a ≤ 25 m. El odómetro se evaluó y se descartó como señal de parada. Detalle y criterios: `.specs/hueco-detenido-deriva/spec.md`.
+
 ## Diseño (para el verde; no se implementa en este commit)
 - Función pura-inyectable `calcularDistanciaHibrida(pings, estimarHuecoKm)` en
   `apps/api/src/services/calcular-distancia-real.ts` (sibling de `calcular-cobertura-telemetria.ts`,
