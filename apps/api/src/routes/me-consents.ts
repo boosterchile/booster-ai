@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { boundedArray } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -29,22 +30,25 @@ import {
  *   GET    /me/consents             — listar grants que yo otorgué
  */
 
-const grantBodySchema = z.object({
+const dataCategorySchema = z.enum([
+  'emisiones_carbono',
+  'rutas',
+  'distancias',
+  'combustibles',
+  'certificados',
+  'perfiles_vehiculos',
+]);
+
+export const grantBodySchema = z.object({
   stakeholder_id: z.string().uuid(),
   scope_type: z.enum(['generador_carga', 'transportista', 'portafolio_viajes', 'organizacion']),
   scope_id: z.string().uuid(),
-  data_categories: z
-    .array(
-      z.enum([
-        'emisiones_carbono',
-        'rutas',
-        'distancias',
-        'combustibles',
-        'certificados',
-        'perfiles_vehiculos',
-      ]),
-    )
-    .min(1, 'al menos 1 categoría requerida'),
+  // A lo más una entrada por categoría; el largo se comprueba antes que los
+  // elementos (ver `boundedArray`).
+  data_categories: boundedArray(
+    z.array(dataCategorySchema).min(1, 'al menos 1 categoría requerida'),
+    dataCategorySchema.options.length,
+  ),
   expires_at: z.string().datetime({ offset: true }).nullable().optional(),
   consent_document_url: z
     .string()

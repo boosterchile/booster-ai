@@ -38,7 +38,7 @@ import { calcularRetentionUntil } from '../services/calcular-retention-until.js'
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
 type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
-const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 const SIGNED_URL_TTL_SECONDS = 300; // 5 min
 
 /**
