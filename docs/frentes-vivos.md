@@ -22,7 +22,7 @@
 | Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Tiene código adelantado sin declarar |
 | Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo |
 
-**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO.
+**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO; #837 (abierto el 10-29) propone migrar a zod 4.
 
 **Gestiones de la fase E que arrancan ya** (acción del PO, no ocupan slot): enviar los RFP de `docs/compliance/glec-rfp.md` y `docs/audits/security-rfp.md`, contratar la revisión legal (la Ley 21.719 rige desde 2026-12-01) y buscar el primer cliente con contrato.
 
@@ -75,7 +75,7 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 - **Viaje sin FMC150.** Solo están los 4 del 09-21 (KXSV65). Tienen `*Actual = null`, pero son anteriores a la métrica data-quality y de un generador de prueba.
 - **HC7DJX (10-20).** Tiene Teltonika, pero cayó a `maps_directions` con cobertura 0. La regla de igualdad exacta del hueco detenido la desvía a Routes (`calcular-distancia-real.ts:167-169`).
 - **T10-05.** Los 7 certificados son `secundario_modeled`. Ningún vehículo tiene `fuente_combustible_can='83'`, que es la única configuración con la que la huella lee el CAN.
-- **Para decidir (PO):** si cuentan los viajes de un generador de prueba, y si se enmienda la regla del hueco detenido en `.specs/distancia-real-hibrida/spec.md`.
+- **Para decidir (PO):** si cuentan los viajes de un generador de prueba, y la enmienda de la regla del hueco detenido en `.specs/distancia-real-hibrida/spec.md`, que #836 (abierto el 10-29) propone con una tolerancia de 25 m.
 
 **Decisión de certificación por fuente:** resuelta en ADR-077. `movil_gps` es fuente de ruta de primera clase; solo CAN + Teltonika ≥95% da `primario_verificable`; la posición del móvil nunca da primario. La migración expand-only del enum `fuente_dato_ruta` (0055) está en `main` y en prod.
 
@@ -233,8 +233,8 @@ Desde el 2026-10-07 se mergearon 77 PRs (`gh pr list --state merged --search "me
   | CI | #824 |
   | Servicios | #788 |
 
-- **Abiertos fuera de slot**: 12 PRs de `fueradelabox` en ramas `cursor/*` y `docs/*`, entre ellos inicio por rol (#800–#804) y capacidades (#816–#819).
-- **PRs propios abiertos**: `boosterchile` tiene 5 (#828, #826, #820, #748 y #726) y el tope es 3.
+- **Abiertos fuera de slot**: 13 PRs de `fueradelabox`, entre ellos inicio por rol (#800–#804), capacidades (#816–#819) y la migración a zod 4 (#837).
+- **PRs propios abiertos**: `boosterchile` tiene 6 (#836, #828, #826, #820, #748 y #726) más este, y el tope es 3.
 
 ## Congelados
 

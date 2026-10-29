@@ -92,24 +92,25 @@ Desde el 2026-10-07 se mergearon 77 PRs (`gh pr list --state merged --search "me
 
 ## PRs abiertos y WIP
 
-- **De `boosterchile` hay 5, y el tope es 3**:
+- **De `boosterchile` hay 6, y el tope es 3**:
+  - #836: el hueco detenido tolera 25 m de deriva del GPS, con enmienda a `.specs/distancia-real-hibrida/spec.md` (abierto el 10-29 a las 18:25Z).
   - #828: contrato `CLAUDE.md`.
   - #826: teléfono del conductor; Playwright en rojo.
   - #820: sonda de Routes; draft.
   - #748: retiro de `es_demo`; draft y en conflicto (`CONFLICTING`/`DIRTY`, última actualización 10-12).
   - #726: entorno de Cloud Agent; draft desde el 09-27.
 
-  Este PR sería el sexto.
-- **De `fueradelabox` hay 12**: 11 ramas `cursor/*` (inicio por rol #800–#804, capacidades #817–#819, conductor asignado #816, rol generador #795 y ubicación #799) y #825 (docs).
+  Este PR es el séptimo; el PO autorizó abrirlo por encima del tope.
+- **De `fueradelabox` hay 13**: 11 ramas `cursor/*` (inicio por rol #800–#804, capacidades #817–#819, conductor asignado #816, rol generador #795 y ubicación #799), #825 (docs) y #837 (migración a zod 4 para que la semanal de Security vuelva a verde, abierto el 10-29 a las 18:26Z).
 
 ## Pendientes del PO
 
-1. **WIP.** Decidir si este PR entra con 5 propios abiertos, y cuáles de #828, #826, #820, #748 y #726 se cierran o esperan. Decidir también si los 12 de `fueradelabox` cuentan contra el tope.
+1. **WIP.** Decidir cuáles de #836, #828, #826, #820, #748 y #726 se cierran o esperan, y si los 13 de `fueradelabox` cuentan contra el tope.
 2. **Registro en `frentes-vivos.md`.** Decidir si los 30 adelantos de las fases B–E y los 39 PRs posteriores se declaran como excepciones o adelantos (regla de la fase activa).
 3. **T10-09 y T10-10.** La evidencia ya está en `main`: los dos packages se eliminaron en #750, y los 7 flujos tienen spec Playwright por PR desde #774. Son criterios de la fase B adelantados y sin declarar, así que marcarlos lo decide el PO.
-4. **T10-07.** El criterio pide dos semanas seguidas en verde y eso ocurrió el 10-12 y el 10-19. Decidir si eso lo cumple o si las corridas tienen que seguir en verde. En cualquier caso hay que resolver lo de `zod` (subir de versión o aceptar el riesgo). Mientras tanto, lo esperable es que la semanal del 2026-11-02 también falle (inferido, no verificado).
+4. **T10-07.** El criterio pide dos semanas seguidas en verde y eso ocurrió el 10-12 y el 10-19. Decidir si eso lo cumple o si las corridas tienen que seguir en verde. En cualquier caso hay que resolver lo de `zod`; #837 propone migrar a zod 4. Sin ese merge, lo esperable es que la semanal del 2026-11-02 también falle (inferido, no verificado).
 5. **T10-01 y T10-02.** Decidir si cuentan los viajes de un generador de prueba. Falta un viaje sin FMC150 después de #747, y un viaje creado, aceptado y asignado por cuentas que no opere el PO.
-6. **Regla del hueco detenido** (T10-01 y T10-05): hoy exige igualdad exacta. Cambiarla requiere enmendar `.specs/distancia-real-hibrida/spec.md`.
+6. **Regla del hueco detenido** (T10-01 y T10-05): en `main` exige igualdad exacta. #836 propone tolerar 25 m de deriva y trae la enmienda de `.specs/distancia-real-hibrida/spec.md`; el visto es del PO.
 7. **T10-05.** Provisionar `fuente_combustible_can='83'` en los camiones que emiten el IO 83. Según la auditoría del 10-29 son cinco, y lo puede hacer el dueño desde la UI (no re-verificado aquí).
 8. **T10-04.** Que un conductor nuevo se active por WhatsApp o correo sin que el PO le entregue el código.
 9. **#748 (T10-03).** Faltan sus precondiciones, la lista de ADR-076 §3 y el visto del PO. Además, renumerarla a 0065 (el journal termina en 0064). La auditoría advierte que con `STRICT_MIGRATION_ORDERING=false` su guarda puede revertir en silencio y dejar el release en verde (no re-verificado). Retirar el dominio `demo.boosterchile.com` también queda pendiente.
