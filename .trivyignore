@@ -90,3 +90,20 @@ GCP-0033
 #   - Migracion a GKE Standard (donde si se puede customizar node SA)
 #   - Trivy actualice la regla para detectar Autopilot y skipear
 GCP-0050
+
+# CVE-2023-54404 / GHSA-mrhx-c7xc-m3w5: zod < 4.6.6, CWE-770 (solo disponibilidad)
+#
+# Aplica al scan de filesystem (vulnerabilidades del lockfile), no al de IaC.
+# Trivy lo reportó con el ID CVE el 2026-10-26 (alerta trivy-fs 185); se listan
+# los dos IDs por si cambia el que usa la base.
+#
+# Riesgo aceptado (2026-10-29), sujeto al visto del PO en el PR que lo
+# introduce: no hay ninguna 3.x parchada y
+# migrar a zod 4 es un cambio mayor. Justificación completa en
+# pnpm-workspace.yaml (auditConfig) y .specs/_followups/zod-4-migracion-2026-10.md.
+#
+# Reabrir esta regla si:
+#   - Se cierra la migración a zod 4 (quitar estas dos líneas en ese PR)
+#   - Llega el 2026-12-31 sin migración: el PO decide si renueva
+CVE-2023-54404
+GHSA-mrhx-c7xc-m3w5
