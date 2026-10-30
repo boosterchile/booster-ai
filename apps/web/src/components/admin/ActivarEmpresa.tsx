@@ -2,6 +2,7 @@ import { Building2, Copy, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { urlActivar } from '../../lib/activar-url.js';
 import { ApiError, api } from '../../lib/api-client.js';
+import { logger } from '../../lib/logger.js';
 
 /**
  * Platform-admin: activar / suspender empresas sin SQL.
@@ -142,8 +143,9 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
       await navigator.clipboard.writeText(codigo);
       setCopiadoId(membershipId);
       window.setTimeout(() => setCopiadoId(null), 2500);
-    } catch {
-      // Sin clipboard (http, permiso denegado): el código igual está en pantalla.
+    } catch (err) {
+      // Sin clipboard (http, permiso denegado): el texto igual está en pantalla.
+      logger.warn({ err, membershipId }, 'activar-empresa: no se pudo copiar al portapapeles');
       setCopiadoId(null);
     }
   }
@@ -309,7 +311,7 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                               </p>
                               <p className="mt-1 text-amber-800 text-sm">
                                 Entrégale a la persona la dirección, su RUT ({codigo.rut}) y este
-                                código. Con eso elige su clave de 6 dígitos.
+                                código. Con eso, la persona elige su propia clave de 6 dígitos.
                               </p>
                               <p className="mt-1 text-amber-700 text-xs">
                                 Vence el {fechaCorta(codigo.expira_en)}.
