@@ -46,7 +46,7 @@ function labels(sections: ReturnType<typeof navSectionsForMe>): string[] {
 }
 
 describe('navSectionsForMe', () => {
-  it('generador → Inicio + Empresa + Crear carga/Mis cargas/Sucursales/Certificados', () => {
+  it('generador → Inicio + Empresa + Crear carga/Mis cargas/Sucursales/Certificados/Equipo', () => {
     const l = labels(navSectionsForMe(buildMe({ generador: true })));
     expect(l).toEqual([
       'Inicio',
@@ -55,6 +55,7 @@ describe('navSectionsForMe', () => {
       'Mis cargas',
       'Sucursales',
       'Certificados',
+      'Equipo',
     ]);
   });
 
@@ -114,5 +115,40 @@ describe('navSectionsForMe', () => {
   it('stakeholder → solo Inicio + Zonas', () => {
     const l = labels(navSectionsForMe(buildMe({ stakeholder: true })));
     expect(l).toEqual(['Inicio', 'Zonas']);
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC8 — el backend deja a dueño y admin de
+ * cualquier empresa dar de alta a su gente; la generadora también necesita
+ * llegar a «Equipo».
+ */
+describe('navSectionsForMe — Equipo (SC8)', () => {
+  function seccionDe(sections: ReturnType<typeof navSectionsForMe>, label: string) {
+    return sections.filter((s) => s.items.some((i) => i.label === label)).map((s) => s.heading);
+  }
+
+  it.each(['dueno', 'admin', 'despachador', 'visualizador'] as const)(
+    'generadora pura, rol %s → «Equipo» en la sección Generador',
+    (role) => {
+      const sections = navSectionsForMe(buildMe({ generador: true, role }));
+      expect(seccionDe(sections, 'Equipo')).toEqual(['Generador']);
+      const item = sections.flatMap((s) => s.items).find((i) => i.label === 'Equipo');
+      expect(item?.to).toBe('/app/equipo');
+    },
+  );
+
+  it('transportista → «Equipo» una sola vez, en Transporte', () => {
+    const l = labels(navSectionsForMe(buildMe({ transportista: true })));
+    expect(l.filter((x) => x === 'Equipo')).toHaveLength(1);
+    expect(seccionDe(navSectionsForMe(buildMe({ transportista: true })), 'Equipo')).toEqual([
+      'Transporte',
+    ]);
+  });
+
+  it('mixta → «Equipo» una sola vez, en Transporte', () => {
+    const sections = navSectionsForMe(buildMe({ transportista: true, generador: true }));
+    expect(labels(sections).filter((x) => x === 'Equipo')).toHaveLength(1);
+    expect(seccionDe(sections, 'Equipo')).toEqual(['Transporte']);
   });
 });

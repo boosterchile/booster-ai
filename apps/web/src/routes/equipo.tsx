@@ -1,6 +1,7 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -56,7 +57,22 @@ const ROL_LABEL: Record<string, string> = {
 };
 
 export function EquipoRoute() {
-  return <ProtectedRoute meRequirement="require-onboarded">{() => <EquipoPage />}</ProtectedRoute>;
+  return (
+    <ProtectedRoute meRequirement="require-onboarded">
+      {(ctx) => {
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
+        // Con el menú de la app, como el resto de `/app/*`
+        // (acceso-usuarios-empresa-panel SC8).
+        return (
+          <Layout me={ctx.me} title="Equipo">
+            <EquipoPage />
+          </Layout>
+        );
+      }}
+    </ProtectedRoute>
+  );
 }
 
 function EquipoPage() {
@@ -90,7 +106,7 @@ function EquipoPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8">
+    <div className="mx-auto w-full max-w-4xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <Users className="mt-1 h-6 w-6 shrink-0 text-primary-700" aria-hidden />

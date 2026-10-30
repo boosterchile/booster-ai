@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
 
 /**
@@ -12,9 +13,53 @@ import { api } from '../lib/api-client.js';
  * elige después su propia clave, así que el código no es una contraseña.
  */
 
+type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
+
+const ME: MeOnboarded = {
+  needs_onboarding: false,
+  user: {
+    id: 'u1',
+    email: 'duena@empresa.cl',
+    full_name: 'Dueña Generadora',
+    phone: null,
+    whatsapp_e164: null,
+    rut: '11111111-1',
+    is_platform_admin: false,
+    status: 'activo',
+  },
+  memberships: [],
+  active_membership: {
+    id: 'm1',
+    role: 'dueno',
+    status: 'activa',
+    joined_at: null,
+    empresa: {
+      id: 'e1',
+      legal_name: 'Retail Norte SpA',
+      rut: '76274900-9',
+      is_generador_carga: true,
+      is_transportista: false,
+      status: 'activa',
+    },
+  },
+};
+
+let providedContext: { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' } = {
+  kind: 'onboarded',
+  me: ME,
+};
 vi.mock('../components/ProtectedRoute.js', () => ({
-  ProtectedRoute: ({ children }: { children: (ctx: { kind: 'unmanaged' }) => ReactNode }) => (
-    <>{children({ kind: 'unmanaged' })}</>
+  ProtectedRoute: ({ children }: { children: (ctx: unknown) => ReactNode }) => (
+    <>{children(providedContext)}</>
+  ),
+}));
+
+// acceso-usuarios-empresa-panel SC8: `/app/equipo` se muestra con el menú de la app.
+vi.mock('../components/Layout.js', () => ({
+  Layout: ({ children, title, me }: { children: ReactNode; title: string; me: MeOnboarded }) => (
+    <main data-testid="layout" data-title={title} data-empresa={me.active_membership?.empresa?.id}>
+      {children}
+    </main>
   ),
 }));
 
@@ -67,6 +112,30 @@ function stubClipboard() {
 beforeEach(() => {
   vi.clearAllMocks();
   stubClipboard();
+  providedContext = { kind: 'onboarded', me: ME };
+});
+
+describe('Equipo — dentro del menú de la app (SC8)', () => {
+  it('se muestra dentro del Layout, con el título Equipo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    const layout = screen.getByTestId('layout');
+    expect(layout).toHaveAttribute('data-title', 'Equipo');
+    expect(layout).toHaveAttribute('data-empresa', 'e1');
+    expect(await screen.findByText('Gabriel Barros')).toBeInTheDocument();
+  });
+
+  it('sin contexto de empresa no renderiza la página', () => {
+    providedContext = { kind: 'unmanaged' };
+    const get = vi.spyOn(api, 'get');
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(screen.queryByTestId('layout')).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+  });
 });
 
 describe('Equipo — listado', () => {

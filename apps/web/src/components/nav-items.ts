@@ -102,6 +102,11 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
         { label: 'Mis cargas', to: '/app/cargas', icon: Package },
         { label: 'Sucursales', to: '/app/sucursales', icon: Building2 },
         { label: 'Certificados', to: '/app/certificados', icon: Leaf },
+        // La generadora también gestiona su equipo. Si además es transportista,
+        // «Equipo» ya está en Transporte y no se repite.
+        ...(empresa.is_transportista
+          ? []
+          : [{ label: 'Equipo', to: '/app/equipo', icon: UserCog }]),
       ],
     });
   }
