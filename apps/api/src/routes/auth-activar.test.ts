@@ -111,9 +111,16 @@ function makeAuth() {
   };
 }
 
-function buildApp(db: ReturnType<typeof makeDb>['db'], auth: Auth) {
+function buildApp(
+  db: ReturnType<typeof makeDb>['db'],
+  auth: Auth,
+  platformAdminEmails: readonly string[] = [],
+) {
   const app = new Hono();
-  app.route('/', createAuthActivarRoutes({ db, logger: noopLogger, firebaseAuth: auth }));
+  app.route(
+    '/',
+    createAuthActivarRoutes({ db, logger: noopLogger, firebaseAuth: auth, platformAdminEmails }),
+  );
   return app;
 }
 
@@ -277,5 +284,143 @@ describe('POST /auth/activar', () => {
     const a = makeAuth();
     const res = await activar(buildApp(d.db, a.auth), { clave_numerica: '123' });
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * SC6 de `.specs/alta-personal-booster/spec.md` — la persona del personal de
+ * Booster no tiene invitación a una empresa: el plazo de su código vive en
+ * `usuarios.activacion_vence_en`. Activa solo si la cuenta está marcada como
+ * personal, su correo está en la lista de Terraform y el código sigue vigente.
+ * Cualquier otra combinación responde lo mismo que un código malo.
+ */
+describe('POST /auth/activar — personal de Booster (SC6)', () => {
+  const CORREO_PERSONAL = 'ana.soto@boosterchile.com';
+  const LISTA = ['dev@boosterchile.com', CORREO_PERSONAL];
+  const EN_TRES_DIAS = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+  function personal(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'user-personal',
+      rut: RUT,
+      email: CORREO_PERSONAL,
+      fullName: 'Ana Soto',
+      firebaseUid: `pending-rut:${RUT}`,
+      activationPinHash: hashActivationPin(CODIGO),
+      claveNumericaHash: null,
+      isPlatformAdmin: true,
+      activacionVenceEn: EN_TRES_DIAS,
+      status: 'pendiente_verificacion',
+      ...overrides,
+    };
+  }
+
+  const RECHAZO = { error: 'invalid_credentials', code: 'invalid_credentials' };
+
+  it('con las tres condiciones y sin invitación: activa, devuelve sesión y consume el código', async () => {
+    const d = makeDb({ user: personal(), membresia: null });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; activated: boolean; custom_token: string };
+    expect(json).toEqual({ ok: true, activated: true, custom_token: 'ct-activacion' });
+    expect(a.spies.createUser).toHaveBeenCalledTimes(1);
+    expect(a.spies.createCustomToken).toHaveBeenCalledWith('fb-nuevo', expect.any(Object));
+
+    const u = d.userUpdates[0] as Record<string, unknown>;
+    expect(u.firebaseUid).toBe('fb-nuevo');
+    expect(u.status).toBe('activo');
+    expect(typeof u.claveNumericaHash).toBe('string');
+    expect(u.claveNumericaHash).not.toBe(CLAVE);
+    expect(JSON.stringify(u)).not.toContain(CLAVE);
+    expect(u.activationPinHash).toBeNull();
+    expect(u.activacionVenceEn).toBeNull();
+    expect(u.email).toBeUndefined();
+    // No hay empresa de por medio: no se toca ninguna membresía.
+    expect(d.membresiaUpdates).toEqual([]);
+  });
+
+  it('el correo de la cuenta se compara con la lista sin distinguir mayúsculas', async () => {
+    const d = makeDb({ user: personal({ email: 'Ana.Soto@BoosterChile.com' }), membresia: null });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+    expect(res.status).toBe(200);
+  });
+
+  it.each([
+    ['la cuenta no está marcada como personal', { isPlatformAdmin: false }, LISTA],
+    ['el correo no está en la lista de Terraform', {}, ['dev@boosterchile.com']],
+    ['la lista está vacía', {}, []],
+    ['el código venció', { activacionVenceEn: new Date(Date.now() - 60 * 1000) }, LISTA],
+    ['activacion_vence_en es NULL', { activacionVenceEn: null }, LISTA],
+  ])('%s → la misma 401 genérica, sin escrituras', async (_caso, overrides, lista) => {
+    const d = makeDb({ user: personal(overrides), membresia: null });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, lista));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(RECHAZO);
+    expect(d.userUpdates).toEqual([]);
+    expect(d.membresiaUpdates).toEqual([]);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.createCustomToken).not.toHaveBeenCalled();
+  });
+
+  it('código incorrecto con las tres condiciones → 401 genérica, sin escrituras', async () => {
+    const d = makeDb({ user: personal(), membresia: null });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, LISTA), { codigo: '999999' });
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(RECHAZO);
+    expect(d.userUpdates).toEqual([]);
+  });
+
+  it('cuenta del personal ya activa → 401 genérica: la clave no se reescribe', async () => {
+    const d = makeDb({
+      user: personal({ firebaseUid: 'fb-real', claveNumericaHash: 'hash-previo' }),
+      membresia: null,
+    });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+    expect(res.status).toBe(401);
+    expect(d.userUpdates).toEqual([]);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('si además tiene una invitación vigente a empresa, la membresía se activa igual que hoy', async () => {
+    const d = makeDb({ user: personal() });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+    expect(res.status).toBe(200);
+    const m = d.membresiaUpdates[0] as Record<string, unknown>;
+    expect(m.status).toBe('activa');
+    expect(m.joinedAt).toBeInstanceOf(Date);
+    const u = d.userUpdates[0] as Record<string, unknown>;
+    expect(u.activationPinHash).toBeNull();
+    expect(u.activacionVenceEn).toBeNull();
+  });
+
+  it('invitación vigente a empresa sin ser personal: activa como hoy aunque la lista no la nombre', async () => {
+    const d = makeDb({ user: personal({ isPlatformAdmin: false, activacionVenceEn: null }) });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, []));
+
+    expect(res.status).toBe(200);
+    expect((d.membresiaUpdates[0] as Record<string, unknown>).status).toBe('activa');
+  });
+
+  it('Firebase caído al activar al personal → 503 y nada escrito', async () => {
+    const d = makeDb({ user: personal(), membresia: null });
+    const a = makeAuth();
+    a.spies.createUser.mockRejectedValueOnce(new Error('firebase down'));
+    const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+    expect(res.status).toBe(503);
+    expect(d.userUpdates).toEqual([]);
   });
 });
