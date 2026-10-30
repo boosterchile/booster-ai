@@ -1,9 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { activarCuentaSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import type { Db } from '../db/client.js';
 import { memberships, users } from '../db/schema.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
@@ -37,6 +38,11 @@ import { cuentaYaActivada, invitacionesVigentes } from '../services/vinculo-pers
  * condiciones: la cuenta tiene `es_admin_plataforma = true`, su correo está en
  * la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`) y el código sigue
  * vigente según `activacion_vence_en`. Si falta una, la respuesta es la misma.
+ *
+ * **Un solo uso también en paralelo.** La escritura exige que el código siga
+ * siendo el que se verificó y que la cuenta no tenga clave. Si otra activación
+ * o una re-emisión lo cambió en el intervalo, no escribe y responde lo mismo
+ * que un código malo.
  */
 
 /** Vigencia del código del personal: `activacion_vence_en` existe y no pasó. */
@@ -58,13 +64,19 @@ export function createAuthActivarRoutes(opts: {
   firebaseAuth: Auth;
   /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de Terraform. */
   platformAdminEmails: readonly string[];
+  /**
+   * Límite de intentos por RUT (`createRateLimitPinMiddleware` con cubos
+   * propios en `server.ts`). Corre antes de validar y de leer la base, como
+   * en `/auth/login-rut`.
+   */
+  rateLimitPerRut: MiddlewareHandler;
 }): Hono {
   const app = new Hono();
   const listaPersonal = new Set(
     opts.platformAdminEmails.map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0),
   );
 
-  app.post('/activar', zValidator('json', activarCuentaSchema), async (c) => {
+  app.post('/activar', opts.rateLimitPerRut, zValidator('json', activarCuentaSchema), async (c) => {
     const body = c.req.valid('json');
 
     /** Respuesta única para todos los rechazos (anti-enumeración). */
@@ -94,8 +106,9 @@ export function createAuthActivarRoutes(opts: {
       opts.logger.info({ rut: body.rut }, 'auth-activar: sin código pendiente');
       return rechazo();
     }
+    const hashVerificado = user.activationPinHash;
 
-    if (!verifyActivationPin(body.codigo, user.activationPinHash)) {
+    if (!verifyActivationPin(body.codigo, hashVerificado)) {
       opts.logger.info({ rut: body.rut }, 'auth-activar: código incorrecto');
       return rechazo();
     }
@@ -158,8 +171,8 @@ export function createAuthActivarRoutes(opts: {
       return c.json({ error: 'service_unavailable', code: 'firebase_error' }, 503);
     }
 
-    await opts.db.transaction(async (tx) => {
-      await tx
+    const activada = await opts.db.transaction(async (tx) => {
+      const escritas = await tx
         .update(users)
         .set({
           firebaseUid,
@@ -172,7 +185,17 @@ export function createAuthActivarRoutes(opts: {
           status: 'activo',
           updatedAt: new Date(),
         })
-        .where(eq(users.id, user.id));
+        .where(
+          and(
+            eq(users.id, user.id),
+            eq(users.activationPinHash, hashVerificado),
+            isNull(users.claveNumericaHash),
+          ),
+        )
+        .returning({ id: users.id });
+      if (escritas.length === 0) {
+        return false;
+      }
 
       // El personal de Booster sin invitación no tiene membresías que activar.
       if (vigentes.length > 0) {
@@ -186,7 +209,18 @@ export function createAuthActivarRoutes(opts: {
             ),
           );
       }
+      return true;
     });
+
+    if (!activada) {
+      // La cuenta Firebase creada arriba queda sin uso: el próximo intento la
+      // encuentra por el email sintético y la reutiliza.
+      opts.logger.info(
+        { userId: user.id },
+        'auth-activar: el código cambió antes de escribir; no se activa',
+      );
+      return rechazo();
+    }
 
     let customToken: string;
     try {

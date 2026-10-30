@@ -9,11 +9,11 @@ import {
   reemitirCodigoPersonalBoosterResponseSchema,
 } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esFirebaseUidDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
@@ -50,6 +50,8 @@ type ResultadoAlta =
       tipo: 'registrada';
       userId: string;
       vinculo: VinculoPersonalBooster;
+      /** Si el alta dejó la cuenta con `es_admin_plataforma = true`. */
+      marcada: boolean;
       /** Código en claro: solo para la respuesta y el correo. Nunca a un log. */
       codigo: string | null;
       expira: Date | string | null;
@@ -79,6 +81,12 @@ type ResultadoAlta =
  * entra a logs, spans ni auditoría. Una cuenta que ya eligió su clave nunca
  * recibe un código nuevo, y el alta no cambia RUT, nombre ni correo de una
  * cuenta existente.
+ *
+ * **Cuenta ya activa.** Se marca como personal solo si su correo ya está en
+ * la lista. `/me` lee la marca para mandar a la persona al panel; sin la
+ * lista, el panel le respondería 403 y perdería el inicio de su empresa.
+ * Las cuentas provisorias se marcan siempre: sin clave no entran a `/me`, y
+ * la marca es una de las condiciones para activar (SC6) y re-emitir (SC5).
  *
  * Auditoría: log estructurado con `event_type` `personal_booster.*` (qué
  * admin, a quién por `user_id`, qué vínculo), igual que las demás rutas admin.
@@ -221,6 +229,9 @@ export function createAdminPersonalBoosterRoutes(opts: {
               })
               .from(users)
               .where(sql`lower(${users.email}) = ${body.email}`)
+              // La fila queda bloqueada hasta el commit: una activación o una
+              // re-emisión en paralelo espera y ve el estado que deja esta.
+              .for('update')
               .limit(1);
             const existente = porEmail[0];
 
@@ -231,21 +242,29 @@ export function createAdminPersonalBoosterRoutes(opts: {
               }
               const vinculo = clasificarVinculoPersona(existente);
               const codigo = vinculo === 'provisoria_sin_codigo' ? generateActivationPin() : null;
-              // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
-              await tx
-                .update(users)
-                .set({
-                  isPlatformAdmin: true,
-                  ...(codigo === null
-                    ? {}
-                    : { activationPinHash: hashActivationPin(codigo), activacionVenceEn: venceEn }),
-                  updatedAt: ahora,
-                })
-                .where(eq(users.id, existente.id));
+              // Una cuenta activa fuera de la lista no se toca (ver arriba).
+              const marcada = vinculo !== 'cuenta_activa' || enLista;
+              if (marcada) {
+                // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+                await tx
+                  .update(users)
+                  .set({
+                    isPlatformAdmin: true,
+                    ...(codigo === null
+                      ? {}
+                      : {
+                          activationPinHash: hashActivationPin(codigo),
+                          activacionVenceEn: venceEn,
+                        }),
+                    updatedAt: ahora,
+                  })
+                  .where(eq(users.id, existente.id));
+              }
               return {
                 tipo: 'registrada',
                 userId: existente.id,
                 vinculo,
+                marcada,
                 codigo,
                 expira:
                   codigo !== null
@@ -290,6 +309,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
               tipo: 'registrada',
               userId: creado.id,
               vinculo: 'nueva',
+              marcada: true,
               codigo,
               expira: venceEn,
               email: body.email,
@@ -298,7 +318,8 @@ export function createAdminPersonalBoosterRoutes(opts: {
           });
         } catch (err) {
           // Carrera contra otra alta del mismo RUT o correo: nada quedó escrito.
-          if (esRutDuplicado(err)) {
+          // El uid provisorio sale del RUT, así que su UNIQUE también es el RUT.
+          if (esRutDuplicado(err) || esFirebaseUidDuplicado(err)) {
             record('rut_already_registered');
             return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
           }
@@ -321,6 +342,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
             actor_user_id: admin.userContext.user.id,
             user_id: resultado.userId,
             vinculo: resultado.vinculo,
+            marcada: resultado.marcada,
             en_lista: enLista,
             codigo_emitido: resultado.codigo !== null,
           },
@@ -401,15 +423,27 @@ export function createAdminPersonalBoosterRoutes(opts: {
           }
           // El hash nuevo reemplaza al anterior: el código previo deja de servir.
           const codigo = generateActivationPin();
+          // El UPDATE exige que la cuenta siga provisoria: si se activó entre
+          // la lectura y esta escritura, no recibe código.
           // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
-          await tx
+          const escritas = await tx
             .update(users)
             .set({
               activationPinHash: hashActivationPin(codigo),
               activacionVenceEn: venceEn,
               updatedAt: ahora,
             })
-            .where(eq(users.id, persona.id));
+            .where(
+              and(
+                eq(users.id, persona.id),
+                isNull(users.claveNumericaHash),
+                like(users.firebaseUid, `${PENDING_FIREBASE_UID_PREFIX}%`),
+              ),
+            )
+            .returning({ id: users.id });
+          if (escritas.length === 0) {
+            return { tipo: 'ya_activada' } as const;
+          }
           return { tipo: 'emitido', persona, codigo } as const;
         });
 

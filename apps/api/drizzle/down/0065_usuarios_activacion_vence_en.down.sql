@@ -6,7 +6,7 @@
 --
 -- Revierte la migración 0065 (usuarios.activacion_vence_en). Dropearla deja
 -- sin plazo los códigos pendientes del personal de Booster: esas personas no
--- podrán activar hasta que se les emita un código nuevo. En prod preferí
+-- podrán activar hasta que se les emita un código nuevo. En prod conviene el
 -- rollback de código (la migración es aditiva → una revisión previa ignora
 -- la columna) o PITR.
 --

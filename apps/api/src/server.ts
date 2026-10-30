@@ -1121,8 +1121,9 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // equipo-de-la-empresa — POST /auth/activar. Pre-auth por diseño: lo usa
     // alguien que todavía no tiene credencial (la está creando en este acto).
-    // Rate limit propio y fail-closed, igual que login-rut: el código es de 6
-    // dígitos y sin límite sería fuerza bruta trivial.
+    // Límites de intentos propios y fail-closed, igual que login-rut: el
+    // código es de 6 dígitos. Dos cubos: el de la IP (arriba) y el del RUT
+    // (dentro de la ruta), con prefijos que no comparte ningún otro endpoint.
     app.use(
       '/auth/activar',
       createRateLimitSignupMiddleware({
@@ -1131,6 +1132,12 @@ export function createServer(opts: CreateServerOptions): Hono {
         keyPrefix: 'rl:activar-cuenta:',
       }),
     );
+    const rateLimitActivarPorRut = createRateLimitPinMiddleware({
+      redis: redisForRateLimit,
+      logger,
+      keyPrefix: 'rl:activar-cuenta-rut:',
+      ipKeyPrefix: 'rl:activar-cuenta-rut:ip:',
+    });
     app.route(
       '/auth',
       createAuthActivarRoutes({
@@ -1140,6 +1147,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         // alta-personal-booster SC6: el personal de Booster activa solo si su
         // correo está en la lista de Terraform.
         platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        rateLimitPerRut: rateLimitActivarPorRut,
       }),
     );
 
