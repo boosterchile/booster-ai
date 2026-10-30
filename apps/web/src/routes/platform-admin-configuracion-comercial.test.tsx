@@ -16,6 +16,8 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 vi.mock('../hooks/use-auth.js', () => ({ signOutUser: vi.fn(async () => undefined) }));
+// El marco del panel lee /me para «Ir a mi empresa»; acá no se prueba eso.
+vi.mock('../hooks/use-me.js', () => ({ useMe: () => ({ data: undefined }) }));
 
 const { PlatformAdminConfiguracionComercialRoute } = await import(
   './platform-admin-configuracion-comercial.js'

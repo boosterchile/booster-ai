@@ -5,6 +5,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { InicioTransportista } from '../components/inicio-transportista/inicio-transportista.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { vistaEmpresaElegida } from '../lib/vista-admin.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -104,7 +105,10 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
   const isAdmin = myRole === 'dueno' || myRole === 'admin';
 
   // Surface guards (platform-admin / conductor / stakeholder tienen shell propio).
-  if (me.user.is_platform_admin) {
+  // La persona de Booster que también es de una empresa sigue yendo al panel,
+  // salvo que en esta pestaña haya elegido «Ir a mi empresa» (SC9 de
+  // acceso-usuarios-empresa-panel).
+  if (me.user.is_platform_admin && !(activeEmpresa && vistaEmpresaElegida())) {
     return <Navigate to="/app/platform-admin" />;
   }
   if (myRole === 'conductor') {

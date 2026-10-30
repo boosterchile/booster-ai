@@ -1,9 +1,10 @@
 import { cn } from '@booster-ai/ui-components';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { LogOut, Settings, User as UserIcon } from 'lucide-react';
+import { LogOut, Settings, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useSwitchCompany } from '../hooks/use-switch-company.js';
+import { volverAlPanel } from '../lib/vista-admin.js';
 import { CompanySwitcher } from './CompanySwitcher.js';
 import { navSectionsForMe } from './nav-items.js';
 import { type BadgeNav, useBadgesTransporte } from './use-badges-transporte.js';
@@ -142,6 +143,23 @@ export function Sidebar({ me, onNavigate }: { me: MeOnboarded; onNavigate?: () =
       </nav>
 
       <div className="shrink-0 border-neutral-200 border-t px-3 py-3">
+        {/* La persona de Booster que entró a la web de su empresa vuelve al
+            panel desde acá (acceso-usuarios-empresa-panel SC9). */}
+        {me.user.is_platform_admin && (
+          <Link
+            to="/app/platform-admin"
+            onClick={() => {
+              volverAlPanel();
+              onNavigate?.();
+            }}
+            className="flex items-center gap-2 rounded-md px-2 text-primary-700 text-sm hover:bg-primary-50"
+            style={{ minHeight: 'var(--touch-min)' }}
+            data-testid="sidebar-panel-booster"
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="flex-1 truncate">Panel de Booster</span>
+          </Link>
+        )}
         <Link
           to="/app/perfil"
           onClick={onNavigate}

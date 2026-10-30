@@ -48,6 +48,7 @@ vi.mock('../lib/api-client.js', async () => {
 });
 
 const { AppRoute } = await import('./app.js');
+const { elegirVistaEmpresa } = await import('../lib/vista-admin.js');
 
 function respuestaVacia(path: string): unknown {
   if (path.startsWith('/offers/mine')) {
@@ -119,6 +120,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  window.sessionStorage.clear();
 });
 
 describe('AppRoute', () => {
@@ -495,5 +497,52 @@ describe('AppRoute', () => {
     await screen.findByText('No cargó Vehículos');
     const despues = apiGetSpy.mock.calls.filter((call) => call[0] === '/vehiculos').length;
     expect(despues).toBeGreaterThan(antes);
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC9 — la persona de Booster que también es de
+ * una empresa puede usar la web de su empresa. Al entrar a `/app` sigue yendo
+ * al panel, salvo que en esta pestaña haya elegido «Ir a mi empresa».
+ */
+describe('AppRoute — persona de Booster con empresa (SC9)', () => {
+  function adminConEmpresa(): MeOnboarded {
+    const me = makeMe('admin', false, true);
+    me.user = { ...me.user, is_platform_admin: true };
+    return me;
+  }
+
+  it('sin elección → redirige al panel, como hoy', () => {
+    providedContext = { kind: 'onboarded', me: adminConEmpresa() };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
+  it('con «Ir a mi empresa» elegido → muestra la web de su empresa', () => {
+    elegirVistaEmpresa();
+    providedContext = { kind: 'onboarded', me: adminConEmpresa() };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(screen.getByText('Bienvenido a Booster')).toBeInTheDocument();
+    expect(screen.getByText('Como generador de carga')).toBeInTheDocument();
+  });
+
+  it('con la elección pero sin empresa activa → redirige al panel', () => {
+    elegirVistaEmpresa();
+    const me = adminConEmpresa();
+    me.active_membership = null;
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
+  it('si sessionStorage lanza → redirige al panel, como hoy', () => {
+    elegirVistaEmpresa();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    providedContext = { kind: 'onboarded', me: adminConEmpresa() };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
   });
 });

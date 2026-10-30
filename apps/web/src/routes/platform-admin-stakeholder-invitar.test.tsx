@@ -21,6 +21,9 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }));
+// El marco del panel lee /me para «Ir a mi empresa»; acá no se prueba eso.
+vi.mock('../hooks/use-me.js', () => ({ useMe: () => ({ data: undefined }) }));
+
 vi.mock('../components/ImpersonationPicker.js', () => ({
   ImpersonationPicker: () => <div />,
 }));
