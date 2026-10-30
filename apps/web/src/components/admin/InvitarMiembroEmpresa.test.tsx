@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../../lib/api-client.js';
+import { logger } from '../../lib/logger.js';
 import { InvitarMiembroEmpresa } from './InvitarMiembroEmpresa.js';
 
 /**
@@ -27,6 +28,10 @@ function stubClipboard(writeText: (text: string) => Promise<void>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('InvitarMiembroEmpresa', () => {
@@ -160,6 +165,52 @@ describe('InvitarMiembroEmpresa — lo que se entrega junto al código (SC4)', (
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/activar`),
     );
     expect(await screen.findByRole('button', { name: /Copiada ✓/ })).toBeInTheDocument();
+  });
+
+  it('si el portapapeles falla, la dirección sigue en pantalla y el fallo queda registrado', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+    stubClipboard(
+      vi.fn(async () => {
+        throw new Error('NotAllowedError');
+      }),
+    );
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    render(<InvitarMiembroEmpresa />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar dirección/i }));
+    await waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: /Copiar dirección/i })).toBeInTheDocument();
+    expect(screen.getByTestId('invitar-entrega')).toHaveTextContent(
+      `${window.location.origin}/activar`,
+    );
+  });
+
+  it('el aviso de copiado vuelve a su texto después de un rato', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+    stubClipboard(vi.fn(async () => undefined));
+    const timeout = vi.spyOn(window, 'setTimeout');
+
+    render(<InvitarMiembroEmpresa />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar dirección/i }));
+    expect(await screen.findByRole('button', { name: /Copiada ✓/ })).toBeInTheDocument();
+    const restaurar = timeout.mock.calls.find(([, ms]) => ms === 2500)?.[0];
+    expect(typeof restaurar).toBe('function');
+    act(() => {
+      if (typeof restaurar === 'function') {
+        restaurar();
+      }
+    });
+    expect(screen.getByRole('button', { name: /Copiar dirección/i })).toBeInTheDocument();
   });
 
   it('copia el código', async () => {
