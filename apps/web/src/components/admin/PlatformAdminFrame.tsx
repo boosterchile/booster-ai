@@ -9,6 +9,8 @@ import { elegirVistaEmpresa } from '../../lib/vista-admin.js';
  * «Ir a mi empresa» para la persona de Booster que también es de una empresa
  * (acceso-usuarios-empresa-panel SC9). Solo con membresía activa a una
  * empresa; la elección queda en la pestaña y `/app` deja de redirigir al panel.
+ * No se ofrece con una membresía de conductor: su web no tiene el menú con
+ * «Panel de Booster» para volver.
  */
 function IrAMiEmpresa() {
   const { data: me } = useMe({ enabled: true });
@@ -16,7 +18,12 @@ function IrAMiEmpresa() {
     return null;
   }
   const membresia = me.active_membership;
-  if (!membresia || membresia.status !== 'activa' || !membresia.empresa) {
+  if (
+    !membresia ||
+    membresia.status !== 'activa' ||
+    !membresia.empresa ||
+    membresia.role === 'conductor'
+  ) {
     return null;
   }
   return (
