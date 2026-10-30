@@ -38,8 +38,10 @@ import { formatRut } from '../../lib/rut.js';
 const LISTA_TERRAFORM = 'booster_platform_admin_emails';
 
 const AVISO_AGREGAR_A_LISTA = `Agrega este correo a la lista de Terraform (${LISTA_TERRAFORM}) y aplica; recién entonces la persona podrá activar. Si el código vence antes, genera uno nuevo aquí.`;
+// La API no informa si el proveedor de correo entregó el mensaje: el aviso no
+// lo afirma y pide entregar el código a mano si no llega.
 const AVISO_CORREO_ENVIADO =
-  'Le enviamos el código por correo a esa dirección; también puedes entregárselo tú.';
+  'Intentamos enviarle el código por correo a esa dirección. Si no le llega, entrégaselo tú: cópialo antes de cerrar.';
 const AVISO_SIN_RUT =
   'No enviamos el correo: la cuenta no tiene RUT registrado y sin RUT no puede activar. Repárala con el script de bootstrap del runbook.';
 
@@ -186,11 +188,12 @@ function panelDelAlta(res: AltaPersonalBoosterResponse, datos: AltaPersonalBoost
 }
 
 function avisoDeLista(panel: CodigoEmitido): string {
-  if (!panel.enLista) {
-    return AVISO_AGREGAR_A_LISTA;
-  }
+  // Sin RUT no puede activar aunque el correo esté en la lista: ese aviso va primero.
   if (panel.rut === null) {
     return AVISO_SIN_RUT;
+  }
+  if (!panel.enLista) {
+    return AVISO_AGREGAR_A_LISTA;
   }
   return AVISO_CORREO_ENVIADO;
 }
@@ -330,7 +333,7 @@ export function PersonalBooster() {
   const enListaConfirmacion =
     confirmacion === null || errorLista !== null
       ? null
-      : personal.some((p) => p.email === confirmacion.email && p.en_lista);
+      : personal.some((p) => p.email.toLowerCase() === confirmacion.email && p.en_lista);
 
   return (
     <div className="mt-6 space-y-8">
@@ -607,8 +610,8 @@ function OrdenDelAlta() {
             </li>
             <li>
               Con el correo ya en la lista, entrégale el código o usa «Generar código nuevo» en su
-              fila para que le llegue por correo. La persona lo usa en /activar con su RUT, elige su
-              clave de 6 dígitos y entra por /login con el tipo «Booster».
+              fila: también intentamos enviárselo por correo. La persona lo usa en /activar con su
+              RUT, elige su clave de 6 dígitos y entra por /login con el tipo «Booster».
             </li>
           </ol>
           <p className="mt-2 text-neutral-600 text-sm">
@@ -738,6 +741,37 @@ function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () =
   );
 }
 
+/**
+ * Provisoria que ya tenía un código (SC3): no se reemplaza ni se vuelve a
+ * mostrar. Si el admin no lo entregó desde este panel, lo correcto es generar
+ * uno nuevo antes de que el correo entre a la lista.
+ */
+function PanelCodigoPendiente({ panel }: { panel: AltaSinCodigo }) {
+  const vencido = panel.expiraEn !== null && yaPaso(panel.expiraEn);
+  return (
+    <>
+      <div className="font-semibold text-amber-900">
+        {vencido
+          ? 'Esta persona tiene un código vencido'
+          : 'Esta persona ya tiene un código pendiente'}
+      </div>
+      <p className="mt-1 text-amber-800 text-sm">
+        No lo reemplazamos y este panel no lo vuelve a mostrar. Si no se lo entregaste tú desde este
+        panel, genera uno nuevo con «Generar código nuevo» en su fila de la lista antes de que el PO
+        agregue el correo a la lista: el anterior deja de servir.
+      </p>
+      {panel.expiraEn !== null && (
+        <p className="mt-1 text-amber-700 text-xs">
+          {vencido ? 'Venció el' : 'Vence el'} {fechaHora(panel.expiraEn)}.
+        </p>
+      )}
+      {!panel.enLista && (
+        <p className="mt-2 font-medium text-amber-900 text-sm">{AVISO_AGREGAR_A_LISTA}</p>
+      )}
+    </>
+  );
+}
+
 /** Alta de alguien que ya existía: no se emite código (SC3). */
 function PanelSinCodigo({ panel, onCerrar }: { panel: AltaSinCodigo; onCerrar: () => void }) {
   return (
@@ -748,33 +782,28 @@ function PanelSinCodigo({ panel, onCerrar }: { panel: AltaSinCodigo; onCerrar: (
       {panel.vinculo === 'cuenta_activa' ? (
         <>
           <div className="font-semibold text-amber-900">Esta persona ya tiene cuenta</div>
-          <p className="mt-1 text-amber-800 text-sm">
-            La marcamos como personal de Booster. Entra con su RUT y su clave de siempre por /login,
-            con el tipo «Booster». No se generó código: su clave no cambia.
-          </p>
-          {!panel.enLista && (
-            <p className="mt-2 font-medium text-amber-900 text-sm">
-              Su correo todavía no está en la lista de Terraform ({LISTA_TERRAFORM}): hasta que se
-              agregue y se aplique, no entra a este panel.
+          {panel.enLista ? (
+            <p className="mt-1 text-amber-800 text-sm">
+              La marcamos como personal de Booster. Entra con su RUT y su clave de siempre por
+              /login, con el tipo «Booster». No se generó código: su clave no cambia.
             </p>
+          ) : (
+            <>
+              <p className="mt-1 text-amber-800 text-sm">
+                Sigue entrando con su RUT y su clave de siempre. No se generó código: su clave no
+                cambia.
+              </p>
+              <p className="mt-2 font-medium text-amber-900 text-sm">
+                Su correo todavía no está en la lista de Terraform ({LISTA_TERRAFORM}), así que no
+                la marcamos como personal: hasta entonces sigue en el inicio de su empresa, como
+                siempre. Cuando el PO agregue el correo y aplique, entra a este panel con el tipo
+                «Booster»; repite el alta en ese momento para dejarla marcada.
+              </p>
+            </>
           )}
         </>
       ) : (
-        <>
-          <div className="font-semibold text-amber-900">
-            Esta persona ya tiene un código vigente
-          </div>
-          <p className="mt-1 text-amber-800 text-sm">
-            No lo reemplazamos. Si no lo tiene a mano o venció, usa «Generar código nuevo» en su
-            fila de la lista.
-          </p>
-          {panel.expiraEn !== null && (
-            <p className="mt-1 text-amber-700 text-xs">Vence el {fechaHora(panel.expiraEn)}.</p>
-          )}
-          {!panel.enLista && (
-            <p className="mt-2 font-medium text-amber-900 text-sm">{AVISO_AGREGAR_A_LISTA}</p>
-          )}
-        </>
+        <PanelCodigoPendiente panel={panel} />
       )}
       <button
         type="button"
