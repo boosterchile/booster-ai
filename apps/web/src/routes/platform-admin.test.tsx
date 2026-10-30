@@ -42,6 +42,9 @@ vi.mock('../lib/api-client.js', () => ({
       if (typeof path === 'string' && path.startsWith('/admin/empresas')) {
         return { empresas: [] };
       }
+      if (path === '/admin/personal-booster') {
+        return { personal: [] };
+      }
       return { organizations: [] };
     }),
     post: vi.fn(),
@@ -54,6 +57,7 @@ const { PlatformAdminRoute, PlatformAdminStakeholdersRoute } = await import('./p
 const { PlatformAdminEmpresasRoute } = await import('./platform-admin-empresas.js');
 const { PlatformAdminTeltonikaRoute } = await import('./platform-admin-teltonika.js');
 const { PlatformAdminImpersonarRoute } = await import('./platform-admin-impersonar.js');
+const { PlatformAdminPersonalRoute } = await import('./platform-admin-personal.js');
 
 describe('/app/platform-admin — entradas del panel', () => {
   it('enlaza a Solicitudes de registro con la ruta correcta', () => {
@@ -61,6 +65,14 @@ describe('/app/platform-admin — entradas del panel', () => {
 
     const link = screen.getByTestId('signup-requests-link');
     expect(link).toHaveAttribute('href', '/app/platform-admin/signup-requests');
+  });
+
+  it('enlaza a Personal de Booster para dar de alta a otra persona del equipo', () => {
+    render(<PlatformAdminRoute />);
+
+    const link = screen.getByTestId('personal-booster-link');
+    expect(link).toHaveAttribute('href', '/app/platform-admin/personal');
+    expect(link).toHaveTextContent('Personal de Booster');
   });
 
   it('describe para qué sirve, sin obligar a conocer la URL', () => {
@@ -136,6 +148,18 @@ describe('páginas de Admin — volver al índice', () => {
       '/app/platform-admin',
     );
     expect(screen.getByRole('heading', { name: 'Organizaciones stakeholder' })).toBeInTheDocument();
+  });
+
+  it('personal vuelve al índice y muestra el panel del personal', async () => {
+    render(<PlatformAdminPersonalRoute />);
+    expect(screen.getByTestId('platform-admin-volver')).toHaveAttribute(
+      'href',
+      '/app/platform-admin',
+    );
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Personal de Booster' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByTestId('personal-lista-vacia')).toBeInTheDocument();
   });
 
   it('impersonar vuelve al índice', () => {
