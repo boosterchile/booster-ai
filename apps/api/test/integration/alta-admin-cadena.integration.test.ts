@@ -23,7 +23,8 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  * Booster que crea la empresa es la verificación, así que nace activa.
  *
  * Son cuatro llamadas, no una transacción: ese es el contrato en producción y
- * no se reescribe acá. Firebase se inyecta (decisión §3.4 (i)): las rutas ya
+ * no se reescribe acá. El caso 7 recorre aparte `PATCH /admin/empresas/:id`
+ * (suspender y reactivar), que sigue en uso. Firebase se inyecta (decisión §3.4 (i)): las rutas ya
  * reciben `Auth` por opts, así que un Auth en memoria basta y el job de
  * integración no necesita el emulador.
  */
@@ -370,5 +371,62 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
       json('POST', { rut: dueno.rut, clave: dueno.clave }),
     );
     expect(login.status).toBe(200);
+  });
+
+  // El PATCH de estado sigue en uso (las empresas que llegan por enlace nacen
+  // en verificación, y el panel suspende o reactiva). Se recorre contra la BD.
+  test('7. PATCH /admin/empresas/:id suspende y reactiva la empresa en la BD', async () => {
+    expect(empresaId).not.toBe('');
+    const a = app();
+    const estadoEnBd = async () => {
+      const [fila] = await handle.db
+        .select({ status: schema.empresas.status })
+        .from(schema.empresas)
+        .where(eq(schema.empresas.id, empresaId));
+      return fila?.status;
+    };
+
+    const suspender = await a.request(
+      `/admin/empresas/${empresaId}`,
+      json('PATCH', { estado: 'suspendida' }),
+    );
+    const suspendida = (await suspender.json()) as {
+      estado: string;
+      estado_anterior: string;
+      unchanged: boolean;
+    };
+    expect(suspender.status, JSON.stringify(suspendida)).toBe(200);
+    expect(suspendida).toMatchObject({
+      estado: 'suspendida',
+      estado_anterior: 'activa',
+      unchanged: false,
+    });
+    expect(await estadoEnBd()).toBe('suspendida');
+
+    const reactivar = await a.request(
+      `/admin/empresas/${empresaId}`,
+      json('PATCH', { estado: 'activa' }),
+    );
+    const reactivada = (await reactivar.json()) as {
+      estado: string;
+      estado_anterior: string;
+      unchanged: boolean;
+    };
+    expect(reactivar.status, JSON.stringify(reactivada)).toBe(200);
+    expect(reactivada).toMatchObject({
+      estado: 'activa',
+      estado_anterior: 'suspendida',
+      unchanged: false,
+    });
+    expect(await estadoEnBd()).toBe('activa');
+
+    const repetir = await a.request(
+      `/admin/empresas/${empresaId}`,
+      json('PATCH', { estado: 'activa' }),
+    );
+    const igual = (await repetir.json()) as { estado: string; unchanged: boolean };
+    expect(repetir.status, JSON.stringify(igual)).toBe(200);
+    expect(igual).toMatchObject({ estado: 'activa', unchanged: true });
+    expect(await estadoEnBd()).toBe('activa');
   });
 });
