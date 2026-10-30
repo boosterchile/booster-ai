@@ -51,6 +51,11 @@ interface DbOpts {
   listRows?: unknown[];
   /** Error que lanza el INSERT de `usuarios` (carrera de UNIQUE). */
   insertError?: unknown;
+  /**
+   * Filas que devuelve `update().set().where().returning()`. Vacío = el
+   * UPDATE condicional no encontró la fila en el estado esperado.
+   */
+  filasActualizadas?: unknown[];
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -58,12 +63,17 @@ function makeDb(opts: DbOpts = {}) {
   const insertedUsers: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
 
+  const locks: unknown[] = [];
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
     const orderBy = vi.fn(() => chain);
     chain.from = vi.fn(() => chain);
     chain.where = vi.fn(() => chain);
     chain.orderBy = orderBy;
+    chain.for = vi.fn((strength: unknown) => {
+      locks.push(strength);
+      return chain;
+    });
     chain.limit = vi.fn(async () => {
       if (orderBy.mock.calls.length > 0) {
         return opts.listRows ?? [];
@@ -89,7 +99,13 @@ function makeDb(opts: DbOpts = {}) {
   const update = vi.fn(() => ({
     set: vi.fn((vals: Record<string, unknown>) => {
       updates.push(vals);
-      return { where: vi.fn(async () => undefined) };
+      const filas = opts.filasActualizadas ?? [{ id: PERSONA_ID }];
+      // `where` se puede esperar directo o seguir con `returning()`.
+      return {
+        where: vi.fn(() =>
+          Object.assign(Promise.resolve(undefined), { returning: vi.fn(async () => filas) }),
+        ),
+      };
     }),
   }));
 
@@ -104,6 +120,7 @@ function makeDb(opts: DbOpts = {}) {
     update,
     insertedUsers,
     updates,
+    locks,
   };
 }
 
@@ -440,6 +457,47 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
     }
   });
 
+  it('cuenta activa con el correo fuera de la lista: no la marca y responde cuenta_activa', async () => {
+    const d = makeDb({
+      lookups: [[existente({ firebaseUid: 'fb-real', claveNumericaHash: 'hash-clave' })]],
+    });
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, logger, lista: [ADMIN_EMAIL] });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      user_id: PERSONA_ID,
+      vinculo: 'cuenta_activa',
+      codigo_activacion: null,
+      expira_en: null,
+      en_lista: false,
+    });
+    // Sin la lista, la marca no se escribe: la cuenta sigue como estaba.
+    expect(d.updates).toEqual([]);
+    expect(d.insertedUsers).toEqual([]);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.alta',
+        vinculo: 'cuenta_activa',
+        marcada: false,
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('la lectura de la cuenta existente bloquea la fila hasta el commit', async () => {
+    const d = makeDb({ lookups: [[existente()]] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(d.locks).toEqual(['update']);
+  });
+
   it('provisoria con código: no emite uno nuevo, la marca y responde codigo_vigente', async () => {
     const vence = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
     const d = makeDb({
@@ -545,6 +603,22 @@ describe('POST /admin/personal-booster — rechazos sin escrituras (SC4)', () =>
     expect(((await res.json()) as { code: string }).code).toBe('rut_already_registered');
   });
 
+  it('carrera contra el UNIQUE de firebase_uid (el placeholder sale del RUT) → 409 rut_already_registered', async () => {
+    const d = makeDb({
+      lookups: [[], []],
+      insertError: Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'usuarios_firebase_uid_key',
+      }),
+    });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('rut_already_registered');
+  });
+
   it.each([
     ['RUT con dígito verificador inválido', { ...BODY, rut: '12345678-9' }],
     ['correo inválido', { ...BODY, email: 'no-es-correo' }],
@@ -630,6 +704,26 @@ describe('POST /admin/personal-booster/:userId/codigo — re-emisión (SC5)', ()
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe('already_activated');
     expect(d.updates).toEqual([]);
+  });
+
+  it('si la cuenta se activó entre la lectura y la escritura → 409 already_activated, sin correo', async () => {
+    const d = makeDb({
+      lookups: [[existente({ isPlatformAdmin: true })]],
+      filasActualizadas: [],
+    });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger });
+
+    const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('already_activated');
+    expect(send).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'personal_booster.reemision_codigo' }),
+      expect.any(String),
+    );
   });
 
   it('persona que no es del personal → 404 personal_not_found, sin escrituras', async () => {

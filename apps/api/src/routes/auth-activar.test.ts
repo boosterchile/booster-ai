@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashActivationPin } from '../services/activation-pin.js';
 import { createAuthActivarRoutes } from './auth-activar.js';
@@ -39,6 +40,11 @@ interface DbOpts {
   user?: Record<string, unknown> | null;
   /** Membresía pendiente asociada. */
   membresia?: Record<string, unknown> | null;
+  /**
+   * Filas que devuelve el UPDATE condicional de la cuenta. Vacío = el código
+   * ya no era el verificado cuando llegó la escritura.
+   */
+  filasActualizadas?: unknown[];
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -79,12 +85,19 @@ function makeDb(opts: DbOpts = {}) {
   const update = vi.fn((table: unknown) => ({
     set: vi.fn((v: Record<string, unknown>) => {
       // La membresía se distingue por los campos que toca.
-      if ('status' in v && ('joinedAt' in v || v.status === 'activa')) {
+      const esMembresia = 'status' in v && ('joinedAt' in v || v.status === 'activa');
+      if (esMembresia) {
         membresiaUpdates.push(v);
       } else {
         userUpdates.push(v);
       }
-      return { where: vi.fn(async () => undefined) };
+      const filas = esMembresia ? [] : (opts.filasActualizadas ?? [{ id: 'user-1' }]);
+      // `where` se puede esperar directo o seguir con `returning()`.
+      return {
+        where: vi.fn(() =>
+          Object.assign(Promise.resolve(undefined), { returning: vi.fn(async () => filas) }),
+        ),
+      };
     }),
     _t: table,
   }));
@@ -96,6 +109,7 @@ function makeDb(opts: DbOpts = {}) {
       update,
       transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as never,
+    select,
     userUpdates,
     membresiaUpdates,
   };
@@ -111,15 +125,26 @@ function makeAuth() {
   };
 }
 
+const sinLimite: MiddlewareHandler = async (_c, next) => {
+  await next();
+};
+
 function buildApp(
   db: ReturnType<typeof makeDb>['db'],
   auth: Auth,
   platformAdminEmails: readonly string[] = [],
+  rateLimitPerRut: MiddlewareHandler = sinLimite,
 ) {
   const app = new Hono();
   app.route(
     '/',
-    createAuthActivarRoutes({ db, logger: noopLogger, firebaseAuth: auth, platformAdminEmails }),
+    createAuthActivarRoutes({
+      db,
+      logger: noopLogger,
+      firebaseAuth: auth,
+      platformAdminEmails,
+      rateLimitPerRut,
+    }),
   );
   return app;
 }
@@ -285,6 +310,51 @@ describe('POST /auth/activar', () => {
     const res = await activar(buildApp(d.db, a.auth), { clave_numerica: '123' });
     expect(res.status).toBe(400);
   });
+
+  it('si el código cambió entre la verificación y la escritura → 401 genérica, sin membresías ni sesión', async () => {
+    const d = makeDb({ filasActualizadas: [] });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: 'invalid_credentials',
+      code: 'invalid_credentials',
+    });
+    expect(d.membresiaUpdates).toEqual([]);
+    expect(a.spies.createCustomToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/activar — límite de intentos por RUT', () => {
+  it('el límite por RUT corre antes de leer la base', async () => {
+    const d = makeDb();
+    const a = makeAuth();
+    const limite: MiddlewareHandler = async (c) =>
+      c.json({ error: 'too_many_attempts', code: 'too_many_attempts' }, 429);
+
+    const res = await activar(buildApp(d.db, a.auth, [], limite));
+
+    expect(res.status).toBe(429);
+    expect(d.select).not.toHaveBeenCalled();
+    expect(d.userUpdates).toEqual([]);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('con intentos disponibles, el límite deja pasar y la activación sigue igual', async () => {
+    const d = makeDb();
+    const a = makeAuth();
+    const paso = vi.fn();
+    const limite: MiddlewareHandler = async (_c, next) => {
+      paso();
+      await next();
+    };
+
+    const res = await activar(buildApp(d.db, a.auth, [], limite));
+
+    expect(paso).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+  });
 });
 
 /**
@@ -412,6 +482,16 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
 
     expect(res.status).toBe(200);
     expect((d.membresiaUpdates[0] as Record<string, unknown>).status).toBe('activa');
+  });
+
+  it('personal: si el código cambió antes de escribir → 401 genérica y sin sesión', async () => {
+    const d = makeDb({ user: personal(), membresia: null, filasActualizadas: [] });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(RECHAZO);
+    expect(a.spies.createCustomToken).not.toHaveBeenCalled();
   });
 
   it('Firebase caído al activar al personal → 503 y nada escrito', async () => {

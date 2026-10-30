@@ -185,6 +185,7 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
         logger,
         firebaseAuth: firebase.auth,
         platformAdminEmails: [ADMIN_EMAIL],
+        rateLimitPerRut: sinRateLimit,
       }),
     );
     a.route(

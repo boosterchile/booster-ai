@@ -71,7 +71,7 @@ const LISTA = { personal: [ANA, BETO, CARLA, DANI] };
 const AVISO_TERRAFORM =
   'Agrega este correo a la lista de Terraform (booster_platform_admin_emails) y aplica; recién entonces la persona podrá activar. Si el código vence antes, genera uno nuevo aquí.';
 const AVISO_CORREO =
-  'Le enviamos el código por correo a esa dirección; también puedes entregárselo tú.';
+  'Intentamos enviarle el código por correo a esa dirección. Si no le llega, entrégaselo tú: cópialo antes de cerrar.';
 
 function stubClipboard(writeText: (text: string) => Promise<void>) {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
@@ -345,6 +345,10 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(panel).toHaveTextContent('Esta persona ya tiene cuenta');
     expect(panel).toHaveTextContent('su clave no cambia');
     expect(panel).toHaveTextContent('booster_platform_admin_emails');
+    // Fuera de la lista la API no la marca: el panel no dice que lo hizo.
+    expect(panel).toHaveTextContent('no la marcamos como personal');
+    expect(panel).toHaveTextContent('repite el alta');
+    expect(panel).not.toHaveTextContent('La marcamos como personal de Booster');
     expect(screen.queryByTestId('personal-codigo')).not.toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Cerrar' }));
@@ -366,6 +370,7 @@ describe('PersonalBooster — alta (SC2)', () => {
     fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
 
     const panel = await screen.findByTestId('personal-vinculo-panel');
+    expect(panel).toHaveTextContent('La marcamos como personal de Booster');
     expect(panel).not.toHaveTextContent('booster_platform_admin_emails');
   });
 
@@ -389,11 +394,35 @@ describe('PersonalBooster — alta (SC2)', () => {
     fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
 
     const panel = await screen.findByTestId('personal-vinculo-panel');
-    expect(panel).toHaveTextContent('Esta persona ya tiene un código vigente');
+    expect(panel).toHaveTextContent('Esta persona ya tiene un código pendiente');
     expect(panel).toHaveTextContent('Generar código nuevo');
+    expect(panel).toHaveTextContent('Si no se lo entregaste tú desde este panel, genera uno nuevo');
+    expect(panel).toHaveTextContent('antes de que el PO agregue el correo a la lista');
     expect(panel).toHaveTextContent(/Vence el/);
     expect(panel).toHaveTextContent(AVISO_TERRAFORM);
     expect(screen.queryByTestId('personal-codigo')).not.toBeInTheDocument();
+  });
+
+  it('codigo_vigente con el código ya vencido lo dice y muestra cuándo venció', async () => {
+    await renderConLista();
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: USER_VENCIDA,
+      vinculo: 'codigo_vigente',
+      codigo_activacion: null,
+      expira_en: '2020-01-01T12:00:00.000Z',
+      en_lista: true,
+    });
+
+    const confirmacion = await altaHastaConfirmar();
+    fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
+
+    const panel = await screen.findByTestId('personal-vinculo-panel');
+    expect(panel).toHaveTextContent('Esta persona tiene un código vencido');
+    expect(panel).toHaveTextContent(/Venció el/);
+    expect(panel).not.toHaveTextContent(/Vence el/);
+    expect(panel).not.toHaveTextContent('ya tiene un código pendiente');
+    expect(panel).toHaveTextContent('Generar código nuevo');
   });
 
   it('codigo_vigente sin vencimiento y en la lista no inventa una fecha', async () => {
@@ -429,6 +458,22 @@ describe('PersonalBooster — alta (SC2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Revisar datos' }));
 
     const confirmacion = await screen.findByTestId('personal-confirmacion');
+    expect(confirmacion).toHaveTextContent('Este correo ya está en la lista de Terraform');
+  });
+});
+
+describe('PersonalBooster — confirmación y lista de Terraform', () => {
+  it('reconoce el correo en la lista aunque la cuenta lo tenga guardado con mayúsculas', async () => {
+    await renderConLista({
+      personal: [ANA, { ...BETO, email: 'Beto.Mayus@BoosterChile.com', en_lista: true }],
+    });
+
+    const confirmacion = await altaHastaConfirmar({
+      email: 'beto.mayus@boosterchile.com',
+      nombre: 'Beto Soto',
+      rut: '12345678-5',
+    });
+
     expect(confirmacion).toHaveTextContent('Este correo ya está en la lista de Terraform');
   });
 });
@@ -590,6 +635,26 @@ describe('PersonalBooster — Generar código nuevo (SC5)', () => {
     const aviso = await within(gus).findByTestId('personal-aviso-lista');
     expect(aviso).toHaveTextContent('no tiene RUT registrado');
     expect(aviso).not.toHaveTextContent(AVISO_CORREO);
+  });
+
+  it('una cuenta sin RUT y fuera de la lista: el aviso es el del RUT, que es lo que impide activar', async () => {
+    await renderConLista({
+      personal: [ANA, { ...BETO, email: 'hugo@boosterchile.com', en_lista: false, rut: null }],
+    });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: USER_PENDIENTE,
+      codigo_activacion: '771204',
+      expira_en: '2026-11-06T16:00:00.000Z',
+      en_lista: false,
+    });
+
+    const hugo = fila('hugo@boosterchile.com');
+    fireEvent.click(within(hugo).getByRole('button', { name: 'Generar código nuevo' }));
+
+    const aviso = await within(hugo).findByTestId('personal-aviso-lista');
+    expect(aviso).toHaveTextContent('no tiene RUT registrado');
+    expect(aviso).not.toHaveTextContent(AVISO_TERRAFORM);
   });
 
   it('el código nuevo de otra fila reemplaza al panel anterior: nunca hay dos códigos en pantalla', async () => {

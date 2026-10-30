@@ -44,6 +44,18 @@ vi.hoisted(() => {
     'admin-personal-it@test.invalid,personal-it@test.invalid';
 });
 
+// Códigos de activación predecibles y siempre distintos entre sí, para que el
+// paso 4 compruebe sin condiciones que el código anterior deja de servir. El
+// hash y la verificación son los reales.
+const secuenciaDeCodigos = vi.hoisted(() => ({ siguiente: 410_000 }));
+vi.mock('../../src/services/activation-pin.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/services/activation-pin.js')>();
+  return {
+    ...real,
+    generateActivationPin: () => String(secuenciaDeCodigos.siguiente++),
+  };
+});
+
 function authEnMemoria() {
   const porEmail = new Map<string, { uid: string; email: string }>();
   const porUid = new Map<string, { uid: string; email: string }>();
@@ -194,6 +206,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
         logger,
         firebaseAuth: firebase.auth,
         platformAdminEmails: lista,
+        rateLimitPerRut: sinRateLimit,
       }),
     );
     a.route(
@@ -311,13 +324,12 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
 
   test('4. el código anterior ya no sirve; el nuevo activa con la clave que elige la persona', async () => {
     const a = app(LISTA_DESPUES);
-    if (primerCodigo !== codigo) {
-      const viejo = await a.request(
-        '/auth/activar',
-        json('POST', { rut: persona.rut, codigo: primerCodigo, clave_numerica: persona.clave }),
-      );
-      expect(viejo.status).toBe(401);
-    }
+    expect(primerCodigo).not.toBe(codigo);
+    const viejo = await a.request(
+      '/auth/activar',
+      json('POST', { rut: persona.rut, codigo: primerCodigo, clave_numerica: persona.clave }),
+    );
+    expect(viejo.status).toBe(401);
 
     const res = await a.request(
       '/auth/activar',
@@ -465,5 +477,133 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     });
     const res = await a.request('/admin/personal-booster', { headers: { 'x-test-uid': otraUid } });
     expect(res.status).toBe(403);
+  });
+
+  async function filaPorId(id: string) {
+    const [u] = await handle.db.select().from(schema.users).where(eq(schema.users.id, id));
+    if (!u) {
+      throw new Error(`fixture: no está la fila ${id}`);
+    }
+    return u;
+  }
+
+  test('12. una cuenta activa fuera de la lista no se marca; con el correo en la lista, sí', async () => {
+    const sufijo = randomUUID().slice(0, 8);
+    const correoActiva = `activa-${sufijo}@test.invalid`;
+    const rut = rutAleatorio();
+    const [cuenta] = await handle.db
+      .insert(schema.users)
+      .values({
+        firebaseUid: `fb-activa-${sufijo}`,
+        email: correoActiva,
+        fullName: 'Dueña Generadora',
+        rut,
+        claveNumericaHash: 'hash-clave-existente',
+        status: 'activo',
+      })
+      .returning({ id: schema.users.id });
+    if (!cuenta) {
+      throw new Error('fixture: cuenta activa no creada');
+    }
+    const datos = { email: correoActiva, full_name: 'Dueña Generadora', rut };
+
+    const fuera = await app(LISTA_DESPUES).request(
+      '/admin/personal-booster',
+      json('POST', datos, adminUid),
+    );
+    const cuerpoFuera = (await fuera.json()) as Record<string, unknown>;
+    expect(fuera.status, JSON.stringify(cuerpoFuera)).toBe(200);
+    expect(cuerpoFuera).toMatchObject({
+      user_id: cuenta.id,
+      vinculo: 'cuenta_activa',
+      codigo_activacion: null,
+      en_lista: false,
+    });
+    expect((await filaPorId(cuenta.id)).isPlatformAdmin).toBe(false);
+
+    const dentro = await app([...LISTA_DESPUES, correoActiva]).request(
+      '/admin/personal-booster',
+      json('POST', datos, adminUid),
+    );
+    const cuerpoDentro = (await dentro.json()) as Record<string, unknown>;
+    expect(dentro.status, JSON.stringify(cuerpoDentro)).toBe(200);
+    expect(cuerpoDentro).toMatchObject({ vinculo: 'cuenta_activa', en_lista: true });
+    const marcada = await filaPorId(cuenta.id);
+    expect(marcada.isPlatformAdmin).toBe(true);
+    expect(marcada.claveNumericaHash).toBe('hash-clave-existente');
+    expect(marcada.fullName).toBe('Dueña Generadora');
+  });
+
+  test('13. el firebase_uid provisorio de ese RUT ya tomado → 409 rut_already_registered, sin escribir', async () => {
+    const sufijo = randomUUID().slice(0, 8);
+    const rut = rutAleatorio();
+    // Fila con el uid provisorio del RUT pero sin el RUT en su columna.
+    await handle.db.insert(schema.users).values({
+      firebaseUid: `pending-rut:${rut}`,
+      email: `heredada-${sufijo}@test.invalid`,
+      fullName: 'Fila Heredada',
+      status: 'pendiente_verificacion',
+    });
+    const correoNuevo = `nueva-${sufijo}@test.invalid`;
+
+    const res = await app(LISTA_DESPUES).request(
+      '/admin/personal-booster',
+      json('POST', { email: correoNuevo, full_name: 'Persona Nueva', rut }, adminUid),
+    );
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('rut_already_registered');
+    const creadas = await handle.db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.email, correoNuevo));
+    expect(creadas).toEqual([]);
+  });
+
+  test('14. la lista trae la cuenta sin marca cuyo correo está en la lista, y el alta encuentra un correo guardado con mayúsculas', async () => {
+    const sufijo = randomUUID().slice(0, 8);
+    const correoGuardado = `Mayus-${sufijo}@Test.Invalid`;
+    const rut = rutAleatorio();
+    const [cuenta] = await handle.db
+      .insert(schema.users)
+      .values({
+        firebaseUid: `fb-mayus-${sufijo}`,
+        email: correoGuardado,
+        fullName: 'Persona Mayúsculas',
+        rut,
+        claveNumericaHash: 'hash-clave',
+        status: 'activo',
+      })
+      .returning({ id: schema.users.id });
+    if (!cuenta) {
+      throw new Error('fixture: cuenta con mayúsculas no creada');
+    }
+    const a = app([...LISTA_DESPUES, correoGuardado.toLowerCase()]);
+
+    const panel = await a.request('/admin/personal-booster', {
+      headers: { 'x-test-uid': adminUid },
+    });
+    const lista = (await panel.json()) as {
+      personal: Array<{ email: string; user_id: string | null; en_lista: boolean; estado: string }>;
+    };
+    expect(panel.status, JSON.stringify(lista)).toBe(200);
+    expect(lista.personal).toContainEqual(
+      expect.objectContaining({ user_id: cuenta.id, en_lista: true, estado: 'activa' }),
+    );
+    expect(
+      lista.personal.filter((p) => p.email.toLowerCase() === correoGuardado.toLowerCase()),
+    ).toHaveLength(1);
+
+    const alta = await a.request(
+      '/admin/personal-booster',
+      json(
+        'POST',
+        { email: correoGuardado.toLowerCase(), full_name: 'Persona Mayúsculas', rut },
+        adminUid,
+      ),
+    );
+    const cuerpo = (await alta.json()) as Record<string, unknown>;
+    expect(alta.status, JSON.stringify(cuerpo)).toBe(200);
+    expect(cuerpo).toMatchObject({ user_id: cuenta.id, vinculo: 'cuenta_activa', en_lista: true });
   });
 });
