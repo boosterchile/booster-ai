@@ -37,6 +37,18 @@ function rutDeLaUrl(): string {
   return parsed.success ? parsed.data : '';
 }
 
+/**
+ * El conductor activa con el PIN que le dio su empresa, en `/login/conductor`.
+ * Si en `/login` eligió otro tipo llega acá; el enlace lleva el RUT que ya
+ * tecleó, solo si es un RUT válido.
+ */
+function hrefConductor(rut: string): string {
+  const parsed = rutSchema.safeParse(ensureRutHasDash(rut.replace(/\./g, '').trim()));
+  return parsed.success
+    ? `/login/conductor?rut=${encodeURIComponent(parsed.data)}`
+    : '/login/conductor';
+}
+
 export function ActivarRoute() {
   const navigate = useNavigate();
   const [rut, setRut] = useState(rutDeLaUrl);
@@ -216,6 +228,17 @@ export function ActivarRoute() {
               'Activar mi cuenta'
             )}
           </button>
+
+          <p className="text-center text-neutral-600 text-sm">
+            <a
+              href={hrefConductor(rut)}
+              className="font-medium text-primary-700 underline"
+              data-testid="activar-link-conductor"
+            >
+              ¿Eres conductor?
+            </a>{' '}
+            Activa tu cuenta con el PIN que te dio tu empresa.
+          </p>
         </div>
       </form>
     </div>
