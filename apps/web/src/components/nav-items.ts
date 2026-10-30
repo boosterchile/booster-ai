@@ -41,8 +41,9 @@ const INICIO: NavItem = { label: 'Inicio', to: '/app', icon: Home };
  * en las secciones condicionales de `app.tsx`. Una empresa puede ser
  * transportista Y generador: se muestran ambas secciones.
  *
- * El conductor y el platform-admin NO usan este shell (tienen shell propio), así
- * que no se modelan acá.
+ * El conductor y el panel de platform-admin NO usan este shell (tienen shell
+ * propio), así que no se modelan acá. La persona de Booster que entra a la web
+ * de su empresa sí lo usa, con las secciones de su membresía.
  */
 export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   const empresa = me.active_membership?.empresa;
