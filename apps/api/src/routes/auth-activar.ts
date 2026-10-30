@@ -30,7 +30,22 @@ import { cuentaYaActivada, invitacionesVigentes } from '../services/vinculo-pers
  * **Sin oráculo**: RUT inexistente, código incorrecto, cuenta ya activada y
  * código vencido devuelven la MISMA respuesta. Un atacante no puede usar este
  * endpoint para enumerar RUTs ni para saber quién tiene una invitación viva.
+ *
+ * **Personal de Booster** (`.specs/alta-personal-booster`, SC6). La persona
+ * que el platform-admin dio de alta desde el panel no tiene invitación a una
+ * empresa. Sin invitaciones vigentes, activa solo si se cumplen las tres
+ * condiciones: la cuenta tiene `es_admin_plataforma = true`, su correo está en
+ * la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`) y el código sigue
+ * vigente según `activacion_vence_en`. Si falta una, la respuesta es la misma.
  */
+
+/** Vigencia del código del personal: `activacion_vence_en` existe y no pasó. */
+function codigoPersonalVigente(venceEn: Date | string | null, ahora = Date.now()): boolean {
+  if (venceEn === null) {
+    return false;
+  }
+  return new Date(venceEn).getTime() >= ahora;
+}
 
 /** Email sintético de Firebase — mismo formato que `auth-universal.ts`. */
 function syntheticEmail(rut: string): string {
@@ -41,8 +56,13 @@ export function createAuthActivarRoutes(opts: {
   db: Db;
   logger: Logger;
   firebaseAuth: Auth;
+  /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de Terraform. */
+  platformAdminEmails: readonly string[];
 }): Hono {
   const app = new Hono();
+  const listaPersonal = new Set(
+    opts.platformAdminEmails.map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0),
+  );
 
   app.post('/activar', zValidator('json', activarCuentaSchema), async (c) => {
     const body = c.req.valid('json');
@@ -60,6 +80,9 @@ export function createAuthActivarRoutes(opts: {
         activationPinHash: users.activationPinHash,
         claveNumericaHash: users.claveNumericaHash,
         fullName: users.fullName,
+        email: users.email,
+        isPlatformAdmin: users.isPlatformAdmin,
+        activacionVenceEn: users.activacionVenceEn,
       })
       .from(users)
       .where(eq(users.rut, body.rut))
@@ -99,13 +122,17 @@ export function createAuthActivarRoutes(opts: {
       .where(and(eq(memberships.userId, user.id), eq(memberships.status, 'pendiente_invitacion')))
       .limit(20);
     const vigentes = invitacionesVigentes(invitaciones);
+    const invitacion = vigentes[0] ?? null;
 
-    if (vigentes.length === 0) {
+    // Sin invitación vigente, el único otro camino es el personal de Booster.
+    const esPersonalBooster =
+      invitacion === null &&
+      user.isPlatformAdmin &&
+      listaPersonal.has(user.email.toLowerCase()) &&
+      codigoPersonalVigente(user.activacionVenceEn);
+
+    if (invitacion === null && !esPersonalBooster) {
       opts.logger.info({ rut: body.rut }, 'auth-activar: sin invitación vigente');
-      return rechazo();
-    }
-    const invitacion = vigentes[0];
-    if (!invitacion) {
       return rechazo();
     }
 
@@ -139,22 +166,26 @@ export function createAuthActivarRoutes(opts: {
           // OJO: `email` NO se toca. Es el canal de comunicación de la
           // plataforma con la persona (spec §6.1).
           claveNumericaHash: hashClaveNumerica(body.clave_numerica),
-          // El código es de un solo uso.
+          // El código es de un solo uso: se borran el hash y su vencimiento.
           activationPinHash: null,
+          activacionVenceEn: null,
           status: 'activo',
           updatedAt: new Date(),
         })
         .where(eq(users.id, user.id));
 
-      await tx
-        .update(memberships)
-        .set({ status: 'activa', joinedAt: new Date(), updatedAt: new Date() })
-        .where(
-          inArray(
-            memberships.id,
-            vigentes.map((row) => row.id),
-          ),
-        );
+      // El personal de Booster sin invitación no tiene membresías que activar.
+      if (vigentes.length > 0) {
+        await tx
+          .update(memberships)
+          .set({ status: 'activa', joinedAt: new Date(), updatedAt: new Date() })
+          .where(
+            inArray(
+              memberships.id,
+              vigentes.map((row) => row.id),
+            ),
+          );
+      }
     });
 
     let customToken: string;
@@ -172,10 +203,17 @@ export function createAuthActivarRoutes(opts: {
       return c.json({ ok: true, activated: true }, 200);
     }
 
-    opts.logger.info(
-      { userId: user.id, empresaId: invitacion.empresaId, membershipId: invitacion.id },
-      'auth-activar: cuenta activada con clave propia',
-    );
+    if (invitacion) {
+      opts.logger.info(
+        { userId: user.id, empresaId: invitacion.empresaId, membershipId: invitacion.id },
+        'auth-activar: cuenta activada con clave propia',
+      );
+    } else {
+      opts.logger.info(
+        { event_type: 'personal_booster.activacion', userId: user.id },
+        'auth-activar: personal de Booster activado con clave propia',
+      );
+    }
 
     return c.json({ ok: true, activated: true, custom_token: customToken }, 200);
   });

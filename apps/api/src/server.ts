@@ -1137,6 +1137,9 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         firebaseAuth: opts.firebaseAuth,
+        // alta-personal-booster SC6: el personal de Booster activa solo si su
+        // correo está en la lista de Terraform.
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
       }),
     );
 
