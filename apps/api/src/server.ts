@@ -38,6 +38,7 @@ import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
+import { createAdminPersonalBoosterRoutes } from './routes/admin-personal-booster.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -835,6 +836,26 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         auth: opts.firebaseAuth,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
+
+    // alta-personal-booster — el platform-admin da de alta a otra persona de
+    // Booster con acceso al panel. Mismo chain que /admin/empresas; la
+    // autorización real la da `requirePlatformAdmin` dentro de cada handler.
+    // La lista de Terraform sigue decidiendo quién entra: se pasa para marcar
+    // `en_lista` y decidir si el código sale por correo.
+    app.use('/admin/personal-booster', firebaseAuthMiddleware);
+    app.use('/admin/personal-booster/*', firebaseAuthMiddleware);
+    app.use('/admin/personal-booster', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/personal-booster/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/personal-booster',
+      createAdminPersonalBoosterRoutes({
+        db: opts.db,
+        logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
       }),

@@ -86,6 +86,10 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // Fase 3.5 — alta de miembros en empresa existente. firebaseAuth + userContext
   // preceden el mount (/admin/empresas/*); gate adicional requirePlatformAdmin.
   createAdminEmpresaMiembrosRoutes: { category: 'ENFORCED', rationale: '' },
+  // alta-personal-booster — alta del personal de Booster. firebaseAuth +
+  // userContext preceden el mount (/admin/personal-booster y /*); gate
+  // adicional requirePlatformAdmin en cada handler.
+  createAdminPersonalBoosterRoutes: { category: 'ENFORCED', rationale: '' },
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
   // ADR-079 §3: firebaseAuth + userContext preceden el mount
   // (/admin/configuracion-comercial y /*); gate adicional requirePlatformAdmin.
@@ -195,7 +199,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAuthActivarRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:
-      'POST /auth/activar (equipo-de-la-empresa): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`), se consume de un solo uso (el hash se borra) y el endpoint corre tras rate-limit por IP fail-closed con cubo propio. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido: sin oráculo de enumeración.',
+      'POST /auth/activar (equipo-de-la-empresa, alta-personal-booster): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`) o, para el personal de Booster, las tres condiciones juntas: `es_admin_plataforma = true`, correo en BOOSTER_PLATFORM_ADMIN_EMAILS (la lista de Terraform) y `activacion_vence_en` vigente. El código se consume de un solo uso (el hash y `activacion_vence_en` se borran) y el endpoint corre tras rate-limit por IP fail-closed con cubo propio. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido / fuera de la lista: sin oráculo de enumeración.',
   },
   createAuthUniversalRoutes: {
     category: 'INTENTIONAL-OPEN',
