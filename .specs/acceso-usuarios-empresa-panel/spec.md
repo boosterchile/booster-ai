@@ -49,7 +49,7 @@ Además, la empresa creada desde el panel nace en `pendiente_verificacion` (`adm
 ## 5. Out of scope
 
 - El alta del personal de Booster en el panel: spec hermana `.specs/alta-personal-booster/`.
-- Que el backend indique en el 410 si la cuenta es de conductor o de empresa. La web decide con el tipo que eligió la persona y ofrece los dos caminos; así el login no revela más de lo que ya revela.
+- Que el backend indique en el 410 si la cuenta es de conductor o de empresa. La web decide el camino con el tipo que eligió la persona y ofrece los dos; el contrato de `/auth/login-rut` no cambia.
 - Crear empresa y dueño en un solo paso (SC1 de `alta-desde-panel-admin`): siguen siendo dos formularios en la misma página.
 - Gestionar miembros activos desde el panel (quitar, cambiar rol) y el aviso de «empresa en verificación» para las empresas que llegan por enlace.
 - Los cambios de capacidades por rol de los PRs abiertos #817–#819.
