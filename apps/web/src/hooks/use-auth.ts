@@ -20,6 +20,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { setActiveEmpresaId } from '../lib/api-client.js';
 import { firebaseAuth, googleProvider } from '../lib/firebase.js';
+import { volverAlPanel } from '../lib/vista-admin.js';
 
 export interface AuthState {
   /** Firebase user actual. null si no logueado. undefined mientras carga el primer estado. */
@@ -157,9 +158,13 @@ export async function requestPasswordReset(email: string): Promise<void> {
  * deja una empresa activa X y user B se loguea después, B mandaría el
  * X-Empresa-Id de A al backend → /me devolvería null o (con fallback
  * activado) la primera empresa de B con un mismatch silencioso.
+ *
+ * Limpia también la elección «Ir a mi empresa» de la pestaña: quien vuelve a
+ * entrar parte en el panel, como siempre (acceso-usuarios-empresa-panel SC9).
  */
 export async function signOutUser(): Promise<void> {
   setActiveEmpresaId(null);
+  volverAlPanel();
   await signOut(firebaseAuth);
 }
 
