@@ -190,7 +190,7 @@ describe('LoginUniversal', () => {
     );
 
     render(<LoginUniversal />);
-    await userEvent.click(screen.getByTestId('login-tipo-carga'));
+    await userEvent.click(screen.getByTestId('login-tipo-conductor'));
     fireEvent.change(screen.getByTestId('login-rut-input'), {
       target: { value: '5.864.136-7' },
     });
@@ -259,5 +259,98 @@ describe('LoginUniversal — la activación tiene que ser encontrable', () => {
     render(<LoginUniversal />);
     await userEvent.click(screen.getByTestId('login-tipo-carga'));
     expect(screen.queryByTestId('login-link-activar-conductor')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC1 — la persona que Booster o su empresa dio
+ * de alta (dueño, admin, despachador, visualizador) tiene un código de
+ * activación, no un PIN de conductor. Su camino es `/activar`, no
+ * `/login/conductor`. El 410 no dice qué tipo de cuenta es: la pantalla decide
+ * con el tipo que eligió la persona y ofrece siempre el otro camino.
+ */
+describe('LoginUniversal — cuenta sin activar según el tipo elegido (SC1)', () => {
+  async function loginSinActivar(tipo: string) {
+    fetchSpy.mockResolvedValueOnce(
+      makeJsonResponse(410, {
+        error: 'needs_activation',
+        code: 'needs_activation',
+        message:
+          'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa para activarla y crear tu clave.',
+      }),
+    );
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId(`login-tipo-${tipo}`));
+    fireEvent.change(screen.getByTestId('login-rut-input'), {
+      target: { value: '12.345.678-5' },
+    });
+    fireEvent.change(screen.getByTestId('login-clave-input'), { target: { value: '123456' } });
+    await userEvent.click(screen.getByTestId('login-submit'));
+    return screen.findByTestId('needs-activation-go-activar');
+  }
+
+  it.each(['carga', 'transporte', 'booster', 'stakeholder'])(
+    'tipo %s → «Activar mi cuenta» lleva a /activar con el RUT',
+    async (tipo) => {
+      const principal = await loginSinActivar(tipo);
+      expect(principal).toHaveTextContent('Activar mi cuenta');
+      expect(principal).toHaveAttribute('href', '/activar?rut=12345678-5');
+      // Le habla del código que tiene en la mano, no del PIN del conductor.
+      expect(document.body.textContent ?? '').toMatch(/código de activación/i);
+    },
+  );
+
+  it.each(['carga', 'transporte', 'booster', 'stakeholder'])(
+    'tipo %s → ofrece también el camino del conductor',
+    async (tipo) => {
+      await loginSinActivar(tipo);
+      const alternativa = screen.getByTestId('needs-activation-alternativa');
+      expect(alternativa).toHaveTextContent('¿Eres conductor?');
+      expect(alternativa).toHaveAttribute('href', '/login/conductor?rut=12345678-5');
+    },
+  );
+
+  it('tipo conductor → sigue yendo a /login/conductor con el RUT', async () => {
+    const principal = await loginSinActivar('conductor');
+    expect(principal).toHaveTextContent('Activar mi cuenta');
+    expect(principal).toHaveAttribute('href', '/login/conductor?rut=12345678-5');
+  });
+
+  it('tipo conductor → ofrece también el camino de quien dio de alta Booster o su empresa', async () => {
+    await loginSinActivar('conductor');
+    const alternativa = screen.getByTestId('needs-activation-alternativa');
+    expect(alternativa).toHaveTextContent('¿Te dio de alta Booster o tu empresa?');
+    expect(alternativa).toHaveAttribute('href', '/activar?rut=12345678-5');
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC2 — quien no es conductor y tiene un código
+ * de activación lo encuentra en el formulario, sin fallar un login antes.
+ */
+describe('LoginUniversal — aviso del código de activación en el formulario (SC2)', () => {
+  it.each(['carga', 'transporte', 'booster', 'stakeholder'])(
+    'tipo %s → «¿Te dieron un código de activación? Activa tu cuenta» enlaza a /activar',
+    async (tipo) => {
+      render(<LoginUniversal />);
+      await userEvent.click(screen.getByTestId(`login-tipo-${tipo}`));
+
+      expect(screen.getByText(/¿Te dieron un código de activación\?/)).toBeInTheDocument();
+      const link = screen.getByTestId('login-link-activar-codigo');
+      expect(link).toHaveAttribute('href', '/activar');
+      expect(link).toHaveTextContent('Activa tu cuenta');
+      expect(screen.queryByTestId('login-link-activar-conductor')).not.toBeInTheDocument();
+    },
+  );
+
+  it('tipo conductor → mantiene el aviso del PIN y no muestra el del código', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-conductor'));
+
+    expect(screen.getByTestId('login-link-activar-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor',
+    );
+    expect(screen.queryByTestId('login-link-activar-codigo')).not.toBeInTheDocument();
   });
 });
