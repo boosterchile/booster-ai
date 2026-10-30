@@ -71,6 +71,17 @@ export function InvitarMiembroEmpresa({
   // La empresa recién creada se elige con rol dueño una sola vez: una recarga
   // posterior de la lista no pisa el rol que eligió el admin.
   const preferAplicada = useRef<string | undefined>(undefined);
+  // true mientras el rol «dueno» es el que puso el panel para la empresa recién
+  // creada, y no uno que eligió el admin. Vale para la primera invitación a esa
+  // empresa: después de invitar, o al elegir otra empresa, vuelve a admin.
+  const duenoPorDefecto = useRef(false);
+
+  function volverAlRolPorDefecto() {
+    if (duenoPorDefecto.current) {
+      duenoPorDefecto.current = false;
+      setRol('admin');
+    }
+  }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshToken solo invalida la lista
   useEffect(() => {
@@ -85,6 +96,7 @@ export function InvitarMiembroEmpresa({
             setEmpresaId(preferEmpresaId);
             if (preferAplicada.current !== preferEmpresaId) {
               preferAplicada.current = preferEmpresaId;
+              duenoPorDefecto.current = true;
               setRol('dueno');
             }
           }
@@ -126,6 +138,7 @@ export function InvitarMiembroEmpresa({
       setFullName('');
       setRut('');
       setEmail('');
+      volverAlRolPorDefecto();
       onInvitado?.();
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
@@ -180,7 +193,10 @@ export function InvitarMiembroEmpresa({
           <span className="font-medium text-neutral-700 text-sm">Empresa</span>
           <select
             value={empresaId}
-            onChange={(e) => setEmpresaId(e.target.value)}
+            onChange={(e) => {
+              setEmpresaId(e.target.value);
+              volverAlRolPorDefecto();
+            }}
             disabled={loadingEmpresas}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           >
@@ -231,7 +247,10 @@ export function InvitarMiembroEmpresa({
           <span className="font-medium text-neutral-700 text-sm">Rol</span>
           <select
             value={rol}
-            onChange={(e) => setRol(e.target.value)}
+            onChange={(e) => {
+              duenoPorDefecto.current = false;
+              setRol(e.target.value);
+            }}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           >
             {ROLES.map((r) => (
@@ -296,9 +315,9 @@ export function InvitarMiembroEmpresa({
             Código de activación — quedó como {result.rol}, pendiente de activar
           </div>
           <p className="mt-1 text-amber-800 text-sm">
-            Entrégale a la persona estos datos por tu canal habitual. En la dirección de abajo
-            escribe su RUT ({result.rut}) y este código, y elige su clave de 6 dígitos. El código
-            sirve una sola vez y no es su contraseña.
+            Entrégale a la persona estos datos por tu canal habitual. En la dirección de abajo, la
+            persona escribe su RUT ({result.rut}) y este código, y elige su propia clave de 6
+            dígitos. El código sirve una sola vez y no es su contraseña.
           </p>
           <p className="mt-1 text-amber-700 text-xs">
             Vence el{' '}
