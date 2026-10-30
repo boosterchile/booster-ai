@@ -147,6 +147,9 @@ describe('InvitarMiembroEmpresa — lo que se entrega junto al código (SC4)', (
     // Le habla al admin, en tuteo, y no en voseo.
     expect(entrega).toHaveTextContent(/Entrégale/);
     expect(entrega.textContent ?? '').not.toMatch(/Entrá|escribí|elegí/);
+    // Quien elige la clave es la persona, no el admin.
+    expect(entrega).toHaveTextContent(/la persona escribe su RUT/);
+    expect(entrega).toHaveTextContent(/elige su propia clave/);
   });
 
   it('copia la dirección de /activar', async () => {
@@ -272,6 +275,61 @@ describe('InvitarMiembroEmpresa — empresa recién creada e invitación (SC6, S
 
     rerender(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} refreshToken={1} />);
     await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText(/Rol/i)).toHaveValue('despachador');
+  });
+
+  it('después de invitar al dueño, la siguiente invitación a esa empresa vuelve al rol admin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [EMPRESAS[0], OTRA_EMPRESA] });
+    const post = vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+
+    render(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} />);
+    await waitFor(() => expect(screen.getByLabelText(/Rol/i)).toHaveValue('dueno'));
+    await invitar();
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        `/admin/empresas/${OTRA_EMPRESA.id}/miembros`,
+        expect.objectContaining({ rol: 'dueno' }),
+      ),
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/Rol/i)).toHaveValue('admin'));
+    expect(screen.getByLabelText(/Empresa/i)).toHaveValue(OTRA_EMPRESA.id);
+    await invitar();
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(post).toHaveBeenLastCalledWith(
+      `/admin/empresas/${OTRA_EMPRESA.id}/miembros`,
+      expect.objectContaining({ rol: 'admin' }),
+    );
+  });
+
+  it('al elegir otra empresa en el selector, el rol vuelve a admin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [EMPRESAS[0], OTRA_EMPRESA] });
+    const post = vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+
+    render(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} />);
+    await waitFor(() => expect(screen.getByLabelText(/Rol/i)).toHaveValue('dueno'));
+
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    expect(screen.getByLabelText(/Rol/i)).toHaveValue('admin');
+    await invitar();
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        `/admin/empresas/${EMPRESAS[0]?.id}/miembros`,
+        expect.objectContaining({ rol: 'admin' }),
+      ),
+    );
+  });
+
+  it('el rol que el admin elige a mano no se cambia al invitar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [EMPRESAS[0], OTRA_EMPRESA] });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+
+    render(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} />);
+    await waitFor(() => expect(screen.getByLabelText(/Rol/i)).toHaveValue('dueno'));
+    fireEvent.change(screen.getByLabelText(/Rol/i), { target: { value: 'despachador' } });
+    await invitar();
+
+    await screen.findByTestId('invitar-entrega');
     expect(screen.getByLabelText(/Rol/i)).toHaveValue('despachador');
   });
 

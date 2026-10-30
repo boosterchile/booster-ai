@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../../lib/api-client.js';
+import { logger } from '../../lib/logger.js';
 import { ActivarEmpresa } from './ActivarEmpresa.js';
 
 const MEMBERSHIP_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
@@ -202,6 +203,42 @@ describe('ActivarEmpresa — código nuevo y filtro inicial (SC4, SC7)', () => {
     expect(entrega).toHaveTextContent(/Vence el/);
     expect(entrega).toHaveTextContent(/Entrégale/);
     expect(entrega.textContent ?? '').not.toMatch(/Entrá|escribí|elegí/);
+    // Quien elige la clave es la persona, no el admin.
+    expect(entrega).toHaveTextContent(/la persona elige su propia clave/);
+  });
+
+  it('si el portapapeles falla al copiar la dirección, queda registrado y la dirección sigue en pantalla', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, miembros_pendientes: [MIEMBRO_PENDIENTE] }],
+    });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      codigo_activacion: '482915',
+      expira_en: '2026-10-05T12:00:00.000Z',
+      membership_id: MEMBERSHIP_ID,
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: vi.fn(async () => {
+          throw new Error('NotAllowedError');
+        }),
+      },
+      configurable: true,
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId(`reemitir-codigo-${MEMBERSHIP_ID}`));
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar dirección/i }));
+
+    await waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipId: `${MEMBERSHIP_ID}-direccion` }),
+      expect.any(String),
+    );
+    expect(screen.getByRole('button', { name: /Copiar dirección/i })).toBeInTheDocument();
+    expect(screen.getByTestId(`codigo-entrega-${MEMBERSHIP_ID}`)).toHaveTextContent(
+      `${window.location.origin}/activar`,
+    );
   });
 
   it('copia la dirección de /activar', async () => {

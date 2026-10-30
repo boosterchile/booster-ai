@@ -122,6 +122,14 @@ describe('PlatformAdminFrame — Ir a mi empresa (SC9)', () => {
     expect(screen.queryByTestId('platform-admin-ir-a-mi-empresa')).not.toBeInTheDocument();
   });
 
+  // La web del conductor no tiene el menú con «Panel de Booster»: desde ahí no
+  // habría cómo volver al panel.
+  it('con una membresía de conductor no aparece', () => {
+    meData = adminDeBooster({ ...MEMBRESIA, role: 'conductor' });
+    renderFrame();
+    expect(screen.queryByTestId('platform-admin-ir-a-mi-empresa')).not.toBeInTheDocument();
+  });
+
   it('con una membresía sin empresa (stakeholder) no aparece', () => {
     meData = adminDeBooster({ ...MEMBRESIA, role: 'stakeholder_sostenibilidad', empresa: null });
     renderFrame();
