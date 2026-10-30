@@ -363,6 +363,17 @@ const platformAdminEmpresasRoute = createRoute({
   ),
 });
 
+// .specs/alta-personal-booster — alta del personal de Booster con acceso al
+// panel. Misma gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS).
+const platformAdminPersonalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/personal',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-personal.js'),
+    'PlatformAdminPersonalRoute',
+  ),
+});
+
 const platformAdminTeltonikaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/teltonika',
@@ -630,6 +641,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,
+  platformAdminPersonalRoute,
   platformAdminTeltonikaRoute,
   platformAdminStakeholdersRoute,
   platformAdminObservatorioRoute,

@@ -35,6 +35,7 @@ const ACCESOS: ReadonlyArray<{
   to:
     | '/app/platform-admin/signup-requests'
     | '/app/platform-admin/empresas'
+    | '/app/platform-admin/personal'
     | '/app/platform-admin/teltonika'
     | '/app/platform-admin/stakeholders'
     | '/app/platform-admin/matching'
@@ -59,6 +60,12 @@ const ACCESOS: ReadonlyArray<{
     title: 'Empresas',
     desc: 'Crea una empresa, actívala e invita a quien la va a operar.',
     testId: 'empresas-link',
+  },
+  {
+    to: '/app/platform-admin/personal',
+    title: 'Personal de Booster',
+    desc: 'Da de alta a otra persona de Booster con acceso a este panel y genera su código de activación.',
+    testId: 'personal-booster-link',
   },
   {
     to: '/app/platform-admin/teltonika',
