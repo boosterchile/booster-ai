@@ -7,12 +7,12 @@ import { api } from '../lib/api-client.js';
 import { firebaseAuth } from '../lib/firebase.js';
 
 /**
- * `/activar` — la persona que su empresa dio de alta crea SU clave.
+ * `/activar` — la persona que Booster o su empresa dio de alta crea SU clave.
  *
- * Llega con un código de un solo uso que le entregó su empresa. Al terminar
- * queda con una credencial que nadie más conoce: ni Booster, ni quien la dio
- * de alta. Esa es la diferencia con el flujo de conductores actual, donde el
- * PIN que genera el admin queda como contraseña permanente.
+ * Llega con un código de un solo uso que le entregó quien la dio de alta. Al
+ * terminar queda con una credencial que nadie más conoce: ni Booster, ni quien
+ * la dio de alta. Esa es la diferencia con el flujo de conductores actual,
+ * donde el PIN que genera el admin queda como contraseña permanente.
  *
  * Pública por diseño: quien entra acá todavía no tiene sesión — la está
  * creando.
@@ -24,9 +24,22 @@ interface ActivarResponse {
   custom_token?: string;
 }
 
+/**
+ * RUT que llega en `?rut=` (desde `/login`, cuando la cuenta no está
+ * activada). La URL es input externo: se valida antes de precargar el campo.
+ */
+function rutDeLaUrl(): string {
+  const crudo = new URLSearchParams(window.location.search).get('rut');
+  if (!crudo) {
+    return '';
+  }
+  const parsed = rutSchema.safeParse(ensureRutHasDash(crudo.replace(/\./g, '').trim()));
+  return parsed.success ? parsed.data : '';
+}
+
 export function ActivarRoute() {
   const navigate = useNavigate();
-  const [rut, setRut] = useState('');
+  const [rut, setRut] = useState(rutDeLaUrl);
   const [codigo, setCodigo] = useState('');
   const [clave, setClave] = useState('');
   const [repetir, setRepetir] = useState('');
@@ -74,7 +87,7 @@ export function ActivarRoute() {
       // revelar qué RUTs existen. La UI no inventa un diagnóstico que el
       // backend evita dar.
       setError(
-        'No pudimos activar la cuenta. Revisa tu RUT y el código; si venció, pídele a tu empresa que te genere uno nuevo.',
+        'No pudimos activar la cuenta. Revisa tu RUT y el código; si venció, pide uno nuevo a quien te dio de alta.',
       );
     } finally {
       setEnviando(false);
@@ -111,7 +124,7 @@ export function ActivarRoute() {
           <h1 className="font-semibold text-lg text-neutral-900">Activa tu cuenta</h1>
         </div>
         <p className="mt-2 text-neutral-600 text-sm">
-          Tu empresa te dio de alta en Booster y te entregó un código. Úsalo una vez para crear tu
+          Booster o tu empresa te dio de alta y te entregó un código. Úsalo una vez para crear tu
           clave: de ahí en adelante entras con tu RUT y esa clave.
         </p>
 
@@ -139,7 +152,9 @@ export function ActivarRoute() {
               className="rounded-md border border-neutral-300 px-3 py-2 text-center font-mono text-lg tracking-[0.3em] focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
               placeholder="000000"
             />
-            <span className="text-neutral-500 text-xs">Los 6 dígitos que te dio tu empresa.</span>
+            <span className="text-neutral-500 text-xs">
+              Los 6 dígitos que te dio Booster o tu empresa.
+            </span>
           </label>
 
           <div className="rounded-lg border border-primary-200 bg-primary-50/50 p-4">
