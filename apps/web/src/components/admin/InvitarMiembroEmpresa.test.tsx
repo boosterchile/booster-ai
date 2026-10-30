@@ -93,3 +93,165 @@ describe('InvitarMiembroEmpresa', () => {
     expect(screen.getByRole('button', { name: /Agregar a la empresa/i })).not.toBeDisabled();
   });
 });
+
+const OTRA_EMPRESA = {
+  id: 'b1d7a2c4-1111-4a2b-9c3d-000000000001',
+  razon_social: 'Retail Norte SpA',
+  rut: '76274900-9',
+  estado: 'activa',
+  es_transportista: false,
+  es_generador_carga: true,
+};
+
+const RESPUESTA_CODIGO = {
+  ok: true,
+  user_id: 'user-uuid',
+  membership_id: 'membership-uuid',
+  rol: 'dueno',
+  estado: 'pendiente_invitacion',
+  codigo_activacion: '482915',
+  expira_en: '2026-10-04T00:00:00.000Z',
+  vinculo: 'nueva' as const,
+};
+
+async function invitar() {
+  fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
+    target: { value: 'Javier Vicencio' },
+  });
+  fireEvent.change(screen.getByLabelText(/^RUT$/i), { target: { value: '12.345.678-5' } });
+  fireEvent.change(screen.getByLabelText(/Email/i), { target: { value: 'fvicencio@me.com' } });
+  fireEvent.click(screen.getByRole('button', { name: /Agregar a la empresa/i }));
+}
+
+/** acceso-usuarios-empresa-panel SC4 — el código se entrega con la dirección de `/activar`. */
+describe('InvitarMiembroEmpresa — lo que se entrega junto al código (SC4)', () => {
+  it('muestra la dirección absoluta de /activar, el RUT, el código y el vencimiento', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+
+    render(<InvitarMiembroEmpresa />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    const entrega = await screen.findByTestId('invitar-entrega');
+    expect(entrega).toHaveTextContent(`${window.location.origin}/activar`);
+    expect(entrega).toHaveTextContent('12345678-5');
+    expect(entrega).toHaveTextContent('482915');
+    expect(entrega).toHaveTextContent(/Vence el/);
+    // Le habla al admin, en tuteo, y no en voseo.
+    expect(entrega).toHaveTextContent(/Entrégale/);
+    expect(entrega.textContent ?? '').not.toMatch(/Entrá|escribí|elegí/);
+  });
+
+  it('copia la dirección de /activar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+
+    render(<InvitarMiembroEmpresa />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar dirección/i }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/activar`),
+    );
+    expect(await screen.findByRole('button', { name: /Copiada ✓/ })).toBeInTheDocument();
+  });
+
+  it('copia el código', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+
+    render(<InvitarMiembroEmpresa />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar código/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('482915'));
+    expect(await screen.findByRole('button', { name: /Copiado ✓/ })).toBeInTheDocument();
+  });
+});
+
+/** acceso-usuarios-empresa-panel SC6 y SC7. */
+describe('InvitarMiembroEmpresa — empresa recién creada e invitación (SC6, SC7)', () => {
+  it('con la empresa recién creada la deja elegida y con rol dueño', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [EMPRESAS[0], OTRA_EMPRESA] });
+
+    render(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} />);
+
+    await waitFor(() => expect(screen.getByLabelText(/Empresa/i)).toHaveValue(OTRA_EMPRESA.id));
+    expect(screen.getByLabelText(/Rol/i)).toHaveValue('dueno');
+  });
+
+  it('sin empresa preseleccionada el rol por defecto sigue siendo admin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [EMPRESAS[0], OTRA_EMPRESA] });
+
+    render(<InvitarMiembroEmpresa />);
+
+    await waitFor(() => screen.getByRole('option', { name: /Retail Norte SpA/ }));
+    expect(screen.getByLabelText(/Empresa/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Rol/i)).toHaveValue('admin');
+  });
+
+  it('si la empresa preferida no está en la lista, no la elige y el rol sigue en admin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+
+    render(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} />);
+
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    expect(screen.getByLabelText(/Empresa/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Rol/i)).toHaveValue('admin');
+  });
+
+  it('una recarga de la lista no le pisa el rol que eligió el admin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [EMPRESAS[0], OTRA_EMPRESA] });
+
+    const { rerender } = render(
+      <InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} refreshToken={0} />,
+    );
+    await waitFor(() => expect(screen.getByLabelText(/Rol/i)).toHaveValue('dueno'));
+    fireEvent.change(screen.getByLabelText(/Rol/i), { target: { value: 'despachador' } });
+
+    rerender(<InvitarMiembroEmpresa preferEmpresaId={OTRA_EMPRESA.id} refreshToken={1} />);
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText(/Rol/i)).toHaveValue('despachador');
+  });
+
+  it('avisa con onInvitado cuando la invitación queda creada', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockResolvedValue(RESPUESTA_CODIGO);
+    const onInvitado = vi.fn();
+
+    render(<InvitarMiembroEmpresa onInvitado={onInvitado} />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    await waitFor(() => expect(onInvitado).toHaveBeenCalledTimes(1));
+  });
+
+  it('no avisa con onInvitado si la invitación falla', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: EMPRESAS });
+    vi.spyOn(api, 'post').mockRejectedValue(
+      Object.assign(new Error('conflict'), { code: 'email_already_registered', status: 409 }),
+    );
+    const onInvitado = vi.fn();
+
+    render(<InvitarMiembroEmpresa onInvitado={onInvitado} />);
+    await waitFor(() => screen.getByRole('option', { name: /Transportes Van Oosterwyk/ }));
+    fireEvent.change(screen.getByLabelText(/Empresa/i), { target: { value: EMPRESAS[0]?.id } });
+    await invitar();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Ese correo ya pertenece a otra persona.',
+    );
+    expect(onInvitado).not.toHaveBeenCalled();
+  });
+});

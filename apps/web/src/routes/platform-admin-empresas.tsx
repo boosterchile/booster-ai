@@ -14,12 +14,15 @@ export function PlatformAdminEmpresasRoute() {
 function PlatformAdminEmpresasPage() {
   const [empresasVersion, setEmpresasVersion] = useState(0);
   const [empresaCreadaId, setEmpresaCreadaId] = useState<string | undefined>(undefined);
+  // Solo la lista de empresas: una invitación nueva trae su pendiente.
+  const [invitacionesVersion, setInvitacionesVersion] = useState(0);
 
   return (
     <PlatformAdminFrame volver={{ to: '/app/platform-admin', label: 'Volver' }}>
       <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Empresas</h1>
       <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-        Crea la empresa, actívala para que pueda operar e invita a quien la administra.
+        Crea la empresa, que queda activa, e invita a quien la administra. Las que llegan por enlace
+        se activan aquí.
       </p>
       <CrearEmpresa
         onCreated={(empresaId) => {
@@ -27,8 +30,12 @@ function PlatformAdminEmpresasPage() {
           setEmpresasVersion((v) => v + 1);
         }}
       />
-      <ActivarEmpresa refreshToken={empresasVersion} />
-      <InvitarMiembroEmpresa refreshToken={empresasVersion} preferEmpresaId={empresaCreadaId} />
+      <ActivarEmpresa refreshToken={empresasVersion + invitacionesVersion} />
+      <InvitarMiembroEmpresa
+        refreshToken={empresasVersion}
+        preferEmpresaId={empresaCreadaId}
+        onInvitado={() => setInvitacionesVersion((v) => v + 1)}
+      />
     </PlatformAdminFrame>
   );
 }

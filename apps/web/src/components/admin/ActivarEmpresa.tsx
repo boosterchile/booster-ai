@@ -1,5 +1,6 @@
 import { Building2, Copy, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { urlActivar } from '../../lib/activar-url.js';
 import { ApiError, api } from '../../lib/api-client.js';
 
 /**
@@ -70,7 +71,9 @@ const ESTADO_LABEL: Record<EmpresaAdminRow['estado'], string> = {
 };
 
 export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) {
-  const [filtro, setFiltro] = useState<EstadoFiltro>('pendiente_verificacion');
+  // «Todas»: la empresa que crea el panel nace activa, y ella y sus
+  // invitaciones pendientes tienen que verse sin cambiar el filtro.
+  const [filtro, setFiltro] = useState<EstadoFiltro>('');
   const [empresas, setEmpresas] = useState<EmpresaAdminRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -293,7 +296,10 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                             </p>
                           )}
                           {codigo && (
-                            <div className="mt-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+                            <div
+                              className="mt-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4"
+                              data-testid={`codigo-entrega-${m.membership_id}`}
+                            >
                               <div className="font-semibold text-amber-900">
                                 Código de activación nuevo
                               </div>
@@ -302,13 +308,30 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                                 mostrar.
                               </p>
                               <p className="mt-1 text-amber-800 text-sm">
-                                Entrá a /activar, escribí el RUT {codigo.rut}, este código y elegí
-                                tu clave.
+                                Entrégale a la persona la dirección, su RUT ({codigo.rut}) y este
+                                código. Con eso elige su clave de 6 dígitos.
                               </p>
                               <p className="mt-1 text-amber-700 text-xs">
                                 Vence el {fechaCorta(codigo.expira_en)}.
                               </p>
                               <div className="mt-3 flex items-center gap-2">
+                                <div className="min-w-0 flex-1 select-all break-all rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-sm">
+                                  {urlActivar()}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void copiarCodigo(`${m.membership_id}-direccion`, urlActivar())
+                                  }
+                                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+                                >
+                                  <Copy className="h-3 w-3" aria-hidden />
+                                  {copiadoId === `${m.membership_id}-direccion`
+                                    ? 'Copiada ✓'
+                                    : 'Copiar dirección'}
+                                </button>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
                                 <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
                                   {codigo.codigo_activacion}
                                 </div>
