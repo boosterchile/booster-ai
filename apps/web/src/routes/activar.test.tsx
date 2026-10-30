@@ -170,3 +170,56 @@ describe('Activar cuenta — RUT precargado y textos (SC3)', () => {
     expect(screen.getByText(/Los 6 dígitos que te dio Booster o tu empresa/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * acceso-usuarios-empresa-panel SC1 — el conductor que en `/login` eligió otro
+ * tipo llega acá con su PIN, que solo sirve en `/login/conductor`. Esta
+ * pantalla le ofrece ese camino, con el RUT que ya tecleó.
+ */
+describe('Activar cuenta — camino del conductor (SC1)', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('ofrece activar con el PIN en /login/conductor, con el RUT que llegó en ?rut=', () => {
+    window.history.replaceState({}, '', '/activar?rut=5864136-7');
+    render(<ActivarRoute />);
+    const link = screen.getByTestId('activar-link-conductor');
+    expect(link).toHaveTextContent('¿Eres conductor?');
+    expect(link).toHaveAttribute('href', '/login/conductor?rut=5864136-7');
+  });
+
+  it('arrastra el RUT que la persona escribe en el campo', () => {
+    render(<ActivarRoute />);
+    fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '5.864.136-7' } });
+    expect(screen.getByTestId('activar-link-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor?rut=5864136-7',
+    );
+  });
+
+  it('sin un RUT válido el enlace va a /login/conductor sin RUT', () => {
+    render(<ActivarRoute />);
+    fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '123' } });
+    expect(screen.getByTestId('activar-link-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor',
+    );
+  });
+
+  it('el rechazo también le recuerda el camino del conductor', async () => {
+    vi.spyOn(api, 'post').mockRejectedValue(
+      Object.assign(new Error('unauthorized'), { code: 'invalid_credentials', status: 401 }),
+    );
+
+    render(<ActivarRoute />);
+    completar({ rut: '5.864.136-7' });
+    fireEvent.click(screen.getByRole('button', { name: /Activar mi cuenta/i }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByTestId('activar-link-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor?rut=5864136-7',
+    );
+  });
+});

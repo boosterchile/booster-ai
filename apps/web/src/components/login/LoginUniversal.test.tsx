@@ -310,6 +310,37 @@ describe('LoginUniversal — cuenta sin activar según el tipo elegido (SC1)', (
     },
   );
 
+  // Incidente 2026-08-03 con otro tipo: el conductor que elige «Generador de
+  // carga» llega a `/activar`, pero su PIN sigue a un toque, con el RUT, y no
+  // se le ofrece un método que nunca tuvo.
+  it('tipo carga → el conductor tiene su camino a /login/conductor y no ve «Google» ni «método anterior»', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeJsonResponse(410, {
+        error: 'needs_activation',
+        code: 'needs_activation',
+        message:
+          'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa.',
+      }),
+    );
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-carga'));
+    fireEvent.change(screen.getByTestId('login-rut-input'), {
+      target: { value: '5.864.136-7' },
+    });
+    fireEvent.change(screen.getByTestId('login-clave-input'), { target: { value: '123456' } });
+    await userEvent.click(screen.getByTestId('login-submit'));
+
+    await screen.findByTestId('needs-activation-go-activar');
+    expect(screen.getByTestId('needs-activation-alternativa')).toHaveAttribute(
+      'href',
+      '/login/conductor?rut=5864136-7',
+    );
+    expect(screen.queryByTestId('needs-rotation-go-legacy')).not.toBeInTheDocument();
+    const texto = document.body.textContent ?? '';
+    expect(texto).not.toMatch(/Google/i);
+    expect(texto).not.toMatch(/método anterior/i);
+  });
+
   it('tipo conductor → sigue yendo a /login/conductor con el RUT', async () => {
     const principal = await loginSinActivar('conductor');
     expect(principal).toHaveTextContent('Activar mi cuenta');
