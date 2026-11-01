@@ -637,8 +637,12 @@ function DetalleEstado({ persona }: { persona: PersonaDelPersonal }) {
   if (persona.estado === 'sin_cuenta') {
     return null;
   }
+  // Sin vencimiento, el código actual no lo emitió el panel y no activa a una
+  // cuenta del personal: se pide uno nuevo desde esta fila.
   if (persona.expira_en === null) {
-    return <span>Código: sin vencimiento registrado</span>;
+    return (
+      <span>Sin código vigente del panel: usa «Generar código nuevo» para entregarle uno.</span>
+    );
   }
   if (yaPaso(persona.expira_en)) {
     return (
