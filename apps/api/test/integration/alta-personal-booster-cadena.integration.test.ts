@@ -105,14 +105,17 @@ function senderEnMemoria() {
 }
 
 async function cargarRutas() {
-  const [personal, activar, universal, me, userContext, empresaMiembros] = await Promise.all([
-    import('../../src/routes/admin-personal-booster.js'),
-    import('../../src/routes/auth-activar.js'),
-    import('../../src/routes/auth-universal.js'),
-    import('../../src/routes/me.js'),
-    import('../../src/middleware/user-context.js'),
-    import('../../src/routes/admin-empresa-miembros.js'),
-  ]);
+  const [personal, activar, universal, me, userContext, empresaMiembros, conductores, driver] =
+    await Promise.all([
+      import('../../src/routes/admin-personal-booster.js'),
+      import('../../src/routes/auth-activar.js'),
+      import('../../src/routes/auth-universal.js'),
+      import('../../src/routes/me.js'),
+      import('../../src/middleware/user-context.js'),
+      import('../../src/routes/admin-empresa-miembros.js'),
+      import('../../src/routes/conductores.js'),
+      import('../../src/routes/auth-driver.js'),
+    ]);
   return {
     createAdminPersonalBoosterRoutes: personal.createAdminPersonalBoosterRoutes,
     createAuthActivarRoutes: activar.createAuthActivarRoutes,
@@ -120,6 +123,8 @@ async function cargarRutas() {
     createMeRoutes: me.createMeRoutes,
     createUserContextMiddleware: userContext.createUserContextMiddleware,
     createAdminEmpresaMiembrosRoutes: empresaMiembros.createAdminEmpresaMiembrosRoutes,
+    createConductoresRoutes: conductores.createConductoresRoutes,
+    createDriverAuthRoutes: driver.createDriverAuthRoutes,
   };
 }
 
@@ -220,6 +225,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
         rateLimitLogin: sinRateLimit,
       }),
     );
+    a.route('/auth', rutas.createDriverAuthRoutes({ db, logger, firebaseAuth: firebase.auth }));
     a.route('/me', rutas.createMeRoutes({ db, logger }));
     // Otro emisor de códigos sobre la misma cuenta: la invitación a una empresa.
     a.route(
@@ -729,5 +735,141 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
       .from(schema.memberships)
       .where(eq(schema.memberships.id, invitacion.membership_id));
     expect(membresia?.status).toBe('activa');
+  });
+
+  /** Transportista de prueba y su sesión de dueño para `/conductores`. */
+  async function transportista(sufijo: string) {
+    const { db } = handle;
+    await db
+      .insert(schema.plans)
+      .values({
+        slug: 'gratis',
+        name: 'Plan personal booster',
+        description: 'fixture',
+        monthlyPriceClp: 0,
+        features: {},
+      })
+      .onConflictDoNothing({ target: schema.plans.slug });
+    const [plan] = await db.select({ id: schema.plans.id }).from(schema.plans).limit(1);
+    if (!plan) {
+      throw new Error('fixture: plan no disponible');
+    }
+    const [empresa] = await db
+      .insert(schema.empresas)
+      .values({
+        legalName: `Transportes Personal ${sufijo}`,
+        rut: rutAleatorio(),
+        contactEmail: `flota-${sufijo}@test.invalid`,
+        contactPhone: '+56911111111',
+        addressStreet: 'Calle Falsa 123',
+        addressCity: 'Santiago',
+        addressRegion: 'XIII',
+        isTransportista: true,
+        planId: plan.id,
+      })
+      .returning({ id: schema.empresas.id, legalName: schema.empresas.legalName });
+    if (!empresa) {
+      throw new Error('fixture: transportista no creada');
+    }
+    const flota = new Hono();
+    flota.use('*', async (c, next) => {
+      c.set('userContext', {
+        user: { id: randomUUID(), firebaseUid: `fb-flota-${sufijo}`, email: 'dueno@test.invalid' },
+        memberships: [],
+        activeMembership: {
+          membership: { id: randomUUID(), role: 'dueno' },
+          empresa: { id: empresa.id, legalName: empresa.legalName },
+        },
+      });
+      await next();
+    });
+    flota.route('/conductores', rutas.createConductoresRoutes({ db, logger }));
+    return flota;
+  }
+
+  test('16. /auth/driver-activate aplica la misma regla: un código que no emitió el panel no activa a una cuenta marcada; el del panel, sí', async () => {
+    const a = app(LISTA_DESPUES);
+    const sufijo = randomUUID().slice(0, 8);
+    const rut = rutAleatorio();
+    const correoPersona = `personal-conductor-${sufijo}@test.invalid`;
+    const clave = '648213';
+    const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
+
+    // 1. Alta en el panel: la cuenta queda marcada con un código del panel.
+    const alta = await a.request(
+      '/admin/personal-booster',
+      json('POST', { email: correoPersona, full_name: 'Caro Personal', rut }, adminUid),
+    );
+    const altaBody = (await alta.json()) as { user_id: string; vinculo: string };
+    expect(alta.status, JSON.stringify(altaBody)).toBe(201);
+    expect(altaBody.vinculo).toBe('nueva');
+    const personaId = altaBody.user_id;
+
+    // 2. Una transportista registra a la misma persona como conductor y corrige
+    //    su teléfono: eso deja en la cuenta un código que no emitió el panel.
+    const flota = await transportista(sufijo);
+    const conductor = await flota.request(
+      '/conductores',
+      json('POST', {
+        rut,
+        full_name: 'Caro Personal',
+        email: correoPersona,
+        phone: '+56987654321',
+        license_class: 'A4',
+        license_number: `LIC-${sufijo}`,
+        license_expiry: '2028-09-22',
+        is_extranjero: false,
+      }),
+    );
+    const conductorBody = (await conductor.json()) as {
+      conductor: { id: string };
+      activation_pin?: string;
+    };
+    expect(conductor.status, JSON.stringify(conductorBody)).toBe(201);
+    expect(conductorBody.activation_pin).toBeUndefined();
+
+    const telefono = await flota.request(
+      `/conductores/${conductorBody.conductor.id}/telefono`,
+      json('POST', { phone: '+56987654322' }),
+    );
+    const telefonoBody = (await telefono.json()) as { activation_pin?: string };
+    expect(telefono.status, JSON.stringify(telefonoBody)).toBe(200);
+    expect(telefonoBody.activation_pin).toMatch(/^\d{6}$/);
+    const conOtroCodigo = await filaPorId(personaId);
+    expect(conOtroCodigo.isPlatformAdmin).toBe(true);
+    expect(conOtroCodigo.activacionVenceEn).toBeNull();
+
+    // 3. Ese código no activa la cuenta marcada por /auth/driver-activate.
+    const conElDeLaFlota = await a.request(
+      '/auth/driver-activate',
+      json('POST', { rut, pin: telefonoBody.activation_pin, clave_numerica: clave }),
+    );
+    expect(conElDeLaFlota.status).toBe(401);
+    expect(await conElDeLaFlota.json()).toEqual(rechazo);
+    const sinActivar = await filaPorId(personaId);
+    expect(sinActivar.claveNumericaHash).toBeNull();
+    expect(sinActivar.firebaseUid).toBe(`pending-rut:${rut}`);
+    expect(sinActivar.activationPinHash).toBe(conOtroCodigo.activationPinHash);
+
+    // 4. El panel re-emite: ese código activa la cuenta por el mismo endpoint.
+    const reemitirPanel = await a.request(
+      `/admin/personal-booster/${personaId}/codigo`,
+      json('POST', undefined, adminUid),
+    );
+    const delPanel = (await reemitirPanel.json()) as { codigo_activacion: string };
+    expect(reemitirPanel.status, JSON.stringify(delPanel)).toBe(200);
+
+    const conElDelPanel = await a.request(
+      '/auth/driver-activate',
+      json('POST', { rut, pin: delPanel.codigo_activacion, clave_numerica: clave }),
+    );
+    const sesion = (await conElDelPanel.json()) as { custom_token?: string };
+    expect(conElDelPanel.status, JSON.stringify(sesion)).toBe(200);
+    expect(sesion.custom_token).toMatch(/^custom-token-/);
+    const activada = await filaPorId(personaId);
+    expect(activada.status).toBe('activo');
+    expect(activada.claveNumericaHash).toBeTruthy();
+    expect(activada.activationPinHash).toBeNull();
+    expect(activada.activacionVenceEn).toBeNull();
   });
 });

@@ -503,3 +503,110 @@ describe('POST /auth/driver-activate — el conductor sale con su clave', () => 
     expect(res.status).toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// alta-personal-booster — la misma regla del código del panel que /auth/activar
+// ---------------------------------------------------------------------------
+// Una cuenta con `es_admin_plataforma = true` se activa solo con un código del
+// panel vigente (`activacion_vence_en` existe y no pasó). Los dos endpoints que
+// consumen el código aplican la misma regla (spec §6.6).
+describe('POST /auth/driver-activate — cuenta del personal de Booster', () => {
+  const EN_UNA_SEMANA = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const AYER = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const RECHAZO = { error: 'invalid_credentials', code: 'invalid_credentials' };
+
+  function stubMarcada(
+    activacionVenceEn: Date | null,
+    conductorRow: Record<string, unknown> | null = { id: 'c-1', deletedAt: null },
+  ) {
+    return makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'personal@boosterchile.com',
+        rut: VALID_RUT,
+        activationPinHash: hashActivationPin('123456'),
+        claveNumericaHash: null,
+        isPlatformAdmin: true,
+        activacionVenceEn,
+      },
+      conductorRow,
+    });
+  }
+
+  function activar(app: Hono) {
+    return app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
+    });
+  }
+
+  it.each([
+    ['con un código sin vencimiento del panel', null],
+    ['con el código del panel vencido', AYER],
+  ])('cuenta marcada %s → 401 sin tocar Firebase ni la base', async (_caso, venceEn) => {
+    const stub = stubMarcada(venceEn);
+    const firebase = makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(RECHAZO);
+    expect(stub.capturedUpdates).toEqual([]);
+    expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+    expect(firebase.createUser).not.toHaveBeenCalled();
+    expect(firebase.createCustomToken).not.toHaveBeenCalled();
+  });
+
+  it('cuenta marcada sin código vigente del panel y sin fila de conductor → la misma 401', async () => {
+    const stub = stubMarcada(null, null);
+    const firebase = makeFirebaseStub({ existingUserUid: null });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(RECHAZO);
+  });
+
+  it('cuenta marcada con el código del panel vigente → activa con la clave elegida', async () => {
+    const stub = stubMarcada(EN_UNA_SEMANA);
+    const firebase = makeFirebaseStub({ existingUserUid: null, createUid: 'fb-personal' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { custom_token: string }).custom_token).toBe('custom-token-xyz');
+    const set = stub.capturedUpdates[0] ?? {};
+    expect(set.activationPinHash).toBeNull();
+    expect(set).toHaveProperty('activacionVenceEn', null);
+    expect(set.claveNumericaHash).toBeDefined();
+  });
+
+  it('cuenta sin marca y sin vencimiento del panel → activa como siempre', async () => {
+    const stub = makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'conductor.real@gmail.com',
+        rut: VALID_RUT,
+        activationPinHash: hashActivationPin('123456'),
+        claveNumericaHash: null,
+        isPlatformAdmin: false,
+        activacionVenceEn: null,
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+    });
+    const app = await buildApp({
+      db: stub.db,
+      firebaseAuth: makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' }),
+    });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+  });
+});
