@@ -146,7 +146,7 @@ describe('PersonalBooster — lista (SC1)', () => {
     expect(within(ana).queryByText(/Código:/)).not.toBeInTheDocument();
   });
 
-  it('una cuenta activa que nunca entró y una pendiente sin vencimiento lo dicen', async () => {
+  it('una cuenta activa que nunca entró y una pendiente sin código del panel lo dicen', async () => {
     await renderConLista({
       personal: [
         ANA,
@@ -158,9 +158,15 @@ describe('PersonalBooster — lista (SC1)', () => {
     expect(
       within(fila('eli@boosterchile.com')).getByText('Último ingreso: todavía no entra'),
     ).toBeInTheDocument();
+    // Sin vencimiento, el código actual no es del panel: no activa a una cuenta
+    // marcada. La fila no lo presenta como un código válido sin plazo.
+    const fer = fila('fer@boosterchile.com');
     expect(
-      within(fila('fer@boosterchile.com')).getByText('Código: sin vencimiento registrado'),
+      within(fer).getByText(
+        'Sin código vigente del panel: usa «Generar código nuevo» para entregarle uno.',
+      ),
     ).toBeInTheDocument();
+    expect(within(fer).queryByText(/sin vencimiento registrado/)).not.toBeInTheDocument();
   });
 
   it('avisa cuando todavía no hay personal', async () => {
