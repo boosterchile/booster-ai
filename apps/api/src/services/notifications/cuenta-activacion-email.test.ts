@@ -216,10 +216,10 @@ describe('enviarCorreoActivacionPersonalBooster', () => {
       expect.any(String),
     );
 
-    const falla = vi.fn().mockRejectedValue(new Error('482017'));
+    const falla = vi.fn<EmailSender['send']>().mockRejectedValue(new Error('482017'));
     await expect(
       enviarCorreoActivacionPersonalBooster({
-        sender: { send: falla } as never as EmailSender,
+        sender: { send: falla },
         logger: logger as never,
         ...PERSONAL,
       }),
@@ -229,9 +229,9 @@ describe('enviarCorreoActivacionPersonalBooster', () => {
       expect.any(String),
     );
 
-    const rechazoRaro = vi.fn().mockRejectedValue('timeout');
+    const rechazoRaro = vi.fn<EmailSender['send']>().mockRejectedValue('timeout');
     await enviarCorreoActivacionPersonalBooster({
-      sender: { send: rechazoRaro } as never as EmailSender,
+      sender: { send: rechazoRaro },
       logger: logger as never,
       ...PERSONAL,
     });

@@ -15,6 +15,38 @@ import type { EmailSender } from '../services/notifications/email-sender.js';
  * primer paso), pero el correo con el código sale solo si ya está en la lista.
  */
 
+/**
+ * SC9: el counter y el span se capturan para comprobar nombres, labels y que
+ * nunca llevan el código. El meter y el tracer reales son no-op en tests.
+ */
+const observabilidad = vi.hoisted(() => ({
+  contadores: [] as Array<{ nombre: string; labels: Record<string, unknown> }>,
+  spans: [] as Array<{ nombre: string; atributos: Record<string, unknown> }>,
+}));
+vi.mock('../observability/business-metrics.js', () => ({
+  getBusinessCounter: (nombre: string) => ({
+    add: (_valor: number, labels: Record<string, unknown> = {}) => {
+      observabilidad.contadores.push({ nombre, labels });
+    },
+  }),
+}));
+vi.mock('../observability/business-span.js', () => ({
+  withBusinessSpan: async (
+    opciones: { name: string; attributes?: Record<string, unknown> },
+    fn: (span: { atributos: Record<string, unknown> }) => Promise<unknown>,
+  ) => {
+    const span = { nombre: opciones.name, atributos: { ...(opciones.attributes ?? {}) } };
+    observabilidad.spans.push(span);
+    return await fn(span);
+  },
+  setResultAttributes: (
+    span: { atributos: Record<string, unknown> },
+    atributos: Record<string, unknown>,
+  ) => {
+    Object.assign(span.atributos, atributos);
+  },
+}));
+
 const ADMIN_EMAIL = 'dev@boosterchile.com';
 const ADMIN_ID = '2b0c1f4e-7d65-4f0e-9a9b-6f1b2d3c4e5f';
 const NUEVO_ID = '7a4e2c1b-3d5f-4a6b-8c9d-0e1f2a3b4c5d';
@@ -40,8 +72,9 @@ function makeLogger() {
 }
 
 function makeSender() {
-  const send = vi.fn(async () => ({ enviado: true as const, id: 'm-1' }));
-  return { sender: { send } as never as EmailSender, send };
+  const send = vi.fn<EmailSender['send']>(async () => ({ enviado: true, id: 'm-1' }));
+  const sender: EmailSender = { send };
+  return { sender, send };
 }
 
 interface DbOpts {
@@ -200,6 +233,8 @@ function textoDeLogs(logger: ReturnType<typeof makeLogger>): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  observabilidad.contadores.length = 0;
+  observabilidad.spans.length = 0;
 });
 
 describe('GET /admin/personal-booster (SC1)', () => {
@@ -660,6 +695,47 @@ describe('POST /admin/personal-booster — rechazos sin escrituras (SC4)', () =>
     expect(((await res.json()) as { code: string }).code).toBe('rut_already_registered');
   });
 
+  it('carrera contra el UNIQUE del correo → 409 email_already_registered', async () => {
+    const d = makeDb({
+      lookups: [[], []],
+      insertError: Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'usuarios_email_key',
+      }),
+    });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'email_already_registered' });
+    expect(d.insertedUsers).toEqual([]);
+    expect(observabilidad.contadores).toEqual([
+      {
+        nombre: 'personal_booster_alta_total',
+        labels: { resultado: 'email_already_registered', en_lista: 'true' },
+      },
+    ]);
+  });
+
+  it('un error que no es de Postgres no se traduce: sale tal cual y responde 500', async () => {
+    const falla = new Error('conexión perdida');
+    const d = makeDb({ lookups: [[], []], insertError: falla });
+    const app = await buildApp({ db: d.db });
+    const capturados: unknown[] = [];
+    app.onError((err, c) => {
+      capturados.push(err);
+      return c.json({ error: 'internal_server_error' }, 500);
+    });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(500);
+    expect(capturados).toEqual([falla]);
+    expect(d.insertedUsers).toEqual([]);
+    expect(observabilidad.contadores).toEqual([]);
+  });
+
   it.each([
     ['RUT con dígito verificador inválido', { ...BODY, rut: '12345678-9' }],
     ['correo inválido', { ...BODY, email: 'no-es-correo' }],
@@ -860,6 +936,7 @@ describe('admin-personal-booster — impersonación (SC8)', () => {
     const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
 
     expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('forbidden_impersonation_write');
     expect(d.update).not.toHaveBeenCalled();
   });
 });
@@ -986,5 +1063,181 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
       expect.any(String),
     );
     expect(textoDeLogs(logger)).not.toContain(codigo_activacion);
+  });
+});
+
+describe('admin-personal-booster — métrica de negocio y span (SC9)', () => {
+  const EN_DOS_DIAS = () => new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+  /** Todo lo que salió a la métrica y al span, para buscar el código. */
+  function telemetria(): string {
+    return JSON.stringify([observabilidad.contadores, observabilidad.spans]);
+  }
+
+  it.each([
+    ['nueva', [[], []], 201],
+    ['cuenta_activa', [[existente({ firebaseUid: 'fb-real', claveNumericaHash: 'h' })]], 200],
+    [
+      'codigo_vigente',
+      [
+        [
+          existente({
+            activationPinHash: hashActivationPin('111111'),
+            activacionVenceEn: EN_DOS_DIAS(),
+          }),
+        ],
+      ],
+      200,
+    ],
+    ['provisoria_sin_codigo', [[existente()]], 200],
+  ] as const)(
+    'alta con vínculo %s: counter con resultado, vínculo y en_lista; span sin el código',
+    async (vinculo, lookups, status) => {
+      const d = makeDb({ lookups: lookups.map((filas) => [...filas]) });
+      const app = await buildApp({ db: d.db });
+
+      const res = await app.request('/', postJson(BODY));
+
+      expect(res.status).toBe(status);
+      const json = (await res.json()) as { vinculo: string; codigo_activacion: string | null };
+      expect(json.vinculo).toBe(vinculo);
+      expect(observabilidad.contadores).toEqual([
+        {
+          nombre: 'personal_booster_alta_total',
+          labels: { resultado: 'registrada', en_lista: 'true', vinculo },
+        },
+      ]);
+      expect(observabilidad.spans).toEqual([
+        {
+          nombre: 'personal_booster.alta',
+          atributos: {
+            'personal_booster.en_lista': true,
+            'personal_booster.resultado': 'registrada',
+            'personal_booster.vinculo': vinculo,
+          },
+        },
+      ]);
+      if (json.codigo_activacion !== null) {
+        expect(telemetria()).not.toContain(json.codigo_activacion);
+      }
+    },
+  );
+
+  it('alta con el correo fuera de la lista: en_lista "false" en el counter y false en el span', async () => {
+    const d = makeDb({ lookups: [[], []] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(201);
+    const { codigo_activacion } = (await res.json()) as { codigo_activacion: string };
+    expect(observabilidad.contadores).toEqual([
+      {
+        nombre: 'personal_booster_alta_total',
+        labels: { resultado: 'registrada', en_lista: 'false', vinculo: 'nueva' },
+      },
+    ]);
+    expect(observabilidad.spans[0]?.atributos['personal_booster.en_lista']).toBe(false);
+    expect(telemetria()).not.toContain(codigo_activacion);
+  });
+
+  it.each([
+    ['rut_mismatch', [[existente({ rut: '22222222-2' })]]],
+    ['rut_already_registered', [[], [{ id: 'otra-persona' }]]],
+  ] as const)('alta rechazada con 409 %s: counter sin vínculo', async (resultado, lookups) => {
+    const d = makeDb({ lookups: lookups.map((filas) => [...filas]) });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(409);
+    expect(observabilidad.contadores).toEqual([
+      { nombre: 'personal_booster_alta_total', labels: { resultado, en_lista: 'true' } },
+    ]);
+    expect(observabilidad.spans[0]?.atributos).toEqual({
+      'personal_booster.en_lista': true,
+      'personal_booster.resultado': resultado,
+    });
+  });
+
+  it('re-emisión: counter emitido; el span lleva el user_id y no el código', async () => {
+    const d = makeDb({ lookups: [[existente({ isPlatformAdmin: true })]] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    const { codigo_activacion } = (await res.json()) as { codigo_activacion: string };
+    expect(observabilidad.contadores).toEqual([
+      { nombre: 'personal_booster_reemision_codigo_total', labels: { resultado: 'emitido' } },
+    ]);
+    expect(observabilidad.spans).toEqual([
+      {
+        nombre: 'personal_booster.reemitir_codigo',
+        atributos: { 'booster.user_id': PERSONA_ID, 'personal_booster.resultado': 'emitido' },
+      },
+    ]);
+    expect(telemetria()).not.toContain(codigo_activacion);
+  });
+
+  it.each([
+    [
+      'already_activated',
+      409,
+      [[existente({ isPlatformAdmin: true, firebaseUid: 'fb-real', claveNumericaHash: 'h' })]],
+    ],
+    ['personal_not_found', 404, [[existente({ isPlatformAdmin: false })]]],
+    ['personal_not_found', 404, [[]]],
+  ] as const)(
+    're-emisión rechazada (%s, %i): counter con ese resultado',
+    async (resultado, status, lookups) => {
+      const d = makeDb({ lookups: lookups.map((filas) => [...filas]) });
+      const app = await buildApp({ db: d.db });
+
+      const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+      expect(res.status).toBe(status);
+      expect(observabilidad.contadores).toEqual([
+        { nombre: 'personal_booster_reemision_codigo_total', labels: { resultado } },
+      ]);
+      expect(observabilidad.spans[0]?.atributos['personal_booster.resultado']).toBe(resultado);
+    },
+  );
+
+  it('listado: counter ok y span con los conteos', async () => {
+    const d = makeDb({
+      listRows: [
+        {
+          id: PERSONA_ID,
+          email: CORREO,
+          fullName: 'Ana Soto',
+          rut: RUT,
+          firebaseUid: `pending-rut:${RUT}`,
+          claveNumericaHash: null,
+          activationPinHash: hashActivationPin('123456'),
+          activacionVenceEn: EN_DOS_DIAS(),
+          lastLoginAt: null,
+          isPlatformAdmin: true,
+        },
+      ],
+    });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/');
+
+    expect(res.status).toBe(200);
+    expect(observabilidad.contadores).toEqual([
+      { nombre: 'personal_booster_listado_total', labels: { resultado: 'ok' } },
+    ]);
+    expect(observabilidad.spans).toEqual([
+      {
+        nombre: 'personal_booster.listar',
+        atributos: {
+          'personal_booster.total': 2,
+          'personal_booster.sin_cuenta': 1,
+          'personal_booster.pendientes': 1,
+        },
+      },
+    ]);
   });
 });
