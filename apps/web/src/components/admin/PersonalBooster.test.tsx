@@ -374,7 +374,7 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(panel).not.toHaveTextContent('booster_platform_admin_emails');
   });
 
-  it('codigo_vigente: no reemplaza el código y apunta a Generar código nuevo', async () => {
+  it('codigo_vigente: el código vigente es del panel; no lo reemplaza y apunta a Generar código nuevo', async () => {
     await renderConLista();
     vi.spyOn(api, 'post').mockResolvedValue({
       ok: true,
@@ -394,35 +394,15 @@ describe('PersonalBooster — alta (SC2)', () => {
     fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
 
     const panel = await screen.findByTestId('personal-vinculo-panel');
-    expect(panel).toHaveTextContent('Esta persona ya tiene un código pendiente');
-    expect(panel).toHaveTextContent('Generar código nuevo');
-    expect(panel).toHaveTextContent('Si no se lo entregaste tú desde este panel, genera uno nuevo');
-    expect(panel).toHaveTextContent('antes de que el PO agregue el correo a la lista');
+    expect(panel).toHaveTextContent('Esta persona ya tiene un código vigente');
+    expect(panel).toHaveTextContent('Lo emitió este panel y sigue vigente');
+    expect(panel).toHaveTextContent('Si no lo tienes a mano, usa «Generar código nuevo»');
+    expect(panel).toHaveTextContent('el anterior deja de servir');
+    expect(panel).not.toHaveTextContent('Si no se lo entregaste tú');
+    expect(panel).not.toHaveTextContent('vencido');
     expect(panel).toHaveTextContent(/Vence el/);
     expect(panel).toHaveTextContent(AVISO_TERRAFORM);
     expect(screen.queryByTestId('personal-codigo')).not.toBeInTheDocument();
-  });
-
-  it('codigo_vigente con el código ya vencido lo dice y muestra cuándo venció', async () => {
-    await renderConLista();
-    vi.spyOn(api, 'post').mockResolvedValue({
-      ok: true,
-      user_id: USER_VENCIDA,
-      vinculo: 'codigo_vigente',
-      codigo_activacion: null,
-      expira_en: '2020-01-01T12:00:00.000Z',
-      en_lista: true,
-    });
-
-    const confirmacion = await altaHastaConfirmar();
-    fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
-
-    const panel = await screen.findByTestId('personal-vinculo-panel');
-    expect(panel).toHaveTextContent('Esta persona tiene un código vencido');
-    expect(panel).toHaveTextContent(/Venció el/);
-    expect(panel).not.toHaveTextContent(/Vence el/);
-    expect(panel).not.toHaveTextContent('ya tiene un código pendiente');
-    expect(panel).toHaveTextContent('Generar código nuevo');
   });
 
   it('codigo_vigente sin vencimiento y en la lista no inventa una fecha', async () => {
