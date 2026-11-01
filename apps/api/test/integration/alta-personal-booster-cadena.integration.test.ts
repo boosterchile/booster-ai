@@ -105,12 +105,13 @@ function senderEnMemoria() {
 }
 
 async function cargarRutas() {
-  const [personal, activar, universal, me, userContext] = await Promise.all([
+  const [personal, activar, universal, me, userContext, empresaMiembros] = await Promise.all([
     import('../../src/routes/admin-personal-booster.js'),
     import('../../src/routes/auth-activar.js'),
     import('../../src/routes/auth-universal.js'),
     import('../../src/routes/me.js'),
     import('../../src/middleware/user-context.js'),
+    import('../../src/routes/admin-empresa-miembros.js'),
   ]);
   return {
     createAdminPersonalBoosterRoutes: personal.createAdminPersonalBoosterRoutes,
@@ -118,6 +119,7 @@ async function cargarRutas() {
     createAuthUniversalRoutes: universal.createAuthUniversalRoutes,
     createMeRoutes: me.createMeRoutes,
     createUserContextMiddleware: userContext.createUserContextMiddleware,
+    createAdminEmpresaMiembrosRoutes: empresaMiembros.createAdminEmpresaMiembrosRoutes,
   };
 }
 
@@ -219,6 +221,11 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
       }),
     );
     a.route('/me', rutas.createMeRoutes({ db, logger }));
+    // Otro emisor de códigos sobre la misma cuenta: la invitación a una empresa.
+    a.route(
+      '/admin/empresas',
+      rutas.createAdminEmpresaMiembrosRoutes({ db, logger, auth: firebase.auth }),
+    );
     return a;
   }
 
@@ -605,5 +612,122 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     const cuerpo = (await alta.json()) as Record<string, unknown>;
     expect(alta.status, JSON.stringify(cuerpo)).toBe(200);
     expect(cuerpo).toMatchObject({ user_id: cuenta.id, vinculo: 'cuenta_activa', en_lista: true });
+  });
+
+  test('15. un código que no emitió el panel no activa a una cuenta marcada; el que re-emite el panel, sí', async () => {
+    const a = app(LISTA_DESPUES);
+    const sufijo = randomUUID().slice(0, 8);
+    const rut = rutAleatorio();
+    const correoPersona = `personal-empresa-${sufijo}@test.invalid`;
+    const clave = '736251';
+    const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
+
+    // 1. Alta en el panel: la cuenta queda marcada con un código del panel.
+    const alta = await a.request(
+      '/admin/personal-booster',
+      json('POST', { email: correoPersona, full_name: 'Bea Personal', rut }, adminUid),
+    );
+    const altaBody = (await alta.json()) as { user_id: string; vinculo: string };
+    expect(alta.status, JSON.stringify(altaBody)).toBe(201);
+    expect(altaBody.vinculo).toBe('nueva');
+    const personaId = altaBody.user_id;
+
+    // 2. Una empresa invita a la misma persona y re-emite el código de esa invitación.
+    await handle.db
+      .insert(schema.plans)
+      .values({
+        slug: 'gratis',
+        name: 'Plan personal booster',
+        description: 'fixture',
+        monthlyPriceClp: 0,
+        features: {},
+      })
+      .onConflictDoNothing({ target: schema.plans.slug });
+    const crear = await a.request(
+      '/admin/empresas',
+      json(
+        'POST',
+        {
+          legal_name: `Personal Booster SpA ${sufijo}`,
+          rut: rutAleatorio(),
+          contact_email: `contacto-${sufijo}@test.invalid`,
+          contact_phone: '+56912345678',
+          address_street: 'Av. Apoquindo 3000',
+          address_city: 'Santiago',
+          address_region: 'XIII',
+          is_generador_carga: true,
+          is_transportista: false,
+        },
+        adminUid,
+      ),
+    );
+    const empresa = (await crear.json()) as { empresa_id: string };
+    expect(crear.status, JSON.stringify(empresa)).toBe(201);
+
+    const invitar = await a.request(
+      `/admin/empresas/${empresa.empresa_id}/miembros`,
+      json(
+        'POST',
+        { email: correoPersona, full_name: 'Bea Personal', rut, rol: 'dueno' },
+        adminUid,
+      ),
+    );
+    const invitacion = (await invitar.json()) as {
+      membership_id: string;
+      vinculo: string;
+      codigo_activacion: string | null;
+    };
+    expect(invitar.status, JSON.stringify(invitacion)).toBe(201);
+    expect(invitacion.vinculo).toBe('codigo_vigente');
+    expect(invitacion.codigo_activacion).toBeNull();
+
+    const reemitirEmpresa = await a.request(
+      `/admin/empresas/${empresa.empresa_id}/miembros/${invitacion.membership_id}/codigo`,
+      json('POST', undefined, adminUid),
+    );
+    const deLaEmpresa = (await reemitirEmpresa.json()) as { codigo_activacion: string };
+    expect(reemitirEmpresa.status, JSON.stringify(deLaEmpresa)).toBe(200);
+    const conCodigoDeLaEmpresa = await filaPorId(personaId);
+    expect(conCodigoDeLaEmpresa.isPlatformAdmin).toBe(true);
+
+    // 3. Ese código no activa la cuenta marcada, aunque la invitación esté vigente.
+    const conElDeLaEmpresa = await a.request(
+      '/auth/activar',
+      json('POST', { rut, codigo: deLaEmpresa.codigo_activacion, clave_numerica: clave }),
+    );
+    expect(conElDeLaEmpresa.status).toBe(401);
+    expect(await conElDeLaEmpresa.json()).toEqual(rechazo);
+    const sinActivar = await filaPorId(personaId);
+    expect(sinActivar.claveNumericaHash).toBeNull();
+    expect(sinActivar.activationPinHash).toBe(conCodigoDeLaEmpresa.activationPinHash);
+    // La re-emisión de la empresa dejó su código sin el vencimiento del panel.
+    expect(sinActivar.activacionVenceEn).toBeNull();
+
+    // 4. El panel re-emite: ese código activa la cuenta y la membresía.
+    const reemitirPanel = await a.request(
+      `/admin/personal-booster/${personaId}/codigo`,
+      json('POST', undefined, adminUid),
+    );
+    const delPanel = (await reemitirPanel.json()) as { codigo_activacion: string };
+    expect(reemitirPanel.status, JSON.stringify(delPanel)).toBe(200);
+    expect(delPanel.codigo_activacion).not.toBe(deLaEmpresa.codigo_activacion);
+
+    const conElDelPanel = await a.request(
+      '/auth/activar',
+      json('POST', { rut, codigo: delPanel.codigo_activacion, clave_numerica: clave }),
+    );
+    const sesion = (await conElDelPanel.json()) as { activated?: boolean };
+    expect(conElDelPanel.status, JSON.stringify(sesion)).toBe(200);
+    expect(sesion.activated).toBe(true);
+    const activada = await filaPorId(personaId);
+    expect(activada.status).toBe('activo');
+    expect(activada.claveNumericaHash).toBeTruthy();
+    expect(activada.activationPinHash).toBeNull();
+    expect(activada.activacionVenceEn).toBeNull();
+    const [membresia] = await handle.db
+      .select()
+      .from(schema.memberships)
+      .where(eq(schema.memberships.id, invitacion.membership_id));
+    expect(membresia?.status).toBe('activa');
   });
 });

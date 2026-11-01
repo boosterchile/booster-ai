@@ -300,7 +300,7 @@ describe('POST /me/empresa/miembros', () => {
     expect(json.codigo_activacion).toMatch(/^\d{6}$/);
     expect(json.vinculo).toBe('provisoria_sin_codigo');
     expect(d.updates[0]).toEqual(
-      expect.objectContaining({ activationPinHash: expect.any(String) }),
+      expect.objectContaining({ activationPinHash: expect.any(String), activacionVenceEn: null }),
     );
     expect(JSON.stringify(d.updates[0])).not.toContain(json.codigo_activacion);
   });

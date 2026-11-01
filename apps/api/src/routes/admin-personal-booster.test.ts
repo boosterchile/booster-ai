@@ -498,7 +498,48 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
     expect(d.locks).toEqual(['update']);
   });
 
-  it('provisoria con código: no emite uno nuevo, la marca y responde codigo_vigente', async () => {
+  it.each([
+    ['sin vencimiento (no lo emitió el panel)', null],
+    ['con el vencimiento del panel ya pasado', new Date(Date.now() - 60 * 1000)],
+  ])(
+    'provisoria con un código %s: emite uno nuevo con su plazo y responde provisoria_sin_codigo',
+    async (_caso, venceEn) => {
+      const hashAnterior = hashActivationPin('246810');
+      const d = makeDb({
+        lookups: [[existente({ activationPinHash: hashAnterior, activacionVenceEn: venceEn })]],
+      });
+      const { sender, send } = makeSender();
+      const app = await buildApp({ db: d.db, sender });
+
+      const res = await app.request('/', postJson(BODY));
+
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as {
+        vinculo: string;
+        codigo_activacion: string;
+        expira_en: string;
+        user_id: string;
+      };
+      expect(json.vinculo).toBe('provisoria_sin_codigo');
+      expect(json.user_id).toBe(PERSONA_ID);
+      expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+      cercaDe(json.expira_en, Date.now() + SIETE_DIAS_MS);
+      expect(d.updates).toHaveLength(1);
+      const cambios = d.updates[0] as Record<string, unknown>;
+      expect(cambios.isPlatformAdmin).toBe(true);
+      expect(cambios.activationPinHash).not.toBe(hashAnterior);
+      expect(verifyActivationPin(json.codigo_activacion, String(cambios.activationPinHash))).toBe(
+        true,
+      );
+      expect(cambios.activacionVenceEn).toBeInstanceOf(Date);
+      cercaDe((cambios.activacionVenceEn as Date).toISOString(), Date.now() + SIETE_DIAS_MS);
+      expect(d.insertedUsers).toEqual([]);
+      // El correo está en la lista: el código nuevo sale también por correo.
+      expect(send).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('provisoria con un código del panel vigente: no emite uno nuevo, la marca y responde codigo_vigente', async () => {
     const vence = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
     const d = makeDb({
       lookups: [
@@ -852,16 +893,33 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('sin código emitido (cuenta activa o código vigente) no se envía correo', async () => {
+  it('sin código emitido (cuenta activa o código del panel vigente) no se envía correo', async () => {
     const { sender, send } = makeSender();
     const activa = makeDb({
       lookups: [[existente({ firebaseUid: 'fb-real', claveNumericaHash: 'h' })]],
     });
-    await (await buildApp({ db: activa.db, sender })).request('/', postJson(BODY));
+    const resActiva = await (await buildApp({ db: activa.db, sender })).request(
+      '/',
+      postJson(BODY),
+    );
+    expect(resActiva.status).toBe(200);
+    expect(((await resActiva.json()) as { vinculo: string }).vinculo).toBe('cuenta_activa');
     const vigente = makeDb({
-      lookups: [[existente({ activationPinHash: hashActivationPin('111111') })]],
+      lookups: [
+        [
+          existente({
+            activationPinHash: hashActivationPin('111111'),
+            activacionVenceEn: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          }),
+        ],
+      ],
     });
-    await (await buildApp({ db: vigente.db, sender })).request('/', postJson(BODY));
+    const resVigente = await (await buildApp({ db: vigente.db, sender })).request(
+      '/',
+      postJson(BODY),
+    );
+    expect(resVigente.status).toBe(200);
+    expect(((await resVigente.json()) as { vinculo: string }).vinculo).toBe('codigo_vigente');
 
     expect(send).not.toHaveBeenCalled();
   });

@@ -465,6 +465,9 @@ describe('POST /auth/driver-activate — el conductor sale con su clave', () => 
     const set = stub.capturedUpdates[0] ?? {};
     expect(set.claveNumericaHash).toBeDefined();
     expect(JSON.stringify(set)).not.toContain('482915');
+    // El PIN se consume: el hash y su vencimiento quedan en NULL.
+    expect(set.activationPinHash).toBeNull();
+    expect(set).toHaveProperty('activacionVenceEn', null);
   });
 
   it('exige la clave: sin ella el conductor quedaría sin forma de volver a entrar', async () => {

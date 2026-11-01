@@ -208,6 +208,7 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     expect(body.codigo_activacion).toMatch(/^\d{6}$/);
     expect(d.sets[0]?.activationPinHash).toBeTruthy();
     expect(d.sets[0]?.activationPinHash).not.toBe(body.codigo_activacion);
+    expect(d.sets[0]).toHaveProperty('activacionVenceEn', null);
   });
 
   it('ya miembro de la organización → 409 y no se escribe', async () => {

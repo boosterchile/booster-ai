@@ -910,6 +910,8 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
     const inviteUpdate = d.updates.find((u) => 'invitedAt' in u);
     expect(pinUpdate?.activationPinHash).toEqual(expect.any(String));
     expect(pinUpdate?.activationPinHash).not.toBe(json.codigo_activacion);
+    // Solo el panel del personal deja `activacion_vence_en`; este código la limpia.
+    expect(pinUpdate).toHaveProperty('activacionVenceEn', null);
     expect(inviteUpdate?.invitedAt).toBeInstanceOf(Date);
     expect(d.updates.some((u) => u.status === 'activa')).toBe(false);
     expect(d.updates.some((u) => 'claveNumericaHash' in u)).toBe(false);
@@ -1106,6 +1108,10 @@ describe('correo de activación del alta desde el panel', () => {
     expect(json.codigo_activacion).toMatch(/^\d{6}$/);
     const msg = mensaje(send);
     expect(msg.to).toBe('registrado@transjavier.cl');
+    expect(d.updates.find((u) => 'activationPinHash' in u)).toHaveProperty(
+      'activacionVenceEn',
+      null,
+    );
     expect(msg.text).toContain(json.codigo_activacion);
   });
 

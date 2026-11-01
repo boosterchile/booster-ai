@@ -362,7 +362,9 @@ describe('POST /auth/activar — límite de intentos por RUT', () => {
  * Booster no tiene invitación a una empresa: el plazo de su código vive en
  * `usuarios.activacion_vence_en`. Activa solo si la cuenta está marcada como
  * personal, su correo está en la lista de Terraform y el código sigue vigente.
- * Cualquier otra combinación responde lo mismo que un código malo.
+ * Una cuenta marcada activa solo con un código emitido desde el panel y
+ * vigente, también cuando tiene invitaciones a empresas. Cualquier otra
+ * combinación responde lo mismo que un código malo.
  */
 describe('POST /auth/activar — personal de Booster (SC6)', () => {
   const CORREO_PERSONAL = 'ana.soto@boosterchile.com';
@@ -475,8 +477,55 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
     expect(u.activacionVenceEn).toBeNull();
   });
 
+  it.each([
+    ['activacion_vence_en es NULL', { activacionVenceEn: null }],
+    ['el código del panel venció', { activacionVenceEn: new Date(Date.now() - 60 * 1000) }],
+  ])(
+    'cuenta marcada con invitación vigente y %s → la misma 401 genérica, sin escrituras',
+    async (_caso, overrides) => {
+      const d = makeDb({ user: personal(overrides) });
+      const a = makeAuth();
+      const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(d.userUpdates).toEqual([]);
+      expect(d.membresiaUpdates).toEqual([]);
+      expect(a.spies.createUser).not.toHaveBeenCalled();
+      expect(a.spies.createCustomToken).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cuenta marcada con invitación vigente y código del panel vigente: activa la cuenta y la membresía aunque la lista no la nombre', async () => {
+    const d = makeDb({ user: personal() });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, []));
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { custom_token: string }).custom_token).toBe('ct-activacion');
+    const u = d.userUpdates[0] as Record<string, unknown>;
+    expect(u.status).toBe('activo');
+    expect(u.activationPinHash).toBeNull();
+    expect(u.activacionVenceEn).toBeNull();
+    expect((d.membresiaUpdates[0] as Record<string, unknown>).status).toBe('activa');
+  });
+
   it('invitación vigente a empresa sin ser personal: activa como hoy aunque la lista no la nombre', async () => {
     const d = makeDb({ user: personal({ isPlatformAdmin: false, activacionVenceEn: null }) });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth, []));
+
+    expect(res.status).toBe(200);
+    expect((d.membresiaUpdates[0] as Record<string, unknown>).status).toBe('activa');
+  });
+
+  it('sin marca, con invitación vigente y un vencimiento del panel ya pasado: activa como hoy', async () => {
+    const d = makeDb({
+      user: personal({
+        isPlatformAdmin: false,
+        activacionVenceEn: new Date(Date.now() - 60 * 1000),
+      }),
+    });
     const a = makeAuth();
     const res = await activar(buildApp(d.db, a.auth, []));
 
