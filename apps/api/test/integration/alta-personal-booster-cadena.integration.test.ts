@@ -59,10 +59,20 @@ vi.mock('../../src/services/activation-pin.js', async (importOriginal) => {
 function authEnMemoria() {
   const porEmail = new Map<string, { uid: string; email: string }>();
   const porUid = new Map<string, { uid: string; email: string }>();
+  /**
+   * Escritura que corre una vez dentro del próximo `createUser`: en
+   * `/auth/activar` cae entre la verificación del código y el UPDATE.
+   */
+  const ganchos: { antesDeCrear: (() => Promise<void>) | null } = { antesDeCrear: null };
   const noExiste = (ref: string) =>
     Object.assign(new Error(`no user: ${ref}`), { code: 'auth/user-not-found' });
   const fake = {
     async createUser(props: { email?: string; uid?: string }) {
+      const gancho = ganchos.antesDeCrear;
+      ganchos.antesDeCrear = null;
+      if (gancho) {
+        await gancho();
+      }
       const email = props.email ?? `${randomUUID()}@fake.invalid`;
       if (porEmail.has(email)) {
         throw Object.assign(new Error('exists'), { code: 'auth/email-already-exists' });
@@ -90,7 +100,7 @@ function authEnMemoria() {
       return `custom-token-${uid}`;
     },
   };
-  return { auth: fake as never as Auth, porUid };
+  return { auth: fake as never as Auth, porUid, ganchos };
 }
 
 function senderEnMemoria() {
@@ -871,5 +881,80 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(activada.claveNumericaHash).toBeTruthy();
     expect(activada.activationPinHash).toBeNull();
     expect(activada.activacionVenceEn).toBeNull();
+  });
+
+  test('17. /auth/activar escribe solo si el código sigue siendo el verificado y la cuenta sigue sin clave', async () => {
+    const sufijo = randomUUID().slice(0, 8);
+    const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
+    const clave = '529184';
+
+    // a) El panel re-emite el código entre la verificación y la escritura.
+    const correoA = `personal-reemite-${sufijo}@test.invalid`;
+    const rutA = rutAleatorio();
+    const a = app([...LISTA_DESPUES, correoA]);
+    const altaA = await a.request(
+      '/admin/personal-booster',
+      json('POST', { email: correoA, full_name: 'Dani Personal', rut: rutA }, adminUid),
+    );
+    const cuerpoA = (await altaA.json()) as { user_id: string; codigo_activacion: string };
+    expect(altaA.status, JSON.stringify(cuerpoA)).toBe(201);
+    let codigoNuevo = '';
+    let hashNuevo: string | null = null;
+    firebase.ganchos.antesDeCrear = async () => {
+      const reemision = await a.request(
+        `/admin/personal-booster/${cuerpoA.user_id}/codigo`,
+        json('POST', undefined, adminUid),
+      );
+      expect(reemision.status).toBe(200);
+      codigoNuevo = ((await reemision.json()) as { codigo_activacion: string }).codigo_activacion;
+      hashNuevo = (await filaPorId(cuerpoA.user_id)).activationPinHash;
+    };
+
+    const conElAnterior = await a.request(
+      '/auth/activar',
+      json('POST', { rut: rutA, codigo: cuerpoA.codigo_activacion, clave_numerica: clave }),
+    );
+    expect(conElAnterior.status).toBe(401);
+    expect(await conElAnterior.json()).toEqual(rechazo);
+    expect(hashNuevo).toBeTruthy();
+    const trasLaReemision = await filaPorId(cuerpoA.user_id);
+    expect(trasLaReemision.claveNumericaHash).toBeNull();
+    expect(trasLaReemision.activationPinHash).toBe(hashNuevo);
+    expect(trasLaReemision.firebaseUid).toBe(`pending-rut:${rutA}`);
+
+    // El código re-emitido sí activa.
+    const conElNuevo = await a.request(
+      '/auth/activar',
+      json('POST', { rut: rutA, codigo: codigoNuevo, clave_numerica: clave }),
+    );
+    expect(conElNuevo.status, JSON.stringify(await conElNuevo.clone().json())).toBe(200);
+
+    // b) La cuenta recibe una clave entre la verificación y la escritura.
+    const correoB = `personal-clave-${sufijo}@test.invalid`;
+    const rutB = rutAleatorio();
+    const b = app([...LISTA_DESPUES, correoB]);
+    const altaB = await b.request(
+      '/admin/personal-booster',
+      json('POST', { email: correoB, full_name: 'Eva Personal', rut: rutB }, adminUid),
+    );
+    const cuerpoB = (await altaB.json()) as { user_id: string; codigo_activacion: string };
+    expect(altaB.status, JSON.stringify(cuerpoB)).toBe(201);
+    firebase.ganchos.antesDeCrear = async () => {
+      await handle.db
+        .update(schema.users)
+        .set({ claveNumericaHash: 'hash-de-otra-escritura' })
+        .where(eq(schema.users.id, cuerpoB.user_id));
+    };
+
+    const conClaveYaPuesta = await b.request(
+      '/auth/activar',
+      json('POST', { rut: rutB, codigo: cuerpoB.codigo_activacion, clave_numerica: clave }),
+    );
+    expect(conClaveYaPuesta.status).toBe(401);
+    expect(await conClaveYaPuesta.json()).toEqual(rechazo);
+    const conClave = await filaPorId(cuerpoB.user_id);
+    expect(conClave.claveNumericaHash).toBe('hash-de-otra-escritura');
+    expect(conClave.activationPinHash).toBeTruthy();
+    expect(conClave.firebaseUid).toBe(`pending-rut:${rutB}`);
   });
 });

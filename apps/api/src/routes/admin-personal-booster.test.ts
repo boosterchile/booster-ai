@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createImpersonationWriteGuardMiddleware } from '../middleware/impersonation-write-guard.js';
@@ -95,6 +97,8 @@ function makeDb(opts: DbOpts = {}) {
   const lookups = [...(opts.lookups ?? [])];
   const insertedUsers: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
+  /** Predicado de cada `update().set().where(...)`, en orden. */
+  const updateWheres: unknown[] = [];
 
   const locks: unknown[] = [];
   const selectChain = () => {
@@ -135,9 +139,12 @@ function makeDb(opts: DbOpts = {}) {
       const filas = opts.filasActualizadas ?? [{ id: PERSONA_ID }];
       // `where` se puede esperar directo o seguir con `returning()`.
       return {
-        where: vi.fn(() =>
-          Object.assign(Promise.resolve(undefined), { returning: vi.fn(async () => filas) }),
-        ),
+        where: vi.fn((predicado: unknown) => {
+          updateWheres.push(predicado);
+          return Object.assign(Promise.resolve(undefined), {
+            returning: vi.fn(async () => filas),
+          });
+        }),
       };
     }),
   }));
@@ -153,6 +160,7 @@ function makeDb(opts: DbOpts = {}) {
     update,
     insertedUsers,
     updates,
+    updateWheres,
     locks,
   };
 }
@@ -841,6 +849,24 @@ describe('POST /admin/personal-booster/:userId/codigo — re-emisión (SC5)', ()
       expect.objectContaining({ event_type: 'personal_booster.reemision_codigo' }),
       expect.any(String),
     );
+  });
+
+  it('el UPDATE de la re-emisión exige que la cuenta siga sin clave y con el uid provisorio', async () => {
+    const d = makeDb({ lookups: [[existente({ isPlatformAdmin: true })]] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    const predicado = d.updateWheres[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la re-emisión no pasó un predicado SQL al UPDATE');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toContain('"usuarios"."id" = $1');
+    expect(consulta.sql).toContain('"usuarios"."clave_numerica_hash" is null');
+    expect(consulta.sql).toContain('"usuarios"."firebase_uid" like $2');
+    expect(consulta.params).toEqual([PERSONA_ID, 'pending-rut:%']);
   });
 
   it('persona que no es del personal → 404 personal_not_found, sin escrituras', async () => {
