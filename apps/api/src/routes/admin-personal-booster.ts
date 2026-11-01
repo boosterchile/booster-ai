@@ -92,8 +92,11 @@ type ResultadoAlta =
  * **Cuenta ya activa.** Se marca como personal solo si su correo ya está en
  * la lista. `/me` lee la marca para mandar a la persona al panel; sin la
  * lista, el panel le respondería 403 y perdería el inicio de su empresa.
- * Las cuentas provisorias se marcan siempre: sin clave no entran a `/me`, y
- * la marca es una de las condiciones para activar (SC6) y re-emitir (SC5).
+ * Las cuentas provisorias se marcan siempre: la marca es una de las
+ * condiciones para activar sin invitación (SC6) y para re-emitir (SC5). Una
+ * provisoria marcada que además tiene una invitación vigente a una empresa
+ * activa con el código del panel aunque su correo todavía no esté en la
+ * lista; desde ahí `/me` la ve como personal.
  *
  * Auditoría: log estructurado con `event_type` `personal_booster.*` (qué
  * admin, a quién por `user_id`, qué vínculo), igual que las demás rutas admin.

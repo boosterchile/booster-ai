@@ -8,7 +8,11 @@
 -- sin plazo los códigos pendientes del personal de Booster: esas personas no
 -- podrán activar hasta que se les emita un código nuevo. En prod conviene el
 -- rollback de código (la migración es aditiva → una revisión previa ignora
--- la columna) o PITR.
+-- la columna) o PITR. Si se vuelve a una revisión anterior, antes de
+-- re-desplegar esta se deja activacion_vence_en en NULL en las cuentas
+-- provisorias y el panel genera códigos nuevos para el personal pendiente:
+-- la columna marca qué código emitió el panel, y una revisión previa no la
+-- mantiene al reescribir el código.
 --
 -- Aplicar a mano vía bastion en modo password (DDL):
 --   AUTH_MODE=password bash scripts/db/connect.sh -f apps/api/drizzle/down/0065_usuarios_activacion_vence_en.down.sql

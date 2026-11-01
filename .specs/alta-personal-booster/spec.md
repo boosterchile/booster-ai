@@ -75,7 +75,7 @@ El paso 3 contradice el principio de identidad (`alta-cliente-autocontenida` §6
 
 - **Migración** `0065_usuarios_activacion_vence_en.sql` + `down/` si el repo lo usa + columna `activacionVenceEn` en `db/schema.ts`.
 - **`routes/admin-personal-booster.ts`** con `createAdminPersonalBoosterRoutes({ db, logger, platformAdminEmails, emailSender, webAppUrl })`, montado en `server.ts` bajo `/admin/personal-booster` con la misma cadena de middleware que `/admin/empresas` (firebaseAuth → userContext → impersonationWriteGuard), y `requirePlatformAdmin` en cada handler. Transacción en el alta y en la re-emisión.
-- **`auth-activar.ts`** recibe `platformAdminEmails` por opciones. Si no hay invitaciones vigentes, evalúa SC6; si se cumple, activa sin membresías.
+- **`auth-activar.ts`** recibe `platformAdminEmails` y `rateLimitPerRut` por opciones. Una cuenta marcada exige el código del panel vigente; sin invitaciones vigentes, además el correo en la lista, y se activa sin membresías. **`auth-driver.ts`** aplica a una cuenta marcada la misma exigencia del código del panel.
 - **Correo:** función nueva junto a `enviarCorreoActivacionCuenta` para el personal de Booster (mismo remitente, texto propio).
 - **Web:** ruta `/app/platform-admin/personal` (registrada en el router y con tarjeta en el índice del panel) con lista, formulario con confirmación, panel del código de una sola vez con la URL absoluta de `/activar`, y «Generar código nuevo» por fila pendiente.
 
@@ -93,7 +93,7 @@ El paso 3 contradice el principio de identidad (`alta-cliente-autocontenida` §6
 
 1. Merge y release (lo dispara el orquestador; el gate `production` es del PO). La migración corre en el release.
 2. Para cada persona nueva: alta en el panel → el PO agrega el correo a `booster_platform_admin_emails` en su `terraform.tfvars` (no en el repo: es público) y corre `terraform plan` y `terraform apply` → «Generar código nuevo» si el primero venció → la persona activa en `/activar` y entra por `/login` con el tipo «Booster».
-3. Rollback: sacar el correo de la lista corta el acceso. La columna nueva es nullable y no la lee nada fuera de esta spec.
+3. Rollback: sacar el correo de la lista corta el acceso. La columna nueva es nullable y no la lee nada fuera de esta spec. Si se vuelve a una revisión anterior a esta, antes de re-desplegar se deja `activacion_vence_en` en NULL en las cuentas provisorias y el panel genera códigos nuevos para el personal pendiente.
 
 ## 10. Decision log
 

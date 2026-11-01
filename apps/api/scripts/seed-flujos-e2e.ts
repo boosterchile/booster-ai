@@ -100,7 +100,7 @@ async function limpiarRateLimits(): Promise<number> {
   await redis.connect();
   try {
     let borradas = 0;
-    for (const patron of ['rl:login-rut:*', 'rl:activar-cuenta:*']) {
+    for (const patron of ['rl:login-rut:*', 'rl:activar-cuenta:*', 'rl:activar-cuenta-rut:*']) {
       const claves = await redis.keys(patron);
       if (claves.length > 0) {
         borradas += await redis.del(...claves);
