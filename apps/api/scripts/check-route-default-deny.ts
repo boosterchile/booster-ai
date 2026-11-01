@@ -199,7 +199,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAuthActivarRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:
-      'POST /auth/activar (equipo-de-la-empresa, alta-personal-booster): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`) o, para el personal de Booster sin invitación, `es_admin_plataforma = true` y el correo en BOOSTER_PLATFORM_ADMIN_EMAILS (la lista de Terraform). Una cuenta con `es_admin_plataforma = true` activa solo con un código del panel vigente según `activacion_vence_en` (el panel es el único emisor que lo deja; los demás lo ponen en NULL), también si tiene invitaciones. El código se consume de un solo uso (el hash y `activacion_vence_en` se borran, y la escritura exige que el hash siga siendo el verificado) y el endpoint corre tras límites de intentos fail-closed con cubos propios. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido / fuera de la lista: sin oráculo de enumeración.',
+      'POST /auth/activar (equipo-de-la-empresa, alta-personal-booster): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`) o, para el personal de Booster sin invitación, `es_admin_plataforma = true` y el correo en BOOSTER_PLATFORM_ADMIN_EMAILS (la lista de Terraform). Una cuenta con `es_admin_plataforma = true` activa solo con un código del panel vigente según `activacion_vence_en` (el panel es el único emisor que lo deja; los demás lo ponen en NULL), también si tiene invitaciones; driver-activate aplica la misma regla. El código se consume de un solo uso (el hash y `activacion_vence_en` se borran, y la escritura exige que el hash siga siendo el verificado) y el endpoint corre tras límites de intentos fail-closed con cubos propios. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido / fuera de la lista: sin oráculo de enumeración.',
   },
   createAuthUniversalRoutes: {
     category: 'INTENTIONAL-OPEN',
@@ -209,7 +209,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createDriverAuthRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:
-      'emisor de auth driver (/auth/driver-activate; driver aún sin Firebase user; rate-limit-pin inline). Verificado: sin app.use de auth precediéndolo.',
+      'emisor de auth driver (/auth/driver-activate; driver aún sin Firebase user; rate-limit-pin inline). Una cuenta con `es_admin_plataforma = true` activa solo con un código del panel vigente según `activacion_vence_en`, la misma regla que /auth/activar, con la misma 401 de un PIN incorrecto. Verificado: sin app.use de auth precediéndolo.',
   },
 
   // --- MIXED ---

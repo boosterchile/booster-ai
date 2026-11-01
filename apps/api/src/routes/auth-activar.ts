@@ -38,9 +38,10 @@ import {
  *
  * **Personal de Booster** (`.specs/alta-personal-booster`, SC6). Una cuenta
  * con `es_admin_plataforma = true` se activa solo con un código emitido desde
- * el panel y vigente según `activacion_vence_en`, en todos los caminos: el
- * panel es el único emisor que deja ese vencimiento (`codigoPersonalVigente`).
- * La persona que el platform-admin dio de alta desde el panel no tiene
+ * el panel y vigente según `activacion_vence_en`, también si tiene
+ * invitaciones vigentes: el panel es el único emisor que deja ese vencimiento
+ * (`codigoPersonalVigente`). `/auth/driver-activate`, el otro endpoint que
+ * consume el código, aplica la misma regla. La persona que el platform-admin dio de alta desde el panel no tiene
  * invitación a una empresa: sin invitaciones vigentes, además su correo tiene
  * que estar en la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`). Si
  * tiene invitaciones vigentes, se activan igual que las de cualquier persona.
