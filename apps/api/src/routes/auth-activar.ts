@@ -9,7 +9,11 @@ import type { Db } from '../db/client.js';
 import { memberships, users } from '../db/schema.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
-import { cuentaYaActivada, invitacionesVigentes } from '../services/vinculo-persona.js';
+import {
+  codigoPersonalVigente,
+  cuentaYaActivada,
+  invitacionesVigentes,
+} from '../services/vinculo-persona.js';
 
 /**
  * equipo-de-la-empresa Fase A — `POST /auth/activar`.
@@ -32,26 +36,21 @@ import { cuentaYaActivada, invitacionesVigentes } from '../services/vinculo-pers
  * código vencido devuelven la MISMA respuesta. Un atacante no puede usar este
  * endpoint para enumerar RUTs ni para saber quién tiene una invitación viva.
  *
- * **Personal de Booster** (`.specs/alta-personal-booster`, SC6). La persona
- * que el platform-admin dio de alta desde el panel no tiene invitación a una
- * empresa. Sin invitaciones vigentes, activa solo si se cumplen las tres
- * condiciones: la cuenta tiene `es_admin_plataforma = true`, su correo está en
- * la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`) y el código sigue
- * vigente según `activacion_vence_en`. Si falta una, la respuesta es la misma.
+ * **Personal de Booster** (`.specs/alta-personal-booster`, SC6). Una cuenta
+ * con `es_admin_plataforma = true` se activa solo con un código emitido desde
+ * el panel y vigente según `activacion_vence_en`, en todos los caminos: el
+ * panel es el único emisor que deja ese vencimiento (`codigoPersonalVigente`).
+ * La persona que el platform-admin dio de alta desde el panel no tiene
+ * invitación a una empresa: sin invitaciones vigentes, además su correo tiene
+ * que estar en la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`). Si
+ * tiene invitaciones vigentes, se activan igual que las de cualquier persona.
+ * Si falta una condición, la respuesta es la misma.
  *
  * **Un solo uso también en paralelo.** La escritura exige que el código siga
  * siendo el que se verificó y que la cuenta no tenga clave. Si otra activación
  * o una re-emisión lo cambió en el intervalo, no escribe y responde lo mismo
  * que un código malo.
  */
-
-/** Vigencia del código del personal: `activacion_vence_en` existe y no pasó. */
-function codigoPersonalVigente(venceEn: Date | string | null, ahora = Date.now()): boolean {
-  if (venceEn === null) {
-    return false;
-  }
-  return new Date(venceEn).getTime() >= ahora;
-}
 
 /** Email sintético de Firebase — mismo formato que `auth-universal.ts`. */
 function syntheticEmail(rut: string): string {
@@ -120,6 +119,16 @@ export function createAuthActivarRoutes(opts: {
       return rechazo();
     }
 
+    // Una cuenta marcada como personal activa solo con el código del panel,
+    // también si tiene invitaciones vigentes a empresas.
+    if (user.isPlatformAdmin && !codigoPersonalVigente(user.activacionVenceEn)) {
+      opts.logger.info(
+        { userId: user.id },
+        'auth-activar: cuenta del personal sin código vigente del panel',
+      );
+      return rechazo();
+    }
+
     // La invitación pendiente da la referencia de vencimiento: el código vive
     // 7 días desde que la empresa dio de alta a la persona. Se activan todas
     // las membresías vigentes: la persona puede haber sido vinculada a más
@@ -137,12 +146,10 @@ export function createAuthActivarRoutes(opts: {
     const vigentes = invitacionesVigentes(invitaciones);
     const invitacion = vigentes[0] ?? null;
 
-    // Sin invitación vigente, el único otro camino es el personal de Booster.
+    // Sin invitación vigente, el único otro camino es el personal de Booster
+    // (el código del panel ya se comprobó arriba).
     const esPersonalBooster =
-      invitacion === null &&
-      user.isPlatformAdmin &&
-      listaPersonal.has(user.email.toLowerCase()) &&
-      codigoPersonalVigente(user.activacionVenceEn);
+      invitacion === null && user.isPlatformAdmin && listaPersonal.has(user.email.toLowerCase());
 
     if (invitacion === null && !esPersonalBooster) {
       opts.logger.info({ rut: body.rut }, 'auth-activar: sin invitación vigente');

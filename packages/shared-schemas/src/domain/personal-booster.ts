@@ -62,8 +62,10 @@ export type ListaPersonalBoosterResponse = z.infer<typeof listaPersonalBoosterRe
  * Qué encontró el alta en `usuarios`:
  *   - `nueva`: no existía; se creó la cuenta provisoria con su código.
  *   - `cuenta_activa`: ya tenía clave; se marcó como personal, sin código.
- *   - `codigo_vigente`: provisoria con un código pendiente; se conserva.
- *   - `provisoria_sin_codigo`: provisoria sin código; se emitió el primero.
+ *   - `codigo_vigente`: provisoria con un código vigente emitido desde el
+ *     panel; se conserva.
+ *   - `provisoria_sin_codigo`: provisoria sin un código vigente del panel: se
+ *     emitió uno nuevo.
  */
 export const vinculoPersonalBoosterSchema = z.enum([
   'nueva',

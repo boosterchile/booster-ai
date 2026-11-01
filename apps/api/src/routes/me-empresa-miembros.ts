@@ -182,7 +182,11 @@ export function createMeEmpresaMiembrosRoutes(opts: {
           codigoEmitido = codigo;
           await tx
             .update(users)
-            .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
+            .set({
+              activationPinHash: hashActivationPin(codigo),
+              activacionVenceEn: null,
+              updatedAt: new Date(),
+            })
             .where(eq(users.id, userId));
         }
       } else {

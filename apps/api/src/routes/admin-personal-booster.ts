@@ -25,6 +25,7 @@ import {
   CODIGO_ACTIVACION_TTL_MS,
   PENDING_FIREBASE_UID_PREFIX,
   clasificarVinculoPersona,
+  codigoPersonalVigente,
 } from '../services/vinculo-persona.js';
 
 /** Cota del listado: el personal de Booster es de decenas, no de miles. */
@@ -81,6 +82,12 @@ type ResultadoAlta =
  * entra a logs, spans ni auditoría. Una cuenta que ya eligió su clave nunca
  * recibe un código nuevo, y el alta no cambia RUT, nombre ni correo de una
  * cuenta existente.
+ *
+ * **Código de la provisoria existente.** Se conserva solo si lo emitió el
+ * panel y sigue vigente (`activacion_vence_en` existe y no pasó). Sin código,
+ * con uno que no emitió el panel o con el del panel vencido, se emite uno
+ * nuevo con su vencimiento: una cuenta marcada se activa solo con un código
+ * del panel (`/auth/activar`).
  *
  * **Cuenta ya activa.** Se marca como personal solo si su correo ya está en
  * la lista. `/me` lee la marca para mandar a la persona al panel; sin la
@@ -240,7 +247,12 @@ export function createAdminPersonalBoosterRoutes(opts: {
               if (existente.rut !== body.rut) {
                 return { tipo: 'rechazo', code: 'rut_mismatch' };
               }
-              const vinculo = clasificarVinculoPersona(existente);
+              const clasificado = clasificarVinculoPersona(existente);
+              const vinculo: VinculoPersonalBooster =
+                clasificado === 'codigo_vigente' &&
+                !codigoPersonalVigente(existente.activacionVenceEn)
+                  ? 'provisoria_sin_codigo'
+                  : clasificado;
               const codigo = vinculo === 'provisoria_sin_codigo' ? generateActivationPin() : null;
               // Una cuenta activa fuera de la lista no se toca (ver arriba).
               const marcada = vinculo !== 'cuenta_activa' || enLista;

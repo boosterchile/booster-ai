@@ -200,6 +200,7 @@ export function createDriverAuthRoutes(opts: {
           // comunicación con la plataforma. El sintético existe solo como
           // identificador interno de Firebase.
           activationPinHash: null,
+          activacionVenceEn: null,
           status: 'activo',
           lastLoginAt: sql`now()`,
           updatedAt: sql`now()`,
