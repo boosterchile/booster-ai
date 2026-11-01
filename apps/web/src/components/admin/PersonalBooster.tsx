@@ -742,28 +742,22 @@ function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () =
 }
 
 /**
- * Provisoria que ya tenía un código (SC3): no se reemplaza ni se vuelve a
- * mostrar. Si el admin no lo entregó desde este panel, lo correcto es generar
- * uno nuevo antes de que el correo entre a la lista.
+ * Provisoria con un código del panel vigente (SC3): la API lo conserva solo
+ * en ese caso; sin código, con uno que no emitió el panel o con el del panel
+ * vencido, emite uno nuevo y la respuesta lo trae. No se reemplaza ni se
+ * vuelve a mostrar.
  */
 function PanelCodigoPendiente({ panel }: { panel: AltaSinCodigo }) {
-  const vencido = panel.expiraEn !== null && yaPaso(panel.expiraEn);
   return (
     <>
-      <div className="font-semibold text-amber-900">
-        {vencido
-          ? 'Esta persona tiene un código vencido'
-          : 'Esta persona ya tiene un código pendiente'}
-      </div>
+      <div className="font-semibold text-amber-900">Esta persona ya tiene un código vigente</div>
       <p className="mt-1 text-amber-800 text-sm">
-        No lo reemplazamos y este panel no lo vuelve a mostrar. Si no se lo entregaste tú desde este
-        panel, genera uno nuevo con «Generar código nuevo» en su fila de la lista antes de que el PO
-        agregue el correo a la lista: el anterior deja de servir.
+        Lo emitió este panel y sigue vigente: no lo reemplazamos y no lo volvemos a mostrar. Si no
+        lo tienes a mano, usa «Generar código nuevo» en su fila de la lista: el anterior deja de
+        servir.
       </p>
       {panel.expiraEn !== null && (
-        <p className="mt-1 text-amber-700 text-xs">
-          {vencido ? 'Venció el' : 'Vence el'} {fechaHora(panel.expiraEn)}.
-        </p>
+        <p className="mt-1 text-amber-700 text-xs">Vence el {fechaHora(panel.expiraEn)}.</p>
       )}
       {!panel.enLista && (
         <p className="mt-2 font-medium text-amber-900 text-sm">{AVISO_AGREGAR_A_LISTA}</p>
