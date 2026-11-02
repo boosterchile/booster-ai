@@ -113,8 +113,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const TRIP_ID = '11111111-1111-1111-1111-111111111111';
-const VEH_ID = '22222222-2222-2222-2222-222222222222';
+const TRIP_ID = '11111111-1111-4111-8111-111111111111';
+const VEH_ID = '22222222-2222-4222-8222-222222222222';
 
 const TRIP_BASE = {
   id: TRIP_ID,
@@ -951,8 +951,8 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
   type Mock = ReturnType<typeof vi.fn>;
   const DELIVERED = new Date('2026-05-01T15:00:00Z');
   const RECOGIDA = new Date('2026-05-01T11:00:00Z');
-  const EMP_TRANSPORTISTA = '44444444-4444-4444-4444-444444444444';
-  const EMP_GENERADOR = '55555555-5555-5555-5555-555555555555';
+  const EMP_TRANSPORTISTA = '44444444-4444-4444-8444-444444444444';
+  const EMP_GENERADOR = '55555555-5555-4555-8555-555555555555';
   const VEH_MODELADO = {
     id: VEH_ID,
     teltonikaImei: '123456789012345',

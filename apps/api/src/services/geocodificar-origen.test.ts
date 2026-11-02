@@ -31,7 +31,7 @@ vi.mock('../observability/business-metrics.js', () => ({
 const { RoutesApiError, computeRoutes } = await import('./routes-api.js');
 const { geocodificarOrigen } = await import('./geocodificar-origen.js');
 
-const TRIP_ID = '00000000-0000-0000-0000-00000000c0de';
+const TRIP_ID = '00000000-0000-4000-8000-00000000c0de';
 const ORIGIN = 'Av. Apoquindo 5550, Las Condes';
 const DESTINATION = 'Concepción centro';
 

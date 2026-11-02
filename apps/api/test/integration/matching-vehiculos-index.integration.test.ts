@@ -66,7 +66,7 @@ describe('integration: índice de matching de vehículos (migración 0041)', () 
       const explain = await client.query<{ 'QUERY PLAN': unknown }>(
         `EXPLAIN (FORMAT JSON)
          SELECT * FROM vehiculos
-         WHERE empresa_id IN ('00000000-0000-0000-0000-000000000001'::uuid)
+         WHERE empresa_id IN ('00000000-0000-4000-8000-000000000001'::uuid)
            AND estado_vehiculo = 'activo'
            AND capacidad_kg >= 1000
          ORDER BY capacidad_kg, id`,
@@ -88,7 +88,7 @@ describe('integration: índice de matching de vehículos (migración 0041)', () 
       const explain = await client.query<{ 'QUERY PLAN': unknown }>(
         `EXPLAIN (FORMAT JSON)
          SELECT * FROM vehiculos
-         WHERE empresa_id = '00000000-0000-0000-0000-000000000001'::uuid`,
+         WHERE empresa_id = '00000000-0000-4000-8000-000000000001'::uuid`,
       );
       const plan = JSON.stringify(explain.rows[0]['QUERY PLAN']);
       // El standalone idx_vehiculos_empresa fue dropeado; el prefijo del
