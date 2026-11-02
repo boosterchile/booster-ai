@@ -445,3 +445,50 @@ describe('buildNotaVisible (helper puro)', () => {
     expect(buildNotaVisible('rechazado', null, '[2026-05-01T09:00:00.000Z admin@x]')).toBeNull();
   });
 });
+
+describe('POST /assignments/:id/cobra-hoy — solicitud rechazada', () => {
+  function post(withContext = true) {
+    const app = makeAssignmentsApp({ withContext });
+    return app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+  }
+
+  it('sin userContext → 400 no_active_empresa, no llama al service', async () => {
+    const res = await post(false);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'no_active_empresa' });
+    expect(cobraHoySpy).not.toHaveBeenCalled();
+  });
+
+  it('userContext sin membresía activa → 400 no_active_empresa', async () => {
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      c.set('userContext', { ...USER_CTX, activeMembership: null });
+      await next();
+    });
+    app.route(
+      '/assignments',
+      createCobraHoyAssignmentsRoutes({ db: {} as never, logger: noopLogger }),
+    );
+    const res = await app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+    expect(res.status).toBe(400);
+  });
+
+  it.each([
+    ['skipped_flag_disabled', 503, 'feature_disabled'],
+    ['assignment_not_found', 404, 'assignment_not_found'],
+    ['no_liquidacion', 409, 'no_liquidacion'],
+    ['forbidden_owner_mismatch', 403, 'forbidden_owner_mismatch'],
+  ])('%s → %i %s', async (status, http, error) => {
+    cobraHoySpy.mockResolvedValue({ status });
+    const res = await post();
+    expect(res.status).toBe(http);
+    expect(((await res.json()) as { error: string }).error).toBe(error);
+  });
+});
+
+describe('buildNotaVisible — notas solo con espacios', () => {
+  it('mora con notas en blanco → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('mora', null, '  \n \n')).toBeNull();
+  });
+});
