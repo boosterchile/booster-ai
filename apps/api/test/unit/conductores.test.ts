@@ -1884,3 +1884,59 @@ describe('POST /conductores — contrato del 400 de validarAltaConductor (TRK-00
     `);
   });
 });
+
+describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
+  it('POST /conductores solo con phone inválido → 400 telefono_invalido (hook L371)', async () => {
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...ALTA_BODY, phone: '+56221234567' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "telefono_invalido",
+          "message": "Ingresa un teléfono válido (+569...)",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('POST /conductores/:id/telefono con phone inválido → 400 telefono_invalido', async () => {
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: '912345678' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "telefono_invalido",
+          "message": "Ingresa un teléfono válido (+569...)",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('POST /conductores/:id/telefono sin phone → 400 telefono_invalido', async () => {
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "telefono_invalido",
+          "message": "Ingresa un teléfono válido (+569...)",
+        },
+        "status": 400,
+      }
+    `);
+  });
+});
