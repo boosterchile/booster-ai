@@ -13,7 +13,7 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
-import { consumoCanSegmento } from '../domain/consumo-can-segmento.js';
+import { type LecturaSegmentoCan, consumoCanSegmento } from '../domain/consumo-can-segmento.js';
 import {
   type DecisionFuente,
   type Reconstruccion,
@@ -62,6 +62,9 @@ const huellaCanbusNoUsadoCounter = getBusinessCounter('huella_canbus_no_usado_to
 const COMBUSTIBLES_CONTADOR_LITROS = new Set(['diesel', 'gasolina']);
 
 /** Perfil energético del vehículo que decide el modo del cálculo (ADR-017/021). */
+/** Tope de la ventana que lee el resumidor CAN (nit QA #868): un viaje de semanas no lee todo. */
+export const VENTANA_MAX_RESUMEN_CAN_MS = 7 * 24 * 60 * 60 * 1000;
+
 type PerfilEnergeticoVehiculo = Pick<
   typeof vehicles.$inferSelect,
   'fuelType' | 'consumptionLPer100kmBaseline' | 'curbWeightKg' | 'capacityKg' | 'vehicleType'
@@ -92,6 +95,8 @@ async function medirLitrosCan(opts: {
   desde: Date;
   hasta: Date;
   distanciaKm: number;
+  /** Lecturas ya cargadas por el resumidor HC-001 (misma ventana): evita leer dos veces. */
+  lecturas?: LecturaSegmentoCan[] | null;
 }): Promise<number | null> {
   const { vehiculo } = opts;
   if (
@@ -102,12 +107,14 @@ async function medirLitrosCan(opts: {
   ) {
     return null;
   }
-  const lecturas = await cargarLecturasConsumoCan({
-    db: opts.db,
-    vehicle: vehiculo,
-    desde: opts.desde,
-    hasta: opts.hasta,
-  });
+  const lecturas =
+    opts.lecturas ??
+    (await cargarLecturasConsumoCan({
+      db: opts.db,
+      vehicle: vehiculo,
+      desde: opts.desde,
+      hasta: opts.hasta,
+    }));
   const resultado = consumoCanSegmento({ lecturas, distanciaSegmentoKm: opts.distanciaKm });
   if (resultado.litros === null) {
     huellaCanbusNoUsadoCounter.add(1, { motivo: resultado.motivo });
@@ -792,15 +799,19 @@ async function recalcularNivelPostEntregaInner(opts: {
       : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
   // El 83 se elige por datos (datos-can.md §4.2): se lee aunque la config no diga '83'.
   let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
-  if (fuente === 'teltonika_gps' && rec.estado === 'ok') {
+  let lecturasCan: LecturaSegmentoCan[] | null = null;
+  const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS) {
+    logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
+  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok') {
     try {
-      const lecturas = await cargarLecturasConsumoCan({
+      lecturasCan = await cargarLecturasConsumoCan({
         db,
         vehicle: vehiculo,
         desde: pickupAt,
         hasta: assignment.deliveredAt,
       });
-      resumenCan = resumirCanSegmento(lecturas, rec.distanciaKm, vehiculo.capacidadEstanqueL);
+      resumenCan = resumirCanSegmento(lecturasCan, rec.distanciaKm, vehiculo.capacidadEstanqueL);
     } catch (err) {
       logger.warn({ err, tripId }, 'HC-001: no se pudo resumir el CAN; decisión sin 83');
     }
@@ -915,6 +926,7 @@ async function recalcularNivelPostEntregaInner(opts: {
         desde: pickupAt,
         hasta: assignment.deliveredAt,
         distanciaKm: distanciaKmReal,
+        lecturas: lecturasCan,
       });
       emisionesReales =
         litrosCan !== null && vehiculo.fuelType

@@ -39,6 +39,12 @@ vi.mock('../../src/services/posicion-segmento.js', async (importOriginal) => ({
   resolverPosicionesSegmento: vi.fn(),
   cargarLecturasConsumoCan: vi.fn(async () => []),
 }));
+// HC-001: la regla queda real; se espía para poder forzar un throw (try/catch).
+vi.mock('../../src/domain/decidir-fuente-huella.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../../src/domain/decidir-fuente-huella.js')>();
+  return { ...orig, decidirFuenteHuella: vi.fn(orig.decidirFuenteHuella) };
+});
+const { decidirFuenteHuella } = await import('../../src/domain/decidir-fuente-huella.js');
 
 const { computeRoutes } = await import('../../src/services/routes-api.js');
 const { calcularCobertura, haversineKm } = await import(
@@ -1280,9 +1286,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     it('83 limpio + cobertura 100 % → exacto_canbus, primario_verificable y emisiones = litros × factor WTW', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock)
-        .mockResolvedValueOnce(conContador(pings, 8)) // resumidor HC-001
-        .mockResolvedValueOnce(conContador(pings, 8)); // medición
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8)); // una sola lectura: resumidor + medición
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       const res = await run(db);
       expect(res.huella).toBe('medida');
@@ -1305,9 +1309,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       const huecoKm = haversineKm(-33.4 + 19 * 0.005, -70.6, -33.4 + 23 * 0.005, -70.6);
       (computeRoutes as Mock).mockResolvedValue(ruta(huecoKm));
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock)
-        .mockResolvedValueOnce(conContador(pings, 8)) // resumidor HC-001
-        .mockResolvedValueOnce(conContador(pings, 8)); // medición
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8)); // una sola lectura: resumidor + medición
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       await run(db);
       const setArg = setDe(db);
@@ -1315,6 +1317,55 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(Number(setArg.coveragePct)).toBeGreaterThanOrEqual(80);
       expect(setArg.precisionMethod).toBe('exacto_canbus');
       expect(setArg.certificationLevel).toBe('secundario_modeled');
+    });
+
+    it('una sola lectura del CAN con config 83 y huella activa (nit QA #868)', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
+      expect(setDe(db).precisionMethod).toBe('exacto_canbus');
+    });
+
+    it('try/catch: el loader del CAN falla → decisión sin 83 y el upgrade sigue', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockRejectedValueOnce(new Error('db caída'));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      const setArg = setDe(db);
+      expect(setArg).toMatchObject({
+        routeDataSource: 'teltonika_gps',
+        certificationLevel: 'secundario_modeled',
+        fuenteDistancia: 'teltonika_gps',
+        motivoFallback: 'can_sin_lecturas',
+      });
+      expect(setArg.fuenteEnergia).not.toBe('can_83');
+    });
+
+    it('try/catch: decidirFuenteHuella lanza → sin columnas de decisión y el UPDATE principal corre', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (decidirFuenteHuella as Mock).mockImplementationOnce(() => {
+        throw new Error('bug en la regla');
+      });
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      const setArg = setDe(db);
+      expect(setArg.certificationLevel).toBe('secundario_modeled');
+      for (const k of [
+        'fuenteDistancia',
+        'fuenteEnergia',
+        'motivoFallback',
+        'alertasDecision',
+        'decisionVersion',
+        'decididoEn',
+        'pesoDeclarado',
+      ]) {
+        expect(setArg).not.toHaveProperty(k);
+      }
     });
 
     it('83 provisionado sin lecturas → modelado como hoy, warn con el motivo y contador', async () => {

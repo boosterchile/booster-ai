@@ -60,7 +60,7 @@ export function resumirCanSegmento(
  * suaviza oleaje); una subida ≥ 10 puntos es recarga → null.
  */
 function nivelSinRecarga(ord: readonly LecturaSegmentoCan[], cap: number | null): number | null {
-  if (cap === null || !(cap > 0)) {
+  if (cap === null || !(Number.isFinite(cap) && cap > 0)) {
     return null;
   }
   const pct = ord.map((l) => nivelPctDe(l.io)).filter((p): p is number => p != null);

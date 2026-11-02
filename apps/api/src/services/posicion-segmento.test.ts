@@ -1,6 +1,9 @@
 import { getTableName } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '../db/client.js';
+import { distanciaRecorrida } from '../domain/consumo-can-segmento.js';
+import { decidirFuenteHuella } from '../domain/decidir-fuente-huella.js';
+import { resumirCanSegmento } from '../domain/resumen-can-segmento.js';
 import {
   cargarLecturasConsumoCan,
   fuentePosicionSegmento,
@@ -215,5 +218,48 @@ describe('cargarLecturasConsumoCan', () => {
       hasta: HASTA,
     });
     expect(lecturas.map((l) => l.io['83'])).toEqual([10010]);
+  });
+
+  it('HC-001 p2: trae también filas con solo el 89 y deja 83/89 como números', async () => {
+    const { db } = makeDb([
+      fila('01', { '89': 80 }),
+      fila('02', { '83': '10000', '89': '79', '66': 1 }),
+      fila('03', { '89': 'abc' }),
+    ]);
+    const lecturas = await cargarLecturasConsumoCan({
+      db,
+      vehicle: CON_IMEI,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(lecturas.map((l) => l.io)).toEqual([{ '89': 80 }, { '83': 10000, '89': 79 }]);
+  });
+
+  it('HC-001 p2 punta a punta: loader → resumirCanSegmento → decidirFuenteHuella con discrepancia_can', async () => {
+    // 83: 1000 → 1140 L (140 L) sobre ≈445 km (31 L/100 km); 89: 80→40 % con cap 1000 L → ≈200 L (+43 %).
+    const filas = [0, 1, 2, 3, 4].map((i) =>
+      fila(`0${i}`, { '83': 10000 + i * 350, '89': 80 - i * 10 }, String(-33 - i)),
+    );
+    const { db } = makeDb(filas);
+    const lecturas = await cargarLecturasConsumoCan({
+      db,
+      vehicle: CON_IMEI,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    const km = distanciaRecorrida(lecturas);
+    const r = resumirCanSegmento(lecturas, km, 1000);
+    expect(r.litrosNivelSinRecarga).toBeCloseTo(200, 6);
+    const d = decidirFuenteHuella({
+      gpsTeltonika: { estado: 'ok', coberturaPct: 100, distanciaKm: km },
+      gpsMovil: null,
+      pingsEnVentana: 5,
+      combustible: 'diesel',
+      ...r,
+      consumoBasePor100km: null,
+      perfilEnergetico: 'consumo_base',
+      pesoDeclarado: true,
+    });
+    expect(d).toMatchObject({ fuenteEnergia: 'can_83', alertas: ['discrepancia_can'] });
   });
 });

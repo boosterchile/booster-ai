@@ -43,10 +43,24 @@ describe('resumirCanSegmento (HC-001 parte 2)', () => {
     });
   });
 
+  // cap 100 → litros = puntos de caída. Escalones: la mediana de 3 conserva el salto.
   it.each([
     ['glitch de 1 muestra filtrado', [80, 79, 78, 20, 77, 76], 600, 18],
-    ['recarga (subida ≥10 puntos) → null', [50, 49, 48, 70, 72, 71], 600, null],
+    [
+      'subida de 10 = recarga, con caída neta positiva → null',
+      [80, 80, 70, 70, 80, 80, 40, 40],
+      100,
+      null,
+    ],
+    ['subida de 9 no es recarga → caída neta', [80, 80, 70, 70, 79, 79, 40, 40], 100, 40],
+    ['subida de 22 = recarga → null', [80, 80, 50, 50, 72, 72, 40, 40], 100, null],
+    ['caída 0 → null (no 0)', [50, 50, 50, 50], 100, null],
+    ['cap 0 → null', [80, 79, 78, 77], 0, null],
+    ['cap Infinity → null', [80, 75, 70, 65], Number.POSITIVE_INFINITY, null],
+    ['cap NaN → null', [80, 75, 70, 65], Number.NaN, null],
     ['sin capacidad → null', [80, 79, 78, 77], null, null],
+    ['3 lecturas: una sola mediana → null', [80, 70, 60], 100, null],
+    ['4 lecturas: caída entre medianas', [80, 70, 60, 50], 100, 10],
     ['menos de 3 lecturas de 89 → null', [80, 79], 600, null],
   ] as const)('nivel 89: %s', (_c, p89, cap, esperado) => {
     const l = tramo(
@@ -55,6 +69,25 @@ describe('resumirCanSegmento (HC-001 parte 2)', () => {
     );
     const v = resumirCanSegmento(l, 10, cap).litrosNivelSinRecarga;
     esperado === null ? expect(v).toBeNull() : expect(v).toBeCloseTo(esperado, 6);
+  });
+
+  it('paso negativo chico (−0,3 L) cuenta como negativo', () => {
+    expect(resumirCanSegmento(tramo([100, 100.5, 100.2, 101]), 10, null).can83).toMatchObject({
+      pasosNegativos: 1,
+    });
+  });
+
+  it('cobertura > 100 se recorta a 100; distancia 0 → cobertura 0', () => {
+    const l = tramo([1000, 1010, 1020]);
+    const km = distanciaRecorrida(l);
+    expect(resumirCanSegmento(l, km / 2, null).can83?.coberturaKmPct).toBe(100);
+    expect(resumirCanSegmento(l, 0, null).can83?.coberturaKmPct).toBe(0);
+  });
+
+  it('83 parcial: la cobertura se mide solo entre la primera y la última lectura del 83', () => {
+    const l = tramo([null, 1000, 1010, null, null]);
+    const km = distanciaRecorrida(l);
+    expect(resumirCanSegmento(l, km, null).can83?.coberturaKmPct).toBeCloseTo(25, 6);
   });
 
   it('resumen + decisión: 83 limpio da can_83 y la discrepancia con el nivel solo alerta', () => {
