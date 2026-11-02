@@ -115,6 +115,8 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['distancia Teltonika NaN', rec(ok(100, Number.NaN)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['distancia Teltonika 0', rec(ok(100, 0)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['distancia Teltonika -Infinity', rec(ok(100, Number.NEGATIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
+    ['distancia Teltonika +Infinity', rec(ok(100, Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
+    ['distancia Teltonika -5', rec(ok(100, -5)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['distancia Teltonika 0 + móvil 90 %', { ...rec(ok(100, 0)), gpsMovil: ok(90) }, 'movil_gps', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['móvil cobertura NaN', mv(ok(Number.NaN)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],
     ['móvil cobertura Infinity', mv(ok(Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],

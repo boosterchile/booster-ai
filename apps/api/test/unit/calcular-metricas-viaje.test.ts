@@ -127,6 +127,22 @@ const TRIP_BASE = {
   createdAt: new Date('2026-05-01T09:00:00Z'),
 };
 
+/** HC-001 parte 2: el único UPDATE escribe solo las columnas de la decisión. */
+function expectSoloDecision(db: { update: unknown }) {
+  expect(db.update).toHaveBeenCalledTimes(1);
+  const setArg = (db.update as ReturnType<typeof vi.fn>).mock.results[0]?.value.set.mock
+    .calls[0][0];
+  expect(Object.keys(setArg).sort()).toEqual([
+    'alertasDecision',
+    'decididoEn',
+    'decisionVersion',
+    'fuenteDistancia',
+    'fuenteEnergia',
+    'motivoFallback',
+    'pesoDeclarado',
+  ]);
+}
+
 describe('calcularMetricasEstimadas', () => {
   it('throw TripNotFoundError si trip no existe', async () => {
     const db = makeDb({ selects: [[]] });
@@ -912,7 +928,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
 
     expect(res.recomputed).toBe(false);
     expect(res.abortReason).toBe('routes_error');
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
     // El logger serializa `err` sin `message`: el motivo viaja aparte.
     expect(noopLogger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ errMessage: 'Routes 503' }),
@@ -928,7 +944,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
 
     expect(res.abortReason).toBe('cap_exceeded');
     expect(computeRoutes).not.toHaveBeenCalled();
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
   });
 
   it('ABORT (sin observación continua) — no-op, abortReason=sin_observacion (no aplica ≠ roto)', async () => {
@@ -943,7 +959,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     const res = await run(db);
 
     expect(res.abortReason).toBe('sin_observacion');
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
   });
 });
 
@@ -1170,7 +1186,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     });
     const res = await run(db);
     expect(res.abortReason).toBe('sin_observacion');
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
   });
 
   it('PESO AUSENTE (T13) — opt-in activo + cobertura alta → emisiones reales null + métrica huella_peso_ausente; la distancia medida SÍ se persiste', async () => {
@@ -1264,7 +1280,9 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     it('83 limpio + cobertura 100 % → exacto_canbus, primario_verificable y emisiones = litros × factor WTW', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      (cargarLecturasConsumoCan as Mock)
+        .mockResolvedValueOnce(conContador(pings, 8)) // resumidor HC-001
+        .mockResolvedValueOnce(conContador(pings, 8)); // medición
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       const res = await run(db);
       expect(res.huella).toBe('medida');
@@ -1287,7 +1305,9 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       const huecoKm = haversineKm(-33.4 + 19 * 0.005, -70.6, -33.4 + 23 * 0.005, -70.6);
       (computeRoutes as Mock).mockResolvedValue(ruta(huecoKm));
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      (cargarLecturasConsumoCan as Mock)
+        .mockResolvedValueOnce(conContador(pings, 8)) // resumidor HC-001
+        .mockResolvedValueOnce(conContador(pings, 8)); // medición
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       await run(db);
       const setArg = setDe(db);
@@ -1332,7 +1352,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo el resumidor HC-001 (por datos)
       expect(setDe(db).precisionMethod).toBe('modelado');
     });
 
@@ -1344,7 +1364,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo el resumidor HC-001 (por datos)
       expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
     });
   });

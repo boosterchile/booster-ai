@@ -98,7 +98,7 @@ export function consumoCanSegmento(opts: {
   return { litros: Math.round(delta * 10) / 10 };
 }
 
-function distanciaRecorrida(lecturas: readonly LecturaSegmentoCan[]): number {
+export function distanciaRecorrida(lecturas: readonly LecturaSegmentoCan[]): number {
   let km = 0;
   for (let i = 1; i < lecturas.length; i++) {
     const a = lecturas[i - 1];

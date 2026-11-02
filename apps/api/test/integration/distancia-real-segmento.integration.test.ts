@@ -297,6 +297,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         decisionVersion: schema.tripMetrics.decisionVersion,
         decididoEn: schema.tripMetrics.decididoEn,
         pesoDeclarado: schema.tripMetrics.pesoDeclarado,
+        alertasDecision: schema.tripMetrics.alertasDecision,
       })
       .from(schema.tripMetrics)
       .where(eq(schema.tripMetrics.tripId, tripId));
@@ -378,8 +379,14 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     const m = await metricas(tripId);
     expect(m?.distanceKmActual).toBeNull();
     expect(m?.routeDataSource).toBe('maps_directions');
-    // HC-001: early return sin opt-in no escribe la decisión (sigue igual que hoy).
-    expect(m?.fuenteDistancia).toBeNull();
+    // HC-001 parte 2: también sin opt-in la decisión queda registrada (R1, AC1-2).
+    expect(m).toMatchObject({
+      fuenteDistancia: 'routes_estimada',
+      motivoFallback: 'sin_dispositivo',
+      decisionVersion: 1,
+      alertasDecision: [],
+    });
+    expect(m?.decididoEn).not.toBeNull();
   });
 
   test('T12 — huella activa (opt-in del transportista): emisiones_kgco2e_reales > 0 desde la distancia real del segmento, movil_gps + secundario_modeled', async () => {
