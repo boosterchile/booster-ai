@@ -1,6 +1,7 @@
 import type { ConfiguracionComercial, SiteConfig } from '@booster-ai/shared-schemas';
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
@@ -1648,6 +1649,11 @@ export const tripMetrics = pgTable(
     certificateSha256: char('certificado_sha256', { length: 64 }),
     certificateKmsKeyVersion: varchar('certificado_kms_version', { length: 50 }),
     certificateIssuedAt: timestamp('certificado_emitido_en', { withTimezone: true }),
+    /** HC-001 p3a: versión vigente en certificados_viaje; las 4 columnas de arriba la espejan. */
+    certificadoVigenteId: uuid('certificado_vigente_id').references(
+      (): AnyPgColumn => certificadosViaje.id,
+      { onDelete: 'restrict' },
+    ),
     // Empty backhaul allocation (GLEC v3.0 §6.4) — alimentado por
     // calcularEmptyBackhaul() del package @booster-ai/carbon-calculator.
     // Nullable: pre-existing rows + viajes sin matching de retorno.
@@ -3040,3 +3046,44 @@ export const bitacoraBackfillDistancia = pgTable(
 );
 export type BitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferSelect;
 export type NewBitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferInsert;
+
+/**
+ * HC-001 p3a (decision.md 14:10): historial de versiones del certificado de un
+ * viaje. La vigente es la única con estado 'vigente' (índice parcial). Una
+ * reemisión marca la anterior 'reemplazado' y la reversa marca 'revertido'.
+ */
+export const certificadosViaje = pgTable(
+  'certificados_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    version: integer('version').notNull(),
+    estado: varchar('estado', { length: 20 }).notNull().default('vigente'),
+    sha256: char('sha256', { length: 64 }).notNull(),
+    pdfUrl: text('pdf_url'),
+    kmsVersion: varchar('kms_version', { length: 50 }),
+    emitidoEn: timestamp('emitido_en', { withTimezone: true }).notNull(),
+    reemplazadoEn: timestamp('reemplazado_en', { withTimezone: true }),
+    reemplazadoPor: uuid('reemplazado_por').references((): AnyPgColumn => certificadosViaje.id, {
+      onDelete: 'restrict',
+    }),
+    fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
+    motivoFallback: varchar('motivo_fallback', { length: 40 }),
+    decisionVersion: smallint('decision_version'),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    versionUnica: unique('uq_certificados_viaje_version').on(table.tripId, table.version),
+    vigenteUnica: uniqueIndex('uq_certificados_viaje_vigente')
+      .on(table.tripId)
+      .where(sql`estado = 'vigente'`),
+    porSha: index('idx_certificados_viaje_sha256').on(table.sha256),
+    versionPositiva: check('chk_certificados_viaje_version', sql`version >= 1`),
+    estadoValido: check(
+      'chk_certificados_viaje_estado',
+      sql`estado IN ('vigente', 'reemplazado', 'revertido')`,
+    ),
+  }),
+);

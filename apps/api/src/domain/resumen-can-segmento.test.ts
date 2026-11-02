@@ -169,3 +169,19 @@ describe('filtro laxo de emisión = main (QA #868 v3)', () => {
     expect(soloLecturas83(f)).toHaveLength(2);
   });
 });
+
+describe('el resumidor usa el filtro estricto soloLecturas83 (nit F5, QA #868 v3)', () => {
+  it('un 83 fuera de rango (1e15) con desvío no densifica la cobertura del resumidor', () => {
+    const filas: LecturaSegmentoCan[] = [
+      { tMs: 0, lat: -33, lng: -70.6, io: { '83': 10000 } },
+      { tMs: 1, lat: -33.5, lng: -70.05, io: { '83': 1e15 } },
+      { tMs: 2, lat: -34, lng: -70.6, io: { '83': 10600 } },
+    ];
+    const recta = distanciaRecorrida([filas[0], filas[2]] as LecturaSegmentoCan[]);
+    // Con el filtro laxo la cobertura sería la de A→B→C (≈151 km), no la recta.
+    expect(resumirCanSegmento(filas, 155.6, null).can83?.coberturaKmPct).toBeCloseTo(
+      (recta / 155.6) * 100,
+      6,
+    );
+  });
+});

@@ -26,6 +26,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `stakeholderAccessLog` | `log_acceso_stakeholder` | Bitácora append-only de accesos de stakeholders. |
 | `tripEvents` | `eventos_viaje` | Se inserta y lee dentro de la transacción de un viaje ya validado contra el tenant. |
 | `tripMetrics` | `metricas_viaje` | Se filtra por `trip_id`, ya validado contra el tenant. |
+| `certificadosViaje` | `certificados_viaje` | Versiones del certificado de un viaje (HC-001 p3a). Igual que `tripMetrics`: se filtra por `trip_id`, ya validado contra el tenant; /verify es público por diseño (código de seguimiento). |
 | `chatMessages` | `mensajes_chat` | Se filtra por `assignment_id`, validado en `resolveChatAccess`. |
 | `pushSubscriptions` | `push_subscriptions` | Se filtra por `userId`. |
 | `telemetryPoints` | `telemetria_puntos` | Se filtra por `vehicleId` o IMEI de un vehículo ya validado contra el tenant. |
