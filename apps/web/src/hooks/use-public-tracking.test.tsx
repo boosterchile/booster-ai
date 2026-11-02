@@ -197,3 +197,33 @@ describe('usePublicTracking — poll mientras el viaje sigue en curso', () => {
     expect(getSpy.mock.calls.length).toBe(afterFirst);
   });
 });
+
+describe('usePublicTracking — token inexistente o expirado (TRK-004)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([404, 410])('%i: 1 sola request, sin retry ni polling', async (status) => {
+    vi.useFakeTimers();
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new ApiError(status, 'not_found', { error: 'not_found' }));
+    // retry del QueryClient de main.tsx: si el hook no lo corta, reintenta.
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: (n) => n < 3, gcTime: 0, staleTime: 30_000, refetchOnWindowFocus: false },
+      },
+    });
+    renderHook(() => usePublicTracking(VALID_TOKEN), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    for (const ms of [20, 30_000, 30_000, 240_000]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    }
+    expect(getSpy).toHaveBeenCalledTimes(1);
+  });
+});
