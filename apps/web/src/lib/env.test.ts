@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { errorMock } = vi.hoisted(() => ({ errorMock: vi.fn() }));
 vi.mock('./logger.js', () => ({ logger: { error: errorMock } }));
 
 describe('env', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('contrato TRK-003: env inválido loguea error.flatten() de zod 3 y lanza', async () => {
     vi.stubEnv('VITE_API_URL', 'https://api.test.boosterchile.com/');
     vi.stubEnv('VITE_RECAPTCHA_SITE_KEY', '');
