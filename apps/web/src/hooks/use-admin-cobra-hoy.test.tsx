@@ -5,8 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../lib/api-client.js';
 import { useAdminAdelantos, useTransicionarAdelantoMutation } from './use-admin-cobra-hoy.js';
 
-type RetryFn = (failureCount: number, error: Error) => boolean;
-
 function makeWrapper() {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: 0 } } });
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -18,6 +16,26 @@ function makeWrapper() {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+/**
+ * Cuenta las llamadas a api.get que hace el hook cuando la API falla con `error`,
+ * dejando correr los reintentos reales (retry y retryDelay por defecto de TanStack).
+ */
+async function contarLlamadas(
+  render: (wrapper: ({ children }: { children: ReactNode }) => ReactNode) => void,
+  error: Error,
+) {
+  vi.useFakeTimers();
+  const get = vi.spyOn(api, 'get').mockRejectedValue(error);
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: 0 } } });
+  render(({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>);
+  for (const ms of [20, 1_000, 2_000, 4_000, 60_000]) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+  return get.mock.calls.length;
+}
 
 describe('useAdminAdelantos', () => {
   it('sin filtros pide la lista sin query string', async () => {
@@ -46,17 +64,11 @@ describe('useAdminAdelantos', () => {
     );
   });
 
-  it('deshabilitado no consulta; no reintenta 503 ni 403', () => {
+  it('deshabilitado no consulta', () => {
     const get = vi.spyOn(api, 'get');
-    const { Wrapper, client } = makeWrapper();
+    const { Wrapper } = makeWrapper();
     renderHook(() => useAdminAdelantos({}, { enabled: false }), { wrapper: Wrapper });
     expect(get).not.toHaveBeenCalled();
-
-    const retry = client.getQueryCache().getAll()[0]?.options.retry as RetryFn;
-    expect(retry(0, new ApiError(503, undefined, null))).toBe(false);
-    expect(retry(0, new ApiError(403, undefined, null))).toBe(false);
-    expect(retry(1, new ApiError(500, undefined, null))).toBe(true);
-    expect(retry(2, new Error('red'))).toBe(false);
   });
 });
 
@@ -111,5 +123,30 @@ describe('useTransicionarAdelantoMutation', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('useAdminAdelantos: reintentos', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([503, 403])('%i: 1 sola request, sin retry', async (status) => {
+    const n = await contarLlamadas(
+      (wrapper) => renderHook(() => useAdminAdelantos({}), { wrapper }),
+      new ApiError(status, undefined, null),
+    );
+    expect(n).toBe(1);
+  });
+
+  it.each([
+    ['500', new ApiError(500, undefined, null)],
+    ['error de red', new Error('red')],
+  ])('%s: 1 request + 2 reintentos', async (_caso, error) => {
+    const n = await contarLlamadas(
+      (wrapper) => renderHook(() => useAdminAdelantos({}), { wrapper }),
+      error,
+    );
+    expect(n).toBe(3);
   });
 });
