@@ -14,16 +14,15 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
 import {
-  type LecturaSegmentoCan,
-  consumoCanSegmento,
-  filasConLectura83,
-} from '../domain/consumo-can-segmento.js';
-import {
   type DecisionFuente,
   type Reconstruccion,
   decidirFuenteHuella,
 } from '../domain/decidir-fuente-huella.js';
-import { type ResumenCan, resumirCanSegmento } from '../domain/resumen-can-segmento.js';
+import {
+  type LecturaSegmentoCan,
+  type ResumenCan,
+  resumirCanSegmento,
+} from '../domain/resumen-can-segmento.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
@@ -56,14 +55,10 @@ export const EVENTO_CIERRE_HUELLA = 'huella.segmento.cierre';
 const huellaCoberturaDegradadaCounter = getBusinessCounter('huella_cobertura_degradada_total');
 const huellaPesoAusenteCounter = getBusinessCounter('huella_peso_ausente_total');
 /**
- * T10-05: vehículo provisionado con el contador CAN (AVL 83) cuya medición no
- * se pudo usar en el cierre (`motivo` = `MotivoConsumoCanNoUsado`). La huella
- * cae a `modelado`; esto lo hace contable.
+ * Cierre Teltonika cuya decisión no eligió el 83 (`motivo` = `motivo_fallback`
+ * de la decisión). La huella cae a `modelado`; esto lo hace contable.
  */
 const huellaCanbusNoUsadoCounter = getBusinessCounter('huella_canbus_no_usado_total');
-
-/** Combustibles que el contador 83 mide en litros. */
-const COMBUSTIBLES_CONTADOR_LITROS = new Set(['diesel', 'gasolina']);
 
 /** Perfil energético del vehículo que decide el modo del cálculo (ADR-017/021). */
 /** Tope de la ventana que lee el resumidor CAN (nit QA #868): un viaje de semanas no lee todo. */
@@ -81,66 +76,6 @@ type PerfilEnergeticoVehiculo = Pick<
  * Misma regla en la estimación (al asignar) y en la huella real (al cerrar):
  * el método no cambia por el momento del cálculo, solo la distancia.
  */
-/**
- * Litros del contador CAN (AVL 83) en el segmento, o `null` si el vehículo no
- * lo tiene provisionado o la medición no sirve (T10-05). Solo un Teltonika con
- * `fuente_combustible_can = '83'` y combustible medido en litros entra; el
- * motivo de un descarte queda en un `warn` y en `huella_canbus_no_usado_total`.
- */
-async function medirLitrosCan(opts: {
-  db: Db;
-  logger: Logger;
-  tripId: string;
-  vehiculo: VehiculoFuentePosicion & {
-    fuelType: string | null;
-    fuenteCombustibleCan: string | null;
-  };
-  fuente: RouteDataSource;
-  desde: Date;
-  hasta: Date;
-  distanciaKm: number;
-  /** Lecturas ya cargadas por el resumidor HC-001 (misma ventana): evita leer dos veces. */
-  lecturas?: LecturaSegmentoCan[] | null;
-}): Promise<number | null> {
-  const { vehiculo } = opts;
-  if (
-    vehiculo.fuenteCombustibleCan !== '83' ||
-    opts.fuente !== 'teltonika_gps' ||
-    !vehiculo.fuelType ||
-    !COMBUSTIBLES_CONTADOR_LITROS.has(vehiculo.fuelType)
-  ) {
-    return null;
-  }
-  const lecturas =
-    opts.lecturas ??
-    (await cargarLecturasConsumoCan({
-      db: opts.db,
-      vehicle: vehiculo,
-      desde: opts.desde,
-      hasta: opts.hasta,
-    }));
-  // Filtro laxo, idéntico a main: toda fila con el 83 presente; las solo-89 fuera
-  // (QA #868 v2/v3). El resumidor usa el estricto (ver consumo-can-segmento.ts).
-  const resultado = consumoCanSegmento({
-    lecturas: filasConLectura83(lecturas),
-    distanciaSegmentoKm: opts.distanciaKm,
-  });
-  if (resultado.litros === null) {
-    huellaCanbusNoUsadoCounter.add(1, { motivo: resultado.motivo });
-    opts.logger.warn(
-      {
-        tripId: opts.tripId,
-        vehicleId: vehiculo.id,
-        motivo: resultado.motivo,
-        lecturas: lecturas.length,
-      },
-      'consumo CAN (AVL 83) no usable en el segmento: huella modelada',
-    );
-    return null;
-  }
-  return resultado.litros;
-}
-
 function emisionesSegunPerfil(opts: {
   veh: PerfilEnergeticoVehiculo | undefined;
   distanciaKm: number;
@@ -669,8 +604,8 @@ async function recalcularNivelPostEntregaInner(opts: {
       curbWeightKg: vehicles.curbWeightKg,
       capacityKg: vehicles.capacityKg,
       vehicleType: vehicles.vehicleType,
-      fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
       capacidadEstanqueL: vehicles.capacidadEstanqueL,
+      fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
     })
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
@@ -678,8 +613,8 @@ async function recalcularNivelPostEntregaInner(opts: {
   const vehiculo:
     | (VehiculoFuentePosicion &
         PerfilEnergeticoVehiculo & {
-          fuenteCombustibleCan: string | null;
           capacidadEstanqueL: number | null;
+          fuenteCombustibleCan: string | null;
         })
     | undefined = vehRows[0];
   if (!vehiculo) {
@@ -797,7 +732,7 @@ async function recalcularNivelPostEntregaInner(opts: {
 
   // HC-001: la decisión de fuente se REGISTRA en columnas propias para TODO
   // viaje entregado (historia.md R1, AC1-2), también en el early return sin
-  // opt-in. Sigue en sombra: no cambia lo que lee la emisión del certificado.
+  // opt-in. HC-005: con huella activa es además el ÚNICO camino a exacto_canbus.
   const rec: Reconstruccion =
     abortReason === null && escritura !== null && escritura.distanciaKmReal !== null
       ? {
@@ -806,20 +741,18 @@ async function recalcularNivelPostEntregaInner(opts: {
           distanciaKm: escritura.distanciaKmReal,
         }
       : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
-  // El 83 se elige por datos (datos-can.md §4.2): se lee aunque la config no diga '83'.
+  // HC-005 fix0: la config es SOLO el interruptor de lectura. Sin '83' no hay resumen CAN y
+  // la decisión cae en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
+  const lee83 = vehiculo.fuenteCombustibleCan === '83';
   let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
-  let lecturasCan: LecturaSegmentoCan[] | null = null;
   const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
   const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
-  // Incoherencia conocida (QA #868 v2): sobre el tope, el resumidor no lee,
-  // pero medirLitrosCan (config '83') lee toda la ventana igual que en main y
-  // la emisión puede salir exacto_canbus con la decisión en ventana_excede_tope.
-  // No se cambia la emisión de main; lo decide la parte 3 (test que lo fija).
-  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && ventanaExcede) {
+  // Sobre el tope no se lee el 83: la decisión queda en ventana_excede_tope y la emisión, modelada.
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83 && ventanaExcede) {
     logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
-  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok') {
+  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83) {
     try {
-      lecturasCan = await cargarLecturasConsumoCan({
+      const lecturasCan: LecturaSegmentoCan[] = await cargarLecturasConsumoCan({
         db,
         vehicle: vehiculo,
         desde: pickupAt,
@@ -842,7 +775,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       pingsEnVentana: pings.length,
       combustible: vehiculo.fuelType,
       ...resumenCan,
-      can83Omitido: ventanaExcede ? 'ventana_excede_tope' : null,
+      can83Omitido: lee83 && ventanaExcede ? 'ventana_excede_tope' : null,
       consumoBasePor100km: consumoBase,
       // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
       perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
@@ -929,20 +862,20 @@ async function recalcularNivelPostEntregaInner(opts: {
       // real (híbrida con cobertura declarada): el cert muestra X km y las
       // emisiones se calcularon sobre esos X km.
       //
-      // T10-05 (ADR-077 §2): con el contador CAN (AVL 83) provisionado en un
-      // Teltonika, el combustible quemado se MIDE y el modo es `exacto_canbus`.
-      // Si la medición no sirve, se registra el motivo y se modela como antes.
-      const litrosCan = await medirLitrosCan({
-        db,
-        logger,
-        tripId,
-        vehiculo,
-        fuente,
-        desde: pickupAt,
-        hasta: assignment.deliveredAt,
-        distanciaKm: distanciaKmReal,
-        lecturas: lecturasCan,
-      });
+      // HC-005: `exacto_canbus` solo si la decisión eligió can_83 (guardrail83,
+      // por datos y no por config), con los MISMOS litros que validó (×0,1 L).
+      // Cualquier otro motivo (tope, no monótono, banda…) → modelado.
+      const litrosCan =
+        decision?.fuenteEnergia === 'can_83' && decision.litrosCan !== null
+          ? Math.round(decision.litrosCan * 10) / 10
+          : null;
+      // Solo vehículos que leen el 83 (config '83'): el contador mide descartes, no ausencias
+      // (runbook incidentes-glec.md §4, QA #871 v1).
+      if (litrosCan === null && fuente === 'teltonika_gps' && lee83) {
+        huellaCanbusNoUsadoCounter.add(1, {
+          motivo: decision?.motivoFallback ?? 'decision_no_registrada',
+        });
+      }
       emisionesReales =
         litrosCan !== null && vehiculo.fuelType
           ? calcularEmisionesViaje({

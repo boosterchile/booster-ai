@@ -1379,9 +1379,9 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
 
-    it('ventana 7 días + 1 ms sin config 83 → el resumidor no lee y el motivo es ventana_excede_tope', async () => {
+    it('ventana 7 días + 1 ms con config 83 → el resumidor no lee y el motivo es ventana_excede_tope', async () => {
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
-      const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
+      const db = conVentana(DIAS7 + 1, VEH_CAN);
       await run(db);
       expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
       expect(setDe(db)).toMatchObject({
@@ -1392,23 +1392,35 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
 
     it('ventana de exactamente 7 días → el resumidor sí lee', async () => {
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
-      const db = conVentana(DIAS7, { fuenteCombustibleCan: 'sin_sensor' });
+      const db = conVentana(DIAS7, VEH_CAN);
       await run(db);
       expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
       expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
     });
 
-    it('incoherencia fijada: sobre el tope con config 83, la emisión lee la ventana como main (lo decide la parte 3)', async () => {
+    it('HC-005: sobre el tope con config 83 → no lee el 83, ventana_excede_tope y emisión modelada', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7 + 1, VEH_CAN);
+      await run(db);
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        motivoFallback: 'ventana_excede_tope',
+        fuenteEnergia: 'modelo_perfil',
+        certificationLevel: 'secundario_modeled',
+      });
+      expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(1, {
+        motivo: 'ventana_excede_tope',
+      });
+    });
+
+    it('HC-005: ventana de exactamente 7 días con 83 limpio → exacto_canbus', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
       (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
-      const db = conVentana(DIAS7 + 1, VEH_CAN);
+      const db = conVentana(DIAS7, VEH_CAN);
       await run(db);
-      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo medirLitrosCan
-      const setArg = setDe(db);
-      expect(setArg.precisionMethod).toBe('exacto_canbus');
-      expect(setArg.motivoFallback).toBe('ventana_excede_tope');
-      expect(setArg.fuenteEnergia).not.toBe('can_83');
+      expect(setDe(db).precisionMethod).toBe('exacto_canbus');
     });
 
     it('filas solo-89 no cambian el resultado del 83 en la emisión (QA #868 v2)', async () => {
@@ -1428,8 +1440,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
     });
 
-    it('emisión con 83 fuera de rango: filtro laxo como main, sigue exacto_canbus (QA #868 v3)', async () => {
-      // B con 83 = 1e15 y desvío: main la conserva y la cobertura pasa el 95 %.
+    it('HC-005: 83 fuera de rango con desvío no densifica la cobertura → modelado (antes exacto por el filtro laxo)', async () => {
       const pings = largo();
       const [a, c] = [pings[0], pings[20]] as [(typeof pings)[0], (typeof pings)[0]];
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
@@ -1440,37 +1451,142 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       ]);
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       await run(db);
-      expect(setDe(db).precisionMethod).toBe('exacto_canbus');
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        motivoFallback: 'can_cobertura_insuficiente',
+      });
     });
 
-    it('83 provisionado sin lecturas → modelado como hoy, warn con el motivo y contador', async () => {
+    it('83 sin lecturas (solo 89 o nada) → modelado con can_sin_lecturas en el contador', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([]);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(
+        pings.map((p, i) => ({ ...p, io: { '89': 60 - i * 0.1 } })),
+      );
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
-      const warn = vi.fn();
-      const logger = { ...(noopLogger as object), warn, child: () => logger };
-      const res = await recalcularNivelPostEntrega({
-        db: db as never,
-        logger: logger as never,
-        tripId: TRIP_ID,
-        routesProjectId: 'proj',
-      });
+      const res = await run(db);
       expect(res.huella).toBe('medida');
-      const setArg = setDe(db);
-      expect(setArg.precisionMethod).toBe('modelado');
-      expect(setArg.certificationLevel).toBe('secundario_modeled');
-      expect(warn).toHaveBeenCalledWith(
-        expect.objectContaining({ tripId: TRIP_ID, motivo: 'sin_lecturas' }),
-        expect.any(String),
-      );
-      expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ motivo: 'sin_lecturas' }),
-      );
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        certificationLevel: 'secundario_modeled',
+        motivoFallback: 'can_sin_lecturas',
+      });
+      expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(1, {
+        motivo: 'can_sin_lecturas',
+      });
     });
 
-    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado', async () => {
+    // HC-005 — patrones reales de datos-can.md §8: la guarda que rechaza en la
+    // decisión es la misma que impide exacto_canbus en la emisión.
+    const conPasos = (pings: ReturnType<typeof largo>, pasosL: number[]) => {
+      let acc = 6_344_550;
+      return pings.map((p, i) => {
+        acc += i === 0 ? 0 : Math.round((pasosL[i - 1] ?? 0) * 10);
+        return { ...p, io: { '83': acc } };
+      });
+    };
+    it.each([
+      // PLFL57: el contador se congela y se pone al día con 55–151 L en un paso.
+      [
+        'PLFL57 congelado + catch-up de 120 L',
+        [...Array(20).fill(0.2), 0, 0, 0, 120, ...Array(16).fill(0.2)],
+      ],
+      // RCPC20: una lectura en 0 en medio de la ventana (Δ neto correcto, pero no monótono).
+      ['RCPC20 reinicio a 0 en medio', null],
+    ])(
+      '%s → can_no_monotono y modelado (antes la emisión no miraba los pasos)',
+      async (_, pasos) => {
+        const pings = largo();
+        const lect =
+          pasos === null
+            ? conContador(pings, 8).map((l, i) => (i === 20 ? { ...l, io: { '83': 0 } } : l))
+            : conPasos(pings, pasos as number[]);
+        (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+        (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(lect);
+        const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+        await run(db);
+        expect(setDe(db)).toMatchObject({
+          precisionMethod: 'modelado',
+          motivoFallback: 'can_no_monotono',
+          fuenteEnergia: 'modelo_perfil',
+        });
+        // fix1 QA #871: config '83' + rechazo → el contador sube con el motivo.
+        expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(1, {
+          motivo: 'can_no_monotono',
+        });
+      },
+    );
+
+    it('alerta de rechazo por banda (≈81 L/100 km) → can_fuera_de_banda y modelado', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 18));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        motivoFallback: 'can_fuera_de_banda',
+      });
+    });
+
+    it('KZXB64: can_83 → emite los MISMOS litros que validó la decisión, con nivel_no_evaluado sin capacidad', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 7.3));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      const decision = (decidirFuenteHuella as Mock).mock.results.at(-1)?.value as {
+        litrosCan: number;
+      };
+      const setArg = setDe(db);
+      expect(setArg.fuenteEnergia).toBe('can_83');
+      expect(setArg.alertasDecision).toEqual(['nivel_no_evaluado']);
+      expect(setArg.precisionMethod).toBe('exacto_canbus');
+      expect(Number(setArg.fuelConsumedLActual)).toBe(Math.round(decision.litrosCan * 10) / 10);
+      expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(7.3, 1);
+    });
+
+    it.each(['sin_sensor', '89', null])(
+      'HC-005 fix0: config %j con 83 limpio → no lee el 83, can_sin_lecturas y modelado',
+      async (cfg) => {
+        const pings = largo();
+        (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+        const db = makeDb({
+          selects: selects({ vehicle: { fuenteCombustibleCan: cfg } }),
+          updates: [[]],
+        });
+        await run(db);
+        expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+        expect(setDe(db)).toMatchObject({
+          precisionMethod: 'modelado',
+          fuenteEnergia: 'modelo_perfil',
+          motivoFallback: 'can_sin_lecturas',
+        });
+        // fix1 QA #871: sin '83' no es un descarte del 83 → el contador no sube.
+        expect(counter('huella_canbus_no_usado_total')?.add).not.toHaveBeenCalled();
+      },
+    );
+
+    it('HC-005 fix0: config sin 83 y ventana sobre el tope → can_sin_lecturas (la config manda)', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
+      await run(db);
+      expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
+    });
+
+    it('HC-005 fix0: muestra chica (4 L en ≈22 km, en banda) → can_muestra_insuficiente y modelado', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 4));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        motivoFallback: 'can_muestra_insuficiente',
+      });
+    });
+
+    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado (fix0)', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
       const db = makeDb({
@@ -1478,7 +1594,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo el resumidor HC-001 (por datos)
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled(); // fix0: sin '83' no se lee
       expect(setDe(db).precisionMethod).toBe('modelado');
     });
 
@@ -1490,7 +1606,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo el resumidor HC-001 (por datos)
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // única lectura: el resumidor
       expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
     });
   });

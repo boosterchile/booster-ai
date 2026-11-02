@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { decidirFuenteHuella } from './decidir-fuente-huella.js';
 import {
   type LecturaSegmentoCan,
-  consumoCanSegmento,
   distanciaRecorrida,
-  filasConLectura83,
+  resumirCanSegmento,
   soloLecturas83,
-} from './consumo-can-segmento.js';
-import { decidirFuenteHuella } from './decidir-fuente-huella.js';
-import { resumirCanSegmento } from './resumen-can-segmento.js';
+} from './resumen-can-segmento.js';
 
 // Sintético: puntos en línea recta, 83 en litros (raw ×10) y 89 en %.
 const tramo = (l83: (number | null)[], p89: (number | null)[] = []): LecturaSegmentoCan[] =>
@@ -125,16 +123,6 @@ describe('filas solo-89 no densifican la cobertura del 83 (QA #868 v2)', () => {
     { tMs: 3, lat: -34, lng: -70.6, io: { '83': 10600 } },
   ];
 
-  it('filas solo-89 no cambian el resultado del 83: sigue cobertura_insuficiente', () => {
-    // Sin el filtro, las solo-89 densifican la polilínea y el 83 pasaría con 60 L.
-    expect(consumoCanSegmento({ lecturas: filas, distanciaSegmentoKm: 155.6 })).toEqual({
-      litros: 60,
-    });
-    expect(
-      consumoCanSegmento({ lecturas: soloLecturas83(filas), distanciaSegmentoKm: 155.6 }),
-    ).toEqual({ litros: null, motivo: 'cobertura_insuficiente' });
-  });
-
   it('resumidor: la cobertura del 83 tampoco se densifica', () => {
     const recta = distanciaRecorrida(soloLecturas83(filas));
     expect(resumirCanSegmento(filas, 155.6, null).can83?.coberturaKmPct).toBeCloseTo(
@@ -144,30 +132,14 @@ describe('filas solo-89 no densifican la cobertura del 83 (QA #868 v2)', () => {
   });
 });
 
-describe('filtro laxo de emisión = main (QA #868 v3)', () => {
-  // A y C válidos; B con 83 = 1e15 (fuera de rango) y desvío. Main lo conserva y
-  // densifica la cobertura: {litros: 60}. El estricto lo descartaría.
-  const filas: LecturaSegmentoCan[] = [
+it('soloLecturas83 saca las filas solo-89 y el 83 fuera de rango', () => {
+  const f: LecturaSegmentoCan[] = [
     { tMs: 0, lat: -33, lng: -70.6, io: { '83': 10000 } },
     { tMs: 1, lat: -33.5, lng: -70.05, io: { '83': 1e15 } },
     { tMs: 2, lat: -34, lng: -70.6, io: { '83': 10600 } },
+    { tMs: 3, lat: -34, lng: -70.6, io: { '89': 40 } },
   ];
-
-  it('83 fuera de rango se conserva en la emisión: {litros: 60} como main', () => {
-    expect(filasConLectura83(filas)).toHaveLength(3);
-    expect(
-      consumoCanSegmento({ lecturas: filasConLectura83(filas), distanciaSegmentoKm: 155.6 }),
-    ).toEqual({ litros: 60 });
-    expect(
-      consumoCanSegmento({ lecturas: soloLecturas83(filas), distanciaSegmentoKm: 155.6 }),
-    ).toEqual({ litros: null, motivo: 'cobertura_insuficiente' });
-  });
-
-  it('las filas solo-89 salen con los dos filtros', () => {
-    const f = [...filas, { tMs: 3, lat: -34, lng: -70.6, io: { '89': 40 } }];
-    expect(filasConLectura83(f)).toHaveLength(3);
-    expect(soloLecturas83(f)).toHaveLength(2);
-  });
+  expect(soloLecturas83(f)).toHaveLength(2);
 });
 
 describe('el resumidor usa el filtro estricto soloLecturas83 (nit F5, QA #868 v3)', () => {

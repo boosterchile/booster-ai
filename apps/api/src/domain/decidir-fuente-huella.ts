@@ -4,13 +4,14 @@ import {
   THRESHOLD_SECUNDARIO_MODELED_PCT,
   derivarNivelCertificacion,
 } from '@booster-ai/carbon-calculator';
+import { KM_MINIMOS_KM_POR_LITRO, LITROS_MINIMOS_KM_POR_LITRO } from './combustible/rendimiento.js';
 
 /**
  * HC-001 PR1 — decisión de fuente de la huella. Función PURA.
  * Reglas: historia.md R1–R3/R5 y datos-can.md §4 (prevalece sobre R2/AC4).
  * El opt-in no es input (R4, historia.md rev. 3: siempre se emite).
  */
-export const DECISION_VERSION = 1;
+export const DECISION_VERSION = 2; // v2 (HC-005): gobierna la emisión + nivel_no_evaluado
 
 /** Fallback de fuente: por qué la distancia o la energía no son medidas. */
 export const MOTIVOS_FALLBACK = [
@@ -27,6 +28,7 @@ export const MOTIVOS_FALLBACK = [
   'can_cobertura_insuficiente',
   'can_no_monotono',
   'can_fuera_de_banda',
+  'can_muestra_insuficiente', // HC-005: < 5 L o < 10 km (umbrales de la ex consumoCanSegmento)
   'can_combustible_no_soportado',
   'telemetria_pendiente', // reservado: firma provisional (PR3)
   'ventana_excede_tope', // el resumidor CAN no lee ventanas más largas que el tope
@@ -34,7 +36,9 @@ export const MOTIVOS_FALLBACK = [
 export type MotivoFallback = (typeof MOTIVOS_FALLBACK)[number];
 
 /** Anotaciones de auditoría: no son fallback ni cambian fuente o nivel. */
-export const ALERTAS_DECISION = ['discrepancia_can'] as const;
+// nivel_no_evaluado (HC-005): can_83 sin nivel 89 comparable (capacidad NULL, recarga o
+// sin 89). Distinto de «sin alerta»: el chequeo cruzado no se hizo.
+export const ALERTAS_DECISION = ['discrepancia_can', 'nivel_no_evaluado'] as const;
 export type AlertaDecision = (typeof ALERTAS_DECISION)[number];
 
 export const FUENTES_DISTANCIA = ['teltonika_gps', 'movil_gps', 'routes_estimada'] as const;
@@ -172,6 +176,10 @@ function guardrail83(e: EntradaDecisionFuente, c: Resumen83, km: number): Motivo
   ) {
     return 'can_no_monotono';
   }
+  // Positiva: NaN nunca pasa. Mismo epsilon que tenía consumoCanSegmento.
+  if (!(c.litros + 1e-9 >= LITROS_MINIMOS_KM_POR_LITRO && km + 1e-9 >= KM_MINIMOS_KM_POR_LITRO)) {
+    return 'can_muestra_insuficiente';
+  }
   const l100 = (c.litros / km) * 100;
   const base = e.consumoBasePor100km;
   const enBase =
@@ -200,7 +208,9 @@ export function decidirFuenteHuella(e: EntradaDecisionFuente): DecisionFuente {
       energia = 'can_83';
       litrosCan = e.can83.litros;
       const nivel = e.litrosNivelSinRecarga;
-      if (nivel !== null && Math.abs(nivel - litrosCan) / litrosCan > CAN_DISCREPANCIA_NIVEL) {
+      if (nivel === null) {
+        alertas.push('nivel_no_evaluado');
+      } else if (Math.abs(nivel - litrosCan) / litrosCan > CAN_DISCREPANCIA_NIVEL) {
         alertas.push('discrepancia_can');
       }
     }
