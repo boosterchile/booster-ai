@@ -69,7 +69,7 @@ function makeDb(queues: DbQueues = {}) {
   };
 }
 
-const TRIP_ID = '11111111-1111-1111-1111-111111111111';
+const TRIP_ID = '11111111-1111-4111-8111-111111111111';
 const SHIPPER_EMP_ID = 'shipper-emp';
 const CARRIER_EMP_ID = 'carrier-emp';
 

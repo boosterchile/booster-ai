@@ -19,7 +19,7 @@ function makeLogger() {
   return logger;
 }
 
-const PAYLOAD = { documentId: '11111111-1111-1111-1111-111111111111' };
+const PAYLOAD = { documentId: '11111111-1111-4111-8111-111111111111' };
 
 function envelope(overrides?: Record<string, unknown>) {
   return {
