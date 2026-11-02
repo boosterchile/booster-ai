@@ -64,6 +64,11 @@ const POLL_ACTIVE_MS = 30_000;
 /** 5min para trips cerrados — la posición no cambia. */
 const POLL_CLOSED_MS = 300_000;
 
+/** 404 = token no existe; 410 = expirado. Ninguno cambia al reintentar. */
+function isTokenGone(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || error.status === 410);
+}
+
 export function usePublicTracking(token: string, opts: { enabled?: boolean } = {}) {
   const enabled = opts.enabled !== false && token.length > 0;
   const query = useQuery<PublicTrackingFoundResponse>({
@@ -72,6 +77,9 @@ export function usePublicTracking(token: string, opts: { enabled?: boolean } = {
       api.get<PublicTrackingFoundResponse>(`/public/tracking/${token}`, LIVE_TRACKING_FETCH),
     enabled,
     refetchInterval: (query) => {
+      if (isTokenGone(query.state.error)) {
+        return false;
+      }
       const data = query.state.data;
       if (!data) {
         return POLL_ACTIVE_MS;
@@ -80,8 +88,7 @@ export function usePublicTracking(token: string, opts: { enabled?: boolean } = {
     },
     ...LIVE_TRACKING_QUERY,
     retry: (failureCount, error) => {
-      // 404 = token no existe / formato inválido. No retry.
-      if (error instanceof ApiError && error.status === 404) {
+      if (isTokenGone(error)) {
         return false;
       }
       return failureCount < 2;
