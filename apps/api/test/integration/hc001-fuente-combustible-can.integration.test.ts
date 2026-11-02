@@ -4,6 +4,8 @@ import * as schema from '../../src/db/schema.js';
 import {
   GuardaFuenteCanError,
   aplicarFuenteCan,
+  destinoDe,
+  formatoDestino,
   main,
 } from '../../src/jobs/hc001-fuente-combustible-can.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
@@ -131,26 +133,70 @@ describe('integration: job HC-001 fuente_combustible_can', () => {
     expect(await leer()).toEqual(INICIAL);
   });
 
+  const conQuery = (q: string) => `${handle.url}${handle.url.includes('?') ? '&' : '?'}${q}`;
   const cli = (env: Record<string, string>) =>
-    main({ DATABASE_URL: handle.url, CONFIRMAR_HOST: '127.0.0.1', DRY_RUN: 'false', ...env });
+    main({
+      DATABASE_URL: handle.url,
+      CONFIRMAR_DESTINO: formatoDestino(destinoDe(handle.url)),
+      DRY_RUN: 'false',
+      ...env,
+    });
+  const dbCodificada = () => {
+    const u = new URL(handle.url);
+    const db = u.pathname.slice(1);
+    u.pathname = `/%${db.charCodeAt(0).toString(16)}${db.slice(1)}`;
+    return {
+      DATABASE_URL: u.toString(),
+      CONFIRMAR_DESTINO: `${u.hostname}:${u.port}${u.pathname}`,
+    };
+  };
 
   test.each([
-    ['DRY_RUN con typo queda en dry-run', { SENTIDO: 'up', DRY_RUN: 'flase' }, null],
-    ['SENTIDO inválido aborta', { SENTIDO: 'arriba' }, /SENTIDO/],
-    ['reversa sin up previo aborta', { SENTIDO: 'reversa' }, /KZXB64/],
-    ['sin CONFIRMAR_HOST no escribe', { SENTIDO: 'up', CONFIRMAR_HOST: '' }, /CONFIRMAR_HOST/],
+    ['DRY_RUN con typo queda en dry-run', () => ({ SENTIDO: 'up', DRY_RUN: 'flase' }), null],
+    ['SENTIDO inválido aborta', () => ({ SENTIDO: 'arriba' }), /SENTIDO/],
+    ['reversa sin up previo aborta', () => ({ SENTIDO: 'reversa' }), /KZXB64/],
     [
-      'CONFIRMAR_HOST incorrecto no escribe',
-      { SENTIDO: 'up', CONFIRMAR_HOST: 'db.prod' },
-      /CONFIRMAR_HOST/,
+      'sin CONFIRMAR_DESTINO no escribe',
+      () => ({ SENTIDO: 'up', CONFIRMAR_DESTINO: '' }),
+      /CONFIRMAR_DESTINO/,
     ],
-  ])('main(): %s', async (_c, env, error) => {
-    const r = cli(env);
+    [
+      'CONFIRMAR_DESTINO incorrecto',
+      () => ({ SENTIDO: 'up', CONFIRMAR_DESTINO: 'localhost:5436/booster_ai' }),
+      /CONFIRMAR_DESTINO/,
+    ],
+    [
+      'host vacío + confirmación vacía',
+      () => ({ SENTIDO: 'up', DATABASE_URL: 'postgresql:///test', CONFIRMAR_DESTINO: '' }),
+      /ambiguo/,
+    ],
+    [
+      '?host= distinto',
+      () => ({ SENTIDO: 'up', DATABASE_URL: conQuery('host=10.9.9.9') }),
+      /ambiguo/,
+    ],
+    ['?port= distinto', () => ({ SENTIDO: 'up', DATABASE_URL: conQuery('port=1') }), /ambiguo/],
+    [
+      'socket',
+      () => ({
+        SENTIDO: 'up',
+        DATABASE_URL: 'socket:/var/run/postgresql?db=test',
+        CONFIRMAR_DESTINO: '',
+      }),
+      /ambiguo/,
+    ],
+    [
+      'DB url-encoded confirmada sin decodificar',
+      () => ({ SENTIDO: 'up', ...dbCodificada() }),
+      /CONFIRMAR_DESTINO/,
+    ],
+  ] as const)('main(): %s', async (_c, env, error) => {
+    const r = cli(env() as Record<string, string>);
     await (error ? expect(r).rejects.toThrow(error) : expect(r).resolves.toHaveLength(3));
     expect(await leer()).toEqual(INICIAL);
   });
 
-  test('main(): con CONFIRMAR_HOST correcto escribe las 3 filas', async () => {
+  test('main(): con CONFIRMAR_DESTINO correcto escribe las 3 filas', async () => {
     await expect(cli({ SENTIDO: 'up' })).resolves.toHaveLength(3);
     expect((await leer()).KZXB64).toBe('83');
   });
