@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type EntradaDecisionFuente,
   MOTIVOS_FALLBACK,
+  type Reconstruccion,
   decidirFuenteHuella,
 } from './decidir-fuente-huella.js';
 
@@ -9,8 +10,8 @@ type E = EntradaDecisionFuente;
 type C = Partial<NonNullable<E['can83']>>;
 // Sintético: Teltonika, GPS 100 % sobre 400 km, 83 limpio con 140 L (35 L/100 km).
 const base: E = {
-  dispositivo: 'teltonika',
-  reconstruccion: { estado: 'ok', coberturaPct: 100, distanciaKm: 400 },
+  gpsTeltonika: { estado: 'ok', coberturaPct: 100, distanciaKm: 400 },
+  gpsMovil: null,
   pingsEnVentana: 500,
   combustible: 'diesel',
   can83: { lecturas: 400, coberturaKmPct: 99, pasosNegativos: 0, saltoMaxPorPasoL: 1, litros: 140 },
@@ -21,7 +22,12 @@ const base: E = {
 };
 const con = (o: Partial<E>) => decidirFuenteHuella({ ...base, ...o });
 const can = (o: C): Partial<E> => ({ can83: { ...(base.can83 as NonNullable<E['can83']>), ...o } });
-const rec = (r: E['reconstruccion']): Partial<E> => ({ reconstruccion: r });
+const rec = (r: Reconstruccion): Partial<E> => ({ gpsTeltonika: r });
+const mv = (r: Reconstruccion): Partial<E> => ({ gpsTeltonika: null, gpsMovil: r });
+const ok = (coberturaPct: number, distanciaKm = 400) =>
+  ({ estado: 'ok', coberturaPct, distanciaKm }) as const;
+const ab = (motivo: 'routes_error' | 'cap_exceeded' | 'sin_observacion') =>
+  ({ estado: 'abort', motivo }) as const;
 
 describe('decidirFuenteHuella (HC-001)', () => {
   it('AC1: Teltonika ≥95 % + 83 válido → teltonika_gps, can_83, primario, final', () => {
@@ -57,6 +63,17 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['AC3: 35 con base 15', { consumoBasePor100km: 15 }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['AC3: 35 con base 80', { consumoBasePor100km: 80 }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['AC3: eléctrico', { combustible: 'electrico' }, 'modelo_perfil', 'can_combustible_no_soportado', [], 'secundario_modeled'],
+    ['NaN lecturas', can({ lecturas: Number.NaN }), 'modelo_perfil', 'can_sin_lecturas', [], 'secundario_modeled'],
+    ['Infinity lecturas', can({ lecturas: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_sin_lecturas', [], 'secundario_modeled'],
+    ['NaN cobertura 83', can({ coberturaKmPct: Number.NaN }), 'modelo_perfil', 'can_cobertura_insuficiente', [], 'secundario_modeled'],
+    ['Infinity cobertura 83', can({ coberturaKmPct: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_cobertura_insuficiente', [], 'secundario_modeled'],
+    ['NaN pasos', can({ pasosNegativos: Number.NaN }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
+    ['NaN salto', can({ saltoMaxPorPasoL: Number.NaN }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
+    ['Infinity salto', can({ saltoMaxPorPasoL: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
+    ['NaN litros', can({ litros: Number.NaN }), 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
+    ['Infinity litros', can({ litros: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
+    ['NaN base', { consumoBasePor100km: Number.NaN }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
+    ['Infinity base', { consumoBasePor100km: Number.POSITIVE_INFINITY }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['banda: 35 con base 30', { consumoBasePor100km: 30 }, 'can_83', null, [], 'primario_verificable'],
     ['AC4: solo nivel 276 L', { can83: null, litrosNivelSinRecarga: 276 }, 'modelo_perfil', 'can_sin_lecturas', [], 'secundario_modeled'],
     ['AC5: sin peso + 83', { pesoDeclarado: false }, 'can_83', 'peso_ausente', [], 'primario_verificable'],
@@ -83,8 +100,20 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['0 pings', { ...rec({ estado: 'abort', motivo: 'sin_observacion' }), pingsEnVentana: 0 }, 'routes_estimada', 'modelo_perfil', 'sin_pings_en_ventana', 'final'],
     ['sin continuidad', rec({ estado: 'abort', motivo: 'sin_observacion' }), 'routes_estimada', 'modelo_perfil', 'sin_observacion_continua', 'final'],
     ['routes_error', rec({ estado: 'abort', motivo: 'routes_error' }), 'routes_estimada', 'modelo_perfil', 'routes_error', 'provisional'],
-    ['AC10 sin dispositivo, sin perfil', { dispositivo: 'ninguno', ...rec({ estado: 'abort', motivo: 'sin_observacion' }), perfilEnergetico: 'ninguno' }, 'routes_estimada', 'por_defecto', 'sin_dispositivo', 'final'],
-    ['AC10 móvil GPS', { dispositivo: 'ninguno', perfilEnergetico: 'tipo_vehiculo' }, 'movil_gps', 'modelo_perfil', 'sin_dispositivo', 'final'],
+    ['AC10 sin dispositivo, sin perfil', { ...mv(ab('sin_observacion')), perfilEnergetico: 'ninguno' }, 'routes_estimada', 'por_defecto', 'sin_dispositivo', 'final'],
+    ['AC10 móvil GPS', { ...mv(ok(100)), perfilEnergetico: 'tipo_vehiculo' }, 'movil_gps', 'modelo_perfil', 'sin_dispositivo', 'final'],
+    ['F2 sin dispositivo + routes_error', mv(ab('routes_error')), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'provisional'],
+    ['N1 Teltonika 70 % + móvil 90 %', { ...rec(ok(70)), gpsMovil: ok(90) }, 'movil_gps', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['N1 Teltonika routes_error + móvil 90 %', { ...rec(ab('routes_error')), gpsMovil: ok(90) }, 'movil_gps', 'modelo_perfil', 'routes_error', 'provisional'],
+    ['N1 Teltonika 70 % + móvil 70 %', { ...rec(ok(70)), gpsMovil: ok(70) }, 'routes_estimada', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['F3 cobertura 120', rec(ok(120)), 'routes_estimada', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['F3 cobertura -5', rec(ok(-5)), 'routes_estimada', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['F3 cobertura NaN', rec(ok(Number.NaN)), 'routes_estimada', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['F3 cobertura Infinity', rec(ok(Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['distancia Teltonika NaN', rec(ok(100, Number.NaN)), 'routes_estimada', 'modelo_perfil', 'cobertura_bajo_umbral', 'final'],
+    ['móvil cobertura NaN', mv(ok(Number.NaN)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],
+    ['móvil cobertura Infinity', mv(ok(Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],
+    ['móvil distancia Infinity', mv(ok(100, Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],
   ] as const)('AC6/AC10 %s → %s, %s, %s, %s', (_c, o, distancia, energia, motivo, completitud) => {
     const d = con(o as Partial<E>);
     expect(d).toMatchObject({ fuenteDistancia: distancia, fuenteEnergia: energia, completitud });
@@ -93,22 +122,31 @@ describe('decidirFuenteHuella (HC-001)', () => {
   });
 
   it('invariante: Teltonika + routes_estimada nunca tiene motivo null', () => {
-    const recons: E['reconstruccion'][] = [
+    const recons: Reconstruccion[] = [
       { estado: 'ok', coberturaPct: 0, distanciaKm: 0 },
       { estado: 'ok', coberturaPct: 79.99, distanciaKm: 400 },
       { estado: 'abort', motivo: 'routes_error' },
       { estado: 'abort', motivo: 'cap_exceeded' },
       { estado: 'abort', motivo: 'sin_observacion' },
     ];
-    for (const reconstruccion of recons) {
+    for (const gpsTeltonika of recons) {
       for (const [pesoDeclarado, pingsEnVentana] of [
         [true, 0],
         [false, 10],
       ] as const) {
-        const d = con({ reconstruccion, pesoDeclarado, pingsEnVentana });
+        const d = con({ gpsTeltonika, pesoDeclarado, pingsEnVentana });
         expect(d.fuenteDistancia).toBe('routes_estimada');
         expect(d.motivoFallback).not.toBeNull();
       }
     }
+  });
+
+  it('AC4: discrepancia_can solo alerta (no cambia fuente, nivel ni motivo); la config no bloquea', () => {
+    const { alertas, ...conAlerta } = con({ litrosNivelSinRecarga: 276 });
+    const { alertas: sinAlertas, ...sinAlerta } = con({ litrosNivelSinRecarga: null });
+    expect([alertas, sinAlertas]).toEqual([['discrepancia_can'], []]);
+    expect(conAlerta).toEqual(sinAlerta);
+    const kzxb64 = { ...base, fuenteCombustibleCan: '89' } as E;
+    expect(decidirFuenteHuella(kzxb64)).toEqual(decidirFuenteHuella(base));
   });
 });

@@ -58,11 +58,17 @@ export interface Resumen83 {
   litros: number;
 }
 
+/** Reconstrucción de la distancia en la ventana con una fuente GPS. */
+export type Reconstruccion =
+  | { estado: 'ok'; coberturaPct: number; distanciaKm: number }
+  | { estado: 'abort'; motivo: 'routes_error' | 'cap_exceeded' | 'sin_observacion' };
+
 export interface EntradaDecisionFuente {
-  dispositivo: 'teltonika' | 'ninguno';
-  reconstruccion:
-    | { estado: 'ok'; coberturaPct: number; distanciaKm: number }
-    | { estado: 'abort'; motivo: 'routes_error' | 'cap_exceeded' | 'sin_observacion' };
+  /** null = el vehículo no tiene Teltonika. */
+  gpsTeltonika: Reconstruccion | null;
+  /** GPS del móvil del conductor; null = sin posiciones del móvil. */
+  gpsMovil: Reconstruccion | null;
+  /** Pings del Teltonika en la ventana. */
   pingsEnVentana: number;
   combustible: string | null;
   /** null = no llegó ninguna lectura del 83 en la ventana. */
@@ -93,24 +99,50 @@ type Distancia = {
   motivo: MotivoFallback | null;
 };
 
+const fin = (x: number) => Number.isFinite(x);
+
+/** Usable para R1: ok, cobertura en [80, 100] y km > 0, todo finito (entrada inválida no lanza). */
+function usable(r: Reconstruccion | null): r is Extract<Reconstruccion, { estado: 'ok' }> {
+  return (
+    r?.estado === 'ok' &&
+    fin(r.coberturaPct) &&
+    r.coberturaPct >= THRESHOLD_SECUNDARIO_MODELED_PCT &&
+    r.coberturaPct <= 100 &&
+    fin(r.distanciaKm) &&
+    r.distanciaKm > 0
+  );
+}
+
+function motivoNoUsable(r: Reconstruccion, pings: number): MotivoFallback {
+  if (r.estado === 'ok') {
+    return 'cobertura_bajo_umbral';
+  }
+  if (r.motivo === 'routes_error') {
+    return 'routes_error';
+  }
+  if (r.motivo === 'cap_exceeded') {
+    return 'cap_huecos';
+  }
+  return pings === 0 ? 'sin_pings_en_ventana' : 'sin_observacion_continua';
+}
+
+/** R1: Teltonika ≥80 %, si no móvil ≥80 %, si no Routes con motivo. */
 function distancia(e: EntradaDecisionFuente): Distancia {
-  const r = e.reconstruccion;
-  const sinDisp = e.dispositivo === 'ninguno' ? 'sin_dispositivo' : null;
-  if (r.estado === 'ok' && r.coberturaPct >= THRESHOLD_SECUNDARIO_MODELED_PCT) {
-    const fuente = e.dispositivo === 'teltonika' ? 'teltonika_gps' : 'movil_gps';
-    return { fuente, coberturaPct: r.coberturaPct, km: r.distanciaKm, motivo: sinDisp };
+  const t = e.gpsTeltonika;
+  const m = e.gpsMovil;
+  const motivo = t === null ? 'sin_dispositivo' : motivoNoUsable(t, e.pingsEnVentana);
+  if (usable(t)) {
+    return {
+      fuente: 'teltonika_gps',
+      coberturaPct: t.coberturaPct,
+      km: t.distanciaKm,
+      motivo: null,
+    };
   }
-  let motivo: MotivoFallback = 'cobertura_bajo_umbral';
-  if (r.estado === 'abort' && r.motivo === 'routes_error') {
-    motivo = 'routes_error';
+  if (usable(m)) {
+    return { fuente: 'movil_gps', coberturaPct: m.coberturaPct, km: m.distanciaKm, motivo };
   }
-  if (r.estado === 'abort' && r.motivo === 'cap_exceeded') {
-    motivo = 'cap_huecos';
-  }
-  if (r.estado === 'abort' && r.motivo === 'sin_observacion') {
-    motivo = e.pingsEnVentana === 0 ? 'sin_pings_en_ventana' : 'sin_observacion_continua';
-  }
-  return { fuente: 'routes_estimada', coberturaPct: 0, km: 0, motivo: sinDisp ?? motivo };
+  return { fuente: 'routes_estimada', coberturaPct: 0, km: 0, motivo };
 }
 
 /** null si el 83 es usable; si no, el guardrail que lo descarta. */
@@ -118,20 +150,23 @@ function guardrail83(e: EntradaDecisionFuente, c: Resumen83, km: number): Motivo
   if (!e.combustible || !COMBUSTIBLES_83.has(e.combustible)) {
     return 'can_combustible_no_soportado';
   }
-  if (c.lecturas < 2) {
+  // Guardrails en forma positiva: NaN/Infinity nunca pasan (QA F1).
+  if (!(fin(c.lecturas) && c.lecturas >= 2)) {
     return 'can_sin_lecturas';
   }
-  if (c.coberturaKmPct < THRESHOLD_PRIMARIO_PCT) {
+  if (!(c.coberturaKmPct >= THRESHOLD_PRIMARIO_PCT && c.coberturaKmPct <= 100)) {
     return 'can_cobertura_insuficiente';
   }
-  if (c.pasosNegativos > 0 || c.saltoMaxPorPasoL > CAN_SALTO_MAX_L_POR_PASO) {
+  if (!(c.pasosNegativos === 0 && c.saltoMaxPorPasoL <= CAN_SALTO_MAX_L_POR_PASO)) {
     return 'can_no_monotono';
   }
   const l100 = (c.litros / km) * 100;
   const base = e.consumoBasePor100km;
-  const fueraBase =
-    base !== null && (l100 < base * CAN_BANDA_VS_BASE.min || l100 > base * CAN_BANDA_VS_BASE.max);
-  if (l100 < CAN_BANDA_L_100KM.min || l100 > CAN_BANDA_L_100KM.max || fueraBase) {
+  const enBase =
+    base === null || (l100 >= base * CAN_BANDA_VS_BASE.min && l100 <= base * CAN_BANDA_VS_BASE.max);
+  if (
+    !(fin(c.litros) && l100 >= CAN_BANDA_L_100KM.min && l100 <= CAN_BANDA_L_100KM.max && enBase)
+  ) {
     return 'can_fuera_de_banda';
   }
   return null;
@@ -164,7 +199,12 @@ export function decidirFuenteHuella(e: EntradaDecisionFuente): DecisionFuente {
     // R5: peso_ausente solo se registra; no baja nivel ni bloquea can_83.
     motivoFallback: d.motivo ?? motivoCan ?? (e.pesoDeclarado ? null : 'peso_ausente'),
     alertas,
-    completitud: d.motivo === 'routes_error' ? 'provisional' : 'final',
+    // QA F2: provisional si alguna fuente GPS falló por Routes y no se midió con Teltonika.
+    completitud:
+      d.fuente !== 'teltonika_gps' &&
+      [e.gpsTeltonika, e.gpsMovil].some((r) => r?.estado === 'abort' && r.motivo === 'routes_error')
+        ? 'provisional'
+        : 'final',
     nivel: derivarNivelCertificacion({
       precisionMethod:
         energia === 'can_83'
