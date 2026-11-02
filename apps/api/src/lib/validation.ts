@@ -21,10 +21,13 @@ const sinPattern = (i: unknown) => {
   return (i as IssueBody).code === 'invalid_format' ? resto : i;
 };
 
+/** Issues aptos para un body 400 público: sin `pattern` (TRK-006, para 400 armados fuera de zValidator). */
+export const issuesPublicos = (issues: readonly unknown[]) => issues.map(sinPattern);
+
 export function zodErrorBody(error: { issues: unknown[]; name: string }) {
   return {
     success: false as const,
-    error: { issues: error.issues.map(sinPattern), name: error.name },
+    error: { issues: issuesPublicos(error.issues), name: error.name },
   };
 }
 
