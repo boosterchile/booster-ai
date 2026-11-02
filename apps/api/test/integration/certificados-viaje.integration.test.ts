@@ -156,7 +156,7 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
     emitidoEn: new Date('2026-11-03T12:00:00Z'),
     fuenteDistancia: 'teltonika_gps',
     motivoFallback: null,
-    decisionVersion: 1,
+    decisionVersion: 2,
   });
   const historial = (tripId: string) =>
     handle.db

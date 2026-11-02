@@ -39,7 +39,7 @@ describe('decidirFuenteHuella (HC-001)', () => {
       alertas: [],
       completitud: 'final',
       nivel: 'primario_verificable',
-      decisionVersion: 1,
+      decisionVersion: 2,
     });
   });
 
@@ -80,7 +80,8 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['AC4: solo nivel 276 L', { can83: null, litrosNivelSinRecarga: 276 }, 'modelo_perfil', 'can_sin_lecturas', [], 'secundario_modeled'],
     ['AC5: sin peso + 83', { pesoDeclarado: false }, 'can_83', 'peso_ausente', [], 'primario_verificable'],
     ['nivel a ≤25 %', { litrosNivelSinRecarga: 170 }, 'can_83', null, [], 'primario_verificable'],
-    ['nivel con recarga', { litrosNivelSinRecarga: null }, 'can_83', null, [], 'primario_verificable'],
+    // HC-005: sin nivel comparable (capacidad NULL o recarga) → nivel_no_evaluado, no «sin alerta».
+    ['nivel con recarga o capacidad NULL', { litrosNivelSinRecarga: null }, 'can_83', null, ['nivel_no_evaluado'], 'primario_verificable'],
     [
       'BOO-HC7DJX: 83 216 L vs nivel 276 L',
       { ...rec({ estado: 'ok', coberturaPct: 100, distanciaKm: 468.76 }), ...can({ litros: 216 }), litrosNivelSinRecarga: 276 },
@@ -151,7 +152,7 @@ describe('decidirFuenteHuella (HC-001)', () => {
   it('AC4: discrepancia_can solo alerta (no cambia fuente, nivel ni motivo); la config no bloquea', () => {
     const { alertas, ...conAlerta } = con({ litrosNivelSinRecarga: 276 });
     const { alertas: sinAlertas, ...sinAlerta } = con({ litrosNivelSinRecarga: null });
-    expect([alertas, sinAlertas]).toEqual([['discrepancia_can'], []]);
+    expect([alertas, sinAlertas]).toEqual([['discrepancia_can'], ['nivel_no_evaluado']]);
     expect(conAlerta).toEqual(sinAlerta);
     const kzxb64 = { ...base, fuenteCombustibleCan: '89' } as E;
     expect(decidirFuenteHuella(kzxb64)).toEqual(decidirFuenteHuella(base));

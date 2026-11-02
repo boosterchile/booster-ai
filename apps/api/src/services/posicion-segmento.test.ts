@@ -1,8 +1,8 @@
 import { getTableName } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '../db/client.js';
-import { distanciaRecorrida } from '../domain/consumo-can-segmento.js';
 import { decidirFuenteHuella } from '../domain/decidir-fuente-huella.js';
+import { distanciaRecorrida } from '../domain/resumen-can-segmento.js';
 import { resumirCanSegmento } from '../domain/resumen-can-segmento.js';
 import {
   cargarLecturasConsumoCan,

@@ -34,7 +34,7 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { posicionesMovilConductor, telemetryPoints } from '../db/schema.js';
-import type { LecturaSegmentoCan } from '../domain/consumo-can-segmento.js';
+import type { LecturaSegmentoCan } from '../domain/resumen-can-segmento.js';
 import { esCoordenadaGpsValida } from './coordenada-gps.js';
 
 /** Punto de posición uniforme para el cálculo (distancia real, cobertura, backfill). */

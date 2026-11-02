@@ -1,14 +1,34 @@
-import {
-  type LecturaSegmentoCan,
-  distanciaRecorrida,
-  soloLecturas83,
-} from './consumo-can-segmento.js';
+import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import type { Resumen83 } from './decidir-fuente-huella.js';
 import { consumoAcumuladoDe, nivelPctDe } from './segmentar-trayectos-teltonika.js';
 
+export interface LecturaSegmentoCan {
+  tMs: number;
+  lat: number;
+  lng: number;
+  io: Record<string, number>;
+}
+
+/** Solo filas con un 83 válido como contador: las solo-89 no densifican la cobertura del 83. */
+export const soloLecturas83 = (lecturas: readonly LecturaSegmentoCan[]) =>
+  lecturas.filter((l) => consumoAcumuladoDe(l.io) != null);
+
+export function distanciaRecorrida(lecturas: readonly LecturaSegmentoCan[]): number {
+  let km = 0;
+  for (let i = 1; i < lecturas.length; i++) {
+    const a = lecturas[i - 1];
+    const b = lecturas[i];
+    if (a && b) {
+      km += haversineKm(a.lat, a.lng, b.lat, b.lng);
+    }
+  }
+  return km;
+}
+
 /**
  * HC-001 parte 2 — resume el contador 83 y el nivel 89 de la ventana para
- * `decidirFuenteHuella`. Función PURA. El 83 se elige por datos, no por la
+ * `decidirFuenteHuella`. Función PURA. HC-005: es la ÚNICA lectura del 83; los
+ * litros que valida la decisión son los que emite el certificado. El 83 se elige por datos, no por la
  * config `fuente_combustible_can` (datos-can.md §4.2); los guardrails viven en
  * la decisión, acá solo se miden.
  */

@@ -10,7 +10,7 @@ import {
  * Reglas: historia.md R1–R3/R5 y datos-can.md §4 (prevalece sobre R2/AC4).
  * El opt-in no es input (R4, historia.md rev. 3: siempre se emite).
  */
-export const DECISION_VERSION = 1;
+export const DECISION_VERSION = 2; // v2 (HC-005): gobierna la emisión + nivel_no_evaluado
 
 /** Fallback de fuente: por qué la distancia o la energía no son medidas. */
 export const MOTIVOS_FALLBACK = [
@@ -34,7 +34,9 @@ export const MOTIVOS_FALLBACK = [
 export type MotivoFallback = (typeof MOTIVOS_FALLBACK)[number];
 
 /** Anotaciones de auditoría: no son fallback ni cambian fuente o nivel. */
-export const ALERTAS_DECISION = ['discrepancia_can'] as const;
+// nivel_no_evaluado (HC-005): can_83 sin nivel 89 comparable (capacidad NULL, recarga o
+// sin 89). Distinto de «sin alerta»: el chequeo cruzado no se hizo.
+export const ALERTAS_DECISION = ['discrepancia_can', 'nivel_no_evaluado'] as const;
 export type AlertaDecision = (typeof ALERTAS_DECISION)[number];
 
 export const FUENTES_DISTANCIA = ['teltonika_gps', 'movil_gps', 'routes_estimada'] as const;
@@ -200,7 +202,9 @@ export function decidirFuenteHuella(e: EntradaDecisionFuente): DecisionFuente {
       energia = 'can_83';
       litrosCan = e.can83.litros;
       const nivel = e.litrosNivelSinRecarga;
-      if (nivel !== null && Math.abs(nivel - litrosCan) / litrosCan > CAN_DISCREPANCIA_NIVEL) {
+      if (nivel === null) {
+        alertas.push('nivel_no_evaluado');
+      } else if (Math.abs(nivel - litrosCan) / litrosCan > CAN_DISCREPANCIA_NIVEL) {
         alertas.push('discrepancia_can');
       }
     }

@@ -333,7 +333,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(m).toMatchObject({
       fuenteDistancia: 'movil_gps',
       motivoFallback: 'sin_dispositivo',
-      decisionVersion: 1,
+      decisionVersion: 2,
       pesoDeclarado: true,
     });
     expect(m?.decididoEn).not.toBeNull();
@@ -358,7 +358,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(m).toMatchObject({
       fuenteDistancia: 'teltonika_gps',
       motivoFallback: 'can_sin_lecturas',
-      decisionVersion: 1,
+      decisionVersion: 2,
     });
     expect(m?.fuenteEnergia).not.toBe('can_83');
   });
@@ -383,7 +383,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(m).toMatchObject({
       fuenteDistancia: 'routes_estimada',
       motivoFallback: 'sin_dispositivo',
-      decisionVersion: 1,
+      decisionVersion: 2,
       alertasDecision: [],
     });
     expect(m?.decididoEn).not.toBeNull();
