@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type LecturaSegmentoCan, distanciaRecorrida } from './consumo-can-segmento.js';
+import {
+  type LecturaSegmentoCan,
+  consumoCanSegmento,
+  distanciaRecorrida,
+  soloLecturas83,
+} from './consumo-can-segmento.js';
 import { decidirFuenteHuella } from './decidir-fuente-huella.js';
 import { resumirCanSegmento } from './resumen-can-segmento.js';
 
@@ -107,5 +112,33 @@ describe('resumirCanSegmento (HC-001 parte 2)', () => {
     expect(r.litrosNivelSinRecarga).toBeCloseTo(120, 6);
     expect(d).toMatchObject({ fuenteEnergia: 'can_83', alertas: [] });
     expect(d.litrosCan).toBeCloseTo(140, 6);
+  });
+});
+
+describe('filas solo-89 no densifican la cobertura del 83 (QA #868 v2)', () => {
+  // 83 en A y D (recta ≈111,2 km); solo-89 en B y C con desvío (≈155 km); segmento 155,6 km.
+  const filas: LecturaSegmentoCan[] = [
+    { tMs: 0, lat: -33, lng: -70.6, io: { '83': 10000 } },
+    { tMs: 1, lat: -33.33, lng: -70.1, io: { '89': 50 } },
+    { tMs: 2, lat: -33.67, lng: -70.1, io: { '89': 49 } },
+    { tMs: 3, lat: -34, lng: -70.6, io: { '83': 10600 } },
+  ];
+
+  it('filas solo-89 no cambian el resultado del 83: sigue cobertura_insuficiente', () => {
+    // Sin el filtro, las solo-89 densifican la polilínea y el 83 pasaría con 60 L.
+    expect(consumoCanSegmento({ lecturas: filas, distanciaSegmentoKm: 155.6 })).toEqual({
+      litros: 60,
+    });
+    expect(
+      consumoCanSegmento({ lecturas: soloLecturas83(filas), distanciaSegmentoKm: 155.6 }),
+    ).toEqual({ litros: null, motivo: 'cobertura_insuficiente' });
+  });
+
+  it('resumidor: la cobertura del 83 tampoco se densifica', () => {
+    const recta = distanciaRecorrida(soloLecturas83(filas));
+    expect(resumirCanSegmento(filas, 155.6, null).can83?.coberturaKmPct).toBeCloseTo(
+      (recta / 155.6) * 100,
+      6,
+    );
   });
 });

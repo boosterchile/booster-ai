@@ -159,4 +159,11 @@ describe('decidirFuenteHuella (HC-001)', () => {
   it.each(['Diesel', ' DIESEL ', 'Gasolina'])('N3: combustible %j se normaliza → can_83', (c) => {
     expect(con({ combustible: c }).fuenteEnergia).toBe('can_83');
   });
+  it('ventana sobre el tope: motivo propio en vez de can_sin_lecturas', () => {
+    expect(con({ can83: null, can83Omitido: 'ventana_excede_tope' })).toMatchObject({
+      fuenteDistancia: 'teltonika_gps',
+      fuenteEnergia: 'modelo_perfil',
+      motivoFallback: 'ventana_excede_tope',
+    });
+  });
 });

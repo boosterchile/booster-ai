@@ -1,4 +1,8 @@
-import { type LecturaSegmentoCan, distanciaRecorrida } from './consumo-can-segmento.js';
+import {
+  type LecturaSegmentoCan,
+  distanciaRecorrida,
+  soloLecturas83,
+} from './consumo-can-segmento.js';
 import type { Resumen83 } from './decidir-fuente-huella.js';
 import { consumoAcumuladoDe, nivelPctDe } from './segmentar-trayectos-teltonika.js';
 
@@ -42,7 +46,7 @@ export function resumirCanSegmento(
         saltoMaxPorPasoL = Math.max(saltoMaxPorPasoL, d);
       }
     }
-    const cubiertaKm = distanciaRecorrida(ord.slice(pri.idx, ult.idx + 1));
+    const cubiertaKm = distanciaRecorrida(soloLecturas83(ord.slice(pri.idx, ult.idx + 1)));
     can83 = {
       lecturas: c.length,
       coberturaKmPct: distanciaKm > 0 ? Math.min(100, (cubiertaKm / distanciaKm) * 100) : 0,

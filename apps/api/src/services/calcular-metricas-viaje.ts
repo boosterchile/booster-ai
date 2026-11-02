@@ -13,7 +13,11 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
-import { type LecturaSegmentoCan, consumoCanSegmento } from '../domain/consumo-can-segmento.js';
+import {
+  type LecturaSegmentoCan,
+  consumoCanSegmento,
+  soloLecturas83,
+} from '../domain/consumo-can-segmento.js';
 import {
   type DecisionFuente,
   type Reconstruccion,
@@ -115,7 +119,11 @@ async function medirLitrosCan(opts: {
       desde: opts.desde,
       hasta: opts.hasta,
     }));
-  const resultado = consumoCanSegmento({ lecturas, distanciaSegmentoKm: opts.distanciaKm });
+  // Solo filas con el 83: las solo-89 no cambian la emisión respecto de main (QA #868 v2).
+  const resultado = consumoCanSegmento({
+    lecturas: soloLecturas83(lecturas),
+    distanciaSegmentoKm: opts.distanciaKm,
+  });
   if (resultado.litros === null) {
     huellaCanbusNoUsadoCounter.add(1, { motivo: resultado.motivo });
     opts.logger.warn(
@@ -801,7 +809,12 @@ async function recalcularNivelPostEntregaInner(opts: {
   let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
   let lecturasCan: LecturaSegmentoCan[] | null = null;
   const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
-  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS) {
+  const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
+  // Incoherencia conocida (QA #868 v2): sobre el tope, el resumidor no lee,
+  // pero medirLitrosCan (config '83') lee toda la ventana igual que en main y
+  // la emisión puede salir exacto_canbus con la decisión en ventana_excede_tope.
+  // No se cambia la emisión de main; lo decide la parte 3 (test que lo fija).
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && ventanaExcede) {
     logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
   } else if (fuente === 'teltonika_gps' && rec.estado === 'ok') {
     try {
@@ -828,6 +841,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       pingsEnVentana: pings.length,
       combustible: vehiculo.fuelType,
       ...resumenCan,
+      can83Omitido: ventanaExcede ? 'ventana_excede_tope' : null,
       consumoBasePor100km: consumoBase,
       // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
       perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',

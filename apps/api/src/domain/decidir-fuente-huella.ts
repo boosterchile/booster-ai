@@ -29,6 +29,7 @@ export const MOTIVOS_FALLBACK = [
   'can_fuera_de_banda',
   'can_combustible_no_soportado',
   'telemetria_pendiente', // reservado: firma provisional (PR3)
+  'ventana_excede_tope', // el resumidor CAN no lee ventanas más largas que el tope
 ] as const;
 export type MotivoFallback = (typeof MOTIVOS_FALLBACK)[number];
 
@@ -74,6 +75,8 @@ export interface EntradaDecisionFuente {
   combustible: string | null;
   /** null = no llegó ninguna lectura del 83 en la ventana. */
   can83: Resumen83 | null;
+  /** Por qué no se leyó el 83 aunque pudo haber lecturas (motivo en vez de can_sin_lecturas). */
+  can83Omitido?: 'ventana_excede_tope' | null;
   /** Consumo por nivel (84/89) suavizado; solo chequeo cruzado. null si no hay o hubo recarga. */
   litrosNivelSinRecarga: number | null;
   consumoBasePor100km: number | null;
@@ -191,7 +194,8 @@ export function decidirFuenteHuella(e: EntradaDecisionFuente): DecisionFuente {
   const alertas: AlertaDecision[] = [];
   // El 83 solo mide sobre la distancia GPS del propio Teltonika (el 107 nunca es fuente).
   if (d.fuente === 'teltonika_gps') {
-    motivoCan = e.can83 === null ? 'can_sin_lecturas' : guardrail83(e, e.can83, d.km);
+    motivoCan =
+      e.can83 === null ? (e.can83Omitido ?? 'can_sin_lecturas') : guardrail83(e, e.can83, d.km);
     if (e.can83 !== null && motivoCan === null) {
       energia = 'can_83';
       litrosCan = e.can83.litros;

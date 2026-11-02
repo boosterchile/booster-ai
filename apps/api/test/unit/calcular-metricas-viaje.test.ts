@@ -1368,6 +1368,66 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       }
     });
 
+    // Tope de ventana del resumidor (QA #868 v2): mata >→>=, 70 días y sin tope.
+    const DIAS7 = 7 * 24 * 60 * 60 * 1000;
+    const conVentana = (ms: number, vehicle: Record<string, unknown>) =>
+      makeDb({
+        selects: selects({
+          vehicle,
+          assignment: { pickedUpAt: new Date(DELIVERED.getTime() - ms) },
+        }),
+        updates: [[]],
+      });
+
+    it('ventana 7 días + 1 ms sin config 83 → el resumidor no lee y el motivo es ventana_excede_tope', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
+      await run(db);
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db)).toMatchObject({
+        fuenteDistancia: 'teltonika_gps',
+        motivoFallback: 'ventana_excede_tope',
+      });
+    });
+
+    it('ventana de exactamente 7 días → el resumidor sí lee', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7, { fuenteCombustibleCan: 'sin_sensor' });
+      await run(db);
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
+      expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
+    });
+
+    it('incoherencia fijada: sobre el tope con config 83, la emisión lee la ventana como main (lo decide la parte 3)', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      const db = conVentana(DIAS7 + 1, VEH_CAN);
+      await run(db);
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo medirLitrosCan
+      const setArg = setDe(db);
+      expect(setArg.precisionMethod).toBe('exacto_canbus');
+      expect(setArg.motivoFallback).toBe('ventana_excede_tope');
+      expect(setArg.fuenteEnergia).not.toBe('can_83');
+    });
+
+    it('filas solo-89 no cambian el resultado del 83 en la emisión (QA #868 v2)', async () => {
+      // 83 solo en el ping 0 y el 20 (≈11 km de 22): cobertura_insuficiente como en main.
+      // Las solo-89 con desvío alargarían la polilínea por sobre el 95 % si no se filtraran.
+      const pings = largo();
+      const [a, d] = [pings[0], pings[20]] as [(typeof pings)[0], (typeof pings)[0]];
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([
+        { ...a, io: { '83': 10000 } },
+        { tMs: a.tMs + 1, lat: -33.365, lng: -70.5, io: { '89': 50 } },
+        { tMs: a.tMs + 2, lat: -33.33, lng: -70.5, io: { '89': 49 } },
+        { ...d, io: { '83': 10080 } },
+      ]);
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
+    });
+
     it('83 provisionado sin lecturas → modelado como hoy, warn con el motivo y contador', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);

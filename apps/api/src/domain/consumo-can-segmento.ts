@@ -98,6 +98,13 @@ export function consumoCanSegmento(opts: {
   return { litros: Math.round(delta * 10) / 10 };
 }
 
+/**
+ * Solo las lecturas que traen el 83. El loader también trae filas solo-89
+ * (HC-001 p2) y esas no deben densificar la cobertura del 83 (QA #868 v2).
+ */
+export const soloLecturas83 = (lecturas: readonly LecturaSegmentoCan[]) =>
+  lecturas.filter((l) => consumoAcumuladoDe(l.io) != null);
+
 export function distanciaRecorrida(lecturas: readonly LecturaSegmentoCan[]): number {
   let km = 0;
   for (let i = 1; i < lecturas.length; i++) {
