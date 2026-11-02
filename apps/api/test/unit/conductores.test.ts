@@ -1853,7 +1853,7 @@ describe('POST /conductores — contrato del 400 de validarAltaConductor (TRK-00
             "issues": [
               {
                 "code": "invalid_value",
-                "message": "Invalid option: expected one of "A1"|"A2"|"A3"|"A4"|"A5"|"B"|"C"|"D"|"E"|"F"",
+                "message": "Required",
                 "path": [
                   "license_class",
                 ],

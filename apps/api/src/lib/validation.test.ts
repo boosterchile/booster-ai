@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { zValidator, zodErrorBody } from './validation.js';
+import { mensajeZod3, zValidator, zodErrorBody } from './validation.js';
 
 const schema = z.object({ name: z.string().min(1), age: z.number().int() });
 
@@ -14,6 +14,34 @@ function post(app: Hono, body: unknown) {
     body: JSON.stringify(body),
   });
 }
+
+describe('zValidator común: textos de zod 3 (D2)', () => {
+  it.each([
+    [z.object({ a: z.string() }), {}, 'Required'],
+    [z.object({ a: z.enum(['x', 'y']) }), {}, 'Required'],
+    [z.object({ a: z.string() }), { a: 1 }, 'Expected string, received number'],
+    [
+      z.object({ a: z.enum(['x', 'y']) }),
+      { a: 'z' },
+      "Invalid enum value. Expected 'x' | 'y', received 'z'",
+    ],
+    [z.object({ a: z.string().min(2) }), { a: 'b' }, 'String must contain at least 2 character(s)'],
+    [
+      z.object({ a: z.array(z.number()).max(1) }),
+      { a: [1, 2] },
+      'Array must contain at most 1 element(s)',
+    ],
+    [z.object({ a: z.number().max(5) }), { a: 9 }, 'Number must be less than or equal to 5'],
+    [z.object({ a: z.number().gt(0) }), { a: 0 }, 'Number must be greater than 0'],
+    [z.object({ a: z.string().min(1, 'propio') }), { a: '' }, 'propio'],
+  ])('%#: %j → %s', async (s, input, mensaje) => {
+    const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
+    const body = (await (await post(app, input)).json()) as {
+      error: { issues: { message: string }[] };
+    };
+    expect(body.error.issues[0]?.message).toBe(mensaje);
+  });
+});
 
 describe('zValidator común', () => {
   it('400 por defecto: { success:false, error:{ issues, name } }', async () => {
@@ -33,7 +61,9 @@ describe('zValidator común', () => {
     const res = await post(app, { name: '', age: 'x' });
     const body = (await res.json()) as { error: { issues: { path: unknown[] }[] } };
     expect(res.headers.get('content-type')).toMatch(/application\/json/);
-    expect(body).toEqual(zodErrorBody(schema.safeParse({ name: '', age: 'x' }).error as never));
+    expect(body).toEqual(
+      zodErrorBody(schema.safeParse({ name: '', age: 'x' }, { error: mensajeZod3 }).error as never),
+    );
     expect(body.error.issues.map((i) => i.path)).toEqual([['name'], ['age']]);
   });
 
