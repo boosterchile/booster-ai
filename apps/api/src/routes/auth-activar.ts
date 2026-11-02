@@ -1,11 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import { activarCuentaSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { memberships, users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
 import { cuentaYaActivada, invitacionesVigentes } from '../services/vinculo-persona.js';

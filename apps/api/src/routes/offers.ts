@@ -1,11 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
 import { offers, trips } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import {
   OfferForbiddenForPreviewError,
   OfferNotFoundForPreviewError,

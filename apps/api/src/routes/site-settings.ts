@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
 import { siteConfigSchema } from '@booster-ai/shared-schemas';
 import { Storage } from '@google-cloud/storage';
-import { zValidator } from '@hono/zod-validator';
 import { desc, eq, max } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
@@ -10,6 +9,7 @@ import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { configuracionSitio } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**

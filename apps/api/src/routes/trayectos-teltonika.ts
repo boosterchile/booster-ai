@@ -1,9 +1,9 @@
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { listarTrayectosTeltonika } from '../services/listar-trayectos-teltonika.js';

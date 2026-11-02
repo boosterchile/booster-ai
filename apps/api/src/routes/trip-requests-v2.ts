@@ -2,7 +2,6 @@ import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -20,6 +19,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,

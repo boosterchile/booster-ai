@@ -1,10 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { rotarClaveSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 import { hashClaveNumerica, verifyClaveNumerica } from '../services/clave-numerica.js';
 

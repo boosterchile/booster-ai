@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import { submitSignupRequest } from '../services/signup-request.js';
 
 /**
