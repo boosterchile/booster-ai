@@ -14,6 +14,7 @@
 //   SENTIDO       'up' | 'reversa' (required)
 //   DRY_RUN       "false" para commitear; cualquier otro valor = ROLLBACK (default)
 //   DATABASE_URL  conexión (la ejecuta Ops Platform con OK de Felipe)
+//   CONFIRMAR_DESTINO  <host>:<port>/<db> que imprime el dry-run; obligatorio con DRY_RUN=false
 // =============================================================================
 
 import { pathToFileURL } from 'node:url';
@@ -65,22 +66,70 @@ export async function aplicarFuenteCan(
   }
 }
 
-async function main(): Promise<void> {
-  const sentido = process.env.SENTIDO;
-  const dryRun = process.env.DRY_RUN !== 'false';
+export interface Destino {
+  host: string;
+  port: number;
+  db: string;
+}
+
+/**
+ * Destino que pg va a usar de verdad (`connectionParameters`, ya decodificado y
+ * con ?host=/?port= aplicados). Lanza si es ambiguo: host o DB vacíos, socket,
+ * multi-host, o ?host=/?port= distintos del host:puerto de la URL.
+ */
+export function destinoDe(connectionString: string): Destino {
+  // connectionParameters existe en runtime pero no en @types/pg.
+  const p = (
+    new pg.Client({ connectionString }) as unknown as {
+      connectionParameters: { host?: string; port?: number; database?: string };
+    }
+  ).connectionParameters;
+  const url = new URL(connectionString);
+  const host = String(p.host ?? '');
+  const db = String(p.database ?? '');
+  if (url.hostname === '' || url.pathname.length <= 1 || host === '' || db === '') {
+    throw new Error('destino ambiguo: host o DB vacíos');
+  }
+  if (host.startsWith('/') || host.includes(',')) {
+    throw new Error('destino ambiguo: socket o multi-host');
+  }
+  const qHost = url.searchParams.get('host');
+  const qPort = url.searchParams.get('port');
+  const authHost = url.hostname.replace(/^\[|\]$/g, '');
+  if (
+    (qHost !== null && qHost !== authHost) ||
+    (qPort !== null && qPort !== (url.port || '5432'))
+  ) {
+    throw new Error('destino ambiguo: ?host= o ?port= no calzan con la URL');
+  }
+  return { host, port: Number(p.port), db };
+}
+
+export const formatoDestino = (d: Destino) => `${d.host}:${d.port}/${d.db}`;
+
+/** CLI. Imprime el destino real (sin password); para escribir exige CONFIRMAR_DESTINO=<host>:<port>/<db>. */
+export async function main(env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+  const sentido = env.SENTIDO;
+  const dryRun = env.DRY_RUN !== 'false';
   if (sentido !== 'up' && sentido !== 'reversa') {
     throw new Error("SENTIDO debe ser 'up' o 'reversa'");
   }
-  if (!process.env.DATABASE_URL) {
+  if (!env.DATABASE_URL) {
     throw new Error('DATABASE_URL es requerida');
   }
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  const destino = formatoDestino(destinoDe(env.DATABASE_URL));
+  process.stdout.write(`${JSON.stringify({ msg: 'hc001 destino', destino, sentido, dryRun })}\n`);
+  if (!dryRun && (!env.CONFIRMAR_DESTINO || env.CONFIRMAR_DESTINO !== destino)) {
+    throw new Error(`CONFIRMAR_DESTINO debe ser '${destino}' para escribir; no se escribió nada`);
+  }
+  const client = new pg.Client({ connectionString: env.DATABASE_URL });
   await client.connect();
   try {
     const afectadas = await aplicarFuenteCan(client, sentido, { dryRun });
     process.stdout.write(
       `${JSON.stringify({ msg: 'hc001 fuente_can', sentido, dryRun, afectadas })}\n`,
     );
+    return afectadas;
   } finally {
     await client.end();
   }
