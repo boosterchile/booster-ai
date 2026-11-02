@@ -14,6 +14,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { consumoCanSegmento } from '../domain/consumo-can-segmento.js';
+import { type Reconstruccion, decidirFuenteHuella } from '../domain/decidir-fuente-huella.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
@@ -802,6 +803,29 @@ async function recalcularNivelPostEntregaInner(opts: {
   const coveragePct = reconstruida ? (escritura?.coveragePct ?? 0) : 0;
   const routeDataSource: RouteDataSource = reconstruida ? fuente : 'maps_directions';
 
+  // HC-001 wiring (parte 1): la decisión de fuente se REGISTRA en columnas
+  // propias, sin alterar lo que lee la emisión. Sombra: todavía no hay
+  // resumidor del 83 (can83 = null) → fuente_energia nunca es can_83 aquí.
+  const rec: Reconstruccion =
+    abortReason !== null || distanciaKmReal === null
+      ? { estado: 'abort', motivo: abortReason ?? 'sin_observacion' }
+      : { estado: 'ok', coberturaPct: coveragePct, distanciaKm: distanciaKmReal };
+  const consumoBase = vehiculo.consumptionLPer100kmBaseline
+    ? Number(vehiculo.consumptionLPer100kmBaseline)
+    : null;
+  const decision = decidirFuenteHuella({
+    gpsTeltonika: fuente === 'teltonika_gps' ? rec : null,
+    gpsMovil: fuente === 'movil_gps' ? rec : null,
+    pingsEnVentana: pings.length,
+    combustible: vehiculo.fuelType,
+    can83: null,
+    litrosNivelSinRecarga: null,
+    consumoBasePor100km: consumoBase,
+    // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
+    perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
+    pesoDeclarado: trip.cargoWeightKg !== null,
+  });
+
   // Huella real del segmento (T12) con sus dos cortes de degradación:
   //   corte #2 — cobertura < umbral (o sin reconstrucción): emisiones null.
   //   corte #3 — peso declarado ausente: emisiones null (T13). NUNCA 0: el
@@ -894,6 +918,12 @@ async function recalcularNivelPostEntregaInner(opts: {
       coveragePct: coveragePct.toString(),
       certificationLevel,
       uncertaintyFactor: uncertaintyFactor.toString(),
+      fuenteDistancia: decision.fuenteDistancia,
+      fuenteEnergia: decision.fuenteEnergia,
+      motivoFallback: decision.motivoFallback,
+      decisionVersion: decision.decisionVersion,
+      decididoEn: sql`now()`,
+      pesoDeclarado: trip.cargoWeightKg !== null,
       ...(huellaActiva
         ? {
             carbonEmissionsKgco2eActual:

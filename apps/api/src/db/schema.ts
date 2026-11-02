@@ -1700,6 +1700,14 @@ export const tripMetrics = pgTable(
     coachingModelo: varchar('coaching_modelo', { length: 50 }),
     /** Timestamp de generación. Para SLO + cache invalidation. */
     coachingGeneradoEn: timestamp('coaching_generado_en', { withTimezone: true }),
+    /** HC-001: decisión de fuente (`decidirFuenteHuella`); NULL = no registrada. */
+    fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
+    fuenteEnergia: varchar('fuente_energia', { length: 20 }),
+    motivoFallback: varchar('motivo_fallback', { length: 40 }),
+    decisionVersion: smallint('decision_version'),
+    decididoEn: timestamp('decidido_en', { withTimezone: true }),
+    /** HC-001 N2: peso declarado al decidir (peso_ausente puede quedar tapado en motivo_fallback). */
+    pesoDeclarado: boolean('peso_declarado'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },

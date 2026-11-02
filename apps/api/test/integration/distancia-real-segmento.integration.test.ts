@@ -291,6 +291,12 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         carbonEmissionsKgco2eActual: schema.tripMetrics.carbonEmissionsKgco2eActual,
         fuelConsumedLActual: schema.tripMetrics.fuelConsumedLActual,
         precisionMethod: schema.tripMetrics.precisionMethod,
+        fuenteDistancia: schema.tripMetrics.fuenteDistancia,
+        fuenteEnergia: schema.tripMetrics.fuenteEnergia,
+        motivoFallback: schema.tripMetrics.motivoFallback,
+        decisionVersion: schema.tripMetrics.decisionVersion,
+        decididoEn: schema.tripMetrics.decididoEn,
+        pesoDeclarado: schema.tripMetrics.pesoDeclarado,
       })
       .from(schema.tripMetrics)
       .where(eq(schema.tripMetrics.tripId, tripId));
@@ -322,6 +328,14 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
     expect(Number(m?.coveragePct)).toBe(100);
     expect(m?.certificationLevel).toBe('secundario_modeled');
+    // HC-001: decisión registrada (sin Teltonika → móvil con motivo).
+    expect(m).toMatchObject({
+      fuenteDistancia: 'movil_gps',
+      motivoFallback: 'sin_dispositivo',
+      decisionVersion: 1,
+      pesoDeclarado: true,
+    });
+    expect(m?.decididoEn).not.toBeNull();
   });
 
   test('vehículo CON Teltonika: mide sobre telemetria_puntos en la misma ventana y persiste teltonika_gps', async () => {
@@ -339,6 +353,13 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     const m = await metricas(tripId);
     expect(m?.routeDataSource).toBe('teltonika_gps');
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
+    // HC-001: sin resumidor del 83 todavía → energía modelada con motivo CAN.
+    expect(m).toMatchObject({
+      fuenteDistancia: 'teltonika_gps',
+      motivoFallback: 'can_sin_lecturas',
+      decisionVersion: 1,
+    });
+    expect(m?.fuenteEnergia).not.toBe('can_83');
   });
 
   test('anclaje: posiciones solo ANTES de recogido_en no cuentan → sin_observacion (no se inventa distancia)', async () => {
@@ -357,6 +378,8 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     const m = await metricas(tripId);
     expect(m?.distanceKmActual).toBeNull();
     expect(m?.routeDataSource).toBe('maps_directions');
+    // HC-001: early return sin opt-in no escribe la decisión (sigue igual que hoy).
+    expect(m?.fuenteDistancia).toBeNull();
   });
 
   test('T12 — huella activa (opt-in del transportista): emisiones_kgco2e_reales > 0 desde la distancia real del segmento, movil_gps + secundario_modeled', async () => {
@@ -393,6 +416,8 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(r.huella).toBe('peso_ausente');
     const m = await metricas(tripId);
     expect(m?.carbonEmissionsKgco2eActual).toBeNull();
+    // HC-001 N2: el peso ausente queda aparte aunque motivo_fallback diga otra cosa.
+    expect(m).toMatchObject({ pesoDeclarado: false, motivoFallback: 'sin_dispositivo' });
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
     expect(m?.routeDataSource).toBe('movil_gps');
   });
