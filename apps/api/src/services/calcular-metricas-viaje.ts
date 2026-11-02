@@ -869,7 +869,9 @@ async function recalcularNivelPostEntregaInner(opts: {
         decision?.fuenteEnergia === 'can_83' && decision.litrosCan !== null
           ? Math.round(decision.litrosCan * 10) / 10
           : null;
-      if (litrosCan === null && fuente === 'teltonika_gps') {
+      // Solo vehículos que leen el 83 (config '83'): el contador mide descartes, no ausencias
+      // (runbook incidentes-glec.md §4, QA #871 v1).
+      if (litrosCan === null && fuente === 'teltonika_gps' && lee83) {
         huellaCanbusNoUsadoCounter.add(1, {
           motivo: decision?.motivoFallback ?? 'decision_no_registrada',
         });

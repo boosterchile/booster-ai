@@ -1510,6 +1510,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
           motivoFallback: 'can_no_monotono',
           fuenteEnergia: 'modelo_perfil',
         });
+        // fix1 QA #871: config '83' + rechazo → el contador sube con el motivo.
+        expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(1, {
+          motivo: 'can_no_monotono',
+        });
       },
     );
 
@@ -1558,6 +1562,8 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
           fuenteEnergia: 'modelo_perfil',
           motivoFallback: 'can_sin_lecturas',
         });
+        // fix1 QA #871: sin '83' no es un descarte del 83 → el contador no sube.
+        expect(counter('huella_canbus_no_usado_total')?.add).not.toHaveBeenCalled();
       },
     );
 

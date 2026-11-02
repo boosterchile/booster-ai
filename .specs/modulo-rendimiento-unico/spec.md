@@ -11,7 +11,7 @@
 | `segmentar-trayectos-teltonika.ts` · `consumoCubierto` | `kmCubiertos / litros` con los litros **sin redondear** |
 | `segmentar-trayectos-teltonika.ts` · `kmPorLitroSuperaTope` | `kmCubiertos / litrosConsumidos` con los litros **redondeados a 0,1** |
 | `resumir-hub-vehiculo.ts` · `kmPorLitroDeVentana` | `Σ kmCubiertos / Σ litrosConsumidos` |
-| `consumo-can-segmento.ts` (plausibilidad de la huella CAN) | `litros / km × 100` |
+| `decidir-fuente-huella.ts` · `guardrail83` (plausibilidad de la huella CAN; antes `consumo-can-segmento.ts`, borrado en HC-005) | `litros / km × 100` |
 | web `trayectos-teltonika.tsx` · `litrosPorCienKm` | `100 / km_por_litro` ya redondeado |
 
 ## Defecto que corrige
@@ -37,7 +37,7 @@ La fila y el hub podían discrepar. Con 62,4 km y 9,96 L la fila daba 6,27 km/L 
 2. La API manda `litros_por_100_km` en cada trayecto (campo nuevo, solo se agrega). Es `null` cuando `km_por_litro` es `null`.
 3. La web muestra el L/100 km que manda la API y no calcula nada. Sin el campo (API anterior) no muestra L/100 km.
 4. Se borran `litrosPorCienKm` (web), `kmPorLitroDeVentana` (hub) y `kmPorLitroSuperaTope` (segmentar). Un `git grep` de `/ litros\b`, `100 /` y `* 100` en esos archivos no encuentra otra cuenta de rendimiento.
-5. `consumo-can-segmento` sigue dando los mismos motivos: misma cuenta, ahora importada.
+5. `guardrail83` (que reemplazó a `consumo-can-segmento` en HC-005) usa la misma cuenta L/100 km; el mínimo de muestra es `can_muestra_insuficiente`.
 6. Tope: 300 líneas netas.
 
 ## Fuera de alcance
