@@ -14,8 +14,14 @@ export function lineaMetodoDesdeMetricas(m: {
   precisionMethod: MetodoPrecision | null;
   routeDataSource: RouteDataSource | null;
   coveragePct: string | number | null;
+  glecVersion: string | null;
 }): string | null {
-  if (m.precisionMethod === null || m.routeDataSource === null || m.coveragePct === null) {
+  if (
+    m.precisionMethod === null ||
+    m.routeDataSource === null ||
+    m.coveragePct === null ||
+    m.glecVersion === null
+  ) {
     return null;
   }
   const coveragePct = Number(m.coveragePct);
@@ -26,5 +32,6 @@ export function lineaMetodoDesdeMetricas(m: {
     precisionMethod: m.precisionMethod,
     routeDataSource: m.routeDataSource,
     coveragePct,
+    glecVersion: m.glecVersion,
   });
 }

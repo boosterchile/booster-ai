@@ -31,6 +31,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'exacto_canbus',
         routeDataSource: 'teltonika_gps',
         coveragePct: 98.2,
+        glecVersion: 'v3.0',
       }),
     ).toBe('Combustible medido por CAN bus del vehículo · Ruta GPS del vehículo (cobertura 98 %)');
   });
@@ -41,6 +42,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'modelado',
         routeDataSource: 'teltonika_gps',
         coveragePct: 91.6,
+        glecVersion: 'v3.0',
       }),
     ).toBe(
       'Distancia medida por GPS del vehículo (cobertura 91 %) · Consumo modelado según GLEC v3.0',
@@ -53,6 +55,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'modelado',
         routeDataSource: 'movil_gps',
         coveragePct: 100,
+        glecVersion: 'v3.0',
       }),
     ).toBe(
       'Distancia medida por GPS del celular del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
@@ -65,6 +68,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'modelado',
         routeDataSource: 'maps_directions',
         coveragePct: 0,
+        glecVersion: 'v3.0',
       }),
     ).toBe('Distancia estimada por ruta (Google Routes) · Consumo modelado según GLEC v3.0');
   });
@@ -75,6 +79,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'por_defecto',
         routeDataSource: 'maps_directions',
         coveragePct: 0,
+        glecVersion: 'v3.0',
       }),
     ).toBe(
       'Distancia estimada por ruta (Google Routes) · Consumo estimado con factores por defecto según GLEC v3.0',
@@ -87,6 +92,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'modelado',
         routeDataSource: 'manual_declared',
         coveragePct: 0,
+        glecVersion: 'v3.0',
       }),
     ).toBe('Distancia declarada por el cliente · Consumo modelado según GLEC v3.0');
   });
@@ -96,6 +102,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
       precisionMethod: 'modelado',
       routeDataSource: 'teltonika_gps',
       coveragePct: 79.99,
+      glecVersion: 'v3.0',
     });
     expect(linea).toContain('(cobertura 79 %)');
   });
@@ -106,6 +113,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         precisionMethod: 'modelado',
         routeDataSource: 'teltonika_gps',
         coveragePct: 101,
+        glecVersion: 'v3.0',
       }),
     ).toThrow(/coveragePct/);
   });
@@ -123,6 +131,7 @@ describe('lineaMetodoCertificacion — vocabulario cerrado (ADR-077 §4)', () =>
             precisionMethod: m,
             routeDataSource: f,
             coveragePct: c,
+            glecVersion: 'v3.0',
           });
           const ctx = `${m} + ${f} + ${c}%`;
           expect(linea, ctx).not.toMatch(/verificable/i);
@@ -144,6 +153,7 @@ describe('lineaMetodoCertificacion — vocabulario cerrado (ADR-077 §4)', () =>
             precisionMethod: m,
             routeDataSource: f,
             coveragePct: c,
+            glecVersion: 'v3.0',
           });
           const ctx = `${m} + ${f} + ${c}%`;
           if (f === 'teltonika_gps' || f === 'movil_gps') {
@@ -162,6 +172,7 @@ describe('lineaMetodoCertificacion — vocabulario cerrado (ADR-077 §4)', () =>
       precisionMethod: 'exacto_canbus',
       routeDataSource: 'movil_gps',
       coveragePct: 100,
+      glecVersion: 'v3.0',
     });
     expect(linea).toMatch(/GPS del celular del conductor/);
     expect(linea).not.toMatch(/verificable/i);
@@ -174,8 +185,25 @@ describe('lineaMetodoCertificacion — vocabulario cerrado (ADR-077 §4)', () =>
         precisionMethod: 'modelado',
         routeDataSource: f,
         coveragePct: 85,
+        glecVersion: 'v3.0',
       }),
     );
     expect(new Set(lineas).size).toBe(FUENTES.length);
   });
+});
+
+describe('HC-004: la versión GLEC de la línea de método es la de la emisión', () => {
+  it.each(['modelado', 'por_defecto'] as const)(
+    '%s imprime la versión guardada y nunca un v3.0 fijo',
+    (precisionMethod) => {
+      const linea = lineaMetodoCertificacion({
+        precisionMethod,
+        routeDataSource: 'maps_directions',
+        coveragePct: 0,
+        glecVersion: 'v9.9',
+      });
+      expect(linea).toContain('según GLEC v9.9');
+      expect(linea).not.toContain('v3.0');
+    },
+  );
 });

@@ -28,6 +28,8 @@ export interface LineaMetodoInput {
   routeDataSource: RouteDataSource;
   /** Fracción del viaje cubierta por la fuente principal, [0..100]. */
   coveragePct: number;
+  /** HC-004: versión GLEC (metodología) guardada en la emisión; sin default. */
+  glecVersion: string;
 }
 
 export function lineaMetodoCertificacion(input: LineaMetodoInput): string {
@@ -40,7 +42,7 @@ export function lineaMetodoCertificacion(input: LineaMetodoInput): string {
   }
 
   const distancia = describirDistancia(input.routeDataSource, cobertura);
-  const consumo = describirConsumo(input.precisionMethod);
+  const consumo = describirConsumo(input.precisionMethod, input.glecVersion);
   return `${distancia} · ${consumo}`;
 }
 
@@ -61,7 +63,7 @@ function describirDistancia(fuente: RouteDataSource, cobertura: string): string 
   }
 }
 
-function describirConsumo(metodo: MetodoPrecision): string {
+function describirConsumo(metodo: MetodoPrecision, glecVersion: string): string {
   switch (metodo) {
     case 'exacto_canbus':
       // Solo se llega acá en un nivel secundario (cobertura < 95 % o fuente no
@@ -69,9 +71,9 @@ function describirConsumo(metodo: MetodoPrecision): string {
       // alcanza el nivel primario. Se dice tal cual, sin la palabra prohibida.
       return 'Consumo medido por CAN bus del vehículo, sin nivel primario';
     case 'modelado':
-      return 'Consumo modelado según GLEC v3.0';
+      return `Consumo modelado según GLEC ${glecVersion}`;
     case 'por_defecto':
-      return 'Consumo estimado con factores por defecto según GLEC v3.0';
+      return `Consumo estimado con factores por defecto según GLEC ${glecVersion}`;
     default: {
       const _never: never = metodo;
       throw new Error(`metodo_precision desconocido: ${String(_never)}`);

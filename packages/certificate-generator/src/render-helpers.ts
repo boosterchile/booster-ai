@@ -157,6 +157,7 @@ export function lineaMetodoCert(m: {
   precisionMethod: DatosMetricasCertificado['precisionMethod'];
   routeDataSource?: DatosMetricasCertificado['routeDataSource'];
   coveragePct?: DatosMetricasCertificado['coveragePct'];
+  glecVersion: string;
 }): string | null {
   if (m.routeDataSource === undefined || m.coveragePct === undefined) {
     return null;
@@ -165,6 +166,7 @@ export function lineaMetodoCert(m: {
     precisionMethod: m.precisionMethod,
     routeDataSource: m.routeDataSource,
     coveragePct: m.coveragePct,
+    glecVersion: m.glecVersion,
   });
 }
 

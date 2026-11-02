@@ -187,3 +187,11 @@ describe('PR-B — factores, referencia HuellaChile y versión (criterios 7, 11,
     expect(todo).not.toContain('Referencia HuellaChile');
   });
 });
+
+describe('HC-004: ningún «v3.0» fijo en el PDF (sin backhaul)', () => {
+  it('con otra versión guardada, el PDF no contiene v3.0 en ninguna parte', async () => {
+    const { todo } = await texto({ ...base, glecVersion: 'v9.9' });
+    expect(todo).toContain('Consumo modelado según GLEC v9.9');
+    expect(todo).not.toContain('v3.0');
+  });
+});
