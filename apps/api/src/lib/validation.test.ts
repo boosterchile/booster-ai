@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { mensajeZod3, zValidator, zodErrorBody } from './validation.js';
+import { zValidator, zodErrorBody } from './validation.js';
 
 const schema = z.object({ name: z.string().min(1), age: z.number().int() });
 
@@ -15,72 +15,43 @@ function post(app: Hono, body: unknown) {
   });
 }
 
-describe('zValidator común: textos de zod 3 (D2)', () => {
-  it.each([
-    [z.object({ a: z.string() }), {}, 'Required'],
-    [z.object({ a: z.enum(['x', 'y']) }), {}, 'Required'],
-    [z.object({ a: z.string() }), { a: 1 }, 'Expected string, received number'],
-    [
-      z.object({ a: z.enum(['x', 'y']) }),
-      { a: 'z' },
-      "Invalid enum value. Expected 'x' | 'y', received 'z'",
-    ],
-    [z.object({ a: z.string().min(2) }), { a: 'b' }, 'String must contain at least 2 character(s)'],
-    [
-      z.object({ a: z.array(z.number()).max(1) }),
-      { a: [1, 2] },
-      'Array must contain at most 1 element(s)',
-    ],
-    [z.object({ a: z.number().max(5) }), { a: 9 }, 'Number must be less than or equal to 5'],
-    [z.object({ a: z.number().gt(0) }), { a: 0 }, 'Number must be greater than 0'],
-    [z.object({ a: z.number().lt(5) }), { a: 5 }, 'Number must be less than 5'],
-    [z.object({ a: z.string().min(1, 'propio') }), { a: '' }, 'propio'],
-    [
-      z.object({ a: z.enum(['x', 'y']) }),
-      { a: { toString: 'x' } },
-      "Expected 'x' | 'y', received object",
-    ],
-    [z.object({ a: z.enum(['x', 'y']) }), { a: 3 }, "Expected 'x' | 'y', received number"],
-    [
-      z.object({ a: z.string().length(2) }),
-      { a: 'abc' },
-      'String must contain exactly 2 character(s)',
-    ],
-    [
-      z.object({ a: z.string().length(2) }),
-      { a: 'a' },
-      'String must contain exactly 2 character(s)',
-    ],
-    [z.object({ a: z.number().int() }), { a: 1.5 }, 'Expected integer, received float'],
-    [
-      z.object({ a: z.enum(['x']) }),
-      { a: 'z'.repeat(150) },
-      `Invalid enum value. Expected 'x', received '${'z'.repeat(100)}…'`,
-    ],
-  ])('%#: %j → %s', async (s, input, mensaje) => {
+describe('zValidator común: mensajes', () => {
+  it('usa el mensaje propio del schema', async () => {
+    const s = z.object({ a: z.string().min(1, 'Completa este campo') });
     const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
-    const body = (await (await post(app, input)).json()) as {
+    const body = (await (await post(app, { a: '' })).json()) as {
       error: { issues: { message: string }[] };
     };
-    expect(body.error.issues[0]?.message).toBe(mensaje);
+    expect(body.error.issues[0]?.message).toBe('Completa este campo');
   });
-});
 
-describe('mensajeZod3 nunca lanza (nunca 500)', () => {
-  it('input con toString no función → 400, no 500', async () => {
-    const s = z.object({ a: z.enum(['x', 'y']) });
+  it('ningún issue de formato expone `pattern`; los demás campos quedan', async () => {
+    const s = z.object({ email: z.string().email('Ingresa un correo válido') });
     const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
-    expect((await post(app, { a: { toString: 'x' } })).status).toBe(400);
+    const body = (await (await post(app, { email: 'a@b' })).json()) as {
+      error: { issues: Record<string, unknown>[] };
+    };
+    expect(body.error.issues[0]).not.toHaveProperty('pattern');
+    expect(body.error.issues[0]).toMatchObject({
+      code: 'invalid_format',
+      format: 'email',
+      message: 'Ingresa un correo válido',
+      path: ['email'],
+    });
   });
 
-  it('si el mapeo falla, cae al default de zod 4 (undefined)', () => {
-    const roto = {
-      code: 'invalid_value',
-      get values(): unknown {
-        throw new Error('x');
-      },
+  it('un regex propio tampoco expone `pattern`', async () => {
+    const s = z.object({ f: z.string().regex(/^\d{4}$/, 'Usa 4 números') });
+    const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
+    const body = (await (await post(app, { f: 'x' })).json()) as {
+      error: { issues: Record<string, unknown>[] };
     };
-    expect(mensajeZod3(roto as never)).toBeUndefined();
+    expect(body.error.issues[0]).not.toHaveProperty('pattern');
+    expect(body.error.issues[0]).toMatchObject({
+      code: 'invalid_format',
+      format: 'regex',
+      message: 'Usa 4 números',
+    });
   });
 });
 
@@ -102,9 +73,7 @@ describe('zValidator común', () => {
     const res = await post(app, { name: '', age: 'x' });
     const body = (await res.json()) as { error: { issues: { path: unknown[] }[] } };
     expect(res.headers.get('content-type')).toMatch(/application\/json/);
-    expect(body).toEqual(
-      zodErrorBody(schema.safeParse({ name: '', age: 'x' }, { error: mensajeZod3 }).error as never),
-    );
+    expect(body).toEqual(zodErrorBody(schema.safeParse({ name: '', age: 'x' }).error as never));
     expect(body.error.issues.map((i) => i.path)).toEqual([['name'], ['age']]);
   });
 
