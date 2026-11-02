@@ -28,6 +28,7 @@ import {
   formatRouteDataSource,
   formatearNumeroPrincipal,
   lineaMetodoCert,
+  lineasReferenciaHuellaChile,
   numeroEsCl,
   presentacionNivel,
   subtituloMetodologia,
@@ -176,6 +177,26 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     c.y -= 14;
     c.texto(d, MX + 16, c.y, 9.5, f.regular, TEXTO);
   }
+  // Referencia HuellaChile: secundaria (9,5 / 8,5 pt gris, sin bold), bajo una línea fina.
+  const ref = lineasReferenciaHuellaChile(
+    m.combustibleUnidad === 'L' ? m.combustibleConsumido : null,
+    m.referencia,
+  );
+  if (ref) {
+    c.y -= 12;
+    c.page.drawLine({
+      start: { x: MX + 16, y: c.y },
+      end: { x: MX2 - 16, y: c.y },
+      thickness: 0.5,
+      color: hex('#D9DEE3'),
+    });
+    c.y -= 14;
+    c.texto(ref[0], MX + 16, c.y, 9.5, f.regular, GRIS);
+    for (const l of partir(ref[1], f.regular, 8.5, MX2 - MX - 32)) {
+      c.y -= 11;
+      c.texto(l, MX + 16, c.y, 8.5, f.regular, GRIS);
+    }
+  }
   c.y -= 16;
   c.page.drawRectangle({
     x: MX,
@@ -190,7 +211,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   // 9. Disclaimer: inmediatamente después de Resultados y entero (no se parte).
   if (pres.estimado) {
     const lineas = partir(
-      textoDisclaimer(m.fuenteFactores, m.glecVersion),
+      textoDisclaimer(m.factoresLinea?.etiqueta ?? m.fuenteFactores, m.glecVersion),
       f.regular,
       9,
       MX2 - MX - 28,
@@ -223,14 +244,22 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     formatPrecisionMethod(m.precisionMethod),
     f,
   );
-  c.par(
-    'Factor de emisión usado',
-    `${numeroEsCl(m.emissionFactorUsado)} kg CO\u2082e / unidad`,
-    null,
-    null,
-    f,
-  );
-  c.par('Fuente de factores', m.fuenteFactores, null, null, f);
+  // Línea de factores (ux.md §Factores): solo si la tabla versionada resolvió la fuente.
+  const fl = m.factoresLinea;
+  if (fl) {
+    c.asegurar(40);
+    const u = 'kg CO\u2082e/L';
+    c.texto(
+      `Factores: WTW ${numeroEsCl(fl.wtw)} ${u} · TTW ${numeroEsCl(fl.ttw)} ${u} · WTT ${numeroEsCl(fl.wtt)} ${u}`,
+      MX,
+      c.y,
+      9.5,
+      f.semibold,
+      TEXTO,
+    );
+    c.texto(`Fuente de factores: ${fl.etiqueta}`, MX, c.y - 13, 8.5, f.regular, GRIS);
+    c.y -= 40;
+  }
   // ADR-028 — origen del polyline; solo si el campo está presente.
   if (m.routeDataSource) {
     c.par(
@@ -346,7 +375,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   // estrictos (eIDAS, auditores ESG) rechazan el legacy.
   const pdfWithPlaceholder = plainAddPlaceholder({
     pdfBuffer: Buffer.from(pdfBytes),
-    reason: 'Certificación de huella de carbono GLEC v3.0',
+    reason: `Certificación de huella de carbono GLEC ${params.metricas.glecVersion}`,
     contactInfo: 'sustentabilidad@boosterchile.com',
     name: 'Booster Chile SpA',
     location: 'Santiago, Chile',

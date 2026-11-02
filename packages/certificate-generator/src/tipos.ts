@@ -52,7 +52,15 @@ export interface DatosMetricasCertificado {
   precisionMethod: 'exacto_canbus' | 'modelado' | 'por_defecto';
   glecVersion: string;
   emissionFactorUsado: number;
-  fuenteFactores: string;
+  /** `factores_fuente` de la emisión; null en filas previas a 0068 (sin etiqueta legacy). */
+  fuenteFactores: string | null;
+  /**
+   * HC-004 — factores por litro resueltos desde la tabla versionada por
+   * `fuenteFactores` (carbon-calculator). Null o ausente → no se imprime la línea.
+   */
+  factoresLinea?: { etiqueta: string; ttw: number; wtt: number; wtw: number } | null;
+  /** HC-004 — referencia HuellaChile guardada en la emisión (0068). Null → sin línea. */
+  referencia?: { ttw: number; wtt: number; fuente: string } | null;
   calculatedAt: Date;
   /**
    * ADR-028 — Origen del polyline real recorrido. Junto con

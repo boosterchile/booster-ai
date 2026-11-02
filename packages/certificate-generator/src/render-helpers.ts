@@ -50,8 +50,29 @@ export function presentacionNivel(m: {
 }
 
 /** Cuerpo del disclaimer: texto exacto de Felipe con fuente y versión de la emisión. */
-export function textoDisclaimer(fuenteFactores: string, glecVersion: string): string {
-  return `Cálculo basado en datos secundarios modelados (Google Routes API + factores ${fuenteFactores} + GLEC Framework ${glecVersion}). NO auditable como dato primario bajo SBTi, CDP o CSRD assurance. Para certificado verificable con datos primarios (telemetría Teltonika), contactar a Booster.`;
+export function textoDisclaimer(fuenteFactores: string | null, glecVersion: string): string {
+  // Sin fuente guardada (filas previas a 0068) no se inventa una (criterio 12).
+  const factores = fuenteFactores ? `factores ${fuenteFactores} + ` : '';
+  return `Cálculo basado en datos secundarios modelados (Google Routes API + ${factores}GLEC Framework ${glecVersion}). NO auditable como dato primario bajo SBTi, CDP o CSRD assurance. Para certificado verificable con datos primarios (telemetría Teltonika), contactar a Booster.`;
+}
+
+/**
+ * Referencia HuellaChile 2025 (ux.md, criterio 14; copy propuesto por UX y
+ * aprobado por Orquestador 17:29): kg_ref = litros × (ttw_ref + wtt_ref).
+ * Sin litros no hay línea. Nunca dice «certificado/verificado HuellaChile».
+ */
+export function lineasReferenciaHuellaChile(
+  litros: number | null,
+  ref: { ttw: number; wtt: number } | null | undefined,
+): [string, string] | null {
+  if (litros === null || !ref) {
+    return null;
+  }
+  const kgRef = litros * (ref.ttw + ref.wtt);
+  return [
+    `Referencia HuellaChile 2025: ${numeroEsCl(kgRef)} kg CO\u2082e WTW`,
+    `Calculado con los mismos ${numeroEsCl(litros)} L y los factores MMA 2025 (TTW ${numeroEsCl(ref.ttw, 3)} + WTT ${numeroEsCl(ref.wtt, 3)} kg CO\u2082e/L). Solo referencia: el resultado de este certificado es el de arriba.`,
+  ];
 }
 
 /** Número es-CL: coma decimal y punto de miles (ux.md §Tipografía). */

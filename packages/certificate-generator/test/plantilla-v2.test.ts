@@ -127,3 +127,63 @@ describe('plantilla v2 — primario (criterios 3, 5, 8, 10)', () => {
     expect(todo).toMatch(/Salida · Llegada\s*—/);
   });
 });
+
+describe('PR-B — factores, referencia HuellaChile y versión (criterios 7, 11, 12, 14, 15)', () => {
+  const conFactores: DatosMetricasCertificado = {
+    ...base,
+    fuenteFactores:
+      'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87',
+    factoresLinea: { etiqueta: 'GLEC v2.0 (2019), Tabla 32', ttw: 2.67, wtt: 0.57, wtw: 3.24 },
+    referencia: { ttw: 2.74, wtt: 0.624, fuente: 'HuellaChile 2025, MMA' },
+  };
+
+  it('etiquetas fijas y valores de la emisión', async () => {
+    const { todo } = await texto(conFactores);
+    expect(todo).toMatch(/Metodología GLEC\s+v3\.0/);
+    expect(todo).toContain(
+      'Factores: WTW 3,24 kg CO\u2082e/L · TTW 2,67 kg CO\u2082e/L · WTT 0,57 kg CO\u2082e/L',
+    );
+    expect(todo).toContain('Fuente de factores: GLEC v2.0 (2019), Tabla 32');
+    expect(todo).toContain('factores GLEC v2.0 (2019), Tabla 32 + GLEC Framework v3.0');
+    // criterio 14: kg_ref = 132,48 L × (2,740 + 0,624) = 445,66
+    expect(todo).toContain('Referencia HuellaChile 2025: 445,66 kg CO\u2082e WTW');
+    expect(todo).toContain(
+      'Calculado con los mismos 132,48 L y los factores MMA 2025 (TTW 2,740 + WTT 0,624 kg CO\u2082e/L). Solo referencia: el resultado de este certificado es el de arriba.',
+    );
+  });
+
+  it('otros factores o versión guardados → el PDF los imprime (nada fijo)', async () => {
+    const { todo } = await texto({
+      ...conFactores,
+      glecVersion: 'v3.1',
+      factoresLinea: { etiqueta: 'Otra tabla', ttw: 2.5, wtt: 0.5, wtw: 3 },
+      referencia: { ttw: 2.8, wtt: 0.7, fuente: 'HuellaChile 2025, MMA' },
+    });
+    expect(todo).toContain(
+      'Factores: WTW 3,00 kg CO\u2082e/L · TTW 2,50 kg CO\u2082e/L · WTT 0,50 kg CO\u2082e/L',
+    );
+    expect(todo).toContain('GLEC Framework v3.1 · ISO 14083:2023');
+    expect(todo).toContain('TTW 2,800 + WTT 0,700');
+    expect(todo).toContain('463,68'); // 132,48 × 3,5
+    // Subtítulo y disclaimer usan la versión de la emisión (la línea de método ADR-077 es aparte).
+    expect(todo).toContain('GLEC Framework v3.1).');
+    expect(todo).not.toContain('GLEC Framework v3.0');
+  });
+
+  it('criterios 12 y 15: sin SEC Chile ni «certificado/verificado HuellaChile»', async () => {
+    const { todo } = await texto({ ...conFactores, fuenteFactores: null, factoresLinea: null });
+    expect(todo).not.toContain('SEC Chile');
+    expect(todo.toLowerCase()).not.toMatch(/(certificado|verificado) huellachile/);
+    expect(todo).toContain('(Google Routes API + GLEC Framework v3.0)');
+  });
+
+  it('sin fila de factores no hay línea de factores; sin litros no hay referencia', async () => {
+    const { todo } = await texto({
+      ...conFactores,
+      factoresLinea: null,
+      combustibleConsumido: null,
+    });
+    expect(todo).not.toContain('Factores:');
+    expect(todo).not.toContain('Referencia HuellaChile');
+  });
+});
