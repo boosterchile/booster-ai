@@ -21,6 +21,7 @@ export const MOTIVOS_FALLBACK = [
   'cap_huecos',
   'routes_error',
   'cobertura_bajo_umbral',
+  'distancia_invalida', // reconstrucción ok pero km ≤0 o no finito
   'peso_ausente',
   'can_sin_lecturas',
   'can_cobertura_insuficiente',
@@ -115,7 +116,7 @@ function usable(r: Reconstruccion | null): r is Extract<Reconstruccion, { estado
 
 function motivoNoUsable(r: Reconstruccion, pings: number): MotivoFallback {
   if (r.estado === 'ok') {
-    return 'cobertura_bajo_umbral';
+    return fin(r.distanciaKm) && r.distanciaKm > 0 ? 'cobertura_bajo_umbral' : 'distancia_invalida';
   }
   if (r.motivo === 'routes_error') {
     return 'routes_error';
@@ -147,7 +148,8 @@ function distancia(e: EntradaDecisionFuente): Distancia {
 
 /** null si el 83 es usable; si no, el guardrail que lo descarta. */
 function guardrail83(e: EntradaDecisionFuente, c: Resumen83, km: number): MotivoFallback | null {
-  if (!e.combustible || !COMBUSTIBLES_83.has(e.combustible)) {
+  // N3: 'Diesel' o ' diesel ' valen igual que 'diesel'.
+  if (!COMBUSTIBLES_83.has(e.combustible?.trim().toLowerCase() ?? '')) {
     return 'can_combustible_no_soportado';
   }
   // Guardrails en forma positiva: NaN/Infinity nunca pasan (QA F1).
