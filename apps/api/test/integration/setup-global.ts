@@ -48,7 +48,12 @@ export default async function setup(): Promise<() => Promise<void>> {
   const pool = new pg.Pool({ connectionString: url, max: 2, connectionTimeoutMillis: 5_000 });
   try {
     const client = await pool.connect().catch((err: unknown) => {
-      const host = url.replace(/^[^@]*@/, '').replace(/\/.*$/, '');
+      let host = 'URL inválida';
+      try {
+        host = new URL(url).host;
+      } catch {
+        // se informa como URL inválida, sin exponer credenciales
+      }
       throw new Error(
         `No pude conectar a Postgres en TEST_DATABASE_URL (${host}): ${err instanceof Error ? err.message : String(err)}. En local levántalo con \`pnpm --filter @booster-ai/api test:integration:local\` (docker-compose.test.yml).`,
       );

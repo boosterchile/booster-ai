@@ -14,7 +14,7 @@
     "test:integration:lint": "node ./scripts/check-no-concurrent-in-integration.mjs",
     "pretest:integration": "pnpm run test:integration:lint",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:integration:local": "docker compose -f ../../docker-compose.test.yml up -d --wait && TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:55433/test REDIS_HOST=127.0.0.1 REDIS_PORT=56380 pnpm run test:integration",
+    "test:integration:local": "docker compose -f ../../docker-compose.test.yml up -d --wait && (TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:55433/test REDIS_HOST=127.0.0.1 REDIS_PORT=56380 pnpm run test:integration; s=$?; docker compose -f ../../docker-compose.test.yml down -v; exit $s)",
     "test:all": "pnpm run test && pnpm run test:integration",
     "load-test:smoke": "k6 run test/load/smoke.k6.js",
     "load-test:t10": "k6 run test/load/t10.k6.js",
