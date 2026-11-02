@@ -158,6 +158,21 @@ describe('api.get', () => {
     });
   });
 
+  it('contrato TRK-003: body 400 real de zValidator default (webpush, campo faltante)', async () => {
+    // Literal (JSON de cable) del snapshot en apps/api/test/unit/webpush-route.test.ts.
+    const body =
+      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Required","path":["keys"],"received":"undefined"}],"name":"ZodError"}}';
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(body, {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const err = await api.post('/me/push-subscription', {}).catch((e: unknown) => e);
+    expect((err as InstanceType<typeof ApiError>).message).toBe('keys: Required');
+    expect((err as InstanceType<typeof ApiError>).code).toBe('validation_error');
+  });
+
   it('error sin code en payload → ApiError code=undefined', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response('plain text error', { status: 500 }),

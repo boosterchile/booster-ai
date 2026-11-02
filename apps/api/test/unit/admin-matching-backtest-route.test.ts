@@ -125,7 +125,23 @@ describe('admin-matching-backtest routes', () => {
         body: JSON.stringify({ tripsLimit: 99999 }),
         headers: { 'content-type': 'application/json' },
       });
-      expect(res.status).toBe(400);
+      // Contrato TRK-003: `detail` es error.format() de zod 3.
+      expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+        {
+          "body": {
+            "detail": {
+              "_errors": [],
+              "tripsLimit": {
+                "_errors": [
+                  "Number must be less than or equal to 5000",
+                ],
+              },
+            },
+            "error": "validation",
+          },
+          "status": 400,
+        }
+      `);
     });
 
     it('admin con pesos custom inválidos (suma > 1) NO se valida en schema, pero validateWeights del service rechaza', async () => {

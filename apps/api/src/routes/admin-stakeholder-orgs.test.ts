@@ -97,11 +97,11 @@ async function loadMod() {
   return import('./admin-stakeholder-orgs.js');
 }
 
-function invitar(app: Hono, email = 'persona@acme.cl') {
+function invitar(app: Hono, email = 'persona@acme.cl', rut = RUT) {
   return app.request(`/${ORG_ID}/invitar`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ rut: RUT, email, full_name: 'Persona Stakeholder' }),
+    body: JSON.stringify({ rut, email, full_name: 'Persona Stakeholder' }),
   });
 }
 
@@ -124,6 +124,26 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     const d = makeDb([[org()]], []);
     const res = await invitar(buildApp(mod, d.db, 'otro@empresa.cl'));
     expect(res.status).toBe(403);
+    expect(d.inserted).toHaveLength(0);
+  });
+
+  it('RUT con DV inválido → 400 invalid_rut con error.format() (contrato TRK-003)', async () => {
+    const mod = await loadMod();
+    const d = makeDb([], []);
+    const res = await invitar(buildApp(mod, d.db), undefined, '12345678-9');
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": {
+            "_errors": [
+              "Dígito verificador de RUT inválido",
+            ],
+          },
+          "error": "invalid_rut",
+        },
+        "status": 400,
+      }
+    `);
     expect(d.inserted).toHaveLength(0);
   });
 
