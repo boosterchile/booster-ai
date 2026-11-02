@@ -124,3 +124,32 @@ export function serverValidationFieldsMessage(
   }
   return `Revisa los campos: ${labels.join(', ')} — el servidor rechazó sus valores.`;
 }
+
+/** Texto cuando un issue no trae mensaje en español (TRK-005, ux.md). */
+export const MENSAJE_ERROR_GENERICO = 'Algo salió mal. Intenta de nuevo';
+const TEXTO_ZOD_INGLES = /^(Invalid|Too (small|big)|Expected|Required|Unrecognized)/;
+
+/**
+ * Primer mensaje por campo de un 400 de zValidator, sin prefijos de status ni
+ * de path. Un texto por defecto de zod (inglés) se reemplaza por el genérico.
+ * null si ningún issue corresponde a los campos del form.
+ */
+export function erroresPorCampo<C extends string>(
+  details: unknown,
+  campos: readonly C[],
+): Partial<Record<C, string>> | null {
+  const issues = (details as { error?: { issues?: unknown } } | null)?.error?.issues;
+  if (!Array.isArray(issues)) {
+    return null;
+  }
+  const out: Partial<Record<C, string>> = {};
+  for (const issue of issues as { path?: unknown[]; message?: unknown }[]) {
+    const campo = issue?.path?.[0] as C;
+    if (!campos.includes(campo) || out[campo] !== undefined) {
+      continue;
+    }
+    const m = typeof issue.message === 'string' ? issue.message : '';
+    out[campo] = m === '' || TEXTO_ZOD_INGLES.test(m) ? MENSAJE_ERROR_GENERICO : m;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}

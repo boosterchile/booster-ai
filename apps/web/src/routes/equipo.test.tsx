@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 /**
  * equipo-de-la-empresa Fase A — sección Equipo en la app del CLIENTE.
@@ -220,5 +220,42 @@ describe('Equipo — validación del RUT antes de enviar', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/RUT/i));
     expect(screen.getByRole('alert').textContent ?? '').not.toMatch(/API error/i);
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe('Equipo — 400 del servidor bajo cada campo (TRK-005)', () => {
+  const rechazo400 = (issues: { path: string[]; message: string }[]) =>
+    vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(400, 'validation_error', {
+        success: false,
+        error: { issues, name: 'ZodError' },
+      }),
+    );
+  async function enviar() {
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: [] });
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+    await screen.findByText(/todavía no|aún no/i);
+    fireEvent.click(screen.getByRole('button', { name: /Agregar persona/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre completo/i), { target: { value: 'Ana Pérez' } });
+    fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '8.601.693-1' } });
+    fireEvent.change(screen.getByLabelText(/Email/i), { target: { value: 'ana@empresa.cl' } });
+    fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
+    return screen.findByRole('alert');
+  }
+
+  it('muestra el mensaje del campo, sin "400:" ni "email:", uno por campo', async () => {
+    rechazo400([
+      { path: ['email'], message: 'Ingresa un correo válido' },
+      { path: ['email'], message: 'Usa como máximo 255 caracteres' },
+    ]);
+    const alerta = await enviar();
+    expect(alerta).toHaveTextContent(/^Ingresa un correo válido$/);
+    expect(screen.getByLabelText(/Email/i).closest('label')).toContainElement(alerta);
+    expect(screen.queryByText(/Usa como máximo/)).not.toBeInTheDocument();
+  });
+
+  it('un issue sin texto en español muestra el genérico', async () => {
+    rechazo400([{ path: ['rol'], message: 'Invalid option: expected one of "admin"' }]);
+    expect(await enviar()).toHaveTextContent('Algo salió mal. Intenta de nuevo');
   });
 });
