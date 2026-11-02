@@ -14,9 +14,9 @@ import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 // `@booster-ai/config` — antes había una copia local byte-idéntica acá.
 
 export const apiEnvSchema = commonEnvSchema
-  .merge(databaseEnvSchema)
-  .merge(redisEnvSchema)
-  .merge(gcpEnvSchema)
+  .extend(databaseEnvSchema.shape)
+  .extend(redisEnvSchema.shape)
+  .extend(gcpEnvSchema.shape)
   .extend({
     SERVICE_NAME: z.literal('booster-ai-api'),
     CORS_ALLOWED_ORIGINS: z.string().transform((s) => s.split(',').filter(Boolean)),

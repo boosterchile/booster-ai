@@ -37,7 +37,7 @@ import { sendPushToUser } from '../services/web-push.js';
 const pubsubPushEnvelopeSchema = z.object({
   message: z.object({
     data: z.string(),
-    attributes: z.record(z.string()).optional(),
+    attributes: z.record(z.string(), z.string()).optional(),
     messageId: z.string(),
   }),
   subscription: z.string(),

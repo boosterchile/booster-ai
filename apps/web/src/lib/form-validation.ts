@@ -65,10 +65,11 @@ export function numericFieldError(rule: NumericFieldRule, raw: string): string |
  * Shape 400/422 de `zValidator('json', …)` sin hook custom (default de
  * `@hono/zod-validator@0.7.6`): `c.json({ success: false, error: <ZodError> })`
  * donde `ZodError` serializa (JSON.stringify de sus propiedades propias
- * enumerables) como `{ issues: [{ path, message, code, … }], name }` —
- * `message` es un getter de prototipo y NO sobrevive el stringify. Solo se
- * valida el subset que se necesita (`path`); el `message`/`code` del issue
- * se ignoran a propósito (vienen en inglés, default de zod sin locale).
+ * enumerables) como `{ issues: [{ code, message, path, … }], name }`. El
+ * `message` de cada issue SÍ llega en el JSON (ver el snapshot de webpush en
+ * `apps/api/test/unit/webpush-route.test.ts`). Aquí solo se valida el
+ * subset que se necesita (`path`); `message`/`code` se ignoran a propósito
+ * (vienen en inglés, default de zod sin locale).
  * Shape verificado empíricamente contra `apps/api` en `solicitar-acceso.tsx`.
  */
 const zValidatorErrorPayloadSchema = z.object({
