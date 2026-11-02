@@ -11,7 +11,7 @@ describe('calcularPorDefecto — defaults por tipo de vehículo', () => {
       tipoVehiculo: 'camion_pesado',
     });
     // Consumo ≈ 35 L total para 100 km (HDV α=0.15, ratio=0.5 → corrección 1.0)
-    // Emisiones ≈ 35 × 3.25 = 113.75 kg CO2e (factor GLEC v3.0 + IPCC AR6)
+    // Emisiones ≈ 35 × 3.24 = 113.4 kg CO2e (GLEC v2.0 2019, Tabla 32 EU)
     expect(r.combustibleConsumido).toBeCloseTo(35, 0);
     expect(r.emisionesKgco2eWtw).toBeCloseTo(113.75, 0);
     expect(r.metodoPrecision).toBe('por_defecto');

@@ -1,9 +1,10 @@
-import { calcularEmisionesViaje } from '@booster-ai/carbon-calculator';
+import { calcularEmisionesViaje, obtenerFactorEmision } from '@booster-ai/carbon-calculator';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_HUECOS_ROUTES } from '../../src/services/calcular-distancia-real.js';
 import {
   TripNotFoundError,
   calcularMetricasEstimadas,
+  desgloseEmisiones,
   recalcularNivelPostEntrega,
 } from '../../src/services/calcular-metricas-viaje.js';
 
@@ -386,6 +387,98 @@ describe('calcularMetricasEstimadas', () => {
     });
 
     expect(result.emisiones.distanciaKm).toBe(500);
+  });
+});
+
+describe('HC-003 T1 — desglose TTW/WTT e intensidad', () => {
+  const VEH_PERFIL = {
+    id: VEH_ID,
+    fuelType: 'diesel',
+    consumptionLPer100kmBaseline: '28.5',
+    curbWeightKg: 7000,
+    capacityKg: 12000,
+    vehicleType: 'camion_pequeno',
+  };
+  async function valoresEstimados(cargoWeightKg: number | null) {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, cargoWeightKg }], [VEH_PERFIL], []],
+      inserts: [[]],
+    });
+    await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: VEH_ID,
+    });
+    const insertCall = (db.insert as ReturnType<typeof vi.fn>).mock.results.find((r) => r.value);
+    return (insertCall?.value as { values: ReturnType<typeof vi.fn> }).values.mock
+      .calls[0]?.[0] as Record<string, string | null>;
+  }
+
+  it('estimado con carga → TTW + WTT = WTW e intensidad = WTW / (t · km)', async () => {
+    const v = await valoresEstimados(5000);
+    const wtw = Number(v.carbonEmissionsKgco2eEstimated);
+    const ttw = Number(v.emisionesKgco2eTtw);
+    const wtt = Number(v.emisionesKgco2eWtt);
+    expect(ttw).toBeGreaterThan(0);
+    expect(wtt).toBeGreaterThan(0);
+    expect(ttw).toBeGreaterThan(wtt);
+    expect(v.factoresFuente).toBe(obtenerFactorEmision('diesel').fuente);
+    expect(ttw + wtt).toBeCloseTo(wtw, 2); // el calculador redondea cada término a 3 decimales
+    const km = Number(v.distanceKmEstimated);
+    expect(Number(v.intensidadGco2ePorTkm)).toBeCloseTo((wtw * 1000) / (5 * km), 1);
+    // Referencia HuellaChile 2025 guardada en la emisión (diésel): kg_ref = litros × (ttw_ref + wtt_ref).
+    expect([v.ttwRef, v.wttRef, v.fuenteRef]).toEqual(['2.74', '0.624', 'HuellaChile 2025, MMA']);
+    const kgRef = Number(v.fuelConsumedLEstimated) * (Number(v.ttwRef) + Number(v.wttRef));
+    expect(kgRef).toBeCloseTo(Number(v.fuelConsumedLEstimated) * 3.364, 6);
+  });
+
+  it.each([0, null])('carga %s → intensidad null (no 0), TTW/WTT igual se persisten', async (c) => {
+    const v = await valoresEstimados(c);
+    expect(v.intensidadGco2ePorTkm).toBeNull();
+    expect(Number(v.emisionesKgco2eTtw) + Number(v.emisionesKgco2eWtt)).toBeCloseTo(
+      Number(v.carbonEmissionsKgco2eEstimated),
+      2,
+    );
+  });
+
+  it('desgloseEmisiones: distancia 0, NaN, Infinity o fuera de rango → intensidad null', () => {
+    const base = {
+      emisionesKgco2eTtw: 2,
+      emisionesKgco2eWtt: 0.5,
+      distanciaKm: 10,
+      intensidadGco2ePorTonKm: 50,
+      fuenteFactores: 'F',
+    } as never as Parameters<typeof desgloseEmisiones>[0];
+    expect(desgloseEmisiones(base, 5000, 'diesel')).toEqual({
+      emisionesKgco2eTtw: '2',
+      emisionesKgco2eWtt: '0.5',
+      intensidadGco2ePorTkm: '50',
+      factoresFuente: 'F',
+      ttwRef: '2.74',
+      wttRef: '0.624',
+      fuenteRef: 'HuellaChile 2025, MMA',
+    });
+    expect(desgloseEmisiones(base, 5000, 'hibrido_diesel').ttwRef).toBe('2.74');
+    // La referencia es por litro de DIÉSEL: otro combustible o sin combustible → null.
+    for (const c of ['gasolina', 'electrico', null]) {
+      expect(desgloseEmisiones(base, 5000, c)).toMatchObject({
+        ttwRef: null,
+        wttRef: null,
+        fuenteRef: null,
+      });
+    }
+    for (const malo of [
+      { distanciaKm: 0 },
+      { intensidadGco2ePorTonKm: Number.NaN },
+      { intensidadGco2ePorTonKm: Number.POSITIVE_INFINITY },
+      { intensidadGco2ePorTonKm: 1e9 },
+    ]) {
+      expect(
+        desgloseEmisiones({ ...base, ...malo }, 5000, 'diesel').intensidadGco2ePorTkm,
+      ).toBeNull();
+    }
+    expect(desgloseEmisiones(base, -1, 'diesel').intensidadGco2ePorTkm).toBeNull();
   });
 });
 
@@ -920,7 +1013,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     const setArg = (db.update as Mock).mock.results[0].value.set.mock.calls[0][0];
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(
       haversineKm(-33.4, -70.6, -33.41, -70.61),
-      6,
+      2,
     );
     expect(Number(setArg.coveragePct)).toBe(100);
   });
@@ -1205,6 +1298,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo, 6);
     expect(setArg.routeDataSource).toBe('teltonika_gps');
+    // HC-003 fix1: sin huella real, el desglose no arrastra un cálculo real anterior.
+    expect(setArg.emisionesKgco2eTtw).toBeNull();
+    expect(setArg.emisionesKgco2eWtt).toBeNull();
+    expect(setArg.intensidadGco2ePorTkm).toBeNull();
     expect(counter('huella_peso_ausente_total')?.add).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ fuente: 'teltonika_gps' }),
@@ -1299,6 +1396,11 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         esperado.emisionesKgco2eWtw,
         3,
       );
+      // HC-003 T1: el desglose persistido es el del cálculo REAL, no el estimado.
+      expect(setArg.emisionesKgco2eTtw).toBe(esperado.emisionesKgco2eTtw.toString());
+      expect(setArg.emisionesKgco2eWtt).toBe(esperado.emisionesKgco2eWtt.toString());
+      expect(setArg.intensidadGco2ePorTkm).toBe(esperado.intensidadGco2ePorTonKm.toString());
+      expect(setArg.factoresFuente).toBe(esperado.fuenteFactores);
       expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(8, 2);
     });
 

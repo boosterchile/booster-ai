@@ -1,4 +1,6 @@
 import {
+  COMBUSTIBLES_REFERENCIA_HUELLACHILE,
+  REFERENCIA_HUELLACHILE_2025,
   type ResultadoEmisiones,
   type ResultadoEmptyBackhaul,
   type RouteDataSource,
@@ -76,6 +78,38 @@ type PerfilEnergeticoVehiculo = Pick<
  * Misma regla en la estimación (al asignar) y en la huella real (al cerrar):
  * el método no cambia por el momento del cálculo, solo la distancia.
  */
+/** Tope bajo numeric(12,3) de `intensidad_gco2e_por_tkm`. */
+const INTENSIDAD_MAX = 1e9;
+
+/**
+ * HC-003 T1 — TTW, WTT e intensidad del MISMO cálculo que respalda el WTW
+ * persistido. Sin carga o sin distancia el calculador devuelve intensidad 0,
+ * que no es una intensidad real: se persiste null.
+ */
+export function desgloseEmisiones(
+  e: ResultadoEmisiones,
+  cargaKg: number | null,
+  combustible: string | null,
+) {
+  const i = e.intensidadGco2ePorTonKm;
+  const intensidadValida =
+    (cargaKg ?? 0) > 0 && e.distanciaKm > 0 && Number.isFinite(i) && i > 0 && i < INTENSIDAD_MAX;
+  return {
+    emisionesKgco2eTtw: e.emisionesKgco2eTtw.toString(),
+    emisionesKgco2eWtt: e.emisionesKgco2eWtt.toString(),
+    intensidadGco2ePorTkm: intensidadValida ? i.toString() : null,
+    factoresFuente: e.fuenteFactores,
+    // Referencia HuellaChile 2025: solo si los litros son diésel (ux.md §14).
+    ...(COMBUSTIBLES_REFERENCIA_HUELLACHILE.has(combustible ?? '')
+      ? {
+          ttwRef: REFERENCIA_HUELLACHILE_2025.ttwKgco2ePorL.toString(),
+          wttRef: REFERENCIA_HUELLACHILE_2025.wttKgco2ePorL.toString(),
+          fuenteRef: REFERENCIA_HUELLACHILE_2025.fuente,
+        }
+      : { ttwRef: null, wttRef: null, fuenteRef: null }),
+  };
+}
+
 function emisionesSegunPerfil(opts: {
   veh: PerfilEnergeticoVehiculo | undefined;
   distanciaKm: number;
@@ -389,6 +423,7 @@ async function calcularMetricasEstimadasInner(
     const valuesToWrite = {
       distanceKmEstimated: emisiones.distanciaKm.toString(),
       carbonEmissionsKgco2eEstimated: emisiones.emisionesKgco2eWtw.toString(),
+      ...desgloseEmisiones(emisiones, cargaKg, veh?.fuelType ?? null),
       fuelConsumedLEstimated:
         emisiones.unidadCombustible === 'L' ? emisiones.combustibleConsumido.toString() : null,
       precisionMethod: emisiones.metodoPrecision,
@@ -938,9 +973,18 @@ async function recalcularNivelPostEntregaInner(opts: {
               emisionesReales !== null && emisionesReales.unidadCombustible === 'L'
                 ? emisionesReales.combustibleConsumido.toString()
                 : null,
+            // Sin huella real el desglose queda en null: TTW+WTT no debe venir de un
+            // cálculo real anterior que ya no respalda el WTW del certificado.
             ...(emisionesReales !== null
-              ? { precisionMethod: emisionesReales.metodoPrecision }
-              : {}),
+              ? {
+                  precisionMethod: emisionesReales.metodoPrecision,
+                  ...desgloseEmisiones(emisionesReales, trip.cargoWeightKg, vehiculo.fuelType),
+                }
+              : {
+                  emisionesKgco2eTtw: null,
+                  emisionesKgco2eWtt: null,
+                  intensidadGco2ePorTkm: null,
+                }),
           }
         : {}),
       updatedAt: sql`now()`,
