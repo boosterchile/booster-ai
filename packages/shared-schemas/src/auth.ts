@@ -37,7 +37,12 @@ export const USER_TYPE_HINT_LABEL: Record<UserTypeHint, string> = {
  */
 export const claveNumericaSchema = z
   .string({ error: MENSAJES.requerido })
-  .regex(/^\d{6}$/, 'La clave debe ser de 6 dígitos numéricos');
+  .regex(/^\d{6}$/, 'La clave tiene 6 números');
+
+/** Código de 6 dígitos (OTP de recuperación y activación); no es la clave. */
+const codigoSeisSchema = z
+  .string({ error: MENSAJES.requerido })
+  .regex(/^\d{6}$/, 'El código tiene 6 números');
 
 /**
  * Body del endpoint `POST /auth/login-rut` — login universal.
@@ -77,7 +82,7 @@ export type RequestRecoveryOtpInput = z.infer<typeof requestRecoveryOtpSchema>;
  */
 export const verifyRecoveryOtpSchema = z.object({
   rut: rutSchema,
-  otp: claveNumericaSchema, // OTP es 6 dígitos, mismo schema
+  otp: codigoSeisSchema,
   clave_nueva: claveNumericaSchema,
 });
 export type VerifyRecoveryOtpInput = z.infer<typeof verifyRecoveryOtpSchema>;
@@ -150,7 +155,7 @@ export type InvitarMiembroInput = z.infer<typeof invitarMiembroSchema>;
  */
 export const activarCuentaSchema = z.object({
   rut: rutSchema,
-  codigo: z.string({ error: MENSAJES.requerido }).regex(/^\d{6}$/, 'El código es de 6 dígitos'),
+  codigo: codigoSeisSchema,
   clave_numerica: claveNumericaSchema,
 });
 export type ActivarCuentaInput = z.infer<typeof activarCuentaSchema>;

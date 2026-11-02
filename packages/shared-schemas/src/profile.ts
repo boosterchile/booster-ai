@@ -33,7 +33,7 @@ export const profileUpdateInputSchema = z
       data.phone !== undefined ||
       data.whatsapp_e164 !== undefined ||
       data.rut !== undefined,
-    { message: 'Al menos un campo debe estar presente' },
+    { message: 'Cambia al menos un dato antes de guardar' },
   );
 
 export type ProfileUpdateInput = z.infer<typeof profileUpdateInputSchema>;

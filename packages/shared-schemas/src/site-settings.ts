@@ -34,7 +34,7 @@ export const siteIdentitySchema = z.object({
    */
   primary_color: z
     .string()
-    .regex(/^#[0-9A-Fa-f]{6}$/i, 'Color hex inválido — usa formato #RRGGBB')
+    .regex(/^#[0-9A-Fa-f]{6}$/i, 'Usa un color en formato #RRGGBB, como #0B5FFF')
     .optional(),
 });
 
@@ -78,7 +78,7 @@ export const siteConfigSchema = z.object({
   identity: siteIdentitySchema,
   hero: heroSchema,
   certifications: z.array(certificationSchema).max(8, 'Usa como máximo 8 certificaciones'),
-  persona_cards: z.array(personaCardSchema).length(4, 'Tienen que ser 4 tarjetas'),
+  persona_cards: z.array(personaCardSchema).length(4, 'Agrega exactamente 4 tarjetas'),
   onboarding: onboardingCopySchema.optional(),
   login: loginCopySchema.optional(),
 });

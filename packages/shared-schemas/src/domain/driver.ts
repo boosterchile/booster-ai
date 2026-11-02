@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { chileanPhoneSchema } from '../primitives/chile.js';
+import { MENSAJE_TELEFONO, chileanPhoneSchema } from '../primitives/chile.js';
 import { driverIdSchema, transportistaIdSchema, userIdSchema } from '../primitives/ids.js';
 import { MENSAJES, errorOpcion, textoEs } from '../primitives/mensajes.js';
 
@@ -72,7 +72,7 @@ export function esEmailDeRelleno(email: string): boolean {
 }
 
 /** Mensaje único del formato, en la ficha y en el alta. */
-export const MENSAJE_EMAIL_CONDUCTOR = 'Escribe un email válido, como nombre@dominio.cl';
+export const MENSAJE_EMAIL_CONDUCTOR = 'Ingresa un correo válido, como nombre@dominio.cl';
 
 /**
  * El dominio tiene que incluir un punto y un TLD de al menos dos letras.
@@ -102,7 +102,7 @@ export const conductorContactEmailSchema = z
   .string({ error: MENSAJE_EMAIL_CONDUCTOR })
   .trim()
   .min(3, MENSAJE_EMAIL_CONDUCTOR)
-  .max(255, MENSAJE_EMAIL_CONDUCTOR)
+  .max(255, MENSAJES.max(255))
   .email(MENSAJE_EMAIL_CONDUCTOR)
   .refine(dominioConTld, { message: MENSAJE_EMAIL_CONDUCTOR })
   .transform((value) => value.toLowerCase())
@@ -113,7 +113,7 @@ export const conductorContactEmailSchema = z
 export type ConductorContactEmail = z.infer<typeof conductorContactEmailSchema>;
 
 /** Mismo texto en el alta y en la ficha. */
-export const MENSAJE_TELEFONO_CONDUCTOR = 'Ingresa un teléfono válido (+569...)';
+export const MENSAJE_TELEFONO_CONDUCTOR = MENSAJE_TELEFONO;
 
 /**
  * WhatsApp del conductor: solo móvil +569. Un fijo (+562…) pasa
