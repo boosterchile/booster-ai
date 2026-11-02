@@ -98,6 +98,18 @@ describe('serverValidationFieldsMessage', () => {
     expect(serverValidationFieldsMessage(err, LABELS)).toBeNull();
   });
 
+  it('contrato TRK-003: body 400 real de zValidator default (webpush, campo faltante)', () => {
+    // Literal (JSON de cable) del snapshot en apps/api/test/unit/webpush-route.test.ts.
+    const body: unknown = JSON.parse(
+      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Required","path":["keys"],"received":"undefined"}],"name":"ZodError"}}',
+    );
+    const err = new ApiError(400, 'validation_error', body, 'keys: Required');
+    expect(zValidatorIssuePaths(err)).toEqual([['keys']]);
+    expect(serverValidationFieldsMessage(err, { keys: 'Claves' })).toBe(
+      'Revisa los campos: Claves — el servidor rechazó sus valores.',
+    );
+  });
+
   it('shape no zValidator → null', () => {
     expect(serverValidationFieldsMessage(new Error('API error 400'), LABELS)).toBeNull();
   });

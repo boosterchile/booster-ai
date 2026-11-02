@@ -87,6 +87,24 @@ describe('resolveMatchingV2Weights', () => {
     expect(resolveMatchingV2Weights(logger)).toEqual(DEFAULT_WEIGHTS_V2);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[1]).toMatch(/shape inválido/);
+    // Contrato TRK-003: `errors` es error.format() de zod 3.
+    expect(warn.mock.calls[0]?.[0]).toMatchInlineSnapshot(`
+      {
+        "errors": {
+          "_errors": [],
+          "reputacion": {
+            "_errors": [
+              "Required",
+            ],
+          },
+          "tier": {
+            "_errors": [
+              "Required",
+            ],
+          },
+        },
+      }
+    `);
   });
 
   it('valor negativo en campo → defaults + warn (shape inválido por min(0))', () => {

@@ -56,4 +56,11 @@ describe('checkPasswordPolicy', () => {
     expect(checkPasswordPolicy('BOOSTERBOOSTER1')).toMatch(/minúscula/);
     expect(checkPasswordPolicy('BoosterBooster')).toMatch(/número/);
   });
+
+  it('contrato TRK-003: texto exacto de cada mensaje', () => {
+    expect(checkPasswordPolicy('Ab1')).toBe('Mínimo 8 caracteres.');
+    expect(checkPasswordPolicy('booster1234')).toBe('Necesita al menos una mayúscula.');
+    expect(checkPasswordPolicy('BOOSTER1234')).toBe('Necesita al menos una minúscula.');
+    expect(checkPasswordPolicy('BoosterBooster')).toBe('Necesita al menos un número.');
+  });
 });
