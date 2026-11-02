@@ -4,6 +4,7 @@ import {
   LIVE_TRACKING_FETCH,
   LIVE_TRACKING_QUERY,
   type PositionSource,
+  isLiveTrackingStatus,
 } from '../lib/live-tracking.js';
 import { useRefetchWhenVisible } from './use-refetch-when-visible.js';
 
@@ -30,7 +31,6 @@ export type PublicTrackingPosition = {
   speed_kmh: number | null;
 };
 
-/** Phase 5 PR-L2 — opcional hasta que #121 merge en main; type-safe via optional. */
 export interface PublicTrackingProgress {
   avg_speed_kmh_last_15min: number | null;
   last_position_age_seconds: number | null;
@@ -55,12 +55,9 @@ export interface PublicTrackingFoundResponse {
    * un API anterior a `tracking-live-unificado` no lo envía.
    */
   position_source?: PositionSource | null;
-  /** Opcional — disponible cuando #121 merge. */
-  progress?: PublicTrackingProgress;
+  progress: PublicTrackingProgress;
   eta_minutes: number | null;
 }
-
-const ACTIVE_TRIP_STATUSES = new Set(['asignado', 'en_proceso']);
 
 /** 30s para trips activos: tope del requisito de seguimiento en vivo. */
 const POLL_ACTIVE_MS = 30_000;
@@ -79,7 +76,7 @@ export function usePublicTracking(token: string, opts: { enabled?: boolean } = {
       if (!data) {
         return POLL_ACTIVE_MS;
       }
-      return ACTIVE_TRIP_STATUSES.has(data.trip.status) ? POLL_ACTIVE_MS : POLL_CLOSED_MS;
+      return isLiveTrackingStatus(data.trip.status) ? POLL_ACTIVE_MS : POLL_CLOSED_MS;
     },
     ...LIVE_TRACKING_QUERY,
     retry: (failureCount, error) => {
