@@ -157,7 +157,14 @@ function guardrail83(e: EntradaDecisionFuente, c: Resumen83, km: number): Motivo
   if (!(c.coberturaKmPct >= THRESHOLD_PRIMARIO_PCT && c.coberturaKmPct <= 100)) {
     return 'can_cobertura_insuficiente';
   }
-  if (!(c.pasosNegativos === 0 && c.saltoMaxPorPasoL <= CAN_SALTO_MAX_L_POR_PASO)) {
+  if (
+    !(
+      c.pasosNegativos === 0 &&
+      fin(c.saltoMaxPorPasoL) &&
+      c.saltoMaxPorPasoL >= 0 &&
+      c.saltoMaxPorPasoL <= CAN_SALTO_MAX_L_POR_PASO
+    )
+  ) {
     return 'can_no_monotono';
   }
   const l100 = (c.litros / km) * 100;

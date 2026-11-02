@@ -70,6 +70,8 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['NaN pasos', can({ pasosNegativos: Number.NaN }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
     ['NaN salto', can({ saltoMaxPorPasoL: Number.NaN }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
     ['Infinity salto', can({ saltoMaxPorPasoL: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
+    ['-Infinity salto', can({ saltoMaxPorPasoL: Number.NEGATIVE_INFINITY }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
+    ['salto -5', can({ saltoMaxPorPasoL: -5 }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
     ['NaN litros', can({ litros: Number.NaN }), 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['Infinity litros', can({ litros: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['NaN base', { consumoBasePor100km: Number.NaN }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
