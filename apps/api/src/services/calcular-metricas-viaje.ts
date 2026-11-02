@@ -16,7 +16,7 @@ import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schem
 import {
   type LecturaSegmentoCan,
   consumoCanSegmento,
-  soloLecturas83,
+  filasConLectura83,
 } from '../domain/consumo-can-segmento.js';
 import {
   type DecisionFuente,
@@ -119,9 +119,10 @@ async function medirLitrosCan(opts: {
       desde: opts.desde,
       hasta: opts.hasta,
     }));
-  // Solo filas con el 83: las solo-89 no cambian la emisión respecto de main (QA #868 v2).
+  // Filtro laxo, idéntico a main: toda fila con el 83 presente; las solo-89 fuera
+  // (QA #868 v2/v3). El resumidor usa el estricto (ver consumo-can-segmento.ts).
   const resultado = consumoCanSegmento({
-    lecturas: soloLecturas83(lecturas),
+    lecturas: filasConLectura83(lecturas),
     distanciaSegmentoKm: opts.distanciaKm,
   });
   if (resultado.litros === null) {

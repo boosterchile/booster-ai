@@ -99,9 +99,17 @@ export function consumoCanSegmento(opts: {
 }
 
 /**
- * Solo las lecturas que traen el 83. El loader también trae filas solo-89
- * (HC-001 p2) y esas no deben densificar la cobertura del 83 (QA #868 v2).
+ * Dos criterios a propósito (QA #868 v3):
+ * - `filasConLectura83` (laxo, emisión): toda fila con `io['83']` presente, igual
+ *   que el loader de main (que ya garantiza finito). Replica la cobertura de main
+ *   aunque el 83 sea negativo, no entero o > 2^32−1: la emisión no cambia.
+ * - `soloLecturas83` (estricto, resumidor HC-001): solo 83 válido como contador.
+ *   Afecta solo la decisión en modo sombra.
+ * Los dos sacan las filas solo-89, que no deben densificar la cobertura del 83.
  */
+export const filasConLectura83 = (lecturas: readonly LecturaSegmentoCan[]) =>
+  lecturas.filter((l) => l.io['83'] !== undefined);
+
 export const soloLecturas83 = (lecturas: readonly LecturaSegmentoCan[]) =>
   lecturas.filter((l) => consumoAcumuladoDe(l.io) != null);
 

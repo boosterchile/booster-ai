@@ -1428,6 +1428,21 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
     });
 
+    it('emisión con 83 fuera de rango: filtro laxo como main, sigue exacto_canbus (QA #868 v3)', async () => {
+      // B con 83 = 1e15 y desvío: main la conserva y la cobertura pasa el 95 %.
+      const pings = largo();
+      const [a, c] = [pings[0], pings[20]] as [(typeof pings)[0], (typeof pings)[0]];
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([
+        { ...a, io: { '83': 10000 } },
+        { tMs: a.tMs + 1, lat: -33.35, lng: -70.5, io: { '83': 1e15 } },
+        { ...c, io: { '83': 10080 } },
+      ]);
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(setDe(db).precisionMethod).toBe('exacto_canbus');
+    });
+
     it('83 provisionado sin lecturas → modelado como hoy, warn con el motivo y contador', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);

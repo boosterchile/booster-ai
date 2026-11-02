@@ -3,6 +3,7 @@ import {
   type LecturaSegmentoCan,
   consumoCanSegmento,
   distanciaRecorrida,
+  filasConLectura83,
   soloLecturas83,
 } from './consumo-can-segmento.js';
 import { decidirFuenteHuella } from './decidir-fuente-huella.js';
@@ -140,5 +141,31 @@ describe('filas solo-89 no densifican la cobertura del 83 (QA #868 v2)', () => {
       (recta / 155.6) * 100,
       6,
     );
+  });
+});
+
+describe('filtro laxo de emisión = main (QA #868 v3)', () => {
+  // A y C válidos; B con 83 = 1e15 (fuera de rango) y desvío. Main lo conserva y
+  // densifica la cobertura: {litros: 60}. El estricto lo descartaría.
+  const filas: LecturaSegmentoCan[] = [
+    { tMs: 0, lat: -33, lng: -70.6, io: { '83': 10000 } },
+    { tMs: 1, lat: -33.5, lng: -70.05, io: { '83': 1e15 } },
+    { tMs: 2, lat: -34, lng: -70.6, io: { '83': 10600 } },
+  ];
+
+  it('83 fuera de rango se conserva en la emisión: {litros: 60} como main', () => {
+    expect(filasConLectura83(filas)).toHaveLength(3);
+    expect(
+      consumoCanSegmento({ lecturas: filasConLectura83(filas), distanciaSegmentoKm: 155.6 }),
+    ).toEqual({ litros: 60 });
+    expect(
+      consumoCanSegmento({ lecturas: soloLecturas83(filas), distanciaSegmentoKm: 155.6 }),
+    ).toEqual({ litros: null, motivo: 'cobertura_insuficiente' });
+  });
+
+  it('las filas solo-89 salen con los dos filtros', () => {
+    const f = [...filas, { tMs: 3, lat: -34, lng: -70.6, io: { '89': 40 } }];
+    expect(filasConLectura83(f)).toHaveLength(3);
+    expect(soloLecturas83(f)).toHaveLength(2);
   });
 });
