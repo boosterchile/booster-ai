@@ -17,20 +17,21 @@
 
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, type PDFFont, rgb, setCharacterSpacing } from 'pdf-lib';
+import { type FuentesCert, embeberFuentes } from './fuentes.js';
 import {
-  DISCLAIMER_SECUNDARIO_LINEAS,
-  HEADER_LAYOUT,
+  FRASE_ISO,
   TAMANO_LINEA_METODO,
+  TITULO_CERT,
+  TITULO_DISCLAIMER,
   declaracionDistancia,
   formatRouteDataSource,
   formatearNumeroPrincipal,
   lineaMetodoCert,
-  muestraDisclaimerSecundario,
-  posicionXMarcaHeader,
-  subtituloHeader,
-  tamanoTitulo,
-  tituloHeader,
+  numeroEsCl,
+  presentacionNivel,
+  subtituloMetodologia,
+  textoDisclaimer,
 } from './render-helpers.js';
 import type {
   DatosEmpresaCertificado,
@@ -62,527 +63,265 @@ const DEFAULT_PLACEHOLDER_BYTES = 16384;
 
 /**
  * Genera el PDF y devuelve los bytes con el placeholder embebido.
+ * Layout v2 (HC-004, ux.md): fila superior · regla · título + sello ·
+ * subtítulo · badge · fechas · Resultados · disclaimer · Metodología · resto.
  */
 export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595.28, 841.89]); // A4
-  const { width, height } = page.getSize();
+  const f = await embeberFuentes(pdfDoc);
+  const m = params.metricas;
+  const pres = presentacionNivel(m);
+  const c = new Cursor(pdfDoc);
 
-  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-  const colorPrimary = rgb(0.043, 0.376, 0.659); // azul Booster (#0B60A8 aprox)
-  const colorMuted = rgb(0.4, 0.4, 0.45);
-  const colorBorder = rgb(0.85, 0.85, 0.87);
-  const colorEmphasis = rgb(0.05, 0.55, 0.32); // verde para kg CO2e
-
-  // ADR-028: el nivel de certificación determina el título del header
-  // y la presencia del disclaimer. Si el campo está ausente (legacy
-  // path pre-ADR-028), tratamos como primario para no romper certs
-  // viejos.
-  const nivelCert = params.metricas.certificationLevel ?? 'primario_verificable';
-  const esPrimario = nivelCert === 'primario_verificable';
-  const colorBackground = esPrimario ? colorPrimary : rgb(0.55, 0.4, 0.05); // ámbar para secundario
-
-  // ============================================================
-  // Header — banda superior con título
-  // ============================================================
-  page.drawRectangle({
-    x: 0,
-    y: height - 90,
-    width,
-    height: 90,
-    color: colorBackground,
-  });
-
-  // Título y marca comparten la fila (y = height − 45). La geometría vive en
-  // HEADER_LAYOUT; `test/header-layout.test.ts` mide con el font real que el
-  // título de cada nivel termina antes de la marca.
-  page.drawText(tituloHeader(nivelCert), {
-    x: HEADER_LAYOUT.tituloX,
-    y: height - 45,
-    size: tamanoTitulo(nivelCert),
-    font: fontBold,
-    color: rgb(1, 1, 1),
-  });
-
-  page.drawText(subtituloHeader(nivelCert), {
-    x: HEADER_LAYOUT.tituloX,
-    y: height - 70,
-    size: 10,
-    font: fontRegular,
-    color: rgb(1, 1, 1),
-  });
-
-  page.drawText(HEADER_LAYOUT.marcaTexto, {
-    x: posicionXMarcaHeader(width),
-    y: height - 45,
-    size: HEADER_LAYOUT.marcaTamano,
-    font: fontBold,
-    color: rgb(1, 1, 1),
-  });
-
-  // ============================================================
-  // Bloque 1 — Identificación del certificado
-  // ============================================================
-  let cursorY = height - 130;
-
-  drawLabelValue(
-    page,
-    'Código de viaje',
-    params.viaje.trackingCode,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
+  // 1. Fila superior: marca a la izquierda; código y versión a la derecha.
+  const ver = params.viaje.version ?? { numero: 1 };
+  c.texto('Booster', MX, c.y - 16, 16, f.bold, AZUL);
+  c.derecha('Código de viaje', c.y - 10, 9, f.regular, GRIS);
+  c.derecha(params.viaje.trackingCode, c.y - 24, 11, f.bold, TEXTO);
+  c.derecha(
+    `Versión ${ver.numero}${ver.reemplazaA ? ` · reemplaza a v${ver.reemplazaA}` : ''}`,
+    c.y - 37,
+    9,
+    f.regular,
+    GRIS,
   );
-  drawLabelValue(
-    page,
-    'Emitido el',
-    formatDateTime(new Date()),
-    width / 2,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
+  c.y -= 48;
+  // 2. Regla azul (igual para todos los niveles: el nivel no va en color de fondo).
+  c.page.drawLine({ start: { x: MX, y: c.y }, end: { x: MX2, y: c.y }, thickness: 3, color: AZUL });
+  c.y -= 32;
+
+  // 3–4. Título y sello ESTIMADO en la misma línea (baja si no cabe).
+  c.texto(TITULO_CERT, MX, c.y, 20, f.bold, AZUL);
+  if (pres.estimado) {
+    const finTitulo = MX + f.bold.widthOfTextAtSize(TITULO_CERT, 20) + 14;
+    const anchoSello = anchoConTracking('ESTIMADO', f.bold, 9.5, 1.5) + 16;
+    const cabe = finTitulo + anchoSello <= MX2;
+    if (!cabe) c.y -= 28;
+    dibujarSello(c.page, cabe ? finTitulo : MX, c.y, anchoSello, f.bold);
+  }
+  c.y -= 20;
+  // 5. Subtítulo: metodología (versión de la emisión) + frase ISO.
+  c.texto(subtituloMetodologia(m.glecVersion), MX, c.y, 9, f.regular, GRIS);
+  c.y -= 13;
+  c.texto(FRASE_ISO, MX, c.y, 9, f.regular, TEXTO);
+  c.y -= 12;
+
+  // 6. Badge de calidad de datos.
+  const ancho = f.semibold.widthOfTextAtSize(pres.badge, 9.5) + 20;
+  rectRedondeado(c.page, MX, c.y - 12 - 18, ancho, 18, 9, {
+    color: pres.estimado ? hex('#FEF3E2') : hex('#E6F4EA'),
+    borderColor: pres.estimado ? hex('#F0B46B') : hex('#86C79B'),
+    borderWidth: 0.75,
+  });
+  c.texto(
+    pres.badge,
+    MX + 10,
+    c.y - 12 - 12.5,
+    9.5,
+    f.semibold,
+    pres.estimado ? hex('#7C3A0A') : hex('#14532D'),
   );
+  c.y -= 12 + 18 + 22;
 
-  cursorY -= 50;
+  // 7. Fechas (3 columnas). Null → «—», sin caer a otro dato (T3 trae las reales).
+  const col = (MX2 - MX) / 3;
+  const fechas: Array<[string, string]> = [
+    ['Fecha del viaje', params.viaje.deliveredAt ? formatDate(params.viaje.deliveredAt) : '—'],
+    ['Salida · Llegada', '—'],
+    ['Emitido el', formatDateTime(new Date())],
+  ];
+  fechas.forEach(([label, valor], i) => {
+    c.texto(label, MX + i * col, c.y, 8.5, f.regular, GRIS);
+    c.texto(valor, MX + i * col, c.y - 15, 10.5, f.semibold, TEXTO);
+  });
+  c.y -= 40;
 
-  // ============================================================
-  // Bloque 2 — Trayecto
-  // ============================================================
-  drawSectionTitle(page, 'Trayecto', 40, cursorY, fontBold, colorPrimary);
-  cursorY -= 22;
+  // 8. Resultados.
+  const kgWtw = m.kgco2eWtwActual ?? m.kgco2eWtwEstimated ?? 0;
+  const num = formatearNumeroPrincipal(kgWtw, m.uncertaintyFactor);
+  const topCaja = c.y;
+  c.y -= 22;
+  c.texto('Emisiones totales WTW', MX + 16, c.y, 9, f.regular, GRIS);
+  c.y -= 26;
+  c.texto(num.valor, MX + 16, c.y, 22, f.bold, TEXTO);
+  c.texto(
+    num.detalle,
+    MX + 16 + f.bold.widthOfTextAtSize(num.valor, 22) + 6,
+    c.y,
+    10.5,
+    f.semibold,
+    GRIS,
+  );
+  c.y -= 16;
+  c.texto('Well-to-Wheel (WTW) — combustión + upstream', MX + 16, c.y, 9, f.regular, GRIS);
+  const detalles: string[] = [];
+  if (m.kgco2eTtw !== null && m.kgco2eWtt !== null) {
+    detalles.push(`TTW: ${numeroEsCl(m.kgco2eTtw)} · WTT: ${numeroEsCl(m.kgco2eWtt)} kg CO\u2082e`);
+  }
+  if (m.intensidadGco2ePorTonKm !== null) {
+    detalles.push(`Intensidad: ${numeroEsCl(m.intensidadGco2ePorTonKm)} g CO\u2082e / t·km`);
+  }
+  const distanciaKm = m.distanciaKmActual ?? m.distanciaKmEstimated ?? 0;
+  // Invariante F0-0 §7: la distancia va cualificada por la cobertura medida.
+  detalles.push(
+    `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)}) · Combustible: ${
+      m.combustibleConsumido !== null
+        ? `${numeroEsCl(m.combustibleConsumido)} ${m.combustibleUnidad ?? ''}`
+        : '—'
+    }`,
+  );
+  for (const d of detalles) {
+    c.y -= 14;
+    c.texto(d, MX + 16, c.y, 9.5, f.regular, TEXTO);
+  }
+  c.y -= 16;
+  c.page.drawRectangle({
+    x: MX,
+    y: c.y,
+    width: MX2 - MX,
+    height: topCaja - c.y,
+    borderColor: hex('#D9DEE3'),
+    borderWidth: 1,
+  });
+  c.y -= 16;
 
-  drawLabelValue(
-    page,
+  // 9. Disclaimer: inmediatamente después de Resultados y entero (no se parte).
+  if (pres.estimado) {
+    const lineas = partir(
+      textoDisclaimer(m.fuenteFactores, m.glecVersion),
+      f.regular,
+      9,
+      MX2 - MX - 28,
+    );
+    const alto = 20 + 14 + lineas.length * 13;
+    c.asegurar(alto);
+    c.page.drawRectangle({
+      x: MX,
+      y: c.y - alto,
+      width: MX2 - MX,
+      height: alto,
+      color: hex('#FEF3E2'),
+    });
+    c.page.drawRectangle({ x: MX, y: c.y - alto, width: 3, height: alto, color: AMBAR });
+    c.texto(TITULO_DISCLAIMER, MX + 14, c.y - 20, 9.5, f.bold, TEXTO);
+    lineas.forEach((l, i) => c.texto(l, MX + 14, c.y - 34 - i * 13, 9, f.regular, TEXTO));
+    c.y -= alto + 20;
+  }
+
+  // Metodología (auditoría).
+  c.seccion('Metodología', f);
+  c.asegurar(16);
+  c.texto(FRASE_ISO, MX, c.y, 9.5, f.regular, TEXTO);
+  c.y -= 26;
+  // HC-003 (ux.md:18): la versión GLEC es la metodología; los factores citan su propia versión.
+  c.par(
+    'Metodología GLEC',
+    m.glecVersion,
+    'Modo de precisión',
+    formatPrecisionMethod(m.precisionMethod),
+    f,
+  );
+  c.par(
+    'Factor de emisión usado',
+    `${numeroEsCl(m.emissionFactorUsado)} kg CO\u2082e / unidad`,
+    null,
+    null,
+    f,
+  );
+  c.par('Fuente de factores', m.fuenteFactores, null, null, f);
+  // ADR-028 — origen del polyline; solo si el campo está presente.
+  if (m.routeDataSource) {
+    c.par(
+      'Origen de la ruta',
+      formatRouteDataSource(m.routeDataSource),
+      m.coveragePct !== undefined ? 'Cobertura telemétrica' : null,
+      m.coveragePct !== undefined ? `${numeroEsCl(m.coveragePct, 1)}%` : null,
+      f,
+    );
+    // ADR-077 §4 — línea de método con vocabulario cerrado.
+    const lineaMetodo = lineaMetodoCert(m);
+    if (lineaMetodo !== null) c.par('Método', lineaMetodo, null, null, f, TAMANO_LINEA_METODO);
+  }
+
+  // Trayecto.
+  c.seccion('Trayecto', f);
+  const region = (r: string | null) => (r ? ` (Región ${r})` : '');
+  c.par(
     'Origen',
-    `${params.viaje.origenDireccion}${params.viaje.origenRegionCode ? ` (Región ${params.viaje.origenRegionCode})` : ''}`,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
+    `${params.viaje.origenDireccion}${region(params.viaje.origenRegionCode)}`,
+    null,
+    null,
+    f,
   );
-  cursorY -= 30;
-
-  drawLabelValue(
-    page,
+  c.par(
     'Destino',
-    `${params.viaje.destinoDireccion}${params.viaje.destinoRegionCode ? ` (Región ${params.viaje.destinoRegionCode})` : ''}`,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
+    `${params.viaje.destinoDireccion}${region(params.viaje.destinoRegionCode)}`,
+    null,
+    null,
+    f,
   );
-  cursorY -= 30;
-
-  drawLabelValue(
-    page,
+  c.par(
     'Tipo de carga',
     formatCargoType(params.viaje.cargoTipo),
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
-  );
-  drawLabelValue(
-    page,
     'Peso',
     params.viaje.cargoPesoKg !== null
       ? `${params.viaje.cargoPesoKg.toLocaleString('es-CL')} kg`
       : '—',
-    width / 2,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
+    f,
   );
-  cursorY -= 30;
-
   if (params.viaje.deliveredAt) {
-    drawLabelValue(
-      page,
-      'Entregado el',
-      formatDateTime(params.viaje.deliveredAt),
-      40,
-      cursorY,
-      fontRegular,
-      fontBold,
-      colorMuted,
-    );
-    cursorY -= 30;
+    c.par('Entregado el', formatDateTime(params.viaje.deliveredAt), null, null, f);
   }
 
-  cursorY -= 10;
-
-  // ============================================================
-  // Bloque 3 — Resultado de carbono (lo importante)
-  // ============================================================
-  page.drawRectangle({
-    x: 30,
-    y: cursorY - 130,
-    width: width - 60,
-    height: 130,
-    borderColor: colorBorder,
-    borderWidth: 1,
-    color: rgb(0.97, 0.99, 0.97),
-  });
-
-  drawSectionTitle(
-    page,
-    'Resultado de huella de carbono',
-    40,
-    cursorY - 18,
-    fontBold,
-    colorPrimary,
-  );
-
-  const kgWtw = params.metricas.kgco2eWtwActual ?? params.metricas.kgco2eWtwEstimated ?? 0;
-  // ADR-028 §3 — si hay factor de incertidumbre, imprimir "X ± Y kg CO2e".
-  // El ± se construye como kgWtw × uncertaintyFactor (intervalo simétrico
-  // estándar GLEC v3 Annex B). Por ejemplo, 318.7 con factor 0.05 → ±15.9.
-  const incertidumbre = params.metricas.uncertaintyFactor;
-  const numeroPrincipal = formatearNumeroPrincipal(kgWtw, incertidumbre);
-  const numeroPrincipalSize = incertidumbre !== undefined && incertidumbre > 0 ? 22 : 28;
-
-  page.drawText(numeroPrincipal, {
-    x: 40,
-    y: cursorY - 60,
-    size: numeroPrincipalSize,
-    font: fontBold,
-    color: colorEmphasis,
-  });
-
-  page.drawText('Well-to-Wheel (WTW) — combustión + upstream', {
-    x: 40,
-    y: cursorY - 80,
-    size: 9,
-    font: fontRegular,
-    color: colorMuted,
-  });
-
-  // Desglose TTW / WTT a la derecha
-  if (params.metricas.kgco2eTtw !== null && params.metricas.kgco2eWtt !== null) {
-    page.drawText(
-      `TTW: ${params.metricas.kgco2eTtw.toFixed(2)}  ·  WTT: ${params.metricas.kgco2eWtt.toFixed(2)}`,
-      {
-        x: width - 230,
-        y: cursorY - 60,
-        size: 10,
-        font: fontRegular,
-        color: colorMuted,
-      },
-    );
-  }
-
-  if (params.metricas.intensidadGco2ePorTonKm !== null) {
-    page.drawText(
-      `Intensidad: ${params.metricas.intensidadGco2ePorTonKm.toFixed(2)} gCO2e / t·km`,
-      {
-        x: width - 230,
-        y: cursorY - 80,
-        size: 10,
-        font: fontRegular,
-        color: colorMuted,
-      },
-    );
-  }
-
-  const distanciaKm =
-    params.metricas.distanciaKmActual ?? params.metricas.distanciaKmEstimated ?? 0;
-
-  // Invariante de honestidad (F0-0 §7): la distancia se declara cualificada por
-  // la cobertura medida — nunca "medida" a secas cuando hay huecos.
-  page.drawText(
-    `Distancia: ${distanciaKm.toFixed(1)} km (${declaracionDistancia(params.metricas.coveragePct)})  ·  Combustible: ${
-      params.metricas.combustibleConsumido !== null
-        ? `${params.metricas.combustibleConsumido.toFixed(2)} ${params.metricas.combustibleUnidad ?? ''}`
-        : '—'
-    }`,
-    {
-      x: 40,
-      y: cursorY - 110,
-      size: 10,
-      font: fontRegular,
-      color: rgb(0.2, 0.2, 0.22),
-    },
-  );
-
-  cursorY -= 150;
-
-  // ============================================================
-  // Bloque 3.5 — Ahorro CO2e via matching de retorno (ADR-021 §6.4).
-  // Nota: usamos "CO2e" ASCII en vez de "CO₂e" (U+2082) porque pdf-lib
-  // embebe Helvetica WinAnsi, que no incluye los caracteres Unicode de
-  // subscript. Renderizar el subscript crashea con
-  // `WinAnsiEncoding cannot encode '₂'`. El resto del PDF usa la
-  // misma convención (líneas 72, 238, 340).
-  // ============================================================
-  // Solo renderizamos si el cálculo se realizó (factorMatchingAplicado
-  // != null) Y hubo ahorro real (> 0). Esto evita ruido visual en certs
-  // donde el viaje no tuvo medición de backhaul, o donde el retorno fue
-  // 100% vacío (peor caso GLEC §6.4.2).
-  const factorMatching = params.metricas.factorMatchingAplicado;
-  const ahorroBackhaul = params.metricas.ahorroCo2eVsSinMatchingKgco2eWtw;
+  // Ahorro por matching de retorno (ADR-021 §6.4): solo con cálculo y ahorro > 0.
+  const factorMatching = m.factorMatchingAplicado;
+  const ahorroBackhaul = m.ahorroCo2eVsSinMatchingKgco2eWtw;
   if (factorMatching != null && ahorroBackhaul != null && ahorroBackhaul > 0) {
-    drawSectionTitle(
-      page,
-      'Ahorro CO2e via matching de retorno (GLEC v3.0 §6.4)',
-      40,
-      cursorY,
-      fontBold,
-      colorPrimary,
-    );
-    cursorY -= 22;
-    drawLabelValue(
-      page,
+    c.seccion('Ahorro CO\u2082e vía matching de retorno (GLEC v3.0 §6.4)', f);
+    c.par(
       'Factor de matching aplicado',
       `${(factorMatching * 100).toFixed(0)}%`,
-      40,
-      cursorY,
-      fontRegular,
-      fontBold,
-      colorMuted,
-    );
-    drawLabelValue(
-      page,
       'Ahorro vs sin matching',
-      `${ahorroBackhaul.toFixed(2)} kg CO2e`,
-      width / 2,
-      cursorY,
-      fontRegular,
-      fontBold,
-      colorMuted,
+      `${numeroEsCl(ahorroBackhaul)} kg CO\u2082e`,
+      f,
     );
-    cursorY -= 35;
   }
 
-  // ============================================================
-  // Bloque 4 — Metodología (auditoría)
-  // ============================================================
-  drawSectionTitle(page, 'Metodología', 40, cursorY, fontBold, colorPrimary);
-  cursorY -= 22;
-
-  drawLabelValue(
-    page,
-    // HC-003 (ux.md:18): la versión GLEC es la metodología; los factores citan su propia versión.
-    'Metodología GLEC',
-    params.metricas.glecVersion,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
-  );
-  drawLabelValue(
-    page,
-    'Modo de precisión',
-    formatPrecisionMethod(params.metricas.precisionMethod),
-    width / 2,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
-  );
-  cursorY -= 30;
-
-  drawLabelValue(
-    page,
-    'Factor de emisión usado',
-    `${params.metricas.emissionFactorUsado.toFixed(5)} kgCO2e / unidad`,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
-  );
-  cursorY -= 30;
-
-  drawLabelValue(
-    page,
-    'Fuente de factores',
-    params.metricas.fuenteFactores,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
-  );
-  cursorY -= 30;
-
-  // ADR-028 — Origen del polyline (segunda dimensión de calidad). Solo
-  // imprimimos si el campo está presente, para no inventar info en certs
-  // viejos pre-ADR-028.
-  if (params.metricas.routeDataSource) {
-    drawLabelValue(
-      page,
-      'Origen de la ruta',
-      formatRouteDataSource(params.metricas.routeDataSource),
-      40,
-      cursorY,
-      fontRegular,
-      fontBold,
-      colorMuted,
-    );
-    if (params.metricas.coveragePct !== undefined) {
-      drawLabelValue(
-        page,
-        'Cobertura telemétrica',
-        `${params.metricas.coveragePct.toFixed(1)}%`,
-        width / 2,
-        cursorY,
-        fontRegular,
-        fontBold,
-        colorMuted,
-      );
-    }
-    cursorY -= 30;
-
-    // ADR-077 §4 — línea de método obligatoria, derivada de método × fuente ×
-    // cobertura con vocabulario cerrado. Misma frase en ambas plantillas y en
-    // la app. Ausente solo en certs legacy sin cobertura.
-    const lineaMetodo = lineaMetodoCert(params.metricas);
-    if (lineaMetodo !== null) {
-      drawLabelValue(
-        page,
-        'Método',
-        lineaMetodo,
-        40,
-        cursorY,
-        fontRegular,
-        fontBold,
-        colorMuted,
-        TAMANO_LINEA_METODO,
-      );
-      cursorY -= 30;
-    }
-  }
-
-  // ADR-028 — Disclaimer prominente solo en certs secundarios. Es el
-  // mecanismo de greenwashing-prevention: el cliente que recibe un cert
-  // secundario lee inmediatamente que NO es auditable bajo SBTi/CDP, y
-  // que existe path de upgrade vía Teltonika.
-  if (muestraDisclaimerSecundario(nivelCert)) {
-    cursorY -= 5;
-    page.drawRectangle({
-      x: 30,
-      y: cursorY - 60,
-      width: width - 60,
-      height: 60,
-      borderColor: rgb(0.85, 0.65, 0.1),
-      borderWidth: 1,
-      color: rgb(0.99, 0.96, 0.86),
-    });
-    page.drawText('IMPORTANTE — DATOS SECUNDARIOS MODELADOS', {
-      x: 40,
-      y: cursorY - 18,
-      size: 9,
-      font: fontBold,
-      color: rgb(0.55, 0.4, 0.05),
-    });
-    let ly = cursorY - 32;
-    for (const line of DISCLAIMER_SECUNDARIO_LINEAS) {
-      page.drawText(line, {
-        x: 40,
-        y: ly,
-        size: 8,
-        font: fontRegular,
-        color: rgb(0.3, 0.25, 0.1),
-      });
-      ly -= 12;
-    }
-    cursorY -= 70;
-  }
-
-  cursorY -= 10;
-
-  // ============================================================
-  // Bloque 5 — Partes
-  // ============================================================
-  drawSectionTitle(page, 'Partes', 40, cursorY, fontBold, colorPrimary);
-  cursorY -= 22;
-
-  drawLabelValue(
-    page,
+  // Partes.
+  c.seccion('Partes', f);
+  const rut = (r: string | null) => (r ? ` (${r})` : '');
+  c.par(
     'Generador de carga',
-    `${params.empresaShipper.legalName}${params.empresaShipper.rut ? ` (${params.empresaShipper.rut})` : ''}`,
-    40,
-    cursorY,
-    fontRegular,
-    fontBold,
-    colorMuted,
+    `${params.empresaShipper.legalName}${rut(params.empresaShipper.rut)}`,
+    null,
+    null,
+    f,
   );
-  cursorY -= 30;
-
-  if (params.transportista?.legalName) {
-    drawLabelValue(
-      page,
-      'Transportista',
-      `${params.transportista.legalName}${params.transportista.rut ? ` (${params.transportista.rut})` : ''}`,
-      40,
-      cursorY,
-      fontRegular,
-      fontBold,
-      colorMuted,
-    );
-    cursorY -= 30;
-
-    if (params.transportista.vehiclePlate) {
-      drawLabelValue(
-        page,
-        'Vehículo',
-        params.transportista.vehiclePlate,
-        40,
-        cursorY,
-        fontRegular,
-        fontBold,
-        colorMuted,
-      );
-      cursorY -= 30;
-    }
+  const t = params.transportista;
+  if (t?.legalName) {
+    c.par('Transportista', `${t.legalName}${rut(t.rut)}`, null, null, f);
+    if (t.vehiclePlate) c.par('Vehículo', t.vehiclePlate, null, null, f);
   }
 
-  // ============================================================
-  // Footer — verificación
-  // ============================================================
-  page.drawLine({
-    start: { x: 30, y: 80 },
-    end: { x: width - 30, y: 80 },
-    color: colorBorder,
-    thickness: 1,
-  });
-
-  page.drawText(
+  // Verificación.
+  c.asegurar(50);
+  c.y -= 6;
+  c.texto(
     'Este documento está firmado digitalmente con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.',
-    {
-      x: 40,
-      y: 60,
-      size: 9,
-      font: fontRegular,
-      color: colorMuted,
-    },
+    MX,
+    c.y,
+    8.5,
+    f.regular,
+    GRIS,
   );
-  page.drawText(`Verifica la firma en: ${params.verifyUrl}`, {
-    x: 40,
-    y: 45,
-    size: 9,
-    font: fontBold,
-    color: colorPrimary,
-  });
-  page.drawText(
+  c.texto(`Verifica la firma en: ${params.verifyUrl}`, MX, c.y - 13, 8.5, f.semibold, AZUL);
+  c.texto(
     'Documento emitido por Booster Chile SpA. Cualquier alteración invalida la firma.',
-    {
-      x: 40,
-      y: 30,
-      size: 8,
-      font: fontRegular,
-      color: colorMuted,
-    },
+    MX,
+    c.y - 26,
+    8,
+    f.regular,
+    GRIS,
   );
 
   // ============================================================
@@ -593,6 +332,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   // serializamos primero y reescribimos sobre el Buffer resultante.
   // ContactInfo y Reason van en el /Sig dictionary y son visibles en
   // Adobe Reader. Mantenerlos cortos.
+  dibujarPies(pdfDoc, f, params.viaje, pres.estimado);
   const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
   // subFilter explícito: el default de plainAddPlaceholder es
   // SUBFILTER_ADOBE_PKCS7_DETACHED (legacy Adobe), pero PAdES-B-B exige
@@ -615,51 +355,156 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
 // ============================================================
 
 type Page = ReturnType<PDFDocument['addPage']>;
-type Font = Awaited<ReturnType<PDFDocument['embedFont']>>;
 type RGB = ReturnType<typeof rgb>;
 
-function drawLabelValue(
+const A4: [number, number] = [595.28, 841.89];
+const MX = 48;
+const MX2 = A4[0] - 48;
+const TOPE = A4[1] - 40;
+/** Bajo esta y empieza la zona del pie (vN · Página X de Y). */
+const PISO = 56;
+
+function hex(h: string): RGB {
+  const n = Number.parseInt(h.slice(1), 16);
+  return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+const AZUL = hex('#0B3D5C');
+const TEXTO = hex('#1F2933');
+const GRIS = hex('#52606D');
+const AMBAR = hex('#B45309');
+
+/** Cursor vertical con salto de página cuando un bloque no cabe. */
+class Cursor {
+  page: Page;
+  y = TOPE;
+  constructor(private readonly doc: PDFDocument) {
+    this.page = doc.addPage(A4);
+  }
+  asegurar(alto: number): void {
+    if (this.y - alto < PISO) {
+      this.page = this.doc.addPage(A4);
+      this.y = TOPE;
+    }
+  }
+  texto(t: string, x: number, y: number, size: number, font: PDFFont, color: RGB): void {
+    this.page.drawText(t, { x, y, size, font, color });
+  }
+  derecha(t: string, y: number, size: number, font: PDFFont, color: RGB): void {
+    this.texto(t, MX2 - font.widthOfTextAtSize(t, size), y, size, font, color);
+  }
+  seccion(t: string, f: FuentesCert): void {
+    this.asegurar(40);
+    this.texto(t, MX, this.y, 11, f.bold, AZUL);
+    this.y -= 22;
+  }
+  /** Una fila con uno o dos pares label/valor (8,5 gris / valor semibold). */
+  par(
+    l1: string,
+    v1: string,
+    l2: string | null,
+    v2: string | null,
+    f: FuentesCert,
+    size = 10.5,
+  ): void {
+    this.asegurar(30);
+    this.texto(l1, MX, this.y + 12, 8.5, f.regular, GRIS);
+    this.texto(v1, MX, this.y, size, f.semibold, TEXTO);
+    if (l2 !== null && v2 !== null) {
+      const x = A4[0] / 2;
+      this.texto(l2, x, this.y + 12, 8.5, f.regular, GRIS);
+      this.texto(v2, x, this.y, size, f.semibold, TEXTO);
+    }
+    this.y -= 30;
+  }
+}
+
+function anchoConTracking(t: string, font: PDFFont, size: number, tracking: number): number {
+  return font.widthOfTextAtSize(t, size) + tracking * (t.length - 1);
+}
+
+/** Sello ESTIMADO: recuadro ámbar sin relleno, MAYÚSCULAS con tracking +1,5. */
+function dibujarSello(page: Page, x: number, yBase: number, ancho: number, bold: PDFFont): void {
+  rectRedondeado(page, x, yBase - 5, ancho, 20, 3, { borderColor: AMBAR, borderWidth: 1.5 });
+  page.pushOperators(setCharacterSpacing(1.5));
+  page.drawText('ESTIMADO', { x: x + 8, y: yBase + 1, size: 9.5, font: bold, color: AMBAR });
+  page.pushOperators(setCharacterSpacing(0));
+}
+
+/** Rectángulo redondeado vía path SVG (pdf-lib no tiene radio en drawRectangle). */
+function rectRedondeado(
   page: Page,
-  label: string,
-  value: string,
   x: number,
   y: number,
-  fontRegular: Font,
-  fontBold: Font,
-  colorMuted: RGB,
-  valueSize = 11,
-) {
-  page.drawText(label.toUpperCase(), {
-    x,
-    y: y + 12,
-    size: 7,
-    font: fontRegular,
-    color: colorMuted,
-  });
-  page.drawText(value, {
-    x,
-    y,
-    size: valueSize,
-    font: fontBold,
-    color: rgb(0.1, 0.1, 0.12),
+  w: number,
+  h: number,
+  r: number,
+  opts: { color?: RGB; borderColor?: RGB; borderWidth?: number },
+): void {
+  const path = `M ${r} 0 H ${w - r} A ${r} ${r} 0 0 1 ${w} ${r} V ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} H ${r} A ${r} ${r} 0 0 1 0 ${h - r} V ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+  page.drawSvgPath(path, { x, y: y + h, ...opts });
+}
+
+/** Parte un texto en líneas que caben en `ancho` pt. */
+function partir(t: string, font: PDFFont, size: number, ancho: number): string[] {
+  const lineas: string[] = [];
+  let actual = '';
+  for (const palabra of t.split(' ')) {
+    const prueba = actual ? `${actual} ${palabra}` : palabra;
+    if (font.widthOfTextAtSize(prueba, size) > ancho && actual) {
+      lineas.push(actual);
+      actual = palabra;
+    } else {
+      actual = prueba;
+    }
+  }
+  if (actual) lineas.push(actual);
+  return lineas;
+}
+
+/** Pie de todas las páginas: «BOO-X · vN[ · Estimado]» y «Página X de Y». */
+function dibujarPies(
+  doc: PDFDocument,
+  f: FuentesCert,
+  viaje: DatosViajeCertificado,
+  estimado: boolean,
+): void {
+  const paginas = doc.getPages();
+  const izq = `${viaje.trackingCode} · v${viaje.version?.numero ?? 1}`;
+  paginas.forEach((p, i) => {
+    p.drawLine({
+      start: { x: MX, y: 36 },
+      end: { x: MX2, y: 36 },
+      thickness: 0.5,
+      color: hex('#D9DEE3'),
+    });
+    p.drawText(izq, { x: MX, y: 24, size: 8, font: f.regular, color: GRIS });
+    if (estimado) {
+      p.drawText(' · Estimado', {
+        x: MX + f.regular.widthOfTextAtSize(izq, 8),
+        y: 24,
+        size: 8,
+        font: f.bold,
+        color: AMBAR,
+      });
+    }
+    const der = `Página ${i + 1} de ${paginas.length}`;
+    p.drawText(der, {
+      x: MX2 - f.regular.widthOfTextAtSize(der, 8),
+      y: 24,
+      size: 8,
+      font: f.regular,
+      color: GRIS,
+    });
   });
 }
 
-function drawSectionTitle(
-  page: Page,
-  text: string,
-  x: number,
-  y: number,
-  fontBold: Font,
-  colorPrimary: RGB,
-) {
-  page.drawText(text, {
-    x,
-    y,
-    size: 11,
-    font: fontBold,
-    color: colorPrimary,
-  });
+function formatDate(d: Date): string {
+  return new Intl.DateTimeFormat('es-CL', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'America/Santiago',
+  }).format(d);
 }
 
 function formatDateTime(d: Date): string {

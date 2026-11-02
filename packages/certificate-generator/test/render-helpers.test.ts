@@ -153,3 +153,18 @@ describe('formatRouteDataSource', () => {
     expect(formatRouteDataSource('phone_gps')).toBe('phone_gps');
   });
 });
+
+describe('presentacionNivel (HC-004): badge, sello y disclaimer salen de la misma función', () => {
+  it('99,6 % no se redondea a 100 (piso)', async () => {
+    const { presentacionNivel } = await import('../src/render-helpers.js');
+    expect(
+      presentacionNivel({ certificationLevel: 'primario_verificable', coveragePct: 99.6 }).badge,
+    ).toBe('\u2713 Dato primario medido · 99% telemetría');
+  });
+  it('cobertura ausente → 0 % y nivel ausente → estimado', async () => {
+    const { presentacionNivel } = await import('../src/render-helpers.js');
+    const p = presentacionNivel({});
+    expect(p.estimado).toBe(true);
+    expect(p.badge).toBe('Estimado · datos secundarios modelados · 0% telemetría');
+  });
+});
