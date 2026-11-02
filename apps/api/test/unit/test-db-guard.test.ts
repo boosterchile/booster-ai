@@ -14,6 +14,10 @@ describe('assertTestDbUrl', () => {
     ['socket cloudsql', 'postgresql://u:secreto@localhost/test?host=/cloudsql/proj:region:inst'],
     ['DB sin prefijo test', 'postgresql://u:secreto@127.0.0.1:5432/booster'],
     ['URL inválida', 'no-es-url'],
+    ['userinfo con #@', 'postgresql://u:secreto#@evil.com/testdb'],
+    ['varios hosts', 'postgresql://u:secreto@localhost,evil.com/testdb'],
+    ['path con ../ hacia otra DB', 'postgresql://u:secreto@localhost/test/../prod'],
+    ['path con ../ normalizable', 'postgresql://u:secreto@localhost/../test'],
   ])('rechaza %s sin exponer el password', (_caso, url) => {
     expect(() => assertTestDbUrl(url)).toThrow(/Aborto sin conectar/);
     expect(() => assertTestDbUrl(url)).not.toThrow(/secreto/);
