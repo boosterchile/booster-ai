@@ -267,13 +267,22 @@ describe('emitirCertificadoViaje', () => {
         emisionesKgco2eTtw: '30.6',
         emisionesKgco2eWtt: '6.6',
         intensidadGco2ePorTkm: '64.4',
-        factoresFuente: 'GLEC v2.0 (2019), Tabla 32',
+        factoresFuente:
+          'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87',
+        emissionFactorUsed: '3.24',
+        ttwRef: '2.740',
+        wttRef: '0.624',
+        fuenteRef: 'HuellaChile 2025, MMA',
       },
       {
         kgco2eTtw: 30.6,
         kgco2eWtt: 6.6,
         intensidadGco2ePorTonKm: 64.4,
-        fuenteFactores: 'GLEC v2.0 (2019), Tabla 32',
+        fuenteFactores:
+          'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87',
+        // HC-004 (d): resuelto desde la tabla versionada por factores_fuente.
+        factoresLinea: { etiqueta: 'GLEC v2.0 (2019), Tabla 32', ttw: 2.67, wtt: 0.57, wtw: 3.24 },
+        referencia: { ttw: 2.74, wtt: 0.624, fuente: 'HuellaChile 2025, MMA' },
       },
     ],
     [
@@ -288,7 +297,10 @@ describe('emitirCertificadoViaje', () => {
         kgco2eTtw: null,
         kgco2eWtt: null,
         intensidadGco2ePorTonKm: null,
-        fuenteFactores: 'SEC Chile 2024 + GLEC v3.0',
+        // HC-004 criterio 12: sin etiqueta legacy «SEC Chile 2024»; sin fila → sin línea.
+        fuenteFactores: null,
+        factoresLinea: null,
+        referencia: null,
       },
     ],
   ])('HC-003 T1: pasa TTW/WTT/intensidad al generador — %s', async (_, cols, esperado) => {
@@ -315,6 +327,22 @@ describe('emitirCertificadoViaje', () => {
       metricas: Record<string, unknown>;
     };
     expect(arg.metricas).toMatchObject(esperado);
+  });
+
+  it('HC-004: sin versión GLEC guardada no se emite (sin default v3.0, decisión 14:50)', async () => {
+    const db = makeDb({
+      selects: [[TRIP_DELIVERED], [{ ...METRICS_BASE, glecVersion: null }]],
+      updates: [[]],
+      inserts: [[]],
+    });
+    const result = await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(result).toEqual({ skipped: true, reason: 'version_glec_missing' });
+    expect(emitirCertificado).not.toHaveBeenCalled();
   });
 
   it('happy path SIN assignment (cert solo con shipper)', async () => {
