@@ -29,9 +29,9 @@ const noopLogger = {
   typeof import('../../src/routes/conductores.js').createConductoresRoutes
 >[0]['logger'];
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
-const CONDUCTOR_ID = '22222222-2222-2222-2222-222222222222';
-const USER_ID = '33333333-3333-3333-3333-333333333333';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
+const CONDUCTOR_ID = '22222222-2222-4222-8222-222222222222';
+const USER_ID = '33333333-3333-4333-8333-333333333333';
 
 const VALID_RUT = '11.111.111-1';
 
@@ -983,7 +983,7 @@ describe('POST /conductores — email real y único', () => {
         [],
         [
           {
-            empresaId: '99999999-9999-9999-9999-999999999999',
+            empresaId: '99999999-9999-4999-9999-999999999999',
             role: 'dueno',
             organizacionId: null,
             status: 'activa',
@@ -1234,7 +1234,7 @@ describe('POST /conductores/:id/email', () => {
     {
       caso: 'membresía en otra empresa',
       vinculo: {
-        empresaId: '99999999-9999-9999-9999-999999999999',
+        empresaId: '99999999-9999-4999-9999-999999999999',
         role: 'conductor',
         organizacionId: null,
         status: 'activa',
@@ -1470,7 +1470,7 @@ describe('POST /conductores/:id/telefono', () => {
         [filaConductor({ phone: '+56911111111' })],
         [
           {
-            empresaId: '99999999-9999-9999-9999-999999999999',
+            empresaId: '99999999-9999-4999-9999-999999999999',
             role: 'conductor',
             organizacionId: null,
             status: 'activa',
@@ -1590,7 +1590,7 @@ describe('POST /conductores/:id/telefono', () => {
   });
 });
 
-const OTRA_EMPRESA_ID = '99999999-9999-9999-9999-999999999999';
+const OTRA_EMPRESA_ID = '99999999-9999-4999-9999-999999999999';
 
 function usuarioPendienteConPin(overrides: Record<string, unknown> = {}) {
   return {

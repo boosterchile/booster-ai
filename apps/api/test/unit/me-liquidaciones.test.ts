@@ -22,7 +22,7 @@ const noopLogger = {
   child: () => noopLogger,
 } as never;
 
-const EMPRESA_CARRIER_ID = '11111111-1111-1111-1111-111111111111';
+const EMPRESA_CARRIER_ID = '11111111-1111-4111-8111-111111111111';
 
 function makeCarrierCtx(): UserContext {
   return {

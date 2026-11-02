@@ -26,7 +26,7 @@ const noopLogger = {
   child: () => noopLogger,
 } as unknown as NotifyTrackingLinkDeps['logger'];
 
-const ASSIGNMENT_ID = '00000000-0000-0000-0000-000000000b01';
+const ASSIGNMENT_ID = '00000000-0000-4000-8000-000000000b01';
 const VALID_SID = 'HXac1ef21ed9423258a2c38dad02f31e41';
 const TOKEN = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -76,7 +76,7 @@ const baseRow = (overrides: Partial<JoinRow> = {}): JoinRow => ({
   originRegion: 'XIII',
   destRegion: 'IV',
   consigneeWhatsapp: null, // default: sin consignee opt-in
-  shipperUserId: '00000000-0000-0000-0000-000000000b02',
+  shipperUserId: '00000000-0000-4000-8000-000000000b02',
   shipperWhatsapp: '+56912345678',
   ...overrides,
 });

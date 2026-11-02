@@ -14,10 +14,10 @@ const noopLogger = {
   typeof import('../../src/routes/documentos.js').createDocumentosRoutes
 >[0]['logger'];
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
-const VEHICLE_ID = '22222222-2222-2222-2222-222222222222';
-const DOC_ID = '33333333-3333-3333-3333-333333333333';
-const CONDUCTOR_ID = '44444444-4444-4444-4444-444444444444';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
+const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
+const DOC_ID = '33333333-3333-4333-8333-333333333333';
+const CONDUCTOR_ID = '44444444-4444-4444-8444-444444444444';
 
 function buildVehicleDocRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {

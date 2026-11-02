@@ -47,7 +47,7 @@ const API_AUDIENCE = ['https://api.boosterchile.com'];
 const VALID_EVENT = {
   eventType: 'crash' as const,
   imei: '123456789012345',
-  vehicleId: '00000000-0000-0000-0000-000000000001',
+  vehicleId: '00000000-0000-4000-8000-000000000001',
   occurredAt: '2026-06-15T10:00:00Z',
 };
 
