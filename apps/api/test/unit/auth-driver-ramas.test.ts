@@ -18,7 +18,7 @@ const EMPRESA_ID = 'eeeeeeee-0000-0000-0000-000000000001';
 const USUARIO_ACTIVABLE = {
   id: USER_ID,
   firebaseUid: 'pending-rut:11.111.111-1',
-  email: 'conductor.real@gmail.com',
+  email: 'conductor@boosterchile.invalid',
   rut: VALID_RUT,
   activationPinHash: hashActivationPin('123456'),
   claveNumericaHash: null,
