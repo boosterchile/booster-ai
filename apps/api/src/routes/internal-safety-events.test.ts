@@ -356,3 +356,69 @@ describe('POST /internal/safety-events', () => {
     });
   });
 });
+
+describe('POST /internal/safety-events — contrato del 400 (TRK-003)', () => {
+  it('envelope Pub/Sub sin message → 400 con details', async () => {
+    const app = makeApp({ oauthClient: makeOAuthClient({ email: CALLER_SA }) });
+    const res = await makeRequest({
+      app,
+      authorization: 'Bearer valid-token',
+      body: { subscription: 'some-sub' },
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": [
+            {
+              "code": "invalid_type",
+              "expected": "object",
+              "message": "Required",
+              "path": [
+                "message",
+              ],
+              "received": "undefined",
+            },
+          ],
+          "error": "Invalid Pub/Sub envelope",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('SafetyEvent inválido → 400 con details', async () => {
+    const app = makeApp({ oauthClient: makeOAuthClient({ email: CALLER_SA }) });
+    const res = await makeRequest({
+      app,
+      authorization: 'Bearer valid-token',
+      body: makeEnvelopeBody({ eventType: 'crash', imei: 'NOT-A-VALID-IMEI' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": [
+            {
+              "code": "invalid_string",
+              "message": "IMEI debe ser 14-16 dígitos",
+              "path": [
+                "imei",
+              ],
+              "validation": "regex",
+            },
+            {
+              "code": "invalid_type",
+              "expected": "string",
+              "message": "Required",
+              "path": [
+                "occurredAt",
+              ],
+              "received": "undefined",
+            },
+          ],
+          "error": "Invalid SafetyEvent",
+        },
+        "status": 400,
+      }
+    `);
+  });
+});

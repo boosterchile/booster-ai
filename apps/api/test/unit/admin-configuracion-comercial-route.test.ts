@@ -259,3 +259,113 @@ describe('gestión de flota por transportista (ADR-079 §4)', () => {
     ).toBe(403);
   });
 });
+
+describe('admin configuración comercial — contrato del 422 (TRK-003)', () => {
+  const EMP_422 = '00000000-0000-4000-8000-0000000000f1';
+  const putEn = (app: Hono, path: string, body: unknown) =>
+    app.request(`/admin/configuracion-comercial${path}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  it('PUT / sin nota_cambio → 422 configuracion_invalida', async () => {
+    const res = await buildApp(ADMIN).put({ config: CONFIGURACION_COMERCIAL_INICIAL });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "configuracion_invalida",
+          "issues": [
+            {
+              "code": "invalid_type",
+              "expected": "string",
+              "message": "Required",
+              "path": [
+                "nota_cambio",
+              ],
+              "received": "undefined",
+            },
+          ],
+        },
+        "status": 422,
+      }
+    `);
+  });
+
+  it('PUT / con spot ≤ programada → 422 configuracion_invalida (refine)', async () => {
+    const res = await buildApp(ADMIN).put({
+      config: {
+        ...CONFIGURACION_COMERCIAL_INICIAL,
+        comisiones: { spot_pct: 10, programada_pct: 10 },
+      },
+      nota_cambio: 'empate',
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "configuracion_invalida",
+          "issues": [
+            {
+              "code": "custom",
+              "message": "spot_pct debe ser mayor que programada_pct (ADR-079 §2)",
+              "path": [
+                "config",
+                "comisiones",
+                "spot_pct",
+              ],
+            },
+          ],
+        },
+        "status": 422,
+      }
+    `);
+  });
+
+  it('PUT /contrato-programado/:id con activo no booleano → 422 body_invalido', async () => {
+    const res = await putEn(buildApp(ADMIN).app, `/contrato-programado/${EMP_422}`, {
+      activo: 'si',
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "body_invalido",
+          "issues": [
+            {
+              "code": "invalid_type",
+              "expected": "boolean",
+              "message": "Expected boolean, received string",
+              "path": [
+                "activo",
+              ],
+              "received": "string",
+            },
+          ],
+        },
+        "status": 422,
+      }
+    `);
+  });
+
+  it('PUT /gestion-flota/:id con activo no booleano → 422 body_invalido', async () => {
+    const res = await putEn(buildApp(ADMIN).app, `/gestion-flota/${EMP_422}`, { activo: 'si' });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "body_invalido",
+          "issues": [
+            {
+              "code": "invalid_type",
+              "expected": "boolean",
+              "message": "Expected boolean, received string",
+              "path": [
+                "activo",
+              ],
+              "received": "string",
+            },
+          ],
+        },
+        "status": 422,
+      }
+    `);
+  });
+});
