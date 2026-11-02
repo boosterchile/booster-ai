@@ -29,10 +29,8 @@ CREATE TABLE IF NOT EXISTS certificados_viaje (
   CONSTRAINT chk_certificados_viaje_estado CHECK (estado IN ('vigente', 'reemplazado', 'revertido'))
 );
 
--- A lo más una versión vigente por viaje.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_certificados_viaje_vigente
   ON certificados_viaje (viaje_id) WHERE estado = 'vigente';
--- /verify busca por sha256 dentro del viaje.
 CREATE INDEX IF NOT EXISTS idx_certificados_viaje_sha256 ON certificados_viaje (sha256);
 
 ALTER TABLE metricas_viaje ADD COLUMN IF NOT EXISTS certificado_vigente_id uuid

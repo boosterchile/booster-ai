@@ -126,24 +126,3 @@ export async function revertirVersion(db: Db, tripId: string): Promise<Certifica
     return vuelta;
   });
 }
-
-/**
- * Para /verify: si el sha256 es de una versión no vigente del viaje, devuelve
- * esa versión y la vigente. null si es la vigente o no está en el historial
- * (en ese caso /verify responde como siempre).
- */
-export async function versionNoVigentePorSha(
-  db: Consulta,
-  tripId: string,
-  sha256: string,
-): Promise<{ version: CertificadoViaje; vigente: CertificadoViaje | null } | null> {
-  const [version] = await db
-    .select()
-    .from(certificadosViaje)
-    .where(and(eq(certificadosViaje.tripId, tripId), eq(certificadosViaje.sha256, sha256)))
-    .limit(1);
-  if (!version || version.estado === 'vigente') {
-    return null;
-  }
-  return { version, vigente: await obtenerVigente(db, tripId) };
-}

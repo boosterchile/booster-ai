@@ -25,9 +25,11 @@ import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { tripMetrics, trips } from '../db/schema.js';
-import { versionNoVigentePorSha } from '../services/certificados-versionados.js';
+import { certificadosViaje, tripMetrics, trips } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
+import { obtenerVigente } from '../services/certificados-versionados.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 
@@ -170,12 +172,18 @@ export function createCertificatesRoutes(opts: {
   //
   // 404 si el tracking_code no existe o el cert todavía no fue emitido.
   //
-  // HC-001 p3a: con `?sha256=` de una versión reemplazada o revertida responde
-  // 200 con `vigente: false` y la referencia a la vigente («reemplazado por v2»)
-  // en vez de tratarla como inválida. La firma de esa versión fue auténtica.
-  // Sin `?sha256=`, o con el de la vigente, responde igual que siempre.
+  // HC-001 p3a, `?sha256=` (hex de 64 en minúscula; si no, 400):
+  // - el de la vigente, o sin el parámetro: igual que siempre;
+  // - el de una versión reemplazada/revertida: `vigente: false` y la vigente;
+  // - cualquier otro: `valid: false`, motivo `sha256_no_corresponde`.
   // ---------------------------------------------------------------------
-  app.get('/:tracking_code/verify', async (c) => {
+  const verifyQuery = z.object({
+    sha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'Debe ser un sha256 hexadecimal de 64 caracteres en minúscula.')
+      .optional(),
+  });
+  app.get('/:tracking_code/verify', zValidator('query', verifyQuery), async (c) => {
     const trackingCode = c.req.param('tracking_code');
 
     if (!opts.certConfig?.certificatesBucket) {
@@ -189,6 +197,7 @@ export function createCertificatesRoutes(opts: {
         tripId: trips.id,
         empresaId: trips.generadorCargaEmpresaId,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
+        certificateSha256: tripMetrics.certificateSha256,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
@@ -207,34 +216,39 @@ export function createCertificatesRoutes(opts: {
         404,
       );
     }
-    const sha256 = c.req.query('sha256')?.trim().toLowerCase();
-    if (sha256) {
-      const historial = await versionNoVigentePorSha(opts.db, trip.tripId, sha256);
-      if (historial) {
-        const { version, vigente } = historial;
+    const { sha256 } = c.req.valid('query');
+    if (sha256 && sha256 !== trip.certificateSha256) {
+      const [version] = await opts.db
+        .select()
+        .from(certificadosViaje)
+        .where(and(eq(certificadosViaje.tripId, trip.tripId), eq(certificadosViaje.sha256, sha256)))
+        .limit(1);
+      if (!version || version.estado === 'vigente') {
         return c.json({
-          valid: true,
-          vigente: false,
+          valid: false,
           tracking_code: trackingCode,
-          estado: version.estado,
-          version: version.version,
-          pdf_sha256: version.sha256,
-          emitido_en: version.emitidoEn.toISOString(),
-          reemplazado_en: version.reemplazadoEn?.toISOString() ?? null,
-          mensaje: vigente
-            ? version.estado === 'reemplazado'
-              ? `reemplazado por v${vigente.version}`
-              : `revertido; vigente v${vigente.version}`
-            : version.estado,
-          version_vigente: vigente
-            ? {
-                version: vigente.version,
-                pdf_sha256: vigente.sha256,
-                emitido_en: vigente.emitidoEn.toISOString(),
-              }
-            : null,
+          motivo: 'sha256_no_corresponde',
         });
       }
+      const vigente = await obtenerVigente(opts.db, trip.tripId);
+      return c.json({
+        valid: true,
+        vigente: false,
+        tracking_code: trackingCode,
+        estado: version.estado,
+        version: version.version,
+        pdf_sha256: version.sha256,
+        emitido_en: version.emitidoEn.toISOString(),
+        reemplazado_en: version.reemplazadoEn?.toISOString() ?? null,
+        mensaje: vigente
+          ? `${version.estado === 'reemplazado' ? 'reemplazado por' : 'revertido; vigente'} v${vigente.version}`
+          : version.estado,
+        version_vigente: vigente && {
+          version: vigente.version,
+          pdf_sha256: vigente.sha256,
+          emitido_en: vigente.emitidoEn.toISOString(),
+        },
+      });
     }
     if (!trip.empresaId) {
       // Edge: trip sin shipper (anonymous WhatsApp). No debería tener

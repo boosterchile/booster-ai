@@ -242,7 +242,7 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
       logger: { info: noop, warn: noop, error: noop, debug: noop } as never,
       certConfig: { certificatesBucket: 'b' },
     });
-    const r1 = await app.request(`/${tracking}/verify?sha256=${sha('A')}`);
+    const r1 = await app.request(`/${tracking}/verify?sha256=${sha('a')}`);
     expect(r1.status).toBe(200);
     expect(await r1.json()).toMatchObject({
       valid: true,
@@ -258,6 +258,20 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
       const r = await app.request(`/${tracking}/verify${q}`);
       expect(r.status).toBe(404);
       expect(await r.json()).toMatchObject({ code: 'certificate_not_issued' });
+    }
+    // Hex válido que no es ninguna versión del viaje → valid:false, nunca el de otra.
+    const otro = await app.request(`/${tracking}/verify?sha256=${sha('e')}`);
+    expect(otro.status).toBe(200);
+    expect(await otro.json()).toEqual({
+      valid: false,
+      tracking_code: tracking,
+      motivo: 'sha256_no_corresponde',
+    });
+    // Formato inválido (mayúsculas, largo, no hex) → 400 del patrón zValidator.
+    for (const malo of [sha('A'), 'a'.repeat(63), `${'g'.repeat(64)}`, '']) {
+      const r = await app.request(`/${tracking}/verify?sha256=${malo}`);
+      expect(r.status, malo).toBe(400);
+      expect(await r.json()).toMatchObject({ success: false });
     }
     await revertirVersion(handle.db as never, tripId);
     const r2 = await app.request(`/${tracking}/verify?sha256=${sha('b')}`);
