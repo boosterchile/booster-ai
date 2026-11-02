@@ -116,7 +116,8 @@ steps:
           echo "[sourcemaps] skip (token o DSN ausente) — deploy sigue idéntico"
           exit 0
         fi
-        docker build --file=apps/web/Dockerfile --target=build \
+        # 420s tope del docker build (máx. observado 389s); 420 + 150 < 600.
+        timeout 420 docker build --file=apps/web/Dockerfile --target=build \
           --build-arg=VITE_API_URL=${_VITE_API_URL} \
           --build-arg=VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY} \
           --build-arg=VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN} \
@@ -133,7 +134,7 @@ steps:
         docker cp webbuild:/app/sourcemaps ./sourcemaps-web
         docker cp webbuild:/app/apps/web/dist ./dist-web
         docker rm webbuild
-        timeout 150 docker run --rm -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
+        timeout 150 docker run --rm --init -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
           getsentry/sentry-cli:2 \
           sourcemaps upload --org=booster-chile --project=javascript-react \
           --release=${_COMMIT_SHA} --url-prefix='~/assets' \
