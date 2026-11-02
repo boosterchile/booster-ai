@@ -55,7 +55,8 @@ const FUENTE_CEN = 'CEN Chile 2024 (factor SEN anual) + GLEC v3.0 EU defaults';
  */
 const FACTORES_SEC_CHILE_2024: Readonly<Record<TipoCombustible, FactorEmisionCombustible>> = {
   // ──────────────────────────────────────────────────────────────────────────
-  // Diésel B5 (5% biodiésel mandatorio en Chile desde Decreto N°60/2010)
+  // Diésel: fila «Diesel» (pura) de la Tabla 32 GLEC v2.0, elegida por Felipe
+  // (decision.md:79). La fila B5 de la misma tabla (2,54/0,63/3,17) no se usa.
   //
   // HC-003: GLEC v2.0 (2019) Módulo 1, Tabla 32 EU, p. 87 →
   //   TTW 2.67 · WTT 0.57 · WTW 3.24 kg CO₂e/L.

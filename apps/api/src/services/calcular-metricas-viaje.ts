@@ -973,13 +973,18 @@ async function recalcularNivelPostEntregaInner(opts: {
               emisionesReales !== null && emisionesReales.unidadCombustible === 'L'
                 ? emisionesReales.combustibleConsumido.toString()
                 : null,
-            // Sin huella real el desglose estimado queda: es el que respalda el WTW del cert.
+            // Sin huella real el desglose queda en null: TTW+WTT no debe venir de un
+            // cálculo real anterior que ya no respalda el WTW del certificado.
             ...(emisionesReales !== null
               ? {
                   precisionMethod: emisionesReales.metodoPrecision,
                   ...desgloseEmisiones(emisionesReales, trip.cargoWeightKg, vehiculo.fuelType),
                 }
-              : {}),
+              : {
+                  emisionesKgco2eTtw: null,
+                  emisionesKgco2eWtt: null,
+                  intensidadGco2ePorTkm: null,
+                }),
           }
         : {}),
       updatedAt: sql`now()`,

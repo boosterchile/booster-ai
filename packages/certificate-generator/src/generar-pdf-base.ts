@@ -370,7 +370,8 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
 
   drawLabelValue(
     page,
-    'Versión GLEC',
+    // HC-003 (ux.md:18): la versión GLEC es la metodología; los factores citan su propia versión.
+    'Metodología GLEC',
     params.metricas.glecVersion,
     40,
     cursorY,
@@ -404,7 +405,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
 
   drawLabelValue(
     page,
-    'Fuente factores',
+    'Fuente de factores',
     params.metricas.fuenteFactores,
     40,
     cursorY,

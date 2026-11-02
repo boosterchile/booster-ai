@@ -1298,6 +1298,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo, 6);
     expect(setArg.routeDataSource).toBe('teltonika_gps');
+    // HC-003 fix1: sin huella real, el desglose no arrastra un cálculo real anterior.
+    expect(setArg.emisionesKgco2eTtw).toBeNull();
+    expect(setArg.emisionesKgco2eWtt).toBeNull();
+    expect(setArg.intensidadGco2ePorTkm).toBeNull();
     expect(counter('huella_peso_ausente_total')?.add).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ fuente: 'teltonika_gps' }),
