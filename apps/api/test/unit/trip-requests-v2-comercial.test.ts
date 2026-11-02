@@ -200,3 +200,69 @@ describe('GET /trip-requests-v2/cotizacion', () => {
     expect((await get(app, 'precio_transportista_clp=-5&modalidad_carga=spot')).status).toBe(400);
   });
 });
+
+describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () => {
+  it('precio negativo → 400 invalid_query', async () => {
+    appConfig.PRICING_V3_ACTIVATED = true;
+    const res = await setup().app.request(
+      '/trip-requests-v2/cotizacion?precio_transportista_clp=-5&modalidad_carga=spot',
+    );
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "invalid_query",
+          "issues": [
+            {
+              "code": "too_small",
+              "exact": false,
+              "inclusive": true,
+              "message": "Number must be greater than or equal to 0",
+              "minimum": 0,
+              "path": [
+                "precio_transportista_clp",
+              ],
+              "type": "number",
+            },
+          ],
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('sin precio y modalidad desconocida → 400 invalid_query', async () => {
+    appConfig.PRICING_V3_ACTIVATED = true;
+    const res = await setup().app.request('/trip-requests-v2/cotizacion?modalidad_carga=nocturna');
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "invalid_query",
+          "issues": [
+            {
+              "code": "invalid_type",
+              "expected": "number",
+              "message": "Expected number, received nan",
+              "path": [
+                "precio_transportista_clp",
+              ],
+              "received": "nan",
+            },
+            {
+              "code": "invalid_enum_value",
+              "message": "Invalid enum value. Expected 'spot' | 'programada', received 'nocturna'",
+              "options": [
+                "spot",
+                "programada",
+              ],
+              "path": [
+                "modalidad_carga",
+              ],
+              "received": "nocturna",
+            },
+          ],
+        },
+        "status": 400,
+      }
+    `);
+  });
+});
