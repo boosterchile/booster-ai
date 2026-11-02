@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { loginRutSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { eq, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { verifyClaveNumerica } from '../services/clave-numerica.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
