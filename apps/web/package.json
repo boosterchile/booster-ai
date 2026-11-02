@@ -19,7 +19,7 @@
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/ui-components": "workspace:*",
     "@booster-ai/ui-tokens": "workspace:*",
-    "@hookform/resolvers": "^3.10.0",
+    "@hookform/resolvers": "^5.2.2",
     "@picovoice/porcupine-web": "4.0.1",
     "@picovoice/web-voice-processor": "4.0.10",
     "@sentry/react": "^10.66.0",
@@ -32,13 +32,13 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.75.0",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.49.1",
     "@tailwindcss/vite": "^4.0.0",
-    "@tanstack/router-plugin": "^1.167.35",
+    "@tanstack/router-plugin": "^1.168.48",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",

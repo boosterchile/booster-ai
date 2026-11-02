@@ -229,7 +229,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
     // Normalizar RUT.
     const rutParsed = rutSchema.safeParse(body.rut);
     if (!rutParsed.success) {
-      return c.json({ error: 'invalid_rut', details: rutParsed.error.format() }, 400);
+      return c.json({ error: 'invalid_rut', details: z.treeifyError(rutParsed.error) }, 400);
     }
     const rut = rutParsed.data;
 

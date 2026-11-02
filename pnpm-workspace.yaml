@@ -38,19 +38,11 @@ overrides:
   # auto-instrumentations-node → instrumentation-host-metrics. Se queda en 5.x
   # (el rango de host-metrics es ^5.31.6).
   "systeminformation@<5.33.16": ">=5.33.16 <6"
-
-# Riesgo aceptado, no silenciado (2026-10-29, follow-up zod-4-migracion-2026-10).
-# Requiere el visto explícito del PO en el PR que lo introduce.
-# GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404, CWE-770, solo disponibilidad): zod
-# acumula un issue por cada elemento inválido de un arreglo, sin tope. Rango
-# `< 4.6.6`: no hay ninguna 3.x parchada y todo el monorepo usa zod 3.25.76.
-# Migrar a zod 4 es un cambio mayor con efectos en contratos públicos (medido
-# en el follow-up). El análisis de exposición se entregó al PO por canal
-# privado. Mismo ID en `.trivyignore`. Se quita al cerrar la migración a zod 4,
-# y se revisa a más tardar el 2026-12-31.
-auditConfig:
-  ignoreGhsas:
-    - GHSA-mrhx-c7xc-m3w5
+  # 2026-11-02 (TRK-003): GHSA-4c8g-83qw-93j6, -7p8r-x3mc-p8w7, -f65p-4m7j-42xc,
+  # -fph4-wmhf-6fwf, -jqff-g426-hqxp, -qw65-cvwx-89v3, -v2hh-gcrm-f6hx (high) y
+  # medium/low hasta 3.1.9, vía web → @hookform/resolvers@5 → ajv@8 → fast-uri.
+  # Quitar cuando ajv o resolvers traigan fast-uri >=3.1.9 por su cuenta.
+  "fast-uri@<3.1.9": ">=3.1.9 <4"
 
 onlyBuiltDependencies:
   - "@biomejs/biome"

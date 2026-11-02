@@ -161,7 +161,7 @@ describe('api.get', () => {
   it('contrato TRK-003: body 400 real de zValidator default (webpush, campo faltante)', async () => {
     // Literal (JSON de cable) del snapshot en apps/api/test/unit/webpush-route.test.ts.
     const body =
-      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Required","path":["keys"],"received":"undefined"}],"name":"ZodError"}}';
+      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Invalid input: expected object, received undefined","path":["keys"]}],"name":"ZodError"}}';
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(body, {
         status: 400,
@@ -169,7 +169,9 @@ describe('api.get', () => {
       }),
     );
     const err = await api.post('/me/push-subscription', {}).catch((e: unknown) => e);
-    expect((err as InstanceType<typeof ApiError>).message).toBe('keys: Required');
+    expect((err as InstanceType<typeof ApiError>).message).toBe(
+      'keys: Invalid input: expected object, received undefined',
+    );
     expect((err as InstanceType<typeof ApiError>).code).toBe('validation_error');
   });
 

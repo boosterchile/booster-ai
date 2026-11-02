@@ -16,10 +16,7 @@ import { z } from 'zod';
  * @param array esquema base, con sus propias restricciones (`.min()`, mensajes).
  * @param max   largo máximo, entero no negativo.
  */
-export function boundedArray<T extends z.ZodTypeAny, C extends z.ArrayCardinality>(
-  array: z.ZodArray<T, C>,
-  max: number,
-) {
+export function boundedArray<T extends z.ZodType>(array: z.ZodArray<T>, max: number) {
   if (!Number.isInteger(max) || max < 0) {
     throw new RangeError(`boundedArray: el tope debe ser un entero no negativo (recibido ${max})`);
   }
@@ -27,14 +24,14 @@ export function boundedArray<T extends z.ZodTypeAny, C extends z.ArrayCardinalit
   return z.preprocess((valor, ctx) => {
     if (Array.isArray(valor) && valor.length > max) {
       ctx.addIssue({
-        code: z.ZodIssueCode.too_big,
-        type: 'array',
+        code: 'too_big',
+        origin: 'array',
         maximum: max,
         inclusive: true,
-        exact: false,
-        message: `Array must contain at most ${max} element(s)`,
-        // `fatal` aborta antes de que el esquema base valide los elementos.
-        fatal: true,
+        input: valor,
+        // Sin `message`: zod genera el mismo texto que `.max()`. Un issue en el
+        // preprocess corta el pipe antes de validar los elementos.
+        continue: false,
       });
       return z.NEVER;
     }

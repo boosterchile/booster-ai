@@ -126,8 +126,11 @@ describe('POST /ranking — contrato del 400 (TRK-003)', () => {
           "error": "invalid_request",
           "issues": [
             {
-              "code": "invalid_union_discriminator",
+              "code": "invalid_union",
+              "discriminator": "algoritmo",
+              "errors": [],
               "message": "Invalid discriminator value. Expected 'v1' | 'v2'",
+              "note": "No matching discriminator",
               "options": [
                 "v1",
                 "v2",
@@ -153,11 +156,10 @@ describe('POST /ranking — contrato del 400 (TRK-003)', () => {
             {
               "code": "invalid_type",
               "expected": "number",
-              "message": "Expected number, received string",
+              "message": "Invalid input: expected number, received string",
               "path": [
                 "cargoWeightKg",
               ],
-              "received": "string",
             },
           ],
         },

@@ -214,14 +214,13 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
           "issues": [
             {
               "code": "too_small",
-              "exact": false,
               "inclusive": true,
-              "message": "Number must be greater than or equal to 0",
+              "message": "Too small: expected number to be >=0",
               "minimum": 0,
+              "origin": "number",
               "path": [
                 "precio_transportista_clp",
               ],
-              "type": "number",
             },
           ],
         },
@@ -241,23 +240,22 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
             {
               "code": "invalid_type",
               "expected": "number",
-              "message": "Expected number, received nan",
+              "message": "Invalid input: expected number, received NaN",
               "path": [
                 "precio_transportista_clp",
               ],
-              "received": "nan",
+              "received": "NaN",
             },
             {
-              "code": "invalid_enum_value",
-              "message": "Invalid enum value. Expected 'spot' | 'programada', received 'nocturna'",
-              "options": [
-                "spot",
-                "programada",
-              ],
+              "code": "invalid_value",
+              "message": "Invalid option: expected one of "spot"|"programada"",
               "path": [
                 "modalidad_carga",
               ],
-              "received": "nocturna",
+              "values": [
+                "spot",
+                "programada",
+              ],
             },
           ],
         },

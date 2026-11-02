@@ -1,10 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { zValidator as honoZValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { zValidator } from './validation.js';
+import { zValidator, zodErrorBody } from './validation.js';
 
 const schema = z.object({ name: z.string().min(1), age: z.number().int() });
 
@@ -29,15 +28,13 @@ describe('zValidator común', () => {
     expect((body.error.issues as unknown[]).length).toBe(2);
   });
 
-  it('el body 400 es byte a byte igual al default de @hono/zod-validator con zod 3', async () => {
-    const ours = new Hono().post('/', zValidator('json', schema), (c) => c.json({ ok: true }));
-    const lib = new Hono().post('/', honoZValidator('json', schema), (c) => c.json({ ok: true }));
-    const input = { name: '', age: 'x', extra: 1 };
-    const a = await post(ours, input);
-    const b = await post(lib, input);
-    expect(a.status).toBe(b.status);
-    expect(a.headers.get('content-type')).toBe(b.headers.get('content-type'));
-    expect(await a.text()).toBe(await b.text());
+  it('el body 400 es el contrato público, no el default de la librería en zod 4', async () => {
+    const app = new Hono().post('/', zValidator('json', schema), (c) => c.json({ ok: true }));
+    const res = await post(app, { name: '', age: 'x' });
+    const body = (await res.json()) as { error: { issues: { path: unknown[] }[] } };
+    expect(res.headers.get('content-type')).toMatch(/application\/json/);
+    expect(body).toEqual(zodErrorBody(schema.safeParse({ name: '', age: 'x' }).error as never));
+    expect(body.error.issues.map((i) => i.path)).toEqual([['name'], ['age']]);
   });
 
   it('input válido pasa y expone c.req.valid', async () => {
@@ -65,25 +62,33 @@ describe('zValidator común', () => {
     expect(await res.json()).toEqual({ error: 'custom' });
   });
 
-  it('hook explícito que no responde cae al default de la librería (igual que antes)', async () => {
+  it('hook explícito que no responde cae al body común', async () => {
     const app = new Hono().post(
       '/',
       zValidator('json', schema, () => undefined),
       (c) => c.json({ ok: true }),
     );
-    const lib = new Hono().post(
-      '/',
-      honoZValidator('json', schema, () => undefined),
-      (c) => c.json({ ok: true }),
-    );
-    const a = await post(app, {});
-    const b = await post(lib, {});
-    expect(a.status).toBe(400);
-    expect(await a.text()).toBe(await b.text());
+    const res = await post(app, {});
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { success: boolean; error: Record<string, unknown> };
+    expect(body.success).toBe(false);
+    expect(Object.keys(body.error)).toEqual(['issues', 'name']);
   });
 });
 
+// from '…' / from "…" (import y export…from) e import('…') dinámico.
+const IMPORT_DIRECTO = /(?:\bfrom\s*|\bimport\s*\(\s*)['"`]@hono\/zod-validator['"`]/;
+
 describe('guard: ninguna ruta importa @hono/zod-validator directo', () => {
+  it.each([
+    "import { zValidator } from '@hono/zod-validator';",
+    'import { zValidator } from "@hono/zod-validator";',
+    "const m = await import('@hono/zod-validator');",
+    "export { zValidator } from '@hono/zod-validator';",
+  ])('detecta %s', (linea) => {
+    expect(IMPORT_DIRECTO.test(linea)).toBe(true);
+  });
+
   it('src/ solo usa ../lib/validation', () => {
     const root = join(__dirname, '..');
     const offenders: string[] = [];
@@ -92,11 +97,15 @@ describe('guard: ninguna ruta importa @hono/zod-validator directo', () => {
         const p = join(dir, entry.name);
         if (entry.isDirectory()) {
           walk(p);
-        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+        } else if (
+          entry.isFile() &&
+          /\.tsx?$/.test(entry.name) &&
+          !/\.test\.tsx?$/.test(entry.name)
+        ) {
           if (p.endsWith(join('lib', 'validation.ts'))) {
             continue;
           }
-          if (readFileSync(p, 'utf8').includes("from '@hono/zod-validator'")) {
+          if (IMPORT_DIRECTO.test(readFileSync(p, 'utf8'))) {
             offenders.push(p);
           }
         }

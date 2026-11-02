@@ -101,9 +101,14 @@ describe('serverValidationFieldsMessage', () => {
   it('contrato TRK-003: body 400 real de zValidator default (webpush, campo faltante)', () => {
     // Literal (JSON de cable) del snapshot en apps/api/test/unit/webpush-route.test.ts.
     const body: unknown = JSON.parse(
-      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Required","path":["keys"],"received":"undefined"}],"name":"ZodError"}}',
+      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Invalid input: expected object, received undefined","path":["keys"]}],"name":"ZodError"}}',
     );
-    const err = new ApiError(400, 'validation_error', body, 'keys: Required');
+    const err = new ApiError(
+      400,
+      'validation_error',
+      body,
+      'keys: Invalid input: expected object, received undefined',
+    );
     expect(zValidatorIssuePaths(err)).toEqual([['keys']]);
     expect(serverValidationFieldsMessage(err, { keys: 'Claves' })).toBe(
       'Revisa los campos: Claves — el servidor rechazó sus valores.',
