@@ -446,7 +446,7 @@ describe('ConductoresDetalleRoute', () => {
 
     await userEvent.type(screen.getByLabelText(/Email de contacto/), 'a@b');
     expect(
-      await screen.findByText(/Escribe un email válido, como nombre@dominio.cl/),
+      await screen.findByText(/Ingresa un correo válido, como nombre@dominio.cl/),
     ).toBeInTheDocument();
     expect(boton).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
@@ -485,7 +485,7 @@ describe('ConductoresDetalleRoute', () => {
     expect(input).toHaveAttribute('placeholder', '+56912345678');
     await userEvent.clear(input);
     await userEvent.type(input, '+569');
-    expect(screen.getByText('Ingresa un teléfono válido (+569...)')).toBeInTheDocument();
+    expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
     const boton = screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' });
     expect(boton).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
@@ -499,7 +499,7 @@ describe('ConductoresDetalleRoute', () => {
     const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
     await userEvent.clear(input);
     await userEvent.type(input, '+56212345678');
-    expect(screen.getByText('Ingresa un teléfono válido (+569...)')).toBeInTheDocument();
+    expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' }),
     ).toBeDisabled();
@@ -636,13 +636,15 @@ describe('ConductoresNuevoRoute — email obligatorio (Fase B)', () => {
     await userEvent.type(screen.getByLabelText(/^Email/), 'abc');
 
     expect(
-      await screen.findByText(/Escribe un email válido, como nombre@dominio.cl/),
+      await screen.findByText(/Ingresa un correo válido, como nombre@dominio.cl/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
 
     await userEvent.clear(screen.getByLabelText(/^Email/));
     await userEvent.type(screen.getByLabelText(/^Email/), 'a@b');
-    expect(screen.getByText(/Escribe un email válido, como nombre@dominio.cl/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ingresa un correo válido, como nombre@dominio.cl/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
@@ -728,7 +730,7 @@ describe('ConductoresNuevoRoute — teléfono obligatorio (canal WhatsApp)', () 
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
 
-    expect(screen.getByText('Ingresa un teléfono válido (+569...)')).toBeInTheDocument();
+    expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });

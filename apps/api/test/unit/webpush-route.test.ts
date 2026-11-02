@@ -260,7 +260,7 @@ describe('POST /me/push-subscription — contrato del 400 de zValidator (TRK-003
               {
                 "code": "invalid_type",
                 "expected": "object",
-                "message": "Required",
+                "message": "Invalid input: expected object, received undefined",
                 "path": [
                   "keys",
                 ],
@@ -281,7 +281,7 @@ describe('POST /me/push-subscription — contrato del 400 de zValidator (TRK-003
               {
                 "code": "invalid_type",
                 "expected": "string",
-                "message": "Expected string, received number",
+                "message": "Invalid input: expected string, received number",
                 "path": [
                   "endpoint",
                 ],
