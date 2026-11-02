@@ -22,6 +22,7 @@ import { type FuentesCert, embeberFuentes } from './fuentes.js';
 import {
   FRASE_ISO,
   TAMANO_LINEA_METODO,
+  TITULO_AHORRO,
   TITULO_CERT,
   TITULO_DISCLAIMER,
   declaracionDistancia,
@@ -310,7 +311,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   const factorMatching = m.factorMatchingAplicado;
   const ahorroBackhaul = m.ahorroCo2eVsSinMatchingKgco2eWtw;
   if (factorMatching != null && ahorroBackhaul != null && ahorroBackhaul > 0) {
-    c.seccion('Ahorro CO\u2082e vía matching de retorno (GLEC v3.0 §6.4)', f);
+    c.seccion(TITULO_AHORRO, f);
     c.par(
       'Factor de matching aplicado',
       `${(factorMatching * 100).toFixed(0)}%`,

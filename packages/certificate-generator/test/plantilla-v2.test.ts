@@ -195,3 +195,20 @@ describe('HC-004: ningún «v3.0» fijo en el PDF (sin backhaul)', () => {
     expect(todo).not.toContain('v3.0');
   });
 });
+
+describe('HC-004: título de ahorro como cita fija del método (decision.md 18:07)', () => {
+  // §6.4 es una sección de GLEC v3.0: el título cita el método y NO sigue a
+  // version_glec. Si alguien lo interpola, este test falla.
+  const TITULO = 'Ahorro CO\u2082e vía matching de retorno (método GLEC v3.0 §6.4)';
+  const conAhorro = { factorMatchingAplicado: 0.5, ahorroCo2eVsSinMatchingKgco2eWtw: 40 };
+
+  it.each(['v2.0', 'v9.9'])(
+    'con version_glec %s el título no cambia y es el único v3.0',
+    async (v) => {
+      const { todo } = await texto({ ...base, ...conAhorro, glecVersion: v });
+      expect(todo).toContain(TITULO);
+      expect(todo).toContain(`GLEC Framework ${v} · ISO 14083:2023`);
+      expect(todo.split(TITULO).join('')).not.toContain('v3.0');
+    },
+  );
+});

@@ -17,6 +17,15 @@ export const TITULO_CERT = 'Certificado de huella de carbono';
 /** Frase ISO exacta de Felipe: subtítulo L2 y Metodología. */
 export const FRASE_ISO = 'Estos resultados han sido establecidos de acuerdo con ISO 14083:2023.';
 
+/**
+ * Título de la sección de ahorro por matching de retorno. FIJO a propósito
+ * (decisión de Orquestador, decision.md 18:07, opción a): «§6.4» es una sección
+ * de GLEC Framework v3.0 (Empty Backhaul Allocation, ADR-021). Es una cita del
+ * MÉTODO, no la versión de la emisión: con otra version_glec la sección podría
+ * no existir con ese número, así que no se interpola.
+ */
+export const TITULO_AHORRO = 'Ahorro CO\u2082e vía matching de retorno (método GLEC v3.0 §6.4)';
+
 export const TITULO_DISCLAIMER = 'IMPORTANTE — DATOS SECUNDARIOS MODELADOS';
 
 /** Subtítulo L1 con la versión GLEC (metodología) guardada en la emisión. */
