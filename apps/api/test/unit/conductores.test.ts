@@ -320,7 +320,7 @@ describe('conductores routes', () => {
       expect(res.status).toBe(400);
       const body = (await res.json()) as { error: string; message: string };
       expect(body.error).toBe('telefono_invalido');
-      expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+      expect(body.message).toBe('Ingresa un teléfono válido, como +56912345678');
       expect(stub.spies.insert).not.toHaveBeenCalled();
       expect(stub.spies.update).not.toHaveBeenCalled();
     });
@@ -1507,7 +1507,7 @@ describe('POST /conductores/:id/telefono', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; message: string };
     expect(body.error).toBe('telefono_invalido');
-    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(body.message).toBe('Ingresa un teléfono válido, como +56912345678');
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
 
@@ -1522,7 +1522,7 @@ describe('POST /conductores/:id/telefono', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; message: string };
     expect(body.error).toBe('telefono_invalido');
-    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(body.message).toBe('Ingresa un teléfono válido, como +56912345678');
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
 
@@ -1853,7 +1853,7 @@ describe('POST /conductores — contrato del 400 de validarAltaConductor (TRK-00
             "issues": [
               {
                 "code": "invalid_value",
-                "message": "Required",
+                "message": "Completa este campo",
                 "path": [
                   "license_class",
                 ],
@@ -1893,7 +1893,7 @@ describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
       {
         "body": {
           "error": "telefono_invalido",
-          "message": "Ingresa un teléfono válido (+569...)",
+          "message": "Ingresa un teléfono válido, como +56912345678",
         },
         "status": 400,
       }
@@ -1911,7 +1911,7 @@ describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
       {
         "body": {
           "error": "telefono_invalido",
-          "message": "Ingresa un teléfono válido (+569...)",
+          "message": "Ingresa un teléfono válido, como +56912345678",
         },
         "status": 400,
       }
@@ -1929,7 +1929,7 @@ describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
       {
         "body": {
           "error": "telefono_invalido",
-          "message": "Ingresa un teléfono válido (+569...)",
+          "message": "Ingresa un teléfono válido, como +56912345678",
         },
         "status": 400,
       }
