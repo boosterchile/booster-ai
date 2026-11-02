@@ -172,10 +172,9 @@ export function createCertificatesRoutes(opts: {
   //
   // 404 si el tracking_code no existe o el cert todavía no fue emitido.
   //
-  // HC-001 p3a, `?sha256=` (hex de 64 en minúscula; si no, 400):
-  // - el de la vigente, o sin el parámetro: igual que siempre;
-  // - el de una versión reemplazada/revertida: `vigente: false` y la vigente;
-  // - cualquier otro: `valid: false`, motivo `sha256_no_corresponde`.
+  // HC-001 p3a, `?sha256=` (hex de 64 en minúscula; si no, 400): vigente o
+  // sin parámetro, igual; reemplazada/revertida: `valid: false`,
+  // `firma_autentica: true` y la vigente; otro: `sha256_no_corresponde`.
   // ---------------------------------------------------------------------
   const verifyQuery = z.object({
     sha256: z
@@ -232,7 +231,8 @@ export function createCertificatesRoutes(opts: {
       }
       const vigente = await obtenerVigente(opts.db, trip.tripId);
       return c.json({
-        valid: true,
+        valid: false,
+        firma_autentica: true,
         vigente: false,
         tracking_code: trackingCode,
         estado: version.estado,

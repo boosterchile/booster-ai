@@ -233,7 +233,7 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
     expect(v3.version).toBe(3);
   });
 
-  test('/verify: la v1 responde «reemplazado por v2»; la v2 y sin sha256 responden como hoy', async () => {
+  test('/verify: reemplazada y revertida responden valid:false; vigente y sin sha256, como hoy', async () => {
     const { tracking, tripId } = await conV1();
     await crearVersion(handle.db as never, v2(tripId));
     const noop = () => undefined;
@@ -245,7 +245,8 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
     const r1 = await app.request(`/${tracking}/verify?sha256=${sha('a')}`);
     expect(r1.status).toBe(200);
     expect(await r1.json()).toMatchObject({
-      valid: true,
+      valid: false,
+      firma_autentica: true,
       vigente: false,
       estado: 'reemplazado',
       version: 1,
@@ -275,9 +276,14 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
     }
     await revertirVersion(handle.db as never, tripId);
     const r2 = await app.request(`/${tracking}/verify?sha256=${sha('b')}`);
+    expect(r2.status).toBe(200);
     expect(await r2.json()).toMatchObject({
+      valid: false,
+      firma_autentica: true,
+      vigente: false,
       estado: 'revertido',
       mensaje: 'revertido; vigente v1',
+      version_vigente: { version: 1, pdf_sha256: sha('a') },
     });
   });
 });
