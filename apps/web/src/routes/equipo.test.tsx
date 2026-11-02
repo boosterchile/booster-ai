@@ -240,7 +240,7 @@ describe('Equipo — 400 del servidor bajo cada campo (TRK-005)', () => {
     fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '8.601.693-1' } });
     fireEvent.change(screen.getByLabelText(/Email/i), { target: { value: 'ana@empresa.cl' } });
     fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
-    return screen.findByRole('alert');
+    return (await screen.findAllByRole('alert'))[0] as HTMLElement;
   }
 
   it('muestra el mensaje del campo, sin "400:" ni "email:", uno por campo', async () => {
@@ -257,5 +257,32 @@ describe('Equipo — 400 del servidor bajo cada campo (TRK-005)', () => {
   it('un issue sin texto en español muestra el genérico', async () => {
     rechazo400([{ path: ['rol'], message: 'Invalid option: expected one of "admin"' }]);
     expect(await enviar()).toHaveTextContent('Algo salió mal. Intenta de nuevo');
+  });
+
+  const rechazo = (status: number, code: string, details: unknown = {}) =>
+    vi.spyOn(api, 'post').mockRejectedValue(new ApiError(status, code, details));
+
+  it('409 rut_already_registered → texto propio, no el genérico', async () => {
+    rechazo(409, 'rut_already_registered');
+    expect(await enviar()).toHaveTextContent(
+      'Ese RUT ya está registrado en Booster con otro correo. Revisa el RUT o escribe a soporte.',
+    );
+  });
+
+  it('403 no_es_empresa → genérico', async () => {
+    rechazo(403, 'no_es_empresa');
+    expect(await enviar()).toHaveTextContent('Algo salió mal. Intenta de nuevo');
+  });
+
+  it('path anidado va a su campo raíz y un issue sin campo suma el genérico arriba', async () => {
+    rechazo400([
+      { path: ['email', 'dominio'], message: 'Ingresa un correo válido' },
+      { path: [], message: 'Revisa los datos' },
+    ]);
+    await enviar();
+    const textos = (await screen.findAllByRole('alert')).map((a) => a.textContent);
+    expect(textos).toEqual(['Ingresa un correo válido', 'Algo salió mal. Intenta de nuevo']);
+    expect(screen.getByLabelText(/Email/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/Email/i)).toHaveAttribute('aria-describedby', 'alta-err-email');
   });
 });

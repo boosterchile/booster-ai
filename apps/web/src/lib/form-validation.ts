@@ -153,3 +153,12 @@ export function erroresPorCampo<C extends string>(
   }
   return Object.keys(out).length > 0 ? out : null;
 }
+
+/** true si el 400 trae issues que no corresponden a ningún campo del form (nit 4 QA #866). */
+export function hayIssuesSinCampo(details: unknown, campos: readonly string[]): boolean {
+  const issues = (details as { error?: { issues?: unknown } } | null)?.error?.issues;
+  return (
+    Array.isArray(issues) &&
+    issues.some((i) => !campos.includes((i as { path?: unknown[] } | null)?.path?.[0] as string))
+  );
+}

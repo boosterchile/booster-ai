@@ -3,7 +3,11 @@ import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ApiError, api } from '../lib/api-client.js';
-import { MENSAJE_ERROR_GENERICO, erroresPorCampo } from '../lib/form-validation.js';
+import {
+  MENSAJE_ERROR_GENERICO,
+  erroresPorCampo,
+  hayIssuesSinCampo,
+} from '../lib/form-validation.js';
 
 /**
  * `/app/equipo` — la empresa gestiona su propia gente
@@ -268,13 +272,18 @@ const CAMPOS_ALTA = ['full_name', 'rut', 'email', 'rol'] as const;
 type CampoAlta = (typeof CAMPOS_ALTA)[number];
 
 /** Error bajo su campo (ux.md TRK-005): un mensaje, sin prefijos. */
-function ErrorCampo({ mensaje }: { mensaje: string | undefined }) {
+function ErrorCampo({ campo, mensaje }: { campo: CampoAlta; mensaje: string | undefined }) {
   return mensaje ? (
-    <span role="alert" className="text-danger-700 text-xs">
+    <span id={`alta-err-${campo}`} role="alert" className="text-danger-700 text-xs">
       {mensaje}
     </span>
   ) : null;
 }
+
+const aria = (err: Partial<Record<CampoAlta, string>>, campo: CampoAlta) => ({
+  'aria-invalid': err[campo] ? true : undefined,
+  'aria-describedby': err[campo] ? `alta-err-${campo}` : undefined,
+});
 
 function FormAlta({
   onCreado,
@@ -325,6 +334,10 @@ function FormAlta({
       const code = (err as { code?: string } | null)?.code;
       if (code === 'already_member') {
         setError('Esa persona ya forma parte de tu equipo.');
+      } else if (code === 'rut_already_registered') {
+        setError(
+          'Ese RUT ya está registrado en Booster con otro correo. Revisa el RUT o escribe a soporte.',
+        );
       } else if (code === 'rol_sin_permiso') {
         setError(
           'No tienes permiso para gestionar el equipo. Pídeselo al dueño o a un administrador.',
@@ -333,7 +346,9 @@ function FormAlta({
         const campos = err instanceof ApiError ? erroresPorCampo(err.details, CAMPOS_ALTA) : null;
         if (campos) {
           setErrCampo(campos);
-        } else {
+        }
+        // Issues sin campo visible no se pierden: genérico arriba.
+        if (!campos || (err instanceof ApiError && hayIssuesSinCampo(err.details, CAMPOS_ALTA))) {
           setError(MENSAJE_ERROR_GENERICO);
         }
       }
@@ -356,10 +371,11 @@ function FormAlta({
           type="text"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
+          {...aria(errCampo, 'full_name')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           placeholder="Ej: Gabriel Barros"
         />
-        <ErrorCampo mensaje={errCampo.full_name} />
+        <ErrorCampo campo="full_name" mensaje={errCampo.full_name} />
       </label>
 
       <label className="flex flex-col gap-1">
@@ -368,10 +384,11 @@ function FormAlta({
           type="text"
           value={rut}
           onChange={(e) => setRut(e.target.value)}
+          {...aria(errCampo, 'rut')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           placeholder="12.345.678-5"
         />
-        <ErrorCampo mensaje={errCampo.rut} />
+        <ErrorCampo campo="rut" mensaje={errCampo.rut} />
       </label>
 
       <label className="flex flex-col gap-1">
@@ -380,10 +397,11 @@ function FormAlta({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          {...aria(errCampo, 'email')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           placeholder="persona@empresa.cl"
         />
-        <ErrorCampo mensaje={errCampo.email} />
+        <ErrorCampo campo="email" mensaje={errCampo.email} />
         <span className="text-neutral-500 text-xs">
           Es el correo con el que Booster se comunica con esa persona.
         </span>
@@ -394,6 +412,7 @@ function FormAlta({
         <select
           value={rol}
           onChange={(e) => setRol(e.target.value)}
+          {...aria(errCampo, 'rol')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
         >
           {ROLES.map((r) => (
@@ -402,7 +421,7 @@ function FormAlta({
             </option>
           ))}
         </select>
-        <ErrorCampo mensaje={errCampo.rol} />
+        <ErrorCampo campo="rol" mensaje={errCampo.rol} />
         <span className="text-neutral-500 text-xs">
           Los conductores se agregan desde la sección Conductores, con su licencia.
         </span>
