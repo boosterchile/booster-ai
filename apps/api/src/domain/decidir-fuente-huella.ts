@@ -8,7 +8,7 @@ import {
 /**
  * HC-001 PR1 — decisión de fuente de la huella. Función PURA.
  * Reglas: historia.md R1–R3/R5 y datos-can.md §4 (prevalece sobre R2/AC4).
- * El opt-in NO es input: decide si se publica (R4, fuera de PR1).
+ * El opt-in no es input (R4, historia.md rev. 3: siempre se emite).
  */
 export const DECISION_VERSION = 1;
 
