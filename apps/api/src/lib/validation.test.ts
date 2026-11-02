@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { zValidator as honoZValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
@@ -88,11 +88,11 @@ describe('guard: ninguna ruta importa @hono/zod-validator directo', () => {
     const root = join(__dirname, '..');
     const offenders: string[] = [];
     const walk = (dir: string) => {
-      for (const entry of readdirSync(dir)) {
-        const p = join(dir, entry);
-        if (statSync(p).isDirectory()) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) {
           walk(p);
-        } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
+        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
           if (p.endsWith(join('lib', 'validation.ts'))) {
             continue;
           }
