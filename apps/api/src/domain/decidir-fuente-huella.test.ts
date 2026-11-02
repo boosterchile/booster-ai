@@ -115,6 +115,8 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['distancia Teltonika NaN', rec(ok(100, Number.NaN)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['distancia Teltonika 0', rec(ok(100, 0)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['distancia Teltonika -Infinity', rec(ok(100, Number.NEGATIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
+    ['distancia Teltonika +Infinity', rec(ok(100, Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
+    ['distancia Teltonika -5', rec(ok(100, -5)), 'routes_estimada', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['distancia Teltonika 0 + móvil 90 %', { ...rec(ok(100, 0)), gpsMovil: ok(90) }, 'movil_gps', 'modelo_perfil', 'distancia_invalida', 'final'],
     ['móvil cobertura NaN', mv(ok(Number.NaN)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],
     ['móvil cobertura Infinity', mv(ok(Number.POSITIVE_INFINITY)), 'routes_estimada', 'modelo_perfil', 'sin_dispositivo', 'final'],
@@ -156,5 +158,12 @@ describe('decidirFuenteHuella (HC-001)', () => {
   });
   it.each(['Diesel', ' DIESEL ', 'Gasolina'])('N3: combustible %j se normaliza → can_83', (c) => {
     expect(con({ combustible: c }).fuenteEnergia).toBe('can_83');
+  });
+  it('ventana sobre el tope: motivo propio en vez de can_sin_lecturas', () => {
+    expect(con({ can83: null, can83Omitido: 'ventana_excede_tope' })).toMatchObject({
+      fuenteDistancia: 'teltonika_gps',
+      fuenteEnergia: 'modelo_perfil',
+      motivoFallback: 'ventana_excede_tope',
+    });
   });
 });

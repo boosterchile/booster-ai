@@ -1708,6 +1708,8 @@ export const tripMetrics = pgTable(
     decididoEn: timestamp('decidido_en', { withTimezone: true }),
     /** HC-001 N2: peso declarado al decidir (peso_ausente puede quedar tapado en motivo_fallback). */
     pesoDeclarado: boolean('peso_declarado'),
+    /** HC-001 parte 2: ALERTAS_DECISION (p. ej. discrepancia_can); '{}' = sin alertas. */
+    alertasDecision: varchar('alertas_decision', { length: 40 }).array(),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },

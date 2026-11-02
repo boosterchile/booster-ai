@@ -39,6 +39,12 @@ vi.mock('../../src/services/posicion-segmento.js', async (importOriginal) => ({
   resolverPosicionesSegmento: vi.fn(),
   cargarLecturasConsumoCan: vi.fn(async () => []),
 }));
+// HC-001: la regla queda real; se espía para poder forzar un throw (try/catch).
+vi.mock('../../src/domain/decidir-fuente-huella.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../../src/domain/decidir-fuente-huella.js')>();
+  return { ...orig, decidirFuenteHuella: vi.fn(orig.decidirFuenteHuella) };
+});
+const { decidirFuenteHuella } = await import('../../src/domain/decidir-fuente-huella.js');
 
 const { computeRoutes } = await import('../../src/services/routes-api.js');
 const { calcularCobertura, haversineKm } = await import(
@@ -126,6 +132,22 @@ const TRIP_BASE = {
   pickupWindowStart: new Date('2026-05-01T10:00:00Z'),
   createdAt: new Date('2026-05-01T09:00:00Z'),
 };
+
+/** HC-001 parte 2: el único UPDATE escribe solo las columnas de la decisión. */
+function expectSoloDecision(db: { update: unknown }) {
+  expect(db.update).toHaveBeenCalledTimes(1);
+  const setArg = (db.update as ReturnType<typeof vi.fn>).mock.results[0]?.value.set.mock
+    .calls[0][0];
+  expect(Object.keys(setArg).sort()).toEqual([
+    'alertasDecision',
+    'decididoEn',
+    'decisionVersion',
+    'fuenteDistancia',
+    'fuenteEnergia',
+    'motivoFallback',
+    'pesoDeclarado',
+  ]);
+}
 
 describe('calcularMetricasEstimadas', () => {
   it('throw TripNotFoundError si trip no existe', async () => {
@@ -912,7 +934,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
 
     expect(res.recomputed).toBe(false);
     expect(res.abortReason).toBe('routes_error');
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
     // El logger serializa `err` sin `message`: el motivo viaja aparte.
     expect(noopLogger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ errMessage: 'Routes 503' }),
@@ -928,7 +950,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
 
     expect(res.abortReason).toBe('cap_exceeded');
     expect(computeRoutes).not.toHaveBeenCalled();
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
   });
 
   it('ABORT (sin observación continua) — no-op, abortReason=sin_observacion (no aplica ≠ roto)', async () => {
@@ -943,7 +965,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     const res = await run(db);
 
     expect(res.abortReason).toBe('sin_observacion');
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
   });
 });
 
@@ -1170,7 +1192,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     });
     const res = await run(db);
     expect(res.abortReason).toBe('sin_observacion');
-    expect(db.update).not.toHaveBeenCalled();
+    expectSoloDecision(db); // HC-001 p2: sin opt-in se registra solo la decisión (R1)
   });
 
   it('PESO AUSENTE (T13) — opt-in activo + cobertura alta → emisiones reales null + métrica huella_peso_ausente; la distancia medida SÍ se persiste', async () => {
@@ -1264,7 +1286,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     it('83 limpio + cobertura 100 % → exacto_canbus, primario_verificable y emisiones = litros × factor WTW', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8)); // una sola lectura: resumidor + medición
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       const res = await run(db);
       expect(res.huella).toBe('medida');
@@ -1287,7 +1309,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       const huecoKm = haversineKm(-33.4 + 19 * 0.005, -70.6, -33.4 + 23 * 0.005, -70.6);
       (computeRoutes as Mock).mockResolvedValue(ruta(huecoKm));
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8)); // una sola lectura: resumidor + medición
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       await run(db);
       const setArg = setDe(db);
@@ -1295,6 +1317,130 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(Number(setArg.coveragePct)).toBeGreaterThanOrEqual(80);
       expect(setArg.precisionMethod).toBe('exacto_canbus');
       expect(setArg.certificationLevel).toBe('secundario_modeled');
+    });
+
+    it('una sola lectura del CAN con config 83 y huella activa (nit QA #868)', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
+      expect(setDe(db).precisionMethod).toBe('exacto_canbus');
+    });
+
+    it('try/catch: el loader del CAN falla → decisión sin 83 y el upgrade sigue', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockRejectedValueOnce(new Error('db caída'));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      const setArg = setDe(db);
+      expect(setArg).toMatchObject({
+        routeDataSource: 'teltonika_gps',
+        certificationLevel: 'secundario_modeled',
+        fuenteDistancia: 'teltonika_gps',
+        motivoFallback: 'can_sin_lecturas',
+      });
+      expect(setArg.fuenteEnergia).not.toBe('can_83');
+    });
+
+    it('try/catch: decidirFuenteHuella lanza → sin columnas de decisión y el UPDATE principal corre', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (decidirFuenteHuella as Mock).mockImplementationOnce(() => {
+        throw new Error('bug en la regla');
+      });
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      const setArg = setDe(db);
+      expect(setArg.certificationLevel).toBe('secundario_modeled');
+      for (const k of [
+        'fuenteDistancia',
+        'fuenteEnergia',
+        'motivoFallback',
+        'alertasDecision',
+        'decisionVersion',
+        'decididoEn',
+        'pesoDeclarado',
+      ]) {
+        expect(setArg).not.toHaveProperty(k);
+      }
+    });
+
+    // Tope de ventana del resumidor (QA #868 v2): mata >→>=, 70 días y sin tope.
+    const DIAS7 = 7 * 24 * 60 * 60 * 1000;
+    const conVentana = (ms: number, vehicle: Record<string, unknown>) =>
+      makeDb({
+        selects: selects({
+          vehicle,
+          assignment: { pickedUpAt: new Date(DELIVERED.getTime() - ms) },
+        }),
+        updates: [[]],
+      });
+
+    it('ventana 7 días + 1 ms sin config 83 → el resumidor no lee y el motivo es ventana_excede_tope', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
+      await run(db);
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db)).toMatchObject({
+        fuenteDistancia: 'teltonika_gps',
+        motivoFallback: 'ventana_excede_tope',
+      });
+    });
+
+    it('ventana de exactamente 7 días → el resumidor sí lee', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7, { fuenteCombustibleCan: 'sin_sensor' });
+      await run(db);
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
+      expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
+    });
+
+    it('incoherencia fijada: sobre el tope con config 83, la emisión lee la ventana como main (lo decide la parte 3)', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      const db = conVentana(DIAS7 + 1, VEH_CAN);
+      await run(db);
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo medirLitrosCan
+      const setArg = setDe(db);
+      expect(setArg.precisionMethod).toBe('exacto_canbus');
+      expect(setArg.motivoFallback).toBe('ventana_excede_tope');
+      expect(setArg.fuenteEnergia).not.toBe('can_83');
+    });
+
+    it('filas solo-89 no cambian el resultado del 83 en la emisión (QA #868 v2)', async () => {
+      // 83 solo en el ping 0 y el 20 (≈11 km de 22): cobertura_insuficiente como en main.
+      // Las solo-89 con desvío alargarían la polilínea por sobre el 95 % si no se filtraran.
+      const pings = largo();
+      const [a, d] = [pings[0], pings[20]] as [(typeof pings)[0], (typeof pings)[0]];
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([
+        { ...a, io: { '83': 10000 } },
+        { tMs: a.tMs + 1, lat: -33.365, lng: -70.5, io: { '89': 50 } },
+        { tMs: a.tMs + 2, lat: -33.33, lng: -70.5, io: { '89': 49 } },
+        { ...d, io: { '83': 10080 } },
+      ]);
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
+    });
+
+    it('emisión con 83 fuera de rango: filtro laxo como main, sigue exacto_canbus (QA #868 v3)', async () => {
+      // B con 83 = 1e15 y desvío: main la conserva y la cobertura pasa el 95 %.
+      const pings = largo();
+      const [a, c] = [pings[0], pings[20]] as [(typeof pings)[0], (typeof pings)[0]];
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([
+        { ...a, io: { '83': 10000 } },
+        { tMs: a.tMs + 1, lat: -33.35, lng: -70.5, io: { '83': 1e15 } },
+        { ...c, io: { '83': 10080 } },
+      ]);
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      expect(setDe(db).precisionMethod).toBe('exacto_canbus');
     });
 
     it('83 provisionado sin lecturas → modelado como hoy, warn con el motivo y contador', async () => {
@@ -1332,7 +1478,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo el resumidor HC-001 (por datos)
       expect(setDe(db).precisionMethod).toBe('modelado');
     });
 
@@ -1344,7 +1490,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // solo el resumidor HC-001 (por datos)
       expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
     });
   });

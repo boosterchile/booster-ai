@@ -13,8 +13,17 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
-import { consumoCanSegmento } from '../domain/consumo-can-segmento.js';
-import { type Reconstruccion, decidirFuenteHuella } from '../domain/decidir-fuente-huella.js';
+import {
+  type LecturaSegmentoCan,
+  consumoCanSegmento,
+  filasConLectura83,
+} from '../domain/consumo-can-segmento.js';
+import {
+  type DecisionFuente,
+  type Reconstruccion,
+  decidirFuenteHuella,
+} from '../domain/decidir-fuente-huella.js';
+import { type ResumenCan, resumirCanSegmento } from '../domain/resumen-can-segmento.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
@@ -57,6 +66,9 @@ const huellaCanbusNoUsadoCounter = getBusinessCounter('huella_canbus_no_usado_to
 const COMBUSTIBLES_CONTADOR_LITROS = new Set(['diesel', 'gasolina']);
 
 /** Perfil energético del vehículo que decide el modo del cálculo (ADR-017/021). */
+/** Tope de la ventana que lee el resumidor CAN (nit QA #868): un viaje de semanas no lee todo. */
+export const VENTANA_MAX_RESUMEN_CAN_MS = 7 * 24 * 60 * 60 * 1000;
+
 type PerfilEnergeticoVehiculo = Pick<
   typeof vehicles.$inferSelect,
   'fuelType' | 'consumptionLPer100kmBaseline' | 'curbWeightKg' | 'capacityKg' | 'vehicleType'
@@ -87,6 +99,8 @@ async function medirLitrosCan(opts: {
   desde: Date;
   hasta: Date;
   distanciaKm: number;
+  /** Lecturas ya cargadas por el resumidor HC-001 (misma ventana): evita leer dos veces. */
+  lecturas?: LecturaSegmentoCan[] | null;
 }): Promise<number | null> {
   const { vehiculo } = opts;
   if (
@@ -97,13 +111,20 @@ async function medirLitrosCan(opts: {
   ) {
     return null;
   }
-  const lecturas = await cargarLecturasConsumoCan({
-    db: opts.db,
-    vehicle: vehiculo,
-    desde: opts.desde,
-    hasta: opts.hasta,
+  const lecturas =
+    opts.lecturas ??
+    (await cargarLecturasConsumoCan({
+      db: opts.db,
+      vehicle: vehiculo,
+      desde: opts.desde,
+      hasta: opts.hasta,
+    }));
+  // Filtro laxo, idéntico a main: toda fila con el 83 presente; las solo-89 fuera
+  // (QA #868 v2/v3). El resumidor usa el estricto (ver consumo-can-segmento.ts).
+  const resultado = consumoCanSegmento({
+    lecturas: filasConLectura83(lecturas),
+    distanciaSegmentoKm: opts.distanciaKm,
   });
-  const resultado = consumoCanSegmento({ lecturas, distanciaSegmentoKm: opts.distanciaKm });
   if (resultado.litros === null) {
     huellaCanbusNoUsadoCounter.add(1, { motivo: resultado.motivo });
     opts.logger.warn(
@@ -649,12 +670,17 @@ async function recalcularNivelPostEntregaInner(opts: {
       capacityKg: vehicles.capacityKg,
       vehicleType: vehicles.vehicleType,
       fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
+      capacidadEstanqueL: vehicles.capacidadEstanqueL,
     })
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
     .limit(1);
   const vehiculo:
-    | (VehiculoFuentePosicion & PerfilEnergeticoVehiculo & { fuenteCombustibleCan: string | null })
+    | (VehiculoFuentePosicion &
+        PerfilEnergeticoVehiculo & {
+          fuenteCombustibleCan: string | null;
+          capacidadEstanqueL: number | null;
+        })
     | undefined = vehRows[0];
   if (!vehiculo) {
     logger.warn(
@@ -769,6 +795,77 @@ async function recalcularNivelPostEntregaInner(opts: {
     abortReason = 'sin_observacion';
   }
 
+  // HC-001: la decisión de fuente se REGISTRA en columnas propias para TODO
+  // viaje entregado (historia.md R1, AC1-2), también en el early return sin
+  // opt-in. Sigue en sombra: no cambia lo que lee la emisión del certificado.
+  const rec: Reconstruccion =
+    abortReason === null && escritura !== null && escritura.distanciaKmReal !== null
+      ? {
+          estado: 'ok',
+          coberturaPct: escritura.coveragePct,
+          distanciaKm: escritura.distanciaKmReal,
+        }
+      : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
+  // El 83 se elige por datos (datos-can.md §4.2): se lee aunque la config no diga '83'.
+  let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
+  let lecturasCan: LecturaSegmentoCan[] | null = null;
+  const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
+  const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
+  // Incoherencia conocida (QA #868 v2): sobre el tope, el resumidor no lee,
+  // pero medirLitrosCan (config '83') lee toda la ventana igual que en main y
+  // la emisión puede salir exacto_canbus con la decisión en ventana_excede_tope.
+  // No se cambia la emisión de main; lo decide la parte 3 (test que lo fija).
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && ventanaExcede) {
+    logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
+  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok') {
+    try {
+      lecturasCan = await cargarLecturasConsumoCan({
+        db,
+        vehicle: vehiculo,
+        desde: pickupAt,
+        hasta: assignment.deliveredAt,
+      });
+      resumenCan = resumirCanSegmento(lecturasCan, rec.distanciaKm, vehiculo.capacidadEstanqueL);
+    } catch (err) {
+      logger.warn({ err, tripId }, 'HC-001: no se pudo resumir el CAN; decisión sin 83');
+    }
+  }
+  const consumoBase = vehiculo.consumptionLPer100kmBaseline
+    ? Number(vehiculo.consumptionLPer100kmBaseline)
+    : null;
+  // Un bug de la regla no puede tumbar el upgrade de nivel (nit 1 QA #865).
+  let decision: DecisionFuente | null = null;
+  try {
+    decision = decidirFuenteHuella({
+      gpsTeltonika: fuente === 'teltonika_gps' ? rec : null,
+      gpsMovil: fuente === 'movil_gps' ? rec : null,
+      pingsEnVentana: pings.length,
+      combustible: vehiculo.fuelType,
+      ...resumenCan,
+      can83Omitido: ventanaExcede ? 'ventana_excede_tope' : null,
+      consumoBasePor100km: consumoBase,
+      // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
+      perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
+      pesoDeclarado: trip.cargoWeightKg !== null,
+    });
+  } catch (err) {
+    logger.error({ err, tripId }, 'HC-001: decidirFuenteHuella lanzó; decisión no registrada');
+  }
+  const columnasDecision =
+    decision === null
+      ? {}
+      : {
+          fuenteDistancia: decision.fuenteDistancia,
+          fuenteEnergia: decision.fuenteEnergia,
+          motivoFallback: decision.motivoFallback,
+          alertasDecision: decision.alertas,
+          decisionVersion: decision.decisionVersion,
+          // Se reescribe en cada recálculo: es la fecha de la ÚLTIMA decisión,
+          // no la primera (nit 3 QA #865). La auditoría histórica va en la reemisión versionada.
+          decididoEn: sql`now()`,
+          pesoDeclarado: trip.cargoWeightKg !== null,
+        };
+
   if (abortReason !== null && !huellaActiva) {
     huellaSegmentoCounter.add(1, { resultado: 'opt_in_inactivo', fuente });
     logger.info(
@@ -782,6 +879,9 @@ async function recalcularNivelPostEntregaInner(opts: {
       },
       'huella del segmento no medida (opt-in inactivo) y sin distancia real',
     );
+    if (decision !== null) {
+      await db.update(tripMetrics).set(columnasDecision).where(eq(tripMetrics.tripId, tripId));
+    }
     return {
       recomputed: false,
       abortReason,
@@ -802,29 +902,6 @@ async function recalcularNivelPostEntregaInner(opts: {
   const kmCubiertos = reconstruida ? (escritura?.kmCubiertos ?? 0) : 0;
   const coveragePct = reconstruida ? (escritura?.coveragePct ?? 0) : 0;
   const routeDataSource: RouteDataSource = reconstruida ? fuente : 'maps_directions';
-
-  // HC-001 wiring (parte 1): la decisión de fuente se REGISTRA en columnas
-  // propias, sin alterar lo que lee la emisión. Sombra: todavía no hay
-  // resumidor del 83 (can83 = null) → fuente_energia nunca es can_83 aquí.
-  const rec: Reconstruccion =
-    abortReason !== null || distanciaKmReal === null
-      ? { estado: 'abort', motivo: abortReason ?? 'sin_observacion' }
-      : { estado: 'ok', coberturaPct: coveragePct, distanciaKm: distanciaKmReal };
-  const consumoBase = vehiculo.consumptionLPer100kmBaseline
-    ? Number(vehiculo.consumptionLPer100kmBaseline)
-    : null;
-  const decision = decidirFuenteHuella({
-    gpsTeltonika: fuente === 'teltonika_gps' ? rec : null,
-    gpsMovil: fuente === 'movil_gps' ? rec : null,
-    pingsEnVentana: pings.length,
-    combustible: vehiculo.fuelType,
-    can83: null,
-    litrosNivelSinRecarga: null,
-    consumoBasePor100km: consumoBase,
-    // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
-    perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
-    pesoDeclarado: trip.cargoWeightKg !== null,
-  });
 
   // Huella real del segmento (T12) con sus dos cortes de degradación:
   //   corte #2 — cobertura < umbral (o sin reconstrucción): emisiones null.
@@ -864,6 +941,7 @@ async function recalcularNivelPostEntregaInner(opts: {
         desde: pickupAt,
         hasta: assignment.deliveredAt,
         distanciaKm: distanciaKmReal,
+        lecturas: lecturasCan,
       });
       emisionesReales =
         litrosCan !== null && vehiculo.fuelType
@@ -918,12 +996,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       coveragePct: coveragePct.toString(),
       certificationLevel,
       uncertaintyFactor: uncertaintyFactor.toString(),
-      fuenteDistancia: decision.fuenteDistancia,
-      fuenteEnergia: decision.fuenteEnergia,
-      motivoFallback: decision.motivoFallback,
-      decisionVersion: decision.decisionVersion,
-      decididoEn: sql`now()`,
-      pesoDeclarado: trip.cargoWeightKg !== null,
+      ...columnasDecision,
       ...(huellaActiva
         ? {
             carbonEmissionsKgco2eActual:

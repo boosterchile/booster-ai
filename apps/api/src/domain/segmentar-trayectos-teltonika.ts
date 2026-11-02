@@ -836,7 +836,7 @@ export function consumoAcumuladoDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_CONSUMED_L).fuelConsumedL ?? null;
 }
 
-function nivelPctDe(io: Record<string, number>): number | null {
+export function nivelPctDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_PCT).fuelLevelPct ?? null;
 }
 
