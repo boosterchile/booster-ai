@@ -64,6 +64,8 @@ async function texto(metricas: DatosMetricasCertificado, v: DatosViajeCertificad
   return { paginas, todo: plano(paginas.join(' ')) };
 }
 
+/** El sello lleva tracking: pdfjs puede devolver «E S T I M A D O». */
+const SELLO = /E ?S ?T ?I ?M ?A ?D ?O/;
 const ISO = 'Estos resultados han sido establecidos de acuerdo con ISO 14083:2023.';
 
 describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
@@ -74,7 +76,7 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
     });
     expect(todo).toContain('Certificado de huella de carbono');
     expect(todo.toLowerCase()).not.toContain('reporte estimativo');
-    expect(todo).toContain('ESTIMADO');
+    expect(todo).toMatch(SELLO);
     expect(todo).toContain('Estimado · datos secundarios modelados · 60% telemetría');
     expect(todo).toContain('IMPORTANTE — DATOS SECUNDARIOS MODELADOS');
     expect(todo).toContain(
@@ -103,7 +105,7 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
   it('sin nivel guardado (legacy) también es Estimado: solo el primario explícito es primario', async () => {
     const { certificationLevel: _n, ...legacy } = base;
     const { todo } = await texto(legacy);
-    expect(todo).toContain('ESTIMADO');
+    expect(todo).toMatch(SELLO);
   });
 });
 
@@ -111,7 +113,7 @@ describe('plantilla v2 — primario (criterios 3, 5, 8, 10)', () => {
   it('badge ✓ con % piso y sin ninguna señal de Estimado', async () => {
     const { todo } = await texto(primario);
     expect(todo).toContain('\u2713 Dato primario medido · 98% telemetría');
-    expect(todo).not.toContain('ESTIMADO');
+    expect(todo).not.toMatch(SELLO);
     expect(todo).not.toContain('IMPORTANTE');
     expect(todo).not.toContain('Estimado');
     expect(todo).toContain('BOO-TEST01 · v1');

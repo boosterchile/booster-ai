@@ -96,7 +96,9 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     const finTitulo = MX + f.bold.widthOfTextAtSize(TITULO_CERT, 20) + 14;
     const anchoSello = anchoConTracking('ESTIMADO', f.bold, 9.5, 1.5) + 16;
     const cabe = finTitulo + anchoSello <= MX2;
-    if (!cabe) c.y -= 28;
+    if (!cabe) {
+      c.y -= 28;
+    }
     dibujarSello(c.page, cabe ? finTitulo : MX, c.y, anchoSello, f.bold);
   }
   c.y -= 20;
@@ -212,7 +214,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   c.seccion('Metodología', f);
   c.asegurar(16);
   c.texto(FRASE_ISO, MX, c.y, 9.5, f.regular, TEXTO);
-  c.y -= 26;
+  c.y -= 30;
   // HC-003 (ux.md:18): la versión GLEC es la metodología; los factores citan su propia versión.
   c.par(
     'Metodología GLEC',
@@ -240,7 +242,9 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     );
     // ADR-077 §4 — línea de método con vocabulario cerrado.
     const lineaMetodo = lineaMetodoCert(m);
-    if (lineaMetodo !== null) c.par('Método', lineaMetodo, null, null, f, TAMANO_LINEA_METODO);
+    if (lineaMetodo !== null) {
+      c.par('Método', lineaMetodo, null, null, f, TAMANO_LINEA_METODO);
+    }
   }
 
   // Trayecto.
@@ -300,7 +304,9 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   const t = params.transportista;
   if (t?.legalName) {
     c.par('Transportista', `${t.legalName}${rut(t.rut)}`, null, null, f);
-    if (t.vehiclePlate) c.par('Vehículo', t.vehiclePlate, null, null, f);
+    if (t.vehiclePlate) {
+      c.par('Vehículo', t.vehiclePlate, null, null, f);
+    }
   }
 
   // Verificación.
@@ -393,9 +399,10 @@ class Cursor {
     this.texto(t, MX2 - font.widthOfTextAtSize(t, size), y, size, font, color);
   }
   seccion(t: string, f: FuentesCert): void {
-    this.asegurar(40);
+    // El título no queda huérfano: exige espacio para él y una fila.
+    this.asegurar(70);
     this.texto(t, MX, this.y, 11, f.bold, AZUL);
-    this.y -= 22;
+    this.y -= 30;
   }
   /** Una fila con uno o dos pares label/valor (8,5 gris / valor semibold). */
   par(
@@ -457,7 +464,9 @@ function partir(t: string, font: PDFFont, size: number, ancho: number): string[]
       actual = prueba;
     }
   }
-  if (actual) lineas.push(actual);
+  if (actual) {
+    lineas.push(actual);
+  }
   return lineas;
 }
 
@@ -515,6 +524,7 @@ function formatDateTime(d: Date): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
     timeZone: 'America/Santiago',
   }).format(d);
 }
