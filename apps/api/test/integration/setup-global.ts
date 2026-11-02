@@ -1,6 +1,7 @@
 import { createLogger } from '@booster-ai/logger';
 import pg from 'pg';
 import { runMigrations } from '../../src/db/migrator.js';
+import { assertTestDbUrl } from '../helpers/test-db-guard.js';
 
 /**
  * vitest globalSetup para integration tests. Corre UNA vez antes del primer
@@ -32,11 +33,7 @@ export default async function setup(): Promise<() => Promise<void>> {
       'TEST_DATABASE_URL no está definido. Exporta una conexión a Postgres local antes de correr tests integration. En local: `pnpm --filter @booster-ai/api test:integration:local`.',
     );
   }
-  if (/prod|staging/i.test(url)) {
-    throw new Error(
-      `TEST_DATABASE_URL parece apuntar a una BD compartida (prod/staging). Aborto. URL: ${url.replace(/:[^:@]*@/, ':***@')}`,
-    );
-  }
+  assertTestDbUrl(url);
 
   const logger = createLogger({
     service: 'integration-test-setup',
