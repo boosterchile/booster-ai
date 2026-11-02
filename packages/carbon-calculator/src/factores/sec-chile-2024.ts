@@ -34,10 +34,19 @@ import type { FactorEmisionCombustible, TipoCombustible } from '../tipos.js';
  *   - Combustión completa: 0.86 × 44/12 = **2.68 kg CO₂/L** (puro CO₂).
  *   - + CH₄ ~0.0001 kg/L × GWP 29.8 = ~0.003 kg CO₂e/L.
  *   - + N₂O ~0.00007 kg/L × GWP 273 = ~0.019 kg CO₂e/L.
- *   - **Total TTW: 2.70 kg CO₂e/L** (consenso GLEC/EPA/EEA).
+ *   - **Total TTW: 2.70 kg CO₂e/L** (consenso GLEC/EPA/EEA) — histórico, ver abajo.
+ *
+ * **HC-003 (2026-11-02, decisión de Felipe):** el diésel (y su híbrido) usa la
+ * tabla de GLEC Framework v2.0 (Smart Freight Centre, 2019, ISBN
+ * 978-90-82-68790-3), Módulo 1, Tabla 32 (valores europeos), p. 87:
+ * WTT 0,57 · TTW 2,67 · WTW 3,24 kg CO₂e/L.
+ * ⚠️ Esos factores ya NO salen de «SEC Chile 2024»: el nombre del archivo y de
+ * la constante se mantienen en este PR para no ampliar el diff (renombrar aparte).
  */
 
 const FUENTE_GLEC = 'GLEC v3.0 (Smart Freight Centre 2023) + IPCC AR6 GWP-100';
+const FUENTE_GLEC_V2_T32 =
+  'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87';
 const FUENTE_CEN = 'CEN Chile 2024 (factor SEN anual) + GLEC v3.0 EU defaults';
 
 /**
@@ -48,21 +57,18 @@ const FACTORES_SEC_CHILE_2024: Readonly<Record<TipoCombustible, FactorEmisionCom
   // ──────────────────────────────────────────────────────────────────────────
   // Diésel B5 (5% biodiésel mandatorio en Chile desde Decreto N°60/2010)
   //
-  // TTW: 2.70 = 2.68 (CO₂ puro combustión) + 0.02 (CH₄ + N₂O × GWP-100 AR6).
-  //   Antes era 3.16 — incluía NOx por error (NOx no es GHG).
-  // WTT: 0.55 — extracción + refinería + transporte + 5% blend biodiésel.
-  //   Antes era 0.61 — al límite alto del rango GLEC EU/Chile (0.50-0.58).
-  // WTW total: 3.25 (vs 3.77 antes; -13.8%).
-  //   Climatiq GLEC EU diesel WTW = 3.24; convergencia ✓.
+  // HC-003: GLEC v2.0 (2019) Módulo 1, Tabla 32 EU, p. 87 →
+  //   TTW 2.67 · WTT 0.57 · WTW 3.24 kg CO₂e/L.
+  //   Antes (FIX-013): TTW 2.70 (2.68 CO₂ estequiométrico + 0.02 CH₄/N₂O) y WTT 0.55 = 3.25.
   // ──────────────────────────────────────────────────────────────────────────
   diesel: {
     combustible: 'diesel',
-    ttwKgco2e: 2.7,
-    wttKgco2e: 0.55,
+    ttwKgco2e: 2.67,
+    wttKgco2e: 0.57,
     energyMjPerUnit: 36.0, // LHV diésel
     unidad: 'L',
     anioReferencia: 2024,
-    fuente: FUENTE_GLEC,
+    fuente: FUENTE_GLEC_V2_T32,
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -132,12 +138,12 @@ const FACTORES_SEC_CHILE_2024: Readonly<Record<TipoCombustible, FactorEmisionCom
   // ──────────────────────────────────────────────────────────────────────────
   hibrido_diesel: {
     combustible: 'hibrido_diesel',
-    ttwKgco2e: 2.7 * 0.7, // = 1.89
-    wttKgco2e: 0.55 * 0.7, // = 0.385
+    ttwKgco2e: 2.67 * 0.7, // = 1.869 (HC-003: 0,7 × diésel GLEC v2.0 T32)
+    wttKgco2e: 0.57 * 0.7, // = 0.399
     energyMjPerUnit: 36.0,
     unidad: 'L',
     anioReferencia: 2024,
-    fuente: `${FUENTE_GLEC} (proxy 70% vs diésel puro)`,
+    fuente: `${FUENTE_GLEC_V2_T32} (proxy 70% vs diésel puro)`,
   },
 
   hibrido_gasolina: {
