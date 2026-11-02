@@ -519,3 +519,26 @@ describe('admin/observability — error paths', () => {
     expect(res.status).toBe(502);
   });
 });
+
+describe('admin/observability — contrato del 400 (TRK-003)', () => {
+  it('GET /costs/by-service?days=abc → 400 invalid_query con error.flatten()', async () => {
+    const app = makeApp(buildOpts(), { withContext: true });
+    const res = await app.request('/admin/observability/costs/by-service?days=abc');
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": {
+            "fieldErrors": {
+              "days": [
+                "Expected number, received nan",
+              ],
+            },
+            "formErrors": [],
+          },
+          "error": "invalid_query",
+        },
+        "status": 400,
+      }
+    `);
+  });
+});

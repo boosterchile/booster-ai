@@ -1836,3 +1836,51 @@ describe('POST /conductores — reactivación de un conductor retirado', () => {
     expect(stub.spies.insert).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /conductores — contrato del 400 de validarAltaConductor (TRK-003)', () => {
+  it('sin license_class → 400 con el error de zod completo', async () => {
+    const { license_class: _omitida, ...sinLicencia } = ALTA_BODY;
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sinLicencia),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "_error": {
+            "issues": [
+              {
+                "code": "invalid_type",
+                "expected": "'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'B' | 'C' | 'D' | 'E' | 'F'",
+                "message": "Required",
+                "path": [
+                  "license_class",
+                ],
+                "received": "undefined",
+              },
+            ],
+            "name": "ZodError",
+          },
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_type",
+                "expected": "'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'B' | 'C' | 'D' | 'E' | 'F'",
+                "message": "Required",
+                "path": [
+                  "license_class",
+                ],
+                "received": "undefined",
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+  });
+});
