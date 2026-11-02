@@ -4,6 +4,7 @@ import * as schema from '../../src/db/schema.js';
 import {
   GuardaFuenteCanError,
   aplicarFuenteCan,
+  main,
 } from '../../src/jobs/hc001-fuente-combustible-can.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
@@ -128,5 +129,29 @@ describe('integration: job HC-001 fuente_combustible_can', () => {
       client.release();
     }
     expect(await leer()).toEqual(INICIAL);
+  });
+
+  const cli = (env: Record<string, string>) =>
+    main({ DATABASE_URL: handle.url, CONFIRMAR_HOST: '127.0.0.1', DRY_RUN: 'false', ...env });
+
+  test.each([
+    ['DRY_RUN con typo queda en dry-run', { SENTIDO: 'up', DRY_RUN: 'flase' }, null],
+    ['SENTIDO inválido aborta', { SENTIDO: 'arriba' }, /SENTIDO/],
+    ['reversa sin up previo aborta', { SENTIDO: 'reversa' }, /KZXB64/],
+    ['sin CONFIRMAR_HOST no escribe', { SENTIDO: 'up', CONFIRMAR_HOST: '' }, /CONFIRMAR_HOST/],
+    [
+      'CONFIRMAR_HOST incorrecto no escribe',
+      { SENTIDO: 'up', CONFIRMAR_HOST: 'db.prod' },
+      /CONFIRMAR_HOST/,
+    ],
+  ])('main(): %s', async (_c, env, error) => {
+    const r = cli(env);
+    await (error ? expect(r).rejects.toThrow(error) : expect(r).resolves.toHaveLength(3));
+    expect(await leer()).toEqual(INICIAL);
+  });
+
+  test('main(): con CONFIRMAR_HOST correcto escribe las 3 filas', async () => {
+    await expect(cli({ SENTIDO: 'up' })).resolves.toHaveLength(3);
+    expect((await leer()).KZXB64).toBe('83');
   });
 });

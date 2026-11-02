@@ -14,6 +14,7 @@
 //   SENTIDO       'up' | 'reversa' (required)
 //   DRY_RUN       "false" para commitear; cualquier otro valor = ROLLBACK (default)
 //   DATABASE_URL  conexión (la ejecuta Ops Platform con OK de Felipe)
+//   CONFIRMAR_HOST  host de DATABASE_URL; obligatorio con DRY_RUN=false
 // =============================================================================
 
 import { pathToFileURL } from 'node:url';
@@ -65,22 +66,32 @@ export async function aplicarFuenteCan(
   }
 }
 
-async function main(): Promise<void> {
-  const sentido = process.env.SENTIDO;
-  const dryRun = process.env.DRY_RUN !== 'false';
+/** CLI. Imprime el destino sin password; para escribir exige CONFIRMAR_HOST = host de destino. */
+export async function main(env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+  const sentido = env.SENTIDO;
+  const dryRun = env.DRY_RUN !== 'false';
   if (sentido !== 'up' && sentido !== 'reversa') {
     throw new Error("SENTIDO debe ser 'up' o 'reversa'");
   }
-  if (!process.env.DATABASE_URL) {
+  if (!env.DATABASE_URL) {
     throw new Error('DATABASE_URL es requerida');
   }
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  const url = new URL(env.DATABASE_URL);
+  const destino = { host: url.hostname, port: url.port || '5432', db: url.pathname.slice(1) };
+  process.stdout.write(
+    `${JSON.stringify({ msg: 'hc001 destino', ...destino, sentido, dryRun })}\n`,
+  );
+  if (!dryRun && env.CONFIRMAR_HOST !== destino.host) {
+    throw new Error(`CONFIRMAR_HOST debe ser '${destino.host}' para escribir; no se escribió nada`);
+  }
+  const client = new pg.Client({ connectionString: env.DATABASE_URL });
   await client.connect();
   try {
     const afectadas = await aplicarFuenteCan(client, sentido, { dryRun });
     process.stdout.write(
       `${JSON.stringify({ msg: 'hc001 fuente_can', sentido, dryRun, afectadas })}\n`,
     );
+    return afectadas;
   } finally {
     await client.end();
   }

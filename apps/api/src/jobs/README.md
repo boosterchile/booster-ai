@@ -53,10 +53,17 @@ HC-001: corrige `vehiculos.fuente_combustible_can` (KZXB64 89→83, LFGR63 84→
 KZBB26 84→sin_sensor) con guarda sobre el valor previo y exactamente 3 filas en
 una transacción. Dry-run por defecto. La ejecuta Ops Platform con OK de Felipe.
 
+Imprime host, puerto y DB de destino (sin password) antes de escribir. Con
+`DRY_RUN=false` exige `CONFIRMAR_HOST` igual al host de `DATABASE_URL`; si no
+calza, aborta sin escribir. Cualquier otro valor de `DRY_RUN` es dry-run.
+
 ```bash
-SENTIDO=up DRY_RUN=false pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+# Dry-run (default):
+SENTIDO=up pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+# Real (solo con el visto de Felipe):
+SENTIDO=up DRY_RUN=false CONFIRMAR_HOST=<host> pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
 # Reversa:
-SENTIDO=reversa DRY_RUN=false pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+SENTIDO=reversa DRY_RUN=false CONFIRMAR_HOST=<host> pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
 ```
 
 ### `reap-orphan-onboarding-firebase.ts`
