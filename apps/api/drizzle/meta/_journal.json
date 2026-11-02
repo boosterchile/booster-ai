@@ -477,6 +477,13 @@
       "when": 1780876800040,
       "tag": "0067_certificados_viaje",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1780876800050,
+      "tag": "0068_metricas_viaje_desglose_ttw_wtt",
+      "breakpoints": true
     }
   ]
 }

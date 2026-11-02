@@ -1607,6 +1607,15 @@ export const tripMetrics = pgTable(
       scale: 3,
     }),
     carbonEmissionsKgco2eActual: numeric('emisiones_kgco2e_reales', { precision: 10, scale: 3 }),
+    // HC-003 T1 (0068) — desglose del cálculo vigente (real si existe, si no estimado).
+    emisionesKgco2eTtw: numeric('emisiones_kgco2e_ttw', { precision: 10, scale: 3 }),
+    emisionesKgco2eWtt: numeric('emisiones_kgco2e_wtt', { precision: 10, scale: 3 }),
+    intensidadGco2ePorTkm: numeric('intensidad_gco2e_por_tkm', { precision: 12, scale: 3 }),
+    factoresFuente: text('factores_fuente'),
+    // Referencia HuellaChile 2025 (por litro de diésel), solo para mostrar.
+    ttwRef: numeric('ttw_ref', { precision: 6, scale: 3 }),
+    wttRef: numeric('wtt_ref', { precision: 6, scale: 3 }),
+    fuenteRef: text('fuente_ref'),
     fuelConsumedLEstimated: numeric('combustible_consumido_l_estimado', {
       precision: 10,
       scale: 2,

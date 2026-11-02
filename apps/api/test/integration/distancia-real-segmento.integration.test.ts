@@ -289,6 +289,13 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         coveragePct: schema.tripMetrics.coveragePct,
         certificationLevel: schema.tripMetrics.certificationLevel,
         carbonEmissionsKgco2eActual: schema.tripMetrics.carbonEmissionsKgco2eActual,
+        emisionesKgco2eTtw: schema.tripMetrics.emisionesKgco2eTtw,
+        emisionesKgco2eWtt: schema.tripMetrics.emisionesKgco2eWtt,
+        intensidadGco2ePorTkm: schema.tripMetrics.intensidadGco2ePorTkm,
+        factoresFuente: schema.tripMetrics.factoresFuente,
+        ttwRef: schema.tripMetrics.ttwRef,
+        wttRef: schema.tripMetrics.wttRef,
+        fuenteRef: schema.tripMetrics.fuenteRef,
         fuelConsumedLActual: schema.tripMetrics.fuelConsumedLActual,
         precisionMethod: schema.tripMetrics.precisionMethod,
         fuenteDistancia: schema.tripMetrics.fuenteDistancia,
@@ -406,6 +413,19 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(Number(m?.carbonEmissionsKgco2eActual)).toBeCloseTo(r.emisionesKgco2eReales ?? -1, 3);
     expect(Number(m?.fuelConsumedLActual)).toBeGreaterThan(0);
     expect(m?.precisionMethod).toBe('modelado');
+    // HC-003 T1 (0068): el desglose real queda en la fila y suma el WTW (±redondeo numeric(10,3)).
+    expect(Number(m?.emisionesKgco2eTtw)).toBeGreaterThan(Number(m?.emisionesKgco2eWtt));
+    expect(Number(m?.emisionesKgco2eTtw) + Number(m?.emisionesKgco2eWtt)).toBeCloseTo(
+      Number(m?.carbonEmissionsKgco2eActual),
+      2,
+    );
+    expect(Number(m?.intensidadGco2ePorTkm)).toBeGreaterThan(0);
+    expect(m?.factoresFuente).toMatch(/GLEC/);
+    expect([m?.ttwRef, m?.wttRef, m?.fuenteRef]).toEqual([
+      '2.740',
+      '0.624',
+      'HuellaChile 2025, MMA',
+    ]);
     expect(m?.routeDataSource).toBe('movil_gps');
     expect(m?.certificationLevel).toBe('secundario_modeled');
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
