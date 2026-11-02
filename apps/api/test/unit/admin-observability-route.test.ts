@@ -541,4 +541,52 @@ describe('admin/observability — contrato del 400 (TRK-003)', () => {
       }
     `);
   });
+
+  it('las otras 4 rutas con query inválida → 400 invalid_query con error.flatten()', async () => {
+    const app = makeApp(buildOpts(), { withContext: true });
+    const get = async (p: string) => {
+      const res = await app.request(`/admin/observability/costs/${p}`);
+      return { status: res.status, body: await res.json() };
+    };
+    // by-project y trend comparten rangeQuerySchema con by-service (snapshot de arriba).
+    const byService = await get('by-service?days=abc');
+    expect(await get('by-project?days=abc')).toEqual(byService);
+    expect(await get('trend?days=abc')).toEqual(byService);
+    const results = {
+      'monthly-history': await get('monthly-history?months=abc'),
+      'top-skus': await get('top-skus?limit=abc'),
+    };
+    expect(results).toMatchInlineSnapshot(`
+      {
+        "monthly-history": {
+          "body": {
+            "details": {
+              "fieldErrors": {
+                "months": [
+                  "Expected number, received nan",
+                ],
+              },
+              "formErrors": [],
+            },
+            "error": "invalid_query",
+          },
+          "status": 400,
+        },
+        "top-skus": {
+          "body": {
+            "details": {
+              "fieldErrors": {
+                "limit": [
+                  "Expected number, received nan",
+                ],
+              },
+              "formErrors": [],
+            },
+            "error": "invalid_query",
+          },
+          "status": 400,
+        },
+      }
+    `);
+  });
 });
