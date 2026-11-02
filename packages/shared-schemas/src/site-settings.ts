@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { errorOpcion, textoEs, urlEs } from './primitives/mensajes.js';
 
 /**
  * Schema canónico de configuración del sitio (Booster AI).
@@ -21,11 +22,11 @@ export const siteIdentitySchema = z.object({
    * `/icons/icon.svg`. Sirve desde el bucket público
    * `booster-ai-public-assets-{env}`.
    */
-  logo_url: z.string().url().optional(),
+  logo_url: urlEs().optional(),
   /** Texto alternativo del logo para accesibilidad. */
-  logo_alt: z.string().min(1).max(60).default('Booster AI'),
+  logo_alt: textoEs(1, 60).default('Booster AI'),
   /** URL HTTPS del favicon. Override del default. */
-  favicon_url: z.string().url().optional(),
+  favicon_url: urlEs().optional(),
   /**
    * Color primario en formato hex `#RRGGBB`. Override del verde
    * Booster default `#1fa058`. Propaga a CSS variable `--color-primary-500`
@@ -39,42 +40,45 @@ export const siteIdentitySchema = z.object({
 
 export const heroSchema = z.object({
   /** Primera línea del headline. */
-  headline_line1: z.string().min(1).max(80),
+  headline_line1: textoEs(1, 80),
   /** Segunda línea (renderiza en color acento primary). */
-  headline_line2: z.string().min(1).max(80),
+  headline_line2: textoEs(1, 80),
   /** Texto descriptivo bajo el headline. */
-  subhead: z.string().min(1).max(500),
+  subhead: textoEs(1, 500),
   /** Microcopy adicional (opcional, debajo del subhead). */
-  microcopy: z.string().min(1).max(200),
+  microcopy: textoEs(1, 200),
 });
 
-export const certificationSchema = z.string().min(1).max(40);
+export const certificationSchema = textoEs(1, 40);
 
 export const personaCardSchema = z.object({
-  persona: z.enum(['shipper', 'carrier', 'conductor', 'stakeholder']),
-  role: z.string().min(1).max(50),
-  entity_name: z.string().min(1).max(80),
-  tagline: z.string().min(1).max(200),
-  highlights: z.array(z.string().min(1).max(100)).min(1).max(5),
+  persona: z.enum(['shipper', 'carrier', 'conductor', 'stakeholder'], { error: errorOpcion }),
+  role: textoEs(1, 50),
+  entity_name: textoEs(1, 80),
+  tagline: textoEs(1, 200),
+  highlights: z
+    .array(textoEs(1, 100))
+    .min(1, 'Agrega al menos 1 punto')
+    .max(5, 'Usa como máximo 5 puntos'),
 });
 
 export const onboardingCopySchema = z.object({
-  step1_title: z.string().min(1).max(100),
-  step2_title: z.string().min(1).max(100),
-  step3_title: z.string().min(1).max(100),
-  step4_title: z.string().min(1).max(100),
+  step1_title: textoEs(1, 100),
+  step2_title: textoEs(1, 100),
+  step3_title: textoEs(1, 100),
+  step4_title: textoEs(1, 100),
 });
 
 export const loginCopySchema = z.object({
-  hero_title: z.string().min(1).max(100),
-  hero_subtitle: z.string().min(1).max(300),
+  hero_title: textoEs(1, 100),
+  hero_subtitle: textoEs(1, 300),
 });
 
 export const siteConfigSchema = z.object({
   identity: siteIdentitySchema,
   hero: heroSchema,
-  certifications: z.array(certificationSchema).max(8),
-  persona_cards: z.array(personaCardSchema).length(4),
+  certifications: z.array(certificationSchema).max(8, 'Usa como máximo 8 certificaciones'),
+  persona_cards: z.array(personaCardSchema).length(4, 'Tienen que ser 4 tarjetas'),
   onboarding: onboardingCopySchema.optional(),
   login: loginCopySchema.optional(),
 });

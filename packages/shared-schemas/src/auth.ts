@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { rutSchema } from './primitives/chile.js';
+import { MENSAJES, correoEs, errorOpcion, textoEs } from './primitives/mensajes.js';
 
 /**
  * @booster-ai/shared-schemas — Auth universal RUT + clave numérica
@@ -35,7 +36,7 @@ export const USER_TYPE_HINT_LABEL: Record<UserTypeHint, string> = {
  * Clave numérica: exactamente 6 dígitos.
  */
 export const claveNumericaSchema = z
-  .string()
+  .string({ error: MENSAJES.requerido })
   .regex(/^\d{6}$/, 'La clave debe ser de 6 dígitos numéricos');
 
 /**
@@ -115,7 +116,9 @@ export interface LoginRutNeedsRotation {
  *   - `stakeholder_sostenibilidad`: pertenece a organizaciones stakeholder
  *     (ADR-034), no a empresas — el CHECK XOR de la BD lo impide.
  */
-export const rolEquipoSchema = z.enum(['dueno', 'admin', 'despachador', 'visualizador']);
+export const rolEquipoSchema = z.enum(['dueno', 'admin', 'despachador', 'visualizador'], {
+  error: errorOpcion,
+});
 export type RolEquipo = z.infer<typeof rolEquipoSchema>;
 
 /**
@@ -130,9 +133,9 @@ export type RolEquipo = z.infer<typeof rolEquipoSchema>;
  * su gente — solo entrega un código de activación de un solo uso.
  */
 export const invitarMiembroSchema = z.object({
-  full_name: z.string().min(2).max(200),
+  full_name: textoEs(2, 200),
   rut: rutSchema,
-  email: z.string().email().max(320),
+  email: correoEs(320),
   rol: rolEquipoSchema,
 });
 export type InvitarMiembroInput = z.infer<typeof invitarMiembroSchema>;
@@ -147,7 +150,7 @@ export type InvitarMiembroInput = z.infer<typeof invitarMiembroSchema>;
  */
 export const activarCuentaSchema = z.object({
   rut: rutSchema,
-  codigo: z.string().regex(/^\d{6}$/, 'El código es de 6 dígitos'),
+  codigo: z.string({ error: MENSAJES.requerido }).regex(/^\d{6}$/, 'El código es de 6 dígitos'),
   clave_numerica: claveNumericaSchema,
 });
 export type ActivarCuentaInput = z.infer<typeof activarCuentaSchema>;

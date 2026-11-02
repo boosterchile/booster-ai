@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
+import { signupRequestSchema } from '@booster-ai/shared-schemas';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { zValidator } from '../lib/validation.js';
 import { submitSignupRequest } from '../services/signup-request.js';
@@ -27,10 +27,7 @@ import { submitSignupRequest } from '../services/signup-request.js';
  *   - 503 — Redis down (middleware fail-closed) o DB throw (route catch).
  */
 
-const signupRequestBodySchema = z.object({
-  email: z.string().email().max(320),
-  nombreCompleto: z.string().min(1).max(200),
-});
+const signupRequestBodySchema = signupRequestSchema.pick({ email: true, nombreCompleto: true });
 
 export function createSignupRequestRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
