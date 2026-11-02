@@ -14,7 +14,8 @@ export function assertTestDbUrl(raw: string): void {
     throw new Error('TEST_DATABASE_URL no es una URL válida. Aborto sin conectar.');
   }
   const segura = `${u.protocol}//${u.username ? `${u.username}:***@` : ''}${u.host}${u.pathname}`;
-  if (!HOSTS_LOCALES.has(u.hostname) || u.searchParams.has('host')) {
+  // `..` en el path: URL lo normaliza (/x/../test → /test); se rechaza el input crudo.
+  if (!HOSTS_LOCALES.has(u.hostname) || u.searchParams.has('host') || raw.includes('..')) {
     throw new Error(
       `TEST_DATABASE_URL debe ser local (localhost, 127.0.0.1 o ::1, sin ?host=). Recibí ${segura}. Aborto sin conectar.`,
     );
