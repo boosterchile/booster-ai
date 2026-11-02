@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { activarCuentaSchema } from '@booster-ai/shared-schemas';
-import { and, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
@@ -84,21 +84,23 @@ export function createAuthActivarRoutes(opts: {
       return rechazo();
     }
 
-    // La invitación pendiente da la referencia de vencimiento: el código vive
-    // 7 días desde que la empresa dio de alta a la persona. Se activan todas
-    // las membresías vigentes: la persona puede haber sido vinculada a más
-    // de una empresa antes de elegir su clave.
+    // El código se emite solo al crear a la persona, junto con su primera
+    // membresía. Activar suma esa invitación y ninguna otra: las de otras
+    // empresas esperan a que la persona las acepte. Vence a los 7 días.
     // rls-allowlist: lookup pre-auth ligado al user recién verificado.
-    const invitaciones = await opts.db
+    const [primera] = await opts.db
       .select({
         id: memberships.id,
         empresaId: memberships.empresaId,
         invitedAt: memberships.invitedAt,
+        status: memberships.status,
       })
       .from(memberships)
-      .where(and(eq(memberships.userId, user.id), eq(memberships.status, 'pendiente_invitacion')))
-      .limit(20);
-    const vigentes = invitacionesVigentes(invitaciones);
+      .where(eq(memberships.userId, user.id))
+      .orderBy(asc(memberships.createdAt), asc(memberships.id))
+      .limit(1);
+    const vigentes =
+      primera?.status === 'pendiente_invitacion' ? invitacionesVigentes([primera]) : [];
 
     if (vigentes.length === 0) {
       opts.logger.info({ rut: body.rut }, 'auth-activar: sin invitación vigente');

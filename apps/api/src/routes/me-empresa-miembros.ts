@@ -11,7 +11,12 @@ import { generateActivationPin, hashActivationPin } from '../services/activation
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
-import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
+import {
+  VINCULO_PERSONA_EXISTENTE,
+  type VinculoPersona,
+  mascarEmail,
+  mascarRut,
+} from '../services/vinculo-persona.js';
 
 /**
  * equipo-de-la-empresa Fase A — la empresa gestiona su propia gente.
@@ -111,16 +116,20 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       .limit(200);
 
     return c.json({
-      miembros: filas.map((f) => ({
-        membership_id: f.membershipId,
-        user_id: f.userId,
-        full_name: f.fullName,
-        email: f.email,
-        rut: f.rut,
-        rol: f.rol,
-        estado: f.estado,
-        invitado_en: f.invitadoEn,
-      })),
+      miembros: filas.map((f) => {
+        // Una invitación pendiente no da acceso a los datos de contacto de la persona.
+        const pendiente = f.estado !== 'activa';
+        return {
+          membership_id: f.membershipId,
+          user_id: f.userId,
+          full_name: f.fullName,
+          email: pendiente ? mascarEmail(f.email) : f.email,
+          rut: pendiente ? mascarRut(f.rut) : f.rut,
+          rol: f.rol,
+          estado: f.estado,
+          invitado_en: f.invitadoEn,
+        };
+      }),
     });
   });
 
@@ -144,14 +153,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       // rls-allowlist: lookup global por RUT — una persona puede trabajar en
       // más de una empresa, así que su identidad se reusa en vez de duplicarse.
       const existentes = await tx
-        .select({
-          id: users.id,
-          email: users.email,
-          fullName: users.fullName,
-          firebaseUid: users.firebaseUid,
-          claveNumericaHash: users.claveNumericaHash,
-          activationPinHash: users.activationPinHash,
-        })
+        .select({ id: users.id })
         .from(users)
         .where(eq(users.rut, body.rut))
         .limit(1);
@@ -175,16 +177,9 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       let codigoEmitido: string | null = null;
       if (existente) {
         userId = existente.id;
-        // La identidad es de la persona. Otra empresa no pisa su código ni su clave.
-        vinculo = clasificarVinculoPersona(existente);
-        if (vinculo === 'provisoria_sin_codigo') {
-          const codigo = generateActivationPin();
-          codigoEmitido = codigo;
-          await tx
-            .update(users)
-            .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-            .where(eq(users.id, userId));
-        }
+        // Persona existente: no se emite código y la respuesta es la misma
+        // para cualquier estado de su cuenta.
+        vinculo = VINCULO_PERSONA_EXISTENTE;
       } else {
         const codigo = generateActivationPin();
         codigoEmitido = codigo;
@@ -218,18 +213,17 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         userId = creado.id;
       }
 
-      const yaActiva = vinculo === 'cuenta_activa';
+      // Toda alta nace pendiente: nadie queda activo en una empresa sin activar.
       const membresias = await tx
         .insert(memberships)
         .values({
           userId,
           empresaId: auth.empresaId,
           role: body.rol,
-          // Quien ya tiene clave entra directo. El resto espera su código.
-          status: yaActiva ? 'activa' : 'pendiente_invitacion',
+          status: 'pendiente_invitacion',
           invitedByUserId: auth.callerId,
           invitedAt: new Date(),
-          joinedAt: yaActiva ? new Date() : null,
+          joinedAt: null,
         })
         .returning({ id: memberships.id });
       const membresia = membresias[0];
@@ -242,11 +236,8 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         membershipId: membresia.id,
         vinculo,
         codigoEmitido,
-        // Persona provisoria: su correo registrado, no el que tipeó la empresa.
-        destinatario: {
-          email: existente?.email ?? email,
-          nombre: existente?.fullName ?? body.full_name,
-        },
+        // Solo una persona nueva recibe código, en el correo que se tipeó al crearla.
+        destinatario: { email, nombre: body.full_name },
       };
     });
 
@@ -298,7 +289,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         user_id: resultado.userId,
         membership_id: resultado.membershipId,
         rol: body.rol,
-        estado: resultado.vinculo === 'cuenta_activa' ? 'activa' : 'pendiente_invitacion',
+        estado: 'pendiente_invitacion',
         codigo_activacion: resultado.codigoEmitido,
         expira_en: expiraEn,
         vinculo: resultado.vinculo,

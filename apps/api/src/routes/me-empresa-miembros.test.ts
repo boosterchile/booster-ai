@@ -223,7 +223,7 @@ describe('POST /me/empresa/miembros', () => {
     expect(m.empresaId).toBe(OTRA_EMPRESA);
   });
 
-  it('reusa una cuenta ya activa sin pisar su código ni su clave', async () => {
+  it('alta de RUT existente con cuenta activa queda pendiente', async () => {
     const d = makeDb({
       userByRut: [
         {
@@ -248,11 +248,11 @@ describe('POST /me/empresa/miembros', () => {
     };
     expect(json.user_id).toBe('user-existente');
     expect(json.codigo_activacion).toBeNull();
-    expect(json.estado).toBe('activa');
-    expect(json.vinculo).toBe('cuenta_activa');
+    expect(json.estado).toBe('pendiente_invitacion');
+    expect(json.vinculo).toBe('codigo_vigente');
     const m = d.insertedMemberships[0] as Record<string, unknown>;
-    expect(m.status).toBe('activa');
-    expect(m.joinedAt).toBeInstanceOf(Date);
+    expect(m.status).toBe('pendiente_invitacion');
+    expect(m.joinedAt).toBeNull();
   });
 
   it('no reemplaza el código de una persona que todavía no activa', async () => {
@@ -281,7 +281,7 @@ describe('POST /me/empresa/miembros', () => {
     expect(json.vinculo).toBe('codigo_vigente');
   });
 
-  it('emite código si la persona provisoria no tiene uno', async () => {
+  it('alta de RUT existente sin credencial no expone credenciales', async () => {
     const d = makeDb({
       userByRut: [
         {
@@ -296,13 +296,10 @@ describe('POST /me/empresa/miembros', () => {
     const res = await post(buildApp(d.db));
 
     expect(res.status).toBe(201);
-    const json = (await res.json()) as { codigo_activacion: string; vinculo: string };
-    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
-    expect(json.vinculo).toBe('provisoria_sin_codigo');
-    expect(d.updates[0]).toEqual(
-      expect.objectContaining({ activationPinHash: expect.any(String) }),
-    );
-    expect(JSON.stringify(d.updates[0])).not.toContain(json.codigo_activacion);
+    const json = (await res.json()) as { codigo_activacion: string | null; vinculo: string };
+    expect(json.codigo_activacion).toBeNull();
+    expect(json.vinculo).toBe('codigo_vigente');
+    expect(d.updates).toEqual([]);
   });
 
   it('409 si esa persona ya es miembro de la empresa', async () => {
@@ -425,7 +422,7 @@ describe('correo de activación del equipo de la empresa', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('una persona provisoria sin código recibe el código en su correo registrado', async () => {
+  it('alta de RUT existente sin credencial no envía correo', async () => {
     const d = makeDb({
       userByRut: [
         {
@@ -442,10 +439,7 @@ describe('correo de activación del equipo de la empresa', () => {
     const res = await post(buildApp(d.db, {}, sender));
 
     expect(res.status).toBe(201);
-    const json = (await res.json()) as { codigo_activacion: string };
-    const msg = mensaje(send);
-    expect(msg.to).toBe('registrado@andes.cl');
-    expect(msg.text).toContain(json.codigo_activacion);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('el código no aparece en ningún log', async () => {

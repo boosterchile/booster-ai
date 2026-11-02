@@ -48,6 +48,29 @@ export function clasificarVinculoPersona(
   return 'provisoria_sin_codigo';
 }
 
+/**
+ * Lo que recibe quien da de alta a una persona que ya existe. Es el mismo valor
+ * para cualquier estado de la cuenta: un tercero no debe poder distinguirlo.
+ */
+export const VINCULO_PERSONA_EXISTENTE = 'codigo_vigente' satisfies VinculoPersona;
+
+/** `12.345.678-5` → `*****678-5`. Para mostrar o loguear sin exponer el RUT. */
+export function mascarRut(rut: string | null): string | null {
+  if (!rut) {
+    return rut;
+  }
+  return rut.replace(/^[\d.]+(?=\d{3}-)/, (m) => '*'.repeat(m.replace(/\./g, '').length));
+}
+
+/** `persona@dominio.cl` → `p***@dominio.cl`. */
+export function mascarEmail(email: string | null): string | null {
+  if (!email) {
+    return email;
+  }
+  const at = email.indexOf('@');
+  return at <= 0 ? '***' : `${email[0]}***${email.slice(at)}`;
+}
+
 /** `/auth/activar` no reescribe una cuenta que ya salió del placeholder. */
 export function cuentaYaActivada(persona: {
   firebaseUid: string;

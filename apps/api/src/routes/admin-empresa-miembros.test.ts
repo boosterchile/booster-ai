@@ -513,11 +513,11 @@ describe('POST /admin/empresas/:id/miembros', () => {
     };
     expect(json.user_id).toBe('user-existente');
     expect(json.codigo_activacion).toBeNull();
-    expect(json.estado).toBe('activa');
-    expect(json.vinculo).toBe('cuenta_activa');
+    expect(json.estado).toBe('pendiente_invitacion');
+    expect(json.vinculo).toBe('codigo_vigente');
     expect(d.updates).toEqual([]);
     expect(d.insertedMemberships[0]).toEqual(
-      expect.objectContaining({ status: 'activa', userId: 'user-existente' }),
+      expect.objectContaining({ status: 'pendiente_invitacion', userId: 'user-existente' }),
     );
   });
 
@@ -1078,7 +1078,7 @@ describe('correo de activación del alta desde el panel', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('una persona provisoria sin código recibe el código en su correo registrado', async () => {
+  it('alta de RUT existente sin credencial no envía correo', async () => {
     const mod = await loadMod();
     const d = makeDb({
       userByEmailRows: [
@@ -1102,11 +1102,9 @@ describe('correo de activación del alta desde el panel', () => {
     });
 
     expect(res.status).toBe(201);
-    const json = (await res.json()) as { codigo_activacion: string };
-    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
-    const msg = mensaje(send);
-    expect(msg.to).toBe('registrado@transjavier.cl');
-    expect(msg.text).toContain(json.codigo_activacion);
+    const json = (await res.json()) as { codigo_activacion: string | null };
+    expect(json.codigo_activacion).toBeNull();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('reemitir el código lo envía al correo de la persona', async () => {
