@@ -33,13 +33,54 @@ describe('zValidator común: textos de zod 3 (D2)', () => {
     ],
     [z.object({ a: z.number().max(5) }), { a: 9 }, 'Number must be less than or equal to 5'],
     [z.object({ a: z.number().gt(0) }), { a: 0 }, 'Number must be greater than 0'],
+    [z.object({ a: z.number().lt(5) }), { a: 5 }, 'Number must be less than 5'],
     [z.object({ a: z.string().min(1, 'propio') }), { a: '' }, 'propio'],
+    [
+      z.object({ a: z.enum(['x', 'y']) }),
+      { a: { toString: 'x' } },
+      "Expected 'x' | 'y', received object",
+    ],
+    [z.object({ a: z.enum(['x', 'y']) }), { a: 3 }, "Expected 'x' | 'y', received number"],
+    [
+      z.object({ a: z.string().length(2) }),
+      { a: 'abc' },
+      'String must contain exactly 2 character(s)',
+    ],
+    [
+      z.object({ a: z.string().length(2) }),
+      { a: 'a' },
+      'String must contain exactly 2 character(s)',
+    ],
+    [z.object({ a: z.number().int() }), { a: 1.5 }, 'Expected integer, received float'],
+    [
+      z.object({ a: z.enum(['x']) }),
+      { a: 'z'.repeat(150) },
+      `Invalid enum value. Expected 'x', received '${'z'.repeat(100)}…'`,
+    ],
   ])('%#: %j → %s', async (s, input, mensaje) => {
     const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
     const body = (await (await post(app, input)).json()) as {
       error: { issues: { message: string }[] };
     };
     expect(body.error.issues[0]?.message).toBe(mensaje);
+  });
+});
+
+describe('mensajeZod3 nunca lanza (nunca 500)', () => {
+  it('input con toString no función → 400, no 500', async () => {
+    const s = z.object({ a: z.enum(['x', 'y']) });
+    const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
+    expect((await post(app, { a: { toString: 'x' } })).status).toBe(400);
+  });
+
+  it('si el mapeo falla, cae al default de zod 4 (undefined)', () => {
+    const roto = {
+      code: 'invalid_value',
+      get values(): unknown {
+        throw new Error('x');
+      },
+    };
+    expect(mensajeZod3(roto as never)).toBeUndefined();
   });
 });
 

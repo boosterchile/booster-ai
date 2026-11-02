@@ -21,36 +21,59 @@ export function zodErrorBody(error: { issues: unknown[]; name: string }) {
 }
 
 type Issue = { code: string; input?: unknown; [k: string]: unknown };
-const q = (v: unknown) => `'${String(v)}'`;
+const corto = (v: string) => (v.length > 100 ? `${v.slice(0, 100)}…` : v);
+const q = (v: unknown) => (typeof v === 'string' ? `'${corto(v)}'` : `${v}`);
+const UNIDAD: Record<string, string[]> = {
+  string: ['String', 'character(s)', 'over', 'under'],
+  array: ['Array', 'element(s)', 'more than', 'less than'],
+};
 const tipo = (v: unknown) =>
   v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isNaN(v) ? 'nan' : typeof v;
-const UNIDAD: Record<string, [string, string]> = {
-  string: ['String', 'character(s)'],
-  array: ['Array', 'element(s)'],
-};
 
 // Borrar cuando la web deje de depender de los textos de zod 3 (TRK-003 D2).
+// Textos verificados contra zod 3.25.76 (v3/locales/en.ts). Nunca lanza: ante error, default de zod 4.
 /** Texto por defecto de zod 3 para un issue de zod 4; `undefined` = default de zod 4. */
 export function mensajeZod3(iss: Issue): string | undefined {
+  try {
+    return textoZod3(iss);
+  } catch {
+    return undefined;
+  }
+}
+
+function textoZod3(iss: Issue): string | undefined {
   const { code, input } = iss;
+  const values = Array.isArray(iss.values) ? iss.values : [];
   if (input === undefined && (code === 'invalid_type' || code === 'invalid_value')) {
     return 'Required';
+  }
+  if (code === 'invalid_type' && iss.expected === 'int') {
+    return typeof input === 'number'
+      ? 'Expected integer, received float'
+      : `Expected number, received ${tipo(input)}`;
   }
   if (code === 'invalid_type') {
     return `Expected ${iss.expected}, received ${tipo(input)}`;
   }
-  if (code === 'invalid_value' && Array.isArray(iss.values)) {
-    return `Invalid enum value. Expected ${iss.values.map(q).join(' | ')}, received ${q(input)}`;
+  if (code === 'invalid_value') {
+    const opciones = values.map(q).join(' | ');
+    return typeof input === 'string'
+      ? `Invalid enum value. Expected ${opciones}, received ${q(input)}`
+      : `Expected ${opciones}, received ${tipo(input)}`;
   }
   if (code === 'too_small' || code === 'too_big') {
     const min = code === 'too_small';
     const n = min ? iss.minimum : iss.maximum;
+    const { exact, inclusive } = iss;
     const u = UNIDAD[String(iss.origin)];
     if (u) {
-      return `${u[0]} must contain ${min ? 'at least' : 'at most'} ${n} ${u[1]}`;
+      const amplio = min ? ['at least', u[2]] : ['at most', u[3]];
+      return `${u[0]} must contain ${exact ? 'exactly' : inclusive ? amplio[0] : amplio[1]} ${n} ${u[1]}`;
     }
     if (iss.origin === 'number') {
-      return `Number must be ${min ? 'greater' : 'less'} than ${iss.inclusive ? 'or equal to ' : ''}${n}`;
+      return min
+        ? `Number must be ${exact ? 'exactly equal to ' : inclusive ? 'greater than or equal to ' : 'greater than '}${n}`
+        : `Number must be ${exact ? 'exactly' : inclusive ? 'less than or equal to' : 'less than'} ${n}`;
     }
   }
   return undefined;
