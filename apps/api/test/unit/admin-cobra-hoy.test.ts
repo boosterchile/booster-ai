@@ -541,3 +541,35 @@ describe('POST /admin/cobra-hoy/adelantos/:id/transicionar', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('POST /admin/cobra-hoy/adelantos/:id/transicionar — contrato del 400 (TRK-003)', () => {
+  it('target_status fuera del enum y notas vacía → 400 invalid_body con error.format()', async () => {
+    const { app } = makeApp({ withContext: true });
+    const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target_status: 'solicitado', notas: '' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": {
+            "_errors": [],
+            "notas": {
+              "_errors": [
+                "String must contain at least 1 character(s)",
+              ],
+            },
+            "target_status": {
+              "_errors": [
+                "Invalid enum value. Expected 'aprobado' | 'desembolsado' | 'cobrado_a_shipper' | 'mora' | 'cancelado' | 'rechazado', received 'solicitado'",
+              ],
+            },
+          },
+          "error": "invalid_body",
+        },
+        "status": 400,
+      }
+    `);
+  });
+});
