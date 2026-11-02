@@ -1,4 +1,5 @@
 import {
+  MENSAJE_TELEFONO,
   type ProfileUpdateInput,
   chileanPhoneSchema,
   ensureRutHasDash,
@@ -46,19 +47,16 @@ const profileFormSchema = z.object({
     .max(200, 'El nombre debe tener entre 1 y 200 caracteres.'),
   phone: z
     .string()
-    .refine(
-      (v) => v === '' || chileanPhoneSchema.safeParse(v).success,
-      'Número de teléfono Chile inválido',
-    ),
+    .refine((v) => v === '' || chileanPhoneSchema.safeParse(v).success, MENSAJE_TELEFONO),
   whatsapp_e164: z
     .string()
-    .refine(
-      (v) => v === '' || chileanPhoneSchema.safeParse(v).success,
-      'Número de teléfono Chile inválido',
-    ),
+    .refine((v) => v === '' || chileanPhoneSchema.safeParse(v).success, MENSAJE_TELEFONO),
   rut: z
     .string()
-    .refine((v) => v === '' || rutSchema.safeParse(ensureRutHasDash(v)).success, 'RUT inválido'),
+    .refine(
+      (v) => v === '' || rutSchema.safeParse(ensureRutHasDash(v)).success,
+      'Ingresa un RUT válido, como 12.345.678-5',
+    ),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;

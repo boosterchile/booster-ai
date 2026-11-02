@@ -55,6 +55,14 @@ describe('zValidator común: mensajes', () => {
   });
 });
 
+describe('zValidator común: nunca 500', () => {
+  it('input hostil ({toString}) → 400', async () => {
+    const s = z.object({ email: z.string().email('Ingresa un correo válido') });
+    const app = new Hono().post('/', zValidator('json', s), (c) => c.json({ ok: true }));
+    expect((await post(app, { email: { toString: 1 } })).status).toBe(400);
+  });
+});
+
 describe('zValidator común', () => {
   it('400 por defecto: { success:false, error:{ issues, name } }', async () => {
     const app = new Hono().post('/', zValidator('json', schema), (c) => c.json({ ok: true }));
