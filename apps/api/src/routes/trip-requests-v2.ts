@@ -1,6 +1,11 @@
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import {
+  MENSAJES,
+  abrirDisputaSchema,
+  errorOpcion,
+  tripRequestCreateInputSchema,
+} from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -19,7 +24,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
-import { zValidator } from '../lib/validation.js';
+import { issuesPublicos, zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
@@ -88,8 +93,11 @@ function generateTrackingCode(): string {
 
 /** ADR-079 §1 — cotización previa a publicar (query string). */
 const cotizacionQuerySchema = z.object({
-  precio_transportista_clp: z.coerce.number().int().nonnegative(),
-  modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+  precio_transportista_clp: z.coerce
+    .number({ error: MENSAJES.numero })
+    .int(MENSAJES.numero)
+    .nonnegative(MENSAJES.numero),
+  modalidad_carga: z.enum(['spot', 'programada'], { error: errorOpcion }).default('spot'),
 });
 
 const cancelBodySchema = z.object({
@@ -226,7 +234,7 @@ export function createTripRequestsV2Routes(opts: {
     }
     const query = cotizacionQuerySchema.safeParse(c.req.query());
     if (!query.success) {
-      return c.json({ error: 'invalid_query', issues: query.error.issues }, 400);
+      return c.json({ error: 'invalid_query', issues: issuesPublicos(query.error.issues) }, 400);
     }
     const contratoEn = auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null;
     if (!modalidadPermitida(query.data.modalidad_carga, contratoEn)) {

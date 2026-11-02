@@ -404,12 +404,11 @@ describe('POST /internal/safety-events — contrato del 400 (TRK-003)', () => {
               "path": [
                 "imei",
               ],
-              "pattern": "/^\\d{14,16}$/",
             },
             {
               "code": "invalid_type",
               "expected": "string",
-              "message": "Invalid input: expected string, received undefined",
+              "message": "Completa este campo",
               "path": [
                 "occurredAt",
               ],
@@ -420,5 +419,23 @@ describe('POST /internal/safety-events — contrato del 400 (TRK-003)', () => {
         "status": 400,
       }
     `);
+  });
+});
+
+describe('POST /internal/safety-events — input hostil → 400, nunca 500 (TRK-006)', () => {
+  it.each([
+    ['imei con toString', { imei: { toString: 1 } }],
+    ['occurredAt array', { occurredAt: ['2026-11-02T00:00:00Z'] }],
+    ['eventType objeto', { eventType: { valueOf: 1 } }],
+    ['rawValue string enorme', { rawValue: 'x'.repeat(10_000) }],
+  ])('%s', async (_c, evento) => {
+    const app = makeApp({ oauthClient: makeOAuthClient({ email: CALLER_SA }) });
+    const res = await makeRequest({
+      app,
+      authorization: 'Bearer valid-token',
+      body: makeEnvelopeBody({ eventType: 'crash', ...evento } as never),
+    });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).not.toContain('pattern');
   });
 });

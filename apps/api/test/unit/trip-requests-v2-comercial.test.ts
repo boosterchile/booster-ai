@@ -215,7 +215,7 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
             {
               "code": "too_small",
               "inclusive": true,
-              "message": "Too small: expected number to be >=0",
+              "message": "Ingresa un número válido",
               "minimum": 0,
               "origin": "number",
               "path": [
@@ -240,7 +240,7 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
             {
               "code": "invalid_type",
               "expected": "number",
-              "message": "Invalid input: expected number, received NaN",
+              "message": "Ingresa un número válido",
               "path": [
                 "precio_transportista_clp",
               ],
@@ -248,7 +248,7 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
             },
             {
               "code": "invalid_value",
-              "message": "Invalid option: expected one of "spot"|"programada"",
+              "message": "Elige una opción válida",
               "path": [
                 "modalidad_carga",
               ],
@@ -262,5 +262,20 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
         "status": 400,
       }
     `);
+  });
+});
+
+describe('GET /trip-requests-v2/cotizacion — input hostil → 400, nunca 500 (TRK-006)', () => {
+  it.each([
+    'precio_transportista_clp=__proto__',
+    'precio_transportista_clp=1e400',
+    'precio_transportista_clp=1.5',
+    `precio_transportista_clp=${'9'.repeat(5000)}`,
+    'precio_transportista_clp=1&modalidad_carga=constructor',
+  ])('%s', async (q) => {
+    appConfig.PRICING_V3_ACTIVATED = true;
+    const res = await setup().app.request(`/trip-requests-v2/cotizacion?${q}`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_query', issues: expect.any(Array) });
   });
 });

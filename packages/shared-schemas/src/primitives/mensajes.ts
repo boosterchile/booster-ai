@@ -10,6 +10,9 @@ export const MENSAJES = {
   url: 'Ingresa una URL válida, como https://…',
   opcion: 'Elige una opción válida',
   fecha: 'Ingresa una fecha válida (AAAA-MM-DD)',
+  fechaHora: 'Ingresa una fecha y hora válidas (ISO 8601)',
+  numero: 'Ingresa un número válido',
+  id: 'Identificador no válido',
   min: (n: number) => `Escribe al menos ${n} caracteres`,
   max: (n: number) => `Usa como máximo ${n} caracteres`,
 };
