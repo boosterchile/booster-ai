@@ -38,7 +38,7 @@ vi.mock('../../src/services/cobra-hoy.js', () => ({
   cobraHoy: (...args: unknown[]) => cobraHoySpy(...args),
 }));
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
 const USER_CTX: UserContext = {
   user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
   activeMembership: {

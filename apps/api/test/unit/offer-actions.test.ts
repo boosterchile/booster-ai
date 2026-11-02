@@ -106,7 +106,7 @@ function makeDb(queues: DbQueues = {}) {
   };
 }
 
-const OFFER_ID = '11111111-1111-1111-1111-111111111111';
+const OFFER_ID = '11111111-1111-4111-8111-111111111111';
 const EMPRESA_ID = 'emp-uuid-1';
 const USER_ID = 'user-uuid-1';
 const TRIP_ID = 'trip-uuid-1';
