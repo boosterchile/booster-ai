@@ -372,11 +372,10 @@ describe('POST /internal/safety-events — contrato del 400 (TRK-003)', () => {
             {
               "code": "invalid_type",
               "expected": "object",
-              "message": "Required",
+              "message": "Invalid input: expected object, received undefined",
               "path": [
                 "message",
               ],
-              "received": "undefined",
             },
           ],
           "error": "Invalid Pub/Sub envelope",
@@ -398,21 +397,22 @@ describe('POST /internal/safety-events — contrato del 400 (TRK-003)', () => {
         "body": {
           "details": [
             {
-              "code": "invalid_string",
+              "code": "invalid_format",
+              "format": "regex",
               "message": "IMEI debe ser 14-16 dígitos",
+              "origin": "string",
               "path": [
                 "imei",
               ],
-              "validation": "regex",
+              "pattern": "/^\\d{14,16}$/",
             },
             {
               "code": "invalid_type",
               "expected": "string",
-              "message": "Required",
+              "message": "Invalid input: expected string, received undefined",
               "path": [
                 "occurredAt",
               ],
-              "received": "undefined",
             },
           ],
           "error": "Invalid SafetyEvent",

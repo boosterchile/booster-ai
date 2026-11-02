@@ -530,7 +530,7 @@ describe('admin/observability — contrato del 400 (TRK-003)', () => {
           "details": {
             "fieldErrors": {
               "days": [
-                "Expected number, received nan",
+                "Invalid input: expected number, received NaN",
               ],
             },
             "formErrors": [],
@@ -563,7 +563,7 @@ describe('admin/observability — contrato del 400 (TRK-003)', () => {
             "details": {
               "fieldErrors": {
                 "months": [
-                  "Expected number, received nan",
+                  "Invalid input: expected number, received NaN",
                 ],
               },
               "formErrors": [],
@@ -577,7 +577,7 @@ describe('admin/observability — contrato del 400 (TRK-003)', () => {
             "details": {
               "fieldErrors": {
                 "limit": [
-                  "Expected number, received nan",
+                  "Invalid input: expected number, received NaN",
                 ],
               },
               "formErrors": [],

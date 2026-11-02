@@ -135,7 +135,7 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
       {
         "body": {
           "details": {
-            "_errors": [
+            "errors": [
               "Dígito verificador de RUT inválido",
             ],
           },

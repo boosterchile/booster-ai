@@ -91,16 +91,18 @@ describe('resolveMatchingV2Weights', () => {
     expect(warn.mock.calls[0]?.[0]).toMatchInlineSnapshot(`
       {
         "errors": {
-          "_errors": [],
-          "reputacion": {
-            "_errors": [
-              "Required",
-            ],
-          },
-          "tier": {
-            "_errors": [
-              "Required",
-            ],
+          "errors": [],
+          "properties": {
+            "reputacion": {
+              "errors": [
+                "Invalid input: expected number, received undefined",
+              ],
+            },
+            "tier": {
+              "errors": [
+                "Invalid input: expected number, received undefined",
+              ],
+            },
           },
         },
       }

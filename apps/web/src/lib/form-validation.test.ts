@@ -101,7 +101,7 @@ describe('serverValidationFieldsMessage', () => {
   it('contrato TRK-003: body 400 real de zValidator default (webpush, campo faltante)', () => {
     // Literal (JSON de cable) del snapshot en apps/api/test/unit/webpush-route.test.ts.
     const body: unknown = JSON.parse(
-      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Required","path":["keys"],"received":"undefined"}],"name":"ZodError"}}',
+      '{"success":false,"error":{"issues":[{"code":"invalid_type","expected":"object","message":"Required","path":["keys"]}],"name":"ZodError"}}',
     );
     const err = new ApiError(400, 'validation_error', body, 'keys: Required');
     expect(zValidatorIssuePaths(err)).toEqual([['keys']]);

@@ -554,16 +554,18 @@ describe('POST /admin/cobra-hoy/adelantos/:id/transicionar — contrato del 400 
       {
         "body": {
           "details": {
-            "_errors": [],
-            "notas": {
-              "_errors": [
-                "String must contain at least 1 character(s)",
-              ],
-            },
-            "target_status": {
-              "_errors": [
-                "Invalid enum value. Expected 'aprobado' | 'desembolsado' | 'cobrado_a_shipper' | 'mora' | 'cancelado' | 'rechazado', received 'solicitado'",
-              ],
+            "errors": [],
+            "properties": {
+              "notas": {
+                "errors": [
+                  "Too small: expected string to have >=1 characters",
+                ],
+              },
+              "target_status": {
+                "errors": [
+                  "Invalid option: expected one of "aprobado"|"desembolsado"|"cobrado_a_shipper"|"mora"|"cancelado"|"rechazado"",
+                ],
+              },
             },
           },
           "error": "invalid_body",

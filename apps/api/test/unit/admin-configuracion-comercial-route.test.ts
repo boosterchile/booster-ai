@@ -279,11 +279,10 @@ describe('admin configuración comercial — contrato del 422 (TRK-003)', () => 
             {
               "code": "invalid_type",
               "expected": "string",
-              "message": "Required",
+              "message": "Invalid input: expected string, received undefined",
               "path": [
                 "nota_cambio",
               ],
-              "received": "undefined",
             },
           ],
         },
@@ -333,11 +332,10 @@ describe('admin configuración comercial — contrato del 422 (TRK-003)', () => 
             {
               "code": "invalid_type",
               "expected": "boolean",
-              "message": "Expected boolean, received string",
+              "message": "Invalid input: expected boolean, received string",
               "path": [
                 "activo",
               ],
-              "received": "string",
             },
           ],
         },
@@ -356,11 +354,10 @@ describe('admin configuración comercial — contrato del 422 (TRK-003)', () => 
             {
               "code": "invalid_type",
               "expected": "boolean",
-              "message": "Expected boolean, received string",
+              "message": "Invalid input: expected boolean, received string",
               "path": [
                 "activo",
               ],
-              "received": "string",
             },
           ],
         },

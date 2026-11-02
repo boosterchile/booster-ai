@@ -432,7 +432,7 @@ describe('capacidad de estanque y fuente CAN', () => {
 });
 
 describe('mensajes custom de combustible — contrato (TRK-003)', () => {
-  function primerMensaje(schema: z.ZodTypeAny, valor: unknown): string | undefined {
+  function primerMensaje(schema: z.ZodType, valor: unknown): string | undefined {
     const parsed = schema.safeParse(valor);
     return parsed.success ? undefined : parsed.error.issues[0]?.message;
   }

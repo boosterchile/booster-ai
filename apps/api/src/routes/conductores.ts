@@ -16,7 +16,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
 import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
-import { zValidator } from '../lib/validation.js';
+import { zValidator, zodErrorBody } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
@@ -375,6 +375,7 @@ export function createConductoresRoutes(opts: {
       if (soloTelefono) {
         return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
       }
+      return c.json(zodErrorBody(result.error), 400);
     }
     return undefined;
   });

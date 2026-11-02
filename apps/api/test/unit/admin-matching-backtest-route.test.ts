@@ -130,11 +130,13 @@ describe('admin-matching-backtest routes', () => {
         {
           "body": {
             "detail": {
-              "_errors": [],
-              "tripsLimit": {
-                "_errors": [
-                  "Number must be less than or equal to 5000",
-                ],
+              "errors": [],
+              "properties": {
+                "tripsLimit": {
+                  "errors": [
+                    "Too big: expected number to be <=5000",
+                  ],
+                },
               },
             },
             "error": "validation",

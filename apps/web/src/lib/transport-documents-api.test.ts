@@ -178,7 +178,7 @@ describe('listTransportDocuments', () => {
         "details": {
           "fieldErrors": {
             "documents": [
-              "Required",
+              "Invalid input: expected array, received undefined",
             ],
           },
           "formErrors": [],

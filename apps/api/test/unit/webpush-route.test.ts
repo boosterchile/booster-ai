@@ -264,7 +264,6 @@ describe('POST /me/push-subscription — contrato del 400 de zValidator (TRK-003
                 "path": [
                   "keys",
                 ],
-                "received": "undefined",
               },
             ],
             "name": "ZodError",
@@ -286,7 +285,6 @@ describe('POST /me/push-subscription — contrato del 400 de zValidator (TRK-003
                 "path": [
                   "endpoint",
                 ],
-                "received": "number",
               },
             ],
             "name": "ZodError",
