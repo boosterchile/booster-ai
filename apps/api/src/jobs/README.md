@@ -47,6 +47,18 @@ Env vars requeridas:
 
 Exit code 1 si algún trip falló — útil para alerting en cron/CI.
 
+### `hc001-fuente-combustible-can.ts`
+
+HC-001: corrige `vehiculos.fuente_combustible_can` (KZXB64 89→83, LFGR63 84→83,
+KZBB26 84→sin_sensor) con guarda sobre el valor previo y exactamente 3 filas en
+una transacción. Dry-run por defecto. La ejecuta Ops Platform con OK de Felipe.
+
+```bash
+SENTIDO=up DRY_RUN=false pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+# Reversa:
+SENTIDO=reversa DRY_RUN=false pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+```
+
 ### `reap-orphan-onboarding-firebase.ts`
 
 Borra el usuario Firebase **huérfano** del onboarding admin-provisioned
