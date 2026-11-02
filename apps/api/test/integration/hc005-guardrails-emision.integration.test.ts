@@ -39,6 +39,7 @@ describe('integration: guardrails CAN gobiernan la emisión (HC-005)', () => {
     pickedUpAt: Date;
     io: (i: number) => Record<string, number>;
     dLat?: number;
+    cfg?: string;
   }) {
     const { db } = handle;
     const sfx = randomUUID().slice(0, 8);
@@ -86,7 +87,7 @@ describe('integration: guardrails CAN gobiernan la emisión (HC-005)', () => {
         consumptionLPer100kmBaseline: '30.00',
         curbWeightKg: 6000,
         teltonikaImei: imei,
-        fuenteCombustibleCan: '83',
+        fuenteCombustibleCan: opts.cfg ?? '83',
       })
       .returning({ id: schema.vehicles.id });
     const [trip] = await db
@@ -197,6 +198,24 @@ describe('integration: guardrails CAN gobiernan la emisión (HC-005)', () => {
       io: (i) => (i === 20 ? { '83': 0 } : limpio(i)),
     });
     expect(m).toMatchObject({ motivoFallback: 'can_no_monotono', precisionMethod: 'modelado' });
+  });
+
+  test('fix0: config sin_sensor con 83 limpio → no se lee, can_sin_lecturas y modelado', async () => {
+    const { m } = await viaje({ pickedUpAt: PICKUP, io: limpio, cfg: 'sin_sensor' });
+    expect(m).toMatchObject({
+      motivoFallback: 'can_sin_lecturas',
+      fuenteEnergia: 'modelo_perfil',
+      precisionMethod: 'modelado',
+    });
+  });
+
+  test('fix0: muestra chica (4 L en ≈22 km, ≈18 L/100 km) → can_muestra_insuficiente y modelado', async () => {
+    const io = (i: number) => ({ '83': 6_344_550 + Math.round((40 * i) / (N - 1)) });
+    const { m } = await viaje({ pickedUpAt: PICKUP, io });
+    expect(m).toMatchObject({
+      motivoFallback: 'can_muestra_insuficiente',
+      precisionMethod: 'modelado',
+    });
   });
 
   test('solo 89 → can_sin_lecturas y modelado', async () => {

@@ -605,6 +605,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       capacityKg: vehicles.capacityKg,
       vehicleType: vehicles.vehicleType,
       capacidadEstanqueL: vehicles.capacidadEstanqueL,
+      fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
     })
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
@@ -613,6 +614,7 @@ async function recalcularNivelPostEntregaInner(opts: {
     | (VehiculoFuentePosicion &
         PerfilEnergeticoVehiculo & {
           capacidadEstanqueL: number | null;
+          fuenteCombustibleCan: string | null;
         })
     | undefined = vehRows[0];
   if (!vehiculo) {
@@ -739,14 +741,16 @@ async function recalcularNivelPostEntregaInner(opts: {
           distanciaKm: escritura.distanciaKmReal,
         }
       : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
-  // El 83 se elige por datos (datos-can.md §4.2): se lee aunque la config no diga '83'.
+  // HC-005 fix0: la config es SOLO el interruptor de lectura. Sin '83' no hay resumen CAN y
+  // la decisión cae en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
+  const lee83 = vehiculo.fuenteCombustibleCan === '83';
   let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
   const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
   const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
   // Sobre el tope no se lee el 83: la decisión queda en ventana_excede_tope y la emisión, modelada.
-  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && ventanaExcede) {
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83 && ventanaExcede) {
     logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
-  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok') {
+  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83) {
     try {
       const lecturasCan: LecturaSegmentoCan[] = await cargarLecturasConsumoCan({
         db,
@@ -771,7 +775,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       pingsEnVentana: pings.length,
       combustible: vehiculo.fuelType,
       ...resumenCan,
-      can83Omitido: ventanaExcede ? 'ventana_excede_tope' : null,
+      can83Omitido: lee83 && ventanaExcede ? 'ventana_excede_tope' : null,
       consumoBasePor100km: consumoBase,
       // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
       perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',

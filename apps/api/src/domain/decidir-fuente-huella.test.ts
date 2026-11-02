@@ -72,7 +72,11 @@ describe('decidirFuenteHuella (HC-001)', () => {
     ['Infinity salto', can({ saltoMaxPorPasoL: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
     ['-Infinity salto', can({ saltoMaxPorPasoL: Number.NEGATIVE_INFINITY }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
     ['salto -5', can({ saltoMaxPorPasoL: -5 }), 'modelo_perfil', 'can_no_monotono', [], 'secundario_modeled'],
-    ['NaN litros', can({ litros: Number.NaN }), 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
+    ['NaN litros', can({ litros: Number.NaN }), 'modelo_perfil', 'can_muestra_insuficiente', [], 'secundario_modeled'],
+    // HC-005 fix0: muestra mínima ≥ 5 L y ≥ 10 km (bordes: 5 L / 10 km = 50 L/100 km pasa).
+    ['4,99 L en 10 km', { ...rec(ok(100, 10)), ...can({ litros: 4.99 }) }, 'modelo_perfil', 'can_muestra_insuficiente', [], 'secundario_modeled'],
+    ['5 L en 9,99 km', { ...rec(ok(100, 9.99)), ...can({ litros: 5 }) }, 'modelo_perfil', 'can_muestra_insuficiente', [], 'secundario_modeled'],
+    ['5 L en 10 km (borde)', { ...rec(ok(100, 10)), ...can({ litros: 5 }), litrosNivelSinRecarga: 5 }, 'can_83', null, [], 'primario_verificable'],
     ['Infinity litros', can({ litros: Number.POSITIVE_INFINITY }), 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['NaN base', { consumoBasePor100km: Number.NaN }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],
     ['Infinity base', { consumoBasePor100km: Number.POSITIVE_INFINITY }, 'modelo_perfil', 'can_fuera_de_banda', [], 'secundario_modeled'],

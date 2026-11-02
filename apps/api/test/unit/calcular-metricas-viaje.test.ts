@@ -1379,9 +1379,9 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
 
-    it('ventana 7 días + 1 ms sin config 83 → el resumidor no lee y el motivo es ventana_excede_tope', async () => {
+    it('ventana 7 días + 1 ms con config 83 → el resumidor no lee y el motivo es ventana_excede_tope', async () => {
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
-      const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
+      const db = conVentana(DIAS7 + 1, VEH_CAN);
       await run(db);
       expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
       expect(setDe(db)).toMatchObject({
@@ -1392,7 +1392,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
 
     it('ventana de exactamente 7 días → el resumidor sí lee', async () => {
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
-      const db = conVentana(DIAS7, { fuenteCombustibleCan: 'sin_sensor' });
+      const db = conVentana(DIAS7, VEH_CAN);
       await run(db);
       expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
       expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
@@ -1513,10 +1513,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       },
     );
 
-    it('alerta de rechazo por banda (12 L/100 km) → can_fuera_de_banda y modelado', async () => {
+    it('alerta de rechazo por banda (≈81 L/100 km) → can_fuera_de_banda y modelado', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 2.6));
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 18));
       const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       await run(db);
       expect(setDe(db)).toMatchObject({
@@ -1542,22 +1542,45 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(7.3, 1);
     });
 
-    it('HC-005: config sin_sensor pero 83 limpio → exacto_canbus (por datos, historia R2/AC4)', async () => {
+    it.each(['sin_sensor', '89', null])(
+      'HC-005 fix0: config %j con 83 limpio → no lee el 83, can_sin_lecturas y modelado',
+      async (cfg) => {
+        const pings = largo();
+        (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+        const db = makeDb({
+          selects: selects({ vehicle: { fuenteCombustibleCan: cfg } }),
+          updates: [[]],
+        });
+        await run(db);
+        expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+        expect(setDe(db)).toMatchObject({
+          precisionMethod: 'modelado',
+          fuenteEnergia: 'modelo_perfil',
+          motivoFallback: 'can_sin_lecturas',
+        });
+      },
+    );
+
+    it('HC-005 fix0: config sin 83 y ventana sobre el tope → can_sin_lecturas (la config manda)', async () => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
+      const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
+      await run(db);
+      expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
+    });
+
+    it('HC-005 fix0: muestra chica (4 L en ≈22 km, en banda) → can_muestra_insuficiente y modelado', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
-      const db = makeDb({
-        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
-        updates: [[]],
-      });
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 4));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
       await run(db);
       expect(setDe(db)).toMatchObject({
-        precisionMethod: 'exacto_canbus',
-        fuenteEnergia: 'can_83',
+        precisionMethod: 'modelado',
+        motivoFallback: 'can_muestra_insuficiente',
       });
     });
 
-    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado', async () => {
+    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado (fix0)', async () => {
       const pings = largo();
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
       const db = makeDb({
@@ -1565,7 +1588,7 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         updates: [[]],
       });
       await run(db);
-      expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1); // única lectura: el resumidor
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled(); // fix0: sin '83' no se lee
       expect(setDe(db).precisionMethod).toBe('modelado');
     });
 
