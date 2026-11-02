@@ -590,7 +590,7 @@ function InviteStakeholderMemberForm({
           value={form.rut}
           onChange={(e) => setForm({ ...form, rut: e.target.value })}
           className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-          placeholder="12.345.678-9"
+          placeholder="12.345.678-5"
           data-testid={`stakeholder-org-invite-rut-${orgId}`}
         />
       </label>
