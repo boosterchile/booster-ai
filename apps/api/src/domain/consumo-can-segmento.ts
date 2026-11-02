@@ -3,8 +3,9 @@ import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import {
   KM_MINIMOS_KM_POR_LITRO,
   LITROS_MINIMOS_KM_POR_LITRO,
-  consumoAcumuladoDe,
-} from './segmentar-trayectos-teltonika.js';
+  litrosPor100KmSinRedondear,
+} from './combustible/rendimiento.js';
+import { consumoAcumuladoDe } from './segmentar-trayectos-teltonika.js';
 
 /**
  * Litros medidos por el contador CAN (AVL 83) en el segmento de un viaje
@@ -85,8 +86,12 @@ export function consumoCanSegmento(opts: {
     return { litros: null, motivo: 'muestra_insuficiente' };
   }
 
-  const litrosPor100Km = (delta / opts.distanciaSegmentoKm) * 100;
-  if (litrosPor100Km < CONSUMO_CAN_MIN_L_100KM || litrosPor100Km > CONSUMO_CAN_MAX_L_100KM) {
+  const litrosPor100Km = litrosPor100KmSinRedondear(opts.distanciaSegmentoKm, delta);
+  if (
+    litrosPor100Km == null ||
+    litrosPor100Km < CONSUMO_CAN_MIN_L_100KM ||
+    litrosPor100Km > CONSUMO_CAN_MAX_L_100KM
+  ) {
     return { litros: null, motivo: 'consumo_implausible' };
   }
 
