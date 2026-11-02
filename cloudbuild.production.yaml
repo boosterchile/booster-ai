@@ -92,6 +92,9 @@ steps:
         gcloud secrets versions access latest --secret=sentry-auth-token \
           > /workspace/.sentry-token 2>/dev/null \
           || { echo "[sourcemaps] sentry-auth-token no disponible — upload se saltará"; : > /workspace/.sentry-token; }
+    # OPS-SENTRY-NOBLOCK — Sentry nunca bloquea el deploy.
+    allowFailure: true
+    timeout: 180s
     waitFor: ['-']
 
   # ADR-074 — upload de sourcemaps del web a Sentry (org booster-chile,
@@ -104,8 +107,11 @@ steps:
     args:
       - -c
       - |
-        set -euo pipefail
-        TOKEN=$$(cat /workspace/.sentry-token)
+        # OPS-SENTRY-NOBLOCK: cualquier fallo de Sentry (504, token inválido,
+        # cuelgue) sale 0 con WARNING; el build y el deploy siguen.
+        trap 'echo "WARNING: [sourcemaps] subida de sourcemaps saltada (exit $$?); re-subir con: npx @sentry/cli sourcemaps upload --org=booster-chile --project=javascript-react --release=${_COMMIT_SHA} --url-prefix=~/assets <sourcemaps> <dist>/assets (ver PR OPS-SENTRY-NOBLOCK)"; exit 0' ERR
+        set -eEuo pipefail
+        TOKEN=$$(cat /workspace/.sentry-token 2>/dev/null || true)
         if [ -z "$$TOKEN" ] || [ -z "${_VITE_SENTRY_DSN}" ]; then
           echo "[sourcemaps] skip (token o DSN ausente) — deploy sigue idéntico"
           exit 0
@@ -127,11 +133,13 @@ steps:
         docker cp webbuild:/app/sourcemaps ./sourcemaps-web
         docker cp webbuild:/app/apps/web/dist ./dist-web
         docker rm webbuild
-        docker run --rm -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
+        timeout 150 docker run --rm -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
           getsentry/sentry-cli:2 \
           sourcemaps upload --org=booster-chile --project=javascript-react \
           --release=${_COMMIT_SHA} --url-prefix='~/assets' \
           /work/sourcemaps-web /work/dist-web/assets
+    allowFailure: true
+    timeout: 180s
     waitFor: ['build-web', 'fetch-sentry-token']
 
   # apps/telemetry-tcp-gateway — TCP server para devices Teltonika.
