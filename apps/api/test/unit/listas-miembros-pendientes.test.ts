@@ -106,5 +106,6 @@ describe('datos de miembros no activos', () => {
     expect(texto).not.toContain('Nombre Real');
     expect(texto).not.toContain('real@x.invalid');
     expect(texto).not.toContain('12.345.678-5');
+    expect(texto).not.toContain('+56900000000');
   });
 });

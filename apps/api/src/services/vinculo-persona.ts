@@ -72,15 +72,16 @@ export function mascarEmail(email: string | null): string | null {
 }
 
 /**
- * La persona ya existía cuando esta empresa la sumó (margen para el alta que
- * crea a la persona y su vínculo en la misma operación).
+ * La persona ya existía cuando esta empresa la sumó (con tolerancia para el alta que
+ * crea a la persona y su vínculo en la misma operación). Sin fechas, se
+ * asume que sí: nunca se entrega acceso por falta de datos.
  */
 export function personaPrevia(
   personaCreadaEn: Date | null | undefined,
   vinculoCreadoEn: Date | null | undefined,
 ): boolean {
   if (!personaCreadaEn || !vinculoCreadoEn) {
-    return false;
+    return true;
   }
   return new Date(personaCreadaEn).getTime() < new Date(vinculoCreadoEn).getTime() - 60_000;
 }

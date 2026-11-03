@@ -874,11 +874,30 @@ function filaPendienteReemision(overrides: Record<string, unknown> = {}) {
     invitadoEn: new Date('2026-09-21T12:00:00.000Z'),
     claveNumericaHash: null,
     firebaseUid: 'pending-rut:12345678-5',
+    personaCreadaEn: new Date('2026-09-21T12:00:00.000Z'),
+    membresiaCreadaEn: new Date('2026-09-21T12:00:00.000Z'),
     ...overrides,
   };
 }
 
 describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
+  it('reemisión de una membresía posterior responde 409', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      joinedMembershipRows: [
+        filaPendienteReemision({ personaCreadaEn: new Date('2026-09-01T12:00:00.000Z') }),
+      ],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+    const res = await app.request(`/${EMPRESA_ID}/miembros/${MEMBERSHIP_ID}/codigo`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(await res.json())).not.toContain('codigo_activacion');
+    expect(d.updates.some((u) => 'activationPinHash' in u)).toBe(false);
+  });
+
   it('reemite un código nuevo y lo devuelve una sola vez', async () => {
     const mod = await loadMod();
     const d = makeDb({ joinedMembershipRows: [filaPendienteReemision()] });
@@ -1078,7 +1097,7 @@ describe('correo de activación del alta desde el panel', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('alta de RUT existente sin credencial no envía correo', async () => {
+  it('alta de RUT registrado sin activar no envía correo', async () => {
     const mod = await loadMod();
     const d = makeDb({
       userByEmailRows: [

@@ -10,10 +10,7 @@ import type { UserContext } from '../../src/services/user-context.js';
 import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
-/**
- * Alta de miembro con un RUT que ya existe: no expone credenciales ni datos
- * de contacto, la membresía queda pendiente y la activación queda acotada.
- */
+/** Alta de miembro con un RUT ya registrado en Booster. */
 
 const noop = (): void => undefined;
 const logger = {
@@ -159,7 +156,7 @@ describe('integration: alta de miembro con RUT existente', () => {
   let codigoA = '';
   let respuestaExistente: Record<string, unknown> = {};
 
-  test('alta de RUT existente no expone credenciales ni datos de contacto', async () => {
+  test('alta de RUT registrado: respuesta y lista uniformes', async () => {
     const alta = await post(A, '/me/empresa/miembros', {
       full_name: 'Persona P',
       rut: rutP,
@@ -209,7 +206,7 @@ describe('integration: alta de miembro con RUT existente', () => {
     expect(texto).not.toContain(rutN);
   });
 
-  test('la activación queda acotada a la invitación original', async () => {
+  test('activación con membresías en dos empresas', async () => {
     const r = await post(A, '/auth/activar', {
       rut: rutP,
       codigo: codigoA,
@@ -236,7 +233,7 @@ describe('integration: alta de miembro con RUT existente', () => {
     expect(ms.find((m) => m.empresaId === C.empresa.id)?.status).toBe('pendiente_invitacion');
   });
 
-  test('alta de RUT existente sin credencial no expone credenciales', async () => {
+  test('alta de RUT registrado sin activar: respuesta uniforme', async () => {
     const rutQ = rutAleatorio();
     const [q] = await h.db
       .insert(schema.users)
@@ -264,7 +261,7 @@ describe('integration: alta de miembro con RUT existente', () => {
     expect(u?.activationPinHash).toBeNull();
   });
 
-  test('alta de RUT existente no prolonga la vigencia de una invitación anterior', async () => {
+  test('alta de RUT registrado mantiene la vigencia anterior', async () => {
     const rutV = rutAleatorio();
     const alta = await post(A, '/me/empresa/miembros', {
       full_name: 'Persona V',

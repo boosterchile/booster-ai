@@ -200,20 +200,6 @@ async function emailIdentidadCompartida(
   });
 }
 
-/**
- * El alta no pisa un WhatsApp que la persona ya tenía. Solo completa el
- * dato cuando la fila llegó vacía (alta vieja o usuario creado sin número).
- */
-function phoneSiEstaVacio(
-  actual: string | null | undefined,
-  incoming: string,
-): { phone: string } | Record<string, never> {
-  if (typeof actual === 'string' && actual.trim() !== '') {
-    return {};
-  }
-  return { phone: incoming };
-}
-
 /** El alta no mueve un conductor que otra empresa ya retiró. */
 const MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA =
   'Este conductor fue retirado de otra empresa. No lo puedes reactivar desde aquí.';
@@ -453,6 +439,7 @@ export function createConductoresRoutes(opts: {
             activationPinHash: users.activationPinHash,
             email: users.email,
             phone: users.phone,
+            createdAt: users.createdAt,
           })
           .from(users)
           .where(eq(users.rut, rut))
@@ -480,6 +467,7 @@ export function createConductoresRoutes(opts: {
               id: conductores.id,
               deletedAt: conductores.deletedAt,
               empresaId: conductores.empresaId,
+              createdAt: conductores.createdAt,
             })
             .from(conductores)
             .where(eq(conductores.userId, userId))
@@ -510,7 +498,12 @@ export function createConductoresRoutes(opts: {
             firebaseUid: existingUser.firebaseUid,
             claveNumericaHash: existingUser.claveNumericaHash,
           });
-          const pendiente = !cuentaActiva;
+          // Solo una persona creada junto con el conductor de esta empresa
+          // recibe PIN o cambios de contacto; una que ya existía, nunca.
+          const propia =
+            filaExistente != null &&
+            !personaPrevia(existingUser.createdAt, filaExistente.createdAt);
+          const pendiente = !cuentaActiva && propia;
           const emailActual =
             typeof existingUser.email === 'string' ? existingUser.email.trim().toLowerCase() : '';
           const reemplazaRelleno =
@@ -518,14 +511,9 @@ export function createConductoresRoutes(opts: {
             pendiente &&
             esEmailDeRelleno(emailActual) &&
             emailActual !== body.email;
-          const telefono = reactivacion
-            ? { phone: body.phone }
-            : phoneSiEstaVacio(existingUser.phone, body.phone);
+          const telefono = propia ? { phone: body.phone } : {};
 
           if (reemplazaRelleno) {
-            if (!reactivacion && (await emailIdentidadCompartida(tx, userId, empresaId))) {
-              return { ok: false as const, code: 'identidad_vinculada' as const };
-            }
             const accionFirebase = await reconciliarIdentidadFirebaseConductor({
               auth: opts.firebaseAuth ?? null,
               cuentaActiva: false,
@@ -533,17 +521,12 @@ export function createConductoresRoutes(opts: {
               rut,
               syntheticEmail: driverSyntheticEmail(rut),
             });
-            // Solo la reactivación de un conductor de esta misma empresa recibe PIN.
-            if (reactivacion) {
-              activationPin = generateActivationPin();
-            }
+            activationPin = generateActivationPin();
             await tx
               .update(users)
               .set({
                 email: body.email,
-                ...(activationPin !== null
-                  ? { activationPinHash: hashActivationPin(activationPin) }
-                  : {}),
+                activationPinHash: hashActivationPin(activationPin),
                 updatedAt: sql`now()`,
                 ...telefono,
               })
@@ -552,7 +535,7 @@ export function createConductoresRoutes(opts: {
           } else if (reactivacion) {
             // Conductor retirado de esta misma empresa: la cuenta pendiente
             // recibe un PIN nuevo y el anterior deja de servir.
-            if (!cuentaActiva) {
+            if (pendiente) {
               activationPin = generateActivationPin();
             }
             await tx
@@ -561,7 +544,7 @@ export function createConductoresRoutes(opts: {
                 ...(activationPin !== null
                   ? { activationPinHash: hashActivationPin(activationPin) }
                   : {}),
-                phone: body.phone,
+                ...telefono,
                 updatedAt: sql`now()`,
               })
               .where(eq(users.id, userId));
@@ -917,7 +900,11 @@ export function createConductoresRoutes(opts: {
           });
         }
 
-        if (await emailIdentidadCompartida(opts.db, fila.userId, empresaId)) {
+        // Una persona que ya existía antes de este conductor conserva su contacto.
+        if (
+          personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn) ||
+          (await emailIdentidadCompartida(opts.db, fila.userId, empresaId))
+        ) {
           record('identidad_vinculada');
           return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
         }
@@ -950,9 +937,7 @@ export function createConductoresRoutes(opts: {
           }
         }
 
-        // Una persona que ya existía antes de este conductor no recibe PIN por esta vía.
-        const sinPin = cuentaActiva || personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn);
-        const activationPin = sinPin ? null : generateActivationPin();
+        const activationPin = cuentaActiva ? null : generateActivationPin();
         const invitacionReenviada = activationPin !== null;
 
         try {
@@ -1105,7 +1090,11 @@ export function createConductoresRoutes(opts: {
             return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
           }
 
-          if (await emailIdentidadCompartida(opts.db, fila.userId, empresaId)) {
+          // Una persona que ya existía antes de este conductor conserva su contacto.
+          if (
+            personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn) ||
+            (await emailIdentidadCompartida(opts.db, fila.userId, empresaId))
+          ) {
             record('identidad_vinculada');
             return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
           }
@@ -1114,9 +1103,7 @@ export function createConductoresRoutes(opts: {
             firebaseUid: fila.firebaseUid,
             claveNumericaHash: fila.claveNumericaHash,
           });
-          const sinPin =
-            cuentaActiva || personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn);
-          const activationPin = sinPin ? null : generateActivationPin();
+          const activationPin = cuentaActiva ? null : generateActivationPin();
           const invitacionReenviada = activationPin !== null;
 
           const actualizado = await opts.db

@@ -215,7 +215,7 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     expect(d.update).not.toHaveBeenCalled();
   });
 
-  it('alta de RUT existente sin credencial no expone credenciales', async () => {
+  it('alta de RUT registrado sin activar: respuesta uniforme', async () => {
     const mod = await loadMod();
     const d = makeDb(
       [[org()], [usuario({ firebaseUid: `pending-rut:${RUT}` })], []],
@@ -272,7 +272,7 @@ describe('correo de activación de la invitación stakeholder', () => {
     expect(msg.text).toContain('https://app.boosterchile.com/activar');
   });
 
-  it('alta de RUT existente sin credencial no envía correo', async () => {
+  it('alta de RUT registrado sin activar no envía correo', async () => {
     const mod = await loadMod();
     const d = makeDb(
       [[org()], [usuario({ firebaseUid: `pending-rut:${RUT}`, email: 'registrado@acme.cl' })], []],

@@ -21,7 +21,11 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import { VINCULO_PERSONA_EXISTENTE, type VinculoPersona } from '../services/vinculo-persona.js';
+import {
+  VINCULO_PERSONA_EXISTENTE,
+  type VinculoPersona,
+  personaPrevia,
+} from '../services/vinculo-persona.js';
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -671,6 +675,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               nombre: users.fullName,
               rut: users.rut,
               razonSocial: empresas.legalName,
+              personaCreadaEn: users.createdAt,
+              membresiaCreadaEn: memberships.createdAt,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -686,7 +692,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           const siguePendiente =
             fila.estado === 'pendiente_invitacion' &&
             fila.claveNumericaHash === null &&
-            fila.firebaseUid.startsWith('pending-rut:');
+            fila.firebaseUid.startsWith('pending-rut:') &&
+            !personaPrevia(fila.personaCreadaEn, fila.membresiaCreadaEn);
           if (!siguePendiente) {
             record('already_activated');
             return c.json({ error: 'conflict', code: 'already_activated' }, 409);

@@ -281,7 +281,7 @@ describe('POST /me/empresa/miembros', () => {
     expect(json.vinculo).toBe('codigo_vigente');
   });
 
-  it('alta de RUT existente sin credencial no expone credenciales', async () => {
+  it('alta de RUT registrado sin activar: respuesta uniforme', async () => {
     const d = makeDb({
       userByRut: [
         {
@@ -422,7 +422,7 @@ describe('correo de activación del equipo de la empresa', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('alta de RUT existente sin credencial no envía correo', async () => {
+  it('alta de RUT registrado sin activar no envía correo', async () => {
     const d = makeDb({
       userByRut: [
         {
