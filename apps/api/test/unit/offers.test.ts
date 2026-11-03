@@ -80,6 +80,7 @@ interface UserContextOpts {
   isTransportista?: boolean;
   empresaId?: string;
   withActiveMembership?: boolean;
+  role?: string;
 }
 function buildUserContext(opts: UserContextOpts = {}) {
   const empresa = {
@@ -103,7 +104,7 @@ function buildUserContext(opts: UserContextOpts = {}) {
       opts.withActiveMembership === false
         ? null
         : {
-            membership: { role: 'dueno' } as Pick<MembershipRow, 'role'>,
+            membership: { role: opts.role ?? 'dueno' } as Pick<MembershipRow, 'role'>,
             empresa: empresa as Pick<
               EmpresaRow,
               'id' | 'isTransportista' | 'isGeneradorCarga' | 'status'
@@ -397,6 +398,39 @@ describe('POST /offers/:id/accept', () => {
       error: 'trip_already_assigned',
       code: 'trip_already_assigned',
     });
+  });
+});
+
+describe('POST /offers/:id/accept — permisos por rol', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  const aceptar = async (role: string) => {
+    const app = await buildAppWith({
+      db: makeStubDbForList([]),
+      userContext: buildUserContext({ role }),
+    });
+    return app.request('/offers/off-1/accept', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  };
+
+  it.each(['visualizador', 'conductor'])('%s → 403 forbidden_role', async (role) => {
+    const actions = await import('../../src/services/offer-actions.js');
+    const res = await aceptar(role);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    expect(actions.acceptOffer).not.toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin', 'despachador'])('%s → llega a aceptar la oferta', async (role) => {
+    const actions = await import('../../src/services/offer-actions.js');
+    vi.mocked(actions.acceptOffer).mockRejectedValueOnce(new actions.OfferNotFoundError('off-1'));
+    const res = await aceptar(role);
+    expect(res.status).toBe(404);
+    expect(actions.acceptOffer).toHaveBeenCalledTimes(1);
   });
 });
 

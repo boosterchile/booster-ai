@@ -64,7 +64,7 @@ const PAGO = {
   eventos: [{ tipo: 'recepcion_conforme', evidencia_ref: 'doc-1' }],
 };
 
-function setup() {
+function setup(role = 'dueno') {
   const app = new Hono();
   app.use('/trip-requests-v2/*', async (c, next) => {
     c.set(
@@ -73,7 +73,7 @@ function setup() {
         user: { id: 'user-1', email: 'g@x.cl' },
         memberships: [],
         activeMembership: {
-          membership: { role: 'dueno' },
+          membership: { role },
           empresa: { id: 'emp-gen', isGeneradorCarga: true, status: 'activa' },
         },
       } as never,
@@ -235,5 +235,34 @@ describe('POST /trip-requests-v2/:id/disputa', () => {
       userId: 'user-1',
       motivo: 'La carga llegó dañada',
     });
+  });
+});
+
+describe('pago y disputa — permisos por rol', () => {
+  const disputa = (app: Hono) =>
+    app.request('/trip-requests-v2/trip-1/disputa', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ motivo: 'La carga llegó dañada' }),
+    });
+
+  it.each(['visualizador', 'conductor', 'despachador'])('%s → 403 forbidden_role', async (role) => {
+    appConfig.MANDATO_COBRO_ACTIVATED = true;
+    const app = setup(role);
+    for (const res of [await app.request('/trip-requests-v2/trip-1/pago'), await disputa(app)]) {
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    }
+    expect(leerPagoDelGenerador).not.toHaveBeenCalled();
+    expect(abrirDisputa).not.toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin'])('%s → ve el pago y abre la disputa', async (role) => {
+    appConfig.MANDATO_COBRO_ACTIVATED = true;
+    leerPagoDelGenerador.mockResolvedValueOnce(PAGO);
+    abrirDisputa.mockResolvedValueOnce({ ok: true, pago: PAGO });
+    const app = setup(role);
+    expect((await app.request('/trip-requests-v2/trip-1/pago')).status).toBe(200);
+    expect((await disputa(app)).status).toBe(201);
   });
 });

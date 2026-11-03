@@ -24,6 +24,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { issuesPublicos, zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
@@ -860,6 +861,10 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    const sinRol = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
+    }
     const pago = await leerPagoDelGenerador(
       opts.db,
       c.req.param('id'),
@@ -878,6 +883,10 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    const sinRolDisputa = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRolDisputa) {
+      return sinRolDisputa;
     }
     const r = await abrirDisputa(
       { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },
