@@ -57,12 +57,11 @@ const UNIDAD_LARGA = 'litros de diésel equivalente medidos por CAN bus del veh�
 export const DIRECCION_MULTILINEA = 'Av. Apoquindo 5400\nDepto. 1204\r\nLas Condes\t\tSantiago';
 export const CARGA_MULTILINEA = 'carga\nseca\r\nrefrigerada\npaletizada';
 /**
- * Token sin espacios más ancho que una columna (≈32 «A» en media página, ≈75
- * en página completa): obliga al corte por carácter. En #873 es de 80 y no de
- * 300 como en el caso de QA: con el corte O(n²) y coverage, 300 pasaba los 30 s
- * en CI. El caso completo vuelve junto con el corte lineal (#876).
+ * Token sin espacios de 300 caracteres, como en el caso de QA: obliga al corte
+ * por carácter (≈32 «A» por media página). Con el corte lineal entra holgado
+ * en el timeout también con coverage (en #873, sin él, iba acotado a 80).
  */
-const A_LARGO = 'A'.repeat(80);
+const A_LARGO = 'A'.repeat(300);
 export const CASOS: Record<string, ParametrosGenerarPdf> = {
   normal: base,
   largo: {
@@ -85,7 +84,7 @@ export const CASOS: Record<string, ParametrosGenerarPdf> = {
       cargoTipo: CARGA_MULTILINEA,
     },
   },
-  /** Caso «extremo» de QA (qa/qa873v1-extremo-*.png), reducido en #873 (ver A_LARGO). */
+  /** Caso «extremo» de QA (qa/qa873v1-extremo-*.png), completo. */
   extremo: {
     ...base,
     viaje: {
@@ -94,7 +93,7 @@ export const CASOS: Record<string, ParametrosGenerarPdf> = {
       destinoDireccion: 'Línea 1 del destino\nLínea 2 del destino\nLínea 3 del destino',
       cargoTipo: A_LARGO,
     },
-    empresaShipper: { id: 'x', legalName: 'Empresa Extrema '.repeat(6), rut: A_LARGO },
+    empresaShipper: { id: 'x', legalName: 'Empresa Extrema '.repeat(47), rut: A_LARGO },
     transportista: { legalName: 'Transportes Extremos Ltda.', rut: A_LARGO, vehiclePlate: A_LARGO },
   },
   raro: {
