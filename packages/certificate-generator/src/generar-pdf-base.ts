@@ -655,14 +655,20 @@ function cortarPalabra(p: string, font: PDFFont, size: number, ancho: number): s
   if (font.widthOfTextAtSize(p, size) <= ancho) {
     return [p];
   }
+  // Ancho acumulado por carácter (O(n)); medir el trozo entero en cada paso
+  // era O(n²) y un token de 300 caracteres llevaba el PDF a ~1,5 s.
   const trozos: string[] = [];
   let actual = '';
+  let anchoActual = 0;
   for (const ch of p) {
-    if (actual && font.widthOfTextAtSize(actual + ch, size) > ancho) {
+    const w = font.widthOfTextAtSize(ch, size);
+    if (actual && anchoActual + w > ancho) {
       trozos.push(actual);
       actual = ch;
+      anchoActual = w;
     } else {
       actual += ch;
+      anchoActual += w;
     }
   }
   if (actual) {
