@@ -90,17 +90,21 @@ describe.each(Object.keys(CASOS))('márgenes — caso %s', (caso) => {
 });
 
 describe('contenido hasta el pie', () => {
-  it('con el origen creciendo de a una línea, ningún bloque baja de TOPE_PIE', async () => {
-    let minimo = Number.POSITIVE_INFINITY;
-    for (const params of casosLlenos()) {
+  // Un test por caso: con coverage en CI cada PDF tarda 1–2 s y los 16 en un
+  // solo test pasaban el timeout de 30 s.
+  let minimo = Number.POSITIVE_INFINITY;
+  it.each(casosLlenos().map((p, k) => [k, p] as const))(
+    'origen con %i bloques extra: ningún bloque baja de TOPE_PIE',
+    async (_k, params) => {
       const { textos, cajas } = await generarPdfConCajas(params);
       for (const b of [...textos, ...cajas].filter((x) => !x.pie)) {
         expect(b.y, JSON.stringify(b)).toBeGreaterThanOrEqual(TOPE_PIE - TOL);
         minimo = Math.min(minimo, b.y);
       }
-    }
-    // Que algún caso de verdad llegue cerca del pie (si no, el test no prueba
-    // nada): con PISO=56 el bloque más bajo queda en y≈82.
+    },
+  );
+  it('algún caso llega de verdad cerca del pie (si no, lo anterior no prueba nada)', () => {
+    // Con PISO=56 el bloque más bajo queda en y≈82.
     expect(minimo).toBeLessThan(TOPE_PIE + 45);
   });
 });
