@@ -103,12 +103,12 @@ export const CASOS: Record<string, ParametrosGenerarPdf> = {
 };
 
 /**
- * Casos que empujan el contenido hasta el pie: el origen crece de a una línea
+ * Casos que empujan el contenido hasta el pie: el origen crece de a ~2,5 líneas (0 a 40)
  * para que, en alguno, un bloque quede justo sobre PISO (mata PISO=10).
  */
 export function casosLlenos(): ParametrosGenerarPdf[] {
   return Array.from({ length: 16 }, (_, k) => ({
     ...base,
-    viaje: { ...viaje, origenDireccion: `${'Calle Larga Número '.repeat(5 * k)}123` },
+    viaje: { ...viaje, origenDireccion: `${'Calle Larga Número '.repeat(10 * k)}123` },
   }));
 }
