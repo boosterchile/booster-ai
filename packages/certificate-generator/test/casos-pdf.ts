@@ -56,7 +56,13 @@ const UNIDAD_LARGA = 'litros de diésel equivalente medidos por CAN bus del veh�
 /** Datos de usuario con saltos de línea y tabs (formularios / bot). */
 export const DIRECCION_MULTILINEA = 'Av. Apoquindo 5400\nDepto. 1204\r\nLas Condes\t\tSantiago';
 export const CARGA_MULTILINEA = 'carga\nseca\r\nrefrigerada\npaletizada';
-const A300 = 'A'.repeat(300);
+/**
+ * Token sin espacios más ancho que una columna (≈32 «A» en media página, ≈75
+ * en página completa): obliga al corte por carácter. En #873 es de 80 y no de
+ * 300 como en el caso de QA: con el corte O(n²) y coverage, 300 pasaba los 30 s
+ * en CI. El caso completo vuelve junto con el corte lineal (#876).
+ */
+const A_LARGO = 'A'.repeat(80);
 export const CASOS: Record<string, ParametrosGenerarPdf> = {
   normal: base,
   largo: {
@@ -79,17 +85,17 @@ export const CASOS: Record<string, ParametrosGenerarPdf> = {
       cargoTipo: CARGA_MULTILINEA,
     },
   },
-  /** Réplica del caso «extremo» de QA (qa/qa873v1-extremo-*.png). */
+  /** Caso «extremo» de QA (qa/qa873v1-extremo-*.png), reducido en #873 (ver A_LARGO). */
   extremo: {
     ...base,
     viaje: {
       ...viaje,
-      origenDireccion: A300,
+      origenDireccion: A_LARGO,
       destinoDireccion: 'Línea 1 del destino\nLínea 2 del destino\nLínea 3 del destino',
-      cargoTipo: A300,
+      cargoTipo: A_LARGO,
     },
-    empresaShipper: { id: 'x', legalName: 'Empresa Extrema '.repeat(47), rut: A300 },
-    transportista: { legalName: 'Transportes Extremos Ltda.', rut: A300, vehiclePlate: A300 },
+    empresaShipper: { id: 'x', legalName: 'Empresa Extrema '.repeat(6), rut: A_LARGO },
+    transportista: { legalName: 'Transportes Extremos Ltda.', rut: A_LARGO, vehiclePlate: A_LARGO },
   },
   raro: {
     ...base,
