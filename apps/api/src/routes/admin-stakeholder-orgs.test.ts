@@ -178,7 +178,7 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     });
   });
 
-  it('cuenta viva: membresía activa, sin código, y no toca al usuario', async () => {
+  it('cuenta viva: membresía pendiente, sin código, y no toca al usuario', async () => {
     const mod = await loadMod();
     const d = makeDb(
       [[org()], [usuario({ claveNumericaHash: 'hash-clave' })], []],
@@ -187,13 +187,13 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     const res = await invitar(buildApp(mod, d.db));
     expect(res.status).toBe(201);
     const body = (await res.json()) as Respuesta;
-    expect(body.vinculo).toBe('cuenta_activa');
-    expect(body.status).toBe('activa');
+    expect(body.vinculo).toBe('codigo_vigente');
+    expect(body.status).toBe('pendiente_invitacion');
     expect(body.codigo_activacion).toBeNull();
     expect(body.expira_en).toBeNull();
     expect(d.update).not.toHaveBeenCalled();
     expect(d.inserted).toHaveLength(1);
-    expect(d.inserted[0]).toMatchObject({ userId: 'u-existente', status: 'activa' });
+    expect(d.inserted[0]).toMatchObject({ userId: 'u-existente', status: 'pendiente_invitacion' });
   });
 
   it('provisoria con código vigente: no emite otro ni reescribe el hash', async () => {
@@ -215,7 +215,7 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     expect(d.update).not.toHaveBeenCalled();
   });
 
-  it('provisoria sin código: emite el primero y lo guarda hasheado', async () => {
+  it('alta de RUT registrado sin activar: respuesta uniforme', async () => {
     const mod = await loadMod();
     const d = makeDb(
       [[org()], [usuario({ firebaseUid: `pending-rut:${RUT}` })], []],
@@ -224,10 +224,9 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     const res = await invitar(buildApp(mod, d.db));
     expect(res.status).toBe(201);
     const body = (await res.json()) as Respuesta;
-    expect(body.vinculo).toBe('provisoria_sin_codigo');
-    expect(body.codigo_activacion).toMatch(/^\d{6}$/);
-    expect(d.sets[0]?.activationPinHash).toBeTruthy();
-    expect(d.sets[0]?.activationPinHash).not.toBe(body.codigo_activacion);
+    expect(body.vinculo).toBe('codigo_vigente');
+    expect(body.codigo_activacion).toBeNull();
+    expect(d.update).not.toHaveBeenCalled();
   });
 
   it('ya miembro de la organización → 409 y no se escribe', async () => {
@@ -273,7 +272,7 @@ describe('correo de activación de la invitación stakeholder', () => {
     expect(msg.text).toContain('https://app.boosterchile.com/activar');
   });
 
-  it('provisoria sin código: el código va a su correo registrado', async () => {
+  it('alta de RUT registrado sin activar no envía correo', async () => {
     const mod = await loadMod();
     const d = makeDb(
       [[org()], [usuario({ firebaseUid: `pending-rut:${RUT}`, email: 'registrado@acme.cl' })], []],
@@ -282,7 +281,7 @@ describe('correo de activación de la invitación stakeholder', () => {
     const { sender, send } = makeSender();
     const res = await invitar(buildApp(mod, d.db, ADMIN_EMAIL, sender), 'otro@acme.cl');
     expect(res.status).toBe(201);
-    expect(mensaje(send).to).toBe('registrado@acme.cl');
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('cuenta viva o código vigente: no se envía correo', async () => {

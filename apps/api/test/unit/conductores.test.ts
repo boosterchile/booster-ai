@@ -399,7 +399,7 @@ describe('conductores routes', () => {
       expect(body.activation_pin).toBeUndefined();
     });
 
-    it('D10 — user con firebase_uid placeholder → SÍ devuelve PIN', async () => {
+    it('alta de RUT registrado pendiente: respuesta uniforme', async () => {
       const stub = makeDbStub({
         selectQueueRows: [
           [
@@ -446,7 +446,7 @@ describe('conductores routes', () => {
       });
       expect(res.status).toBe(201);
       const body = (await res.json()) as { activation_pin: string };
-      expect(body.activation_pin).toMatch(/^\d{6}$/);
+      expect(body.activation_pin).toBeUndefined();
     });
 
     it('placeholder que ya tiene código no recibe otro PIN', async () => {
@@ -824,6 +824,8 @@ describe('POST /conductores — fecha de licencia no rompe la respuesta', () => 
 });
 
 const EMAIL_REAL = 'usuario@example.com';
+/** Persona y conductor creados en la misma alta. */
+const CREADO_EN = new Date('2026-05-01T00:00:00Z');
 
 function filaConductor(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -836,6 +838,8 @@ function filaConductor(overrides: Record<string, unknown> = {}): Record<string, 
     phone: '+56912345678',
     firebaseUid: 'pending-rut:11.111.111-1',
     claveNumericaHash: null,
+    personaCreadaEn: CREADO_EN,
+    conductorCreadoEn: CREADO_EN,
     ...overrides,
   };
 }
@@ -966,7 +970,7 @@ describe('POST /conductores — email real y único', () => {
     expect(((await res.json()) as { code: string }).code).toBe('duplicate');
   });
 
-  it('reemplazar el relleno de alguien vinculado a otra empresa → 409 sin escribir ni Firebase', async () => {
+  it('alta de RUT existente no cambia los datos de la persona', async () => {
     const stub = makeDbStub({
       selectQueueRows: [
         [
@@ -990,6 +994,7 @@ describe('POST /conductores — email real y único', () => {
           },
         ],
       ],
+      insertReturning: [[conductorInsertado()]],
     });
     const firebase = firebaseSinCuentas();
     const app = await buildApp(stub.db, { firebaseAuth: firebase });
@@ -1006,10 +1011,12 @@ describe('POST /conductores — email real y único', () => {
         license_expiry: '2028-06-28',
       }),
     });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
-    expect(stub.spies.update).not.toHaveBeenCalled();
-    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { activation_pin?: string }).activation_pin).toBeUndefined();
+    const cambios = payloadsDeUpdate(stub.spies.update);
+    expect(cambios.some((u) => 'email' in u || 'phone' in u || 'activationPinHash' in u)).toBe(
+      false,
+    );
     expect(firebase.getUserByEmail).not.toHaveBeenCalled();
   });
 });
@@ -1039,6 +1046,31 @@ describe('POST /conductores/:id/email', () => {
     expect(res.status).toBe(403);
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
+
+  it.each(['email', 'telefono'] as const)(
+    'ficha de una persona registrada antes: %s sin cambios',
+    async (campo) => {
+      const stub = makeDbStub({
+        selectQueueRows: [
+          [filaConductor({ personaCreadaEn: new Date('2026-04-01T00:00:00Z') })],
+          [],
+        ],
+        updateReturning: [[{ id: USER_ID }]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const firebase = firebaseSinCuentas();
+      const app = await buildApp(stub.db, { firebaseAuth: firebase });
+      const res = await app.request(`/conductores/${CONDUCTOR_ID}/${campo}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(campo === 'email' ? { email: EMAIL_REAL } : { phone: '+56957790378' }),
+      });
+      expect(res.status).toBe(409);
+      expect(JSON.stringify(await res.json())).not.toContain('activation_pin');
+      expect(stub.spies.update).not.toHaveBeenCalled();
+      expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['dueno', 'admin', 'despachador'] as const)(
     '%s reemplaza el relleno, reenvía el PIN y audita',
@@ -1329,7 +1361,7 @@ const ALTA_BODY = {
 };
 
 describe('POST /conductores — RUT existente guarda phone si estaba vacío', () => {
-  it('provisoria sin código y phone null persiste el teléfono del alta', async () => {
+  it('alta de RUT existente sin teléfono no le asigna uno', async () => {
     const stub = makeDbStub({
       selectQueueRows: [
         [
@@ -1355,12 +1387,10 @@ describe('POST /conductores — RUT existente guarda phone si estaba vacío', ()
       body: JSON.stringify(ALTA_BODY),
     });
     expect(res.status).toBe(201);
-    expect(
-      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === '+56957790379'),
-    ).toBe(true);
+    expect(payloadsDeUpdate(stub.spies.update).some((payload) => 'phone' in payload)).toBe(false);
   });
 
-  it('reemplazo de email de relleno con phone vacío también lo guarda', async () => {
+  it('alta de RUT existente con correo provisorio no lo reemplaza', async () => {
     const stub = makeDbStub({
       selectQueueRows: [
         [
@@ -1388,8 +1418,10 @@ describe('POST /conductores — RUT existente guarda phone si estaba vacío', ()
     });
     expect(res.status).toBe(201);
     expect(
-      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === '+56957790379'),
-    ).toBe(true);
+      payloadsDeUpdate(stub.spies.update).some(
+        (payload) => 'phone' in payload || 'email' in payload,
+      ),
+    ).toBe(false);
   });
 
   it('no pisa un teléfono que el usuario ya tenía', async () => {
@@ -1601,6 +1633,7 @@ function usuarioPendienteConPin(overrides: Record<string, unknown> = {}) {
     activationPinHash: 'hash-previo',
     email: EMAIL_REAL,
     phone: '+56911111111',
+    createdAt: CREADO_EN,
     ...overrides,
   };
 }
@@ -1610,6 +1643,7 @@ function conductorRetirado(empresaId: string) {
     id: CONDUCTOR_ID,
     deletedAt: new Date('2026-05-01T00:00:00Z'),
     empresaId,
+    createdAt: CREADO_EN,
   };
 }
 
