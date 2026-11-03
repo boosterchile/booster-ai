@@ -27,6 +27,7 @@ import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -73,6 +74,7 @@ interface ConductorUser {
   email: string;
   phone: string | null;
   is_pending: boolean;
+  pendiente_aceptar?: boolean;
 }
 
 interface Conductor {
@@ -215,7 +217,7 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                         {c.user.is_pending && (
                           <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                             <Clock className="h-3 w-3" aria-hidden />
-                            Pendiente login
+                            {c.user.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente login'}
                           </div>
                         )}
                         {c.is_extranjero && (
@@ -288,7 +290,7 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       {c.user.is_pending && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                           <Clock className="h-3 w-3" aria-hidden />
-                          Pendiente login
+                          {c.user.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente login'}
                         </span>
                       )}
                       {c.is_extranjero && (
@@ -451,6 +453,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   // 2 memberships: dueño + conductor). Pre-fillea form con datos del me y
   // skipea la card de PIN al success (el dueño ya tiene email/password).
   const [selfMode, setSelfMode] = useState(false);
+  const [solicitud, setSolicitud] = useState(false);
   const [activationResult, setActivationResult] = useState<{
     pin: string;
     driverName: string;
@@ -486,8 +489,11 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           driverRut: variables.rut.trim(),
           reactivado: res.reactivado === true,
         });
-      } else {
+      } else if (selfMode) {
         void navigate({ to: '/app/conductores' });
+      } else {
+        // RUT que ya existe: la misma respuesta para cualquier persona.
+        setSolicitud(true);
       }
     },
     onError: (err: Error) => {
@@ -565,6 +571,17 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     // él la plataforma no puede comunicarse con el conductor (5 de 6 en
     // producción terminaron con un `@boosterchile.invalid`).
     createM.mutate({ ...values, rut: rutResult.data, email: values.email.trim() });
+  }
+
+  if (solicitud) {
+    return (
+      <Layout me={me} title="Nuevo conductor">
+        <SolicitudRegistrada
+          volverLabel="Volver a Conductores"
+          onVolver={() => void navigate({ to: '/app/conductores' })}
+        />
+      </Layout>
+    );
   }
 
   if (activationResult) {

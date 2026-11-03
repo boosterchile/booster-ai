@@ -80,11 +80,12 @@ describe('invitar miembro stakeholder', () => {
     await waitFor(() => expect(screen.getByTestId('stakeholder-codigo')).toBeInTheDocument());
   });
 
-  it('si la persona ya tiene cuenta, el aviso de vínculo queda visible', async () => {
-    post.mockResolvedValueOnce({ vinculo: 'cuenta_activa', status: 'activa' });
+  it('alta de RUT existente muestra la solicitud registrada y no los textos anteriores', async () => {
+    post.mockResolvedValueOnce({ vinculo: 'codigo_vigente', status: 'pendiente_invitacion' });
     await invitar();
     const vinculo = await screen.findByTestId('stakeholder-vinculo');
-    expect(vinculo).toHaveTextContent('Esta persona ya tiene cuenta');
+    expect(vinculo).toHaveTextContent('Solicitud registrada');
+    expect(vinculo).not.toHaveTextContent(/ya tiene cuenta|ya tiene un código|quedará en/i);
     expect(vinculo.closest('output, [role="status"]')).not.toBeNull();
   });
 });

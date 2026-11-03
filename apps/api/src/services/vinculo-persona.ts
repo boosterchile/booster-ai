@@ -71,6 +71,20 @@ export function mascarEmail(email: string | null): string | null {
   return at <= 0 ? '***' : `${email[0]}***${email.slice(at)}`;
 }
 
+/**
+ * La persona ya existía cuando esta empresa la sumó (margen para el alta que
+ * crea a la persona y su vínculo en la misma operación).
+ */
+export function personaPrevia(
+  personaCreadaEn: Date | null | undefined,
+  vinculoCreadoEn: Date | null | undefined,
+): boolean {
+  if (!personaCreadaEn || !vinculoCreadoEn) {
+    return false;
+  }
+  return new Date(personaCreadaEn).getTime() < new Date(vinculoCreadoEn).getTime() - 60_000;
+}
+
 /** `/auth/activar` no reescribe una cuenta que ya salió del placeholder. */
 export function cuentaYaActivada(persona: {
   firebaseUid: string;

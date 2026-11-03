@@ -16,6 +16,7 @@ import {
   type VinculoPersona,
   mascarEmail,
   mascarRut,
+  personaPrevia,
 } from '../services/vinculo-persona.js';
 
 /**
@@ -108,6 +109,8 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         rol: memberships.role,
         estado: memberships.status,
         invitadoEn: memberships.invitedAt,
+        personaCreadaEn: users.createdAt,
+        membresiaCreadaEn: memberships.createdAt,
       })
       .from(memberships)
       .innerJoin(users, eq(users.id, memberships.userId))
@@ -117,8 +120,10 @@ export function createMeEmpresaMiembrosRoutes(opts: {
 
     return c.json({
       miembros: filas.map((f) => {
-        // Una invitación pendiente no da acceso a los datos de contacto de la persona.
-        const pendiente = f.estado !== 'activa';
+        // Persona que ya existía y no aceptó: sus datos de contacto no se muestran.
+        const pendiente =
+          f.estado === 'pendiente_invitacion' &&
+          personaPrevia(f.personaCreadaEn, f.membresiaCreadaEn);
         return {
           membership_id: f.membershipId,
           user_id: f.userId,
@@ -128,6 +133,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
           rol: f.rol,
           estado: f.estado,
           invitado_en: f.invitadoEn,
+          pendiente_aceptar: pendiente,
         };
       }),
     });

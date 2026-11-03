@@ -550,17 +550,11 @@ function InviteStakeholderMemberForm({
       setForm({ rut: '', email: '', full_name: '' });
       if (res.codigo_activacion) {
         onInvited({ tipo: 'codigo', codigo: res.codigo_activacion });
-      } else if (res.vinculo === 'cuenta_activa' || res.status === 'activa') {
-        onInvited({
-          tipo: 'vinculo',
-          aviso:
-            'Esta persona ya tiene cuenta. Quedó en la organización y entra con su RUT y su clave. Su clave no cambia.',
-        });
       } else {
         onInvited({
           tipo: 'vinculo',
           aviso:
-            'Esta persona ya tiene un código vigente. No se reemplazó. Cuando lo use, también quedará en la organización.',
+            'Solicitud registrada. Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora, avísale tú.',
         });
       }
     } catch (err) {

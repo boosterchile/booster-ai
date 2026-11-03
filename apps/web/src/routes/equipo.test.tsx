@@ -157,23 +157,31 @@ describe('Equipo — alta', () => {
     ).toBeInTheDocument();
   });
 
-  it('si la persona ya tiene cuenta, no muestra un código nuevo', async () => {
+  it('alta de RUT existente muestra la solicitud registrada, sin código ni textos anteriores', async () => {
     vi.spyOn(api, 'post').mockResolvedValue({
       ok: true,
       user_id: 'u9',
       membership_id: 'm9',
       rol: 'admin',
-      estado: 'activa',
+      estado: 'pendiente_invitacion',
       codigo_activacion: null,
       expira_en: null,
-      vinculo: 'cuenta_activa',
+      vinculo: 'codigo_vigente',
     } as never);
 
     await abrirFormYCompletar();
     fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
 
-    expect(await screen.findByText(/ya tiene cuenta/i)).toBeInTheDocument();
-    expect(screen.getByText(/su clave no cambia/i)).toBeInTheDocument();
+    expect(await screen.findByText('Solicitud registrada')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora, avísale tú.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Volver a Equipo' })).toBeInTheDocument();
+    for (const viejo of [/ya tiene cuenta/i, /ya tiene un código/i, /quedará en/i]) {
+      expect(screen.queryByText(viejo)).not.toBeInTheDocument();
+    }
     expect(screen.queryByRole('button', { name: /Copiar código/i })).not.toBeInTheDocument();
   });
 

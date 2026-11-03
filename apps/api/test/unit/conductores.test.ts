@@ -399,7 +399,7 @@ describe('conductores routes', () => {
       expect(body.activation_pin).toBeUndefined();
     });
 
-    it('D10 — user con firebase_uid placeholder → SÍ devuelve PIN', async () => {
+    it('alta de RUT existente pendiente no expone credenciales', async () => {
       const stub = makeDbStub({
         selectQueueRows: [
           [
@@ -446,7 +446,7 @@ describe('conductores routes', () => {
       });
       expect(res.status).toBe(201);
       const body = (await res.json()) as { activation_pin: string };
-      expect(body.activation_pin).toMatch(/^\d{6}$/);
+      expect(body.activation_pin).toBeUndefined();
     });
 
     it('placeholder que ya tiene código no recibe otro PIN', async () => {

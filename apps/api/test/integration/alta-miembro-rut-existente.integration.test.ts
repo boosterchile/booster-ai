@@ -169,6 +169,11 @@ describe('integration: alta de miembro con RUT existente', () => {
     expect(alta.status).toBe(201);
     userP = String(alta.json.user_id);
     codigoA = String(alta.json.codigo_activacion);
+    // La persona ya existía cuando otra empresa la suma.
+    await h.db
+      .update(schema.users)
+      .set({ createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) })
+      .where(eq(schema.users.id, userP));
 
     const r = await post(B, '/me/empresa/miembros', {
       full_name: 'Otro Nombre',
