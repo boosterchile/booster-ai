@@ -8,6 +8,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { generarPdfBase } from '../src/generar-pdf-base.js';
+import { suitePdf } from './pdf-suite.js';
+
+suitePdf();
 
 describe('generarPdfBase', () => {
   const viajeMinimo = {
