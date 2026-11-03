@@ -77,12 +77,13 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
  */
 export async function generarPdfConCajas(
   params: ParametrosGenerarPdf,
-): Promise<{ bytes: Uint8Array; cajas: CajaDibujada[] }> {
+): Promise<{ bytes: Uint8Array; cajas: CajaDibujada[]; textos: TextoDibujado[] }> {
   const pdfDoc = await PDFDocument.create();
   const f = await embeberFuentes(pdfDoc);
   const m = params.metricas;
   const pres = presentacionNivel(m);
-  const c = new Cursor(pdfDoc);
+  const registro: Registro = { cajas: [], textos: [], zona: 'contenido' };
+  const c = new Cursor(pdfDoc, registro);
 
   // 1. Fila superior: marca a la izquierda; código y versión a la derecha.
   const ver = params.viaje.version ?? { numero: 1 };
@@ -98,8 +99,12 @@ export async function generarPdfConCajas(
   );
   c.y -= 48;
   // 2. Regla azul (igual para todos los niveles: el nivel no va en color de fondo).
-  c.caja(MX, c.y - 1.5, MX2 - MX, 3);
-  c.page.drawLine({ start: { x: MX, y: c.y }, end: { x: MX2, y: c.y }, thickness: 3, color: AZUL });
+  dibujarLinea(c.page, {
+    start: { x: MX, y: c.y },
+    end: { x: MX2, y: c.y },
+    thickness: 3,
+    color: AZUL,
+  });
   c.y -= 32;
 
   // 3–4. Título y sello ESTIMADO en la misma línea (baja si no cabe).
@@ -113,7 +118,6 @@ export async function generarPdfConCajas(
     }
     const xSello = cabe ? finTitulo : MX;
     dibujarSello(c.page, xSello, c.y, anchoSello, f.bold);
-    c.caja(xSello, c.y - 5, anchoSello, 20);
   }
   c.y -= 20;
   // 5. Subtítulo: metodología (versión de la emisión) + frase ISO.
@@ -124,7 +128,6 @@ export async function generarPdfConCajas(
 
   // 6. Badge de calidad de datos.
   const ancho = f.semibold.widthOfTextAtSize(pres.badge, 9.5) + 20;
-  c.caja(MX, c.y - 12 - 18, ancho, 18);
   rectRedondeado(c.page, MX, c.y - 12 - 18, ancho, 18, 9, {
     color: pres.estimado ? hex('#FEF3E2') : hex('#E6F4EA'),
     borderColor: pres.estimado ? hex('#F0B46B') : hex('#86C79B'),
@@ -194,8 +197,7 @@ export async function generarPdfConCajas(
     }
   }
   c.y -= 16;
-  c.caja(MX, c.y, MX2 - MX, topCaja - c.y);
-  c.page.drawRectangle({
+  dibujarRect(c.page, {
     x: MX,
     y: c.y,
     width: MX2 - MX,
@@ -215,15 +217,14 @@ export async function generarPdfConCajas(
     );
     const alto = 20 + 14 + lineas.length * 13;
     c.asegurar(alto);
-    c.caja(MX, c.y - alto, MX2 - MX, alto);
-    c.page.drawRectangle({
+    dibujarRect(c.page, {
       x: MX,
       y: c.y - alto,
       width: MX2 - MX,
       height: alto,
       color: hex('#FEF3E2'),
     });
-    c.page.drawRectangle({ x: MX, y: c.y - alto, width: 3, height: alto, color: AMBAR });
+    dibujarRect(c.page, { x: MX, y: c.y - alto, width: 3, height: alto, color: AMBAR });
     c.texto(TITULO_DISCLAIMER, MX + 14, c.y - 20, 9.5, f.bold, TEXTO);
     lineas.forEach((l, i) => c.texto(l, MX + 14, c.y - 34 - i * 13, 9, f.regular, TEXTO));
     c.y -= alto + 20;
@@ -358,7 +359,8 @@ export async function generarPdfConCajas(
   // serializamos primero y reescribimos sobre el Buffer resultante.
   // ContactInfo y Reason van en el /Sig dictionary y son visibles en
   // Adobe Reader. Mantenerlos cortos.
-  dibujarPies(pdfDoc, f, params.viaje, pres.estimado, c.cajas);
+  registro.zona = 'pie';
+  dibujarPies(pdfDoc, f, params.viaje, pres.estimado);
   const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
   // subFilter explícito: el default de plainAddPlaceholder es
   // SUBFILTER_ADOBE_PKCS7_DETACHED (legacy Adobe), pero PAdES-B-B exige
@@ -373,7 +375,11 @@ export async function generarPdfConCajas(
     signatureLength: params.placeholderBytes ?? DEFAULT_PLACEHOLDER_BYTES,
     subFilter: SUBFILTER_ETSI_CADES_DETACHED,
   });
-  return { bytes: new Uint8Array(pdfWithPlaceholder), cajas: c.cajas };
+  return {
+    bytes: new Uint8Array(pdfWithPlaceholder),
+    cajas: registro.cajas,
+    textos: registro.textos,
+  };
 }
 
 // ============================================================
@@ -397,6 +403,103 @@ const PISO = 56;
  */
 export const AREA_UTIL = { x0: MX, x1: MX2, y0: 20, y1: TOPE } as const;
 
+/**
+ * El contenido (todo menos el pie) no baja de aquí: la línea del pie está en
+ * y=36 y se dejan 8 pt libres sobre ella.
+ */
+export const TOPE_PIE = 44;
+
+/** Texto dibujado: bbox calculado de los mismos x/y/size/fuente de drawText. */
+export interface TextoDibujado {
+  pagina: number;
+  texto: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  pie: boolean;
+}
+
+interface Registro {
+  cajas: CajaDibujada[];
+  textos: TextoDibujado[];
+  zona: 'contenido' | 'pie';
+}
+
+/**
+ * Todo lo que se dibuja pasa por dibujarTexto/dibujarRect/dibujarLinea/
+ * rectRedondeado, que anotan el bbox con los MISMOS argumentos que van a
+ * pdf-lib (no hay una llamada de registro aparte que pueda desalinearse).
+ */
+const paginasRegistradas = new WeakMap<Page, { pagina: number; registro: Registro }>();
+function registrarPagina(page: Page, pagina: number, registro: Registro): void {
+  paginasRegistradas.set(page, { pagina, registro });
+}
+function marcarPie(page: Page): void {
+  const r = paginasRegistradas.get(page);
+  if (r) {
+    r.registro.zona = 'pie';
+  }
+}
+function anotarCaja(page: Page, x: number, y: number, w: number, h: number): void {
+  const r = paginasRegistradas.get(page);
+  r?.registro.cajas.push({ pagina: r.pagina, x, y, w, h, pie: r.registro.zona === 'pie' });
+}
+function dibujarTexto(
+  page: Page,
+  t: string,
+  o: { x: number; y: number; size: number; font: PDFFont; color: RGB },
+): void {
+  page.drawText(t, o);
+  const r = paginasRegistradas.get(page);
+  const alto = o.font.heightAtSize(o.size);
+  const descenso = alto - o.font.heightAtSize(o.size, { descender: false });
+  r?.registro.textos.push({
+    pagina: r.pagina,
+    texto: t,
+    x: o.x,
+    y: o.y - descenso,
+    // Sin el tracking del sello (+1,5 pt/carácter): su caja ya lo contiene.
+    w: o.font.widthOfTextAtSize(t, o.size),
+    h: alto,
+    pie: r.registro.zona === 'pie',
+  });
+}
+function dibujarRect(
+  page: Page,
+  o: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    color?: RGB;
+    borderColor?: RGB;
+    borderWidth?: number;
+  },
+): void {
+  page.drawRectangle(o);
+  anotarCaja(page, o.x, o.y, o.width, o.height);
+}
+function dibujarLinea(
+  page: Page,
+  o: {
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    thickness: number;
+    color: RGB;
+  },
+): void {
+  page.drawLine(o);
+  const t = o.thickness / 2;
+  anotarCaja(
+    page,
+    Math.min(o.start.x, o.end.x),
+    Math.min(o.start.y, o.end.y) - t,
+    Math.abs(o.end.x - o.start.x),
+    Math.abs(o.end.y - o.start.y) + o.thickness,
+  );
+}
+
 /** Bbox de un elemento no textual dibujado en la página `pagina` (0-based). */
 export interface CajaDibujada {
   pagina: number;
@@ -404,6 +507,7 @@ export interface CajaDibujada {
   y: number;
   w: number;
   h: number;
+  pie: boolean;
 }
 
 function hex(h: string): RGB {
@@ -420,9 +524,12 @@ class Cursor {
   page: Page;
   y = TOPE;
   pagina = 0;
-  readonly cajas: CajaDibujada[] = [];
-  constructor(private readonly doc: PDFDocument) {
+  constructor(
+    private readonly doc: PDFDocument,
+    private readonly registro: Registro,
+  ) {
     this.page = doc.addPage(A4);
+    registrarPagina(this.page, 0, registro);
   }
   /** Título de sección aún no dibujado: viaja con el primer bloque que lo sigue. */
   private tituloPendiente: { t: string; f: FuentesCert } | null = null;
@@ -431,6 +538,7 @@ class Cursor {
     if (this.y - alto - (titulo ? 30 : 0) < PISO) {
       this.page = this.doc.addPage(A4);
       this.pagina += 1;
+      registrarPagina(this.page, this.pagina, this.registro);
       this.y = TOPE;
     }
     if (titulo) {
@@ -441,11 +549,8 @@ class Cursor {
       this.y -= 30;
     }
   }
-  caja(x: number, y: number, w: number, h: number): void {
-    this.cajas.push({ pagina: this.pagina, x, y, w, h });
-  }
   texto(t: string, x: number, y: number, size: number, font: PDFFont, color: RGB): void {
-    this.page.drawText(t, { x, y, size, font, color });
+    dibujarTexto(this.page, t, { x, y, size, font, color });
   }
   derecha(t: string, y: number, size: number, font: PDFFont, color: RGB): void {
     this.texto(t, MX2 - font.widthOfTextAtSize(t, size), y, size, font, color);
@@ -498,7 +603,7 @@ function anchoConTracking(t: string, font: PDFFont, size: number, tracking: numb
 function dibujarSello(page: Page, x: number, yBase: number, ancho: number, bold: PDFFont): void {
   rectRedondeado(page, x, yBase - 5, ancho, 20, 3, { borderColor: AMBAR, borderWidth: 1.5 });
   page.pushOperators(setCharacterSpacing(1.5));
-  page.drawText('ESTIMADO', { x: x + 8, y: yBase + 1, size: 9.5, font: bold, color: AMBAR });
+  dibujarTexto(page, 'ESTIMADO', { x: x + 8, y: yBase + 1, size: 9.5, font: bold, color: AMBAR });
   page.pushOperators(setCharacterSpacing(0));
 }
 
@@ -514,6 +619,7 @@ function rectRedondeado(
 ): void {
   const path = `M ${r} 0 H ${w - r} A ${r} ${r} 0 0 1 ${w} ${r} V ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} H ${r} A ${r} ${r} 0 0 1 0 ${h - r} V ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
   page.drawSvgPath(path, { x, y: y + h, ...opts });
+  anotarCaja(page, x, y, w, h);
 }
 
 /**
@@ -523,7 +629,13 @@ function rectRedondeado(
 function partir(t: string, font: PDFFont, size: number, ancho: number): string[] {
   const lineas: string[] = [];
   let actual = '';
-  const palabras = t.split(' ').flatMap((p) => cortarPalabra(p, font, size, ancho));
+  // QA #873 v2: un \n o \r\n en datos de usuario (direcciones desde formularios
+  // o el bot) pdf-lib lo dibuja como línea extra que el layout no cuenta.
+  const palabras = t
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .flatMap((p) => cortarPalabra(p, font, size, ancho));
   for (const palabra of palabras) {
     const prueba = actual ? `${actual} ${palabra}` : palabra;
     if (font.widthOfTextAtSize(prueba, size) > ancho && actual) {
@@ -565,21 +677,22 @@ function dibujarPies(
   f: FuentesCert,
   viaje: DatosViajeCertificado,
   estimado: boolean,
-  cajas: CajaDibujada[],
 ): void {
   const paginas = doc.getPages();
+  for (const p of paginas) {
+    marcarPie(p);
+  }
   const izq = `${viaje.trackingCode} · v${viaje.version?.numero ?? 1}`;
   paginas.forEach((p, i) => {
-    cajas.push({ pagina: i, x: MX, y: 35.75, w: MX2 - MX, h: 0.5 });
-    p.drawLine({
+    dibujarLinea(p, {
       start: { x: MX, y: 36 },
       end: { x: MX2, y: 36 },
       thickness: 0.5,
       color: hex('#D9DEE3'),
     });
-    p.drawText(izq, { x: MX, y: 24, size: 8, font: f.regular, color: GRIS });
+    dibujarTexto(p, izq, { x: MX, y: 24, size: 8, font: f.regular, color: GRIS });
     if (estimado) {
-      p.drawText(' · Estimado', {
+      dibujarTexto(p, ' · Estimado', {
         x: MX + f.regular.widthOfTextAtSize(izq, 8),
         y: 24,
         size: 8,
@@ -588,7 +701,7 @@ function dibujarPies(
       });
     }
     const der = `Página ${i + 1} de ${paginas.length}`;
-    p.drawText(der, {
+    dibujarTexto(p, der, {
       x: MX2 - f.regular.widthOfTextAtSize(der, 8),
       y: 24,
       size: 8,
