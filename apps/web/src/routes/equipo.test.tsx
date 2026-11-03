@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { esperarPendientesLimpios } from '../components/NombreMiembro.test-helper.js';
 import { ApiError, api } from '../lib/api-client.js';
 
 /**
@@ -90,7 +91,8 @@ describe('Equipo — listado', () => {
     render(<EquipoRoute />, { wrapper: makeWrapper() });
 
     expect(await screen.findByText('Pendiente de aceptar')).toBeInTheDocument();
-    expect(screen.getByText('—')).toBeInTheDocument();
+    await esperarPendientesLimpios();
+    expect(screen.getByText('*****222-3')).toBeInTheDocument();
     expect(screen.queryByText('Marta Rojas')).toBeNull();
   });
 

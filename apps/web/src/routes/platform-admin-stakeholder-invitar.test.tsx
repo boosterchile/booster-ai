@@ -2,6 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { esperarPendientesLimpios } from '../components/NombreMiembro.test-helper.js';
+import { api } from '../lib/api-client.js';
 
 /**
  * Invitación a una organización stakeholder: el código de activación se
@@ -67,6 +69,36 @@ async function invitar() {
   await user.type(screen.getByTestId(`stakeholder-org-invite-name-${ORG_ID}`), 'Analista Uno');
   await user.click(screen.getByTestId(`stakeholder-org-invite-submit-${ORG_ID}`));
 }
+
+describe('miembros stakeholder', () => {
+  it('un pendiente muestra «Invitación pendiente», igual que en Equipo y Conductores', async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) =>
+      path === `/admin/stakeholder-orgs/${ORG_ID}`
+        ? {
+            ...ORG,
+            miembros: [
+              {
+                membership_id: 'm1',
+                user_id: 'u1',
+                rut: '*****575-2',
+                email: 'a***@observatorio.cl',
+                full_name: null,
+                status: 'pendiente_invitacion',
+                is_pending: true,
+                invitado_en: '2026-10-09T12:00:00.000Z',
+                unido_en: null,
+              },
+            ],
+          }
+        : { organizations: [ORG] },
+    );
+    const user = userEvent.setup();
+    render(<PlatformAdminStakeholdersRoute />);
+    await user.click(await screen.findByTestId(`stakeholder-org-toggle-${ORG_ID}`));
+    await esperarPendientesLimpios();
+    expect(screen.getByText('*****575-2')).toBeInTheDocument();
+  });
+});
 
 describe('invitar miembro stakeholder', () => {
   it('el código de activación queda visible tras invitar', async () => {
