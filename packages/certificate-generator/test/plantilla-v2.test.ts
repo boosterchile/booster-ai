@@ -98,8 +98,10 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
     expect(todo).toContain('kg CO\u2082e');
     // QA #873: etiquetas de Metodología fijadas (mutantes «Versión GLEC», «Fuente factores», «Factor»).
     expect(todo).toMatch(/Metodología GLEC\s+v3\.0/);
-    expect(todo).toMatch(/Factor de emisión usado\s+3,24 kg CO\u2082e \/ unidad/);
-    expect(todo).toMatch(/Fuente de factores\s+GLEC v2\.0 \(2019\), Tabla 32/);
+    // PR-B: «Factor de emisión usado» se reemplazó por la línea «Factores: …» y
+    // «Fuente de factores: …», que solo se imprimen con la tabla versionada
+    // (opción d). Sus etiquetas se fijan en «etiquetas fijas y valores de la emisión».
+    expect(todo).not.toContain('Factor de emisión usado');
     expect(todo).not.toContain('Versión GLEC');
     expect(todo).not.toContain('Fuente factores');
     expect(todo).toContain('cobertura 60%');
