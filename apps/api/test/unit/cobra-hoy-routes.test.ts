@@ -43,6 +43,7 @@ const USER_CTX: UserContext = {
   user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
   activeMembership: {
     id: 'm1',
+    membership: { role: 'dueno' },
     role: 'dueno',
     status: 'activa',
     empresa: {
@@ -57,11 +58,19 @@ const USER_CTX: UserContext = {
   memberships: [],
 } as unknown as UserContext;
 
-function makeAssignmentsApp(opts: { withContext: boolean; db?: unknown }) {
+function ctxConRol(role: string): UserContext {
+  const am = USER_CTX.activeMembership as NonNullable<UserContext['activeMembership']>;
+  return {
+    ...USER_CTX,
+    activeMembership: { ...am, membership: { ...am.membership, role } },
+  } as UserContext;
+}
+
+function makeAssignmentsApp(opts: { withContext: boolean; db?: unknown; role?: string }) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     if (opts.withContext) {
-      c.set('userContext', USER_CTX);
+      c.set('userContext', opts.role ? ctxConRol(opts.role) : USER_CTX);
     }
     await next();
   });
@@ -75,11 +84,11 @@ function makeAssignmentsApp(opts: { withContext: boolean; db?: unknown }) {
   return app;
 }
 
-function makeMeApp(opts: { withContext: boolean; db: unknown }) {
+function makeMeApp(opts: { withContext: boolean; db: unknown; role?: string }) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     if (opts.withContext) {
-      c.set('userContext', USER_CTX);
+      c.set('userContext', opts.role ? ctxConRol(opts.role) : USER_CTX);
     }
     await next();
   });
@@ -379,6 +388,51 @@ describe('GET /me/cobra-hoy/historial', () => {
     expect(body.adelantos[0]?.nota_visible).toBe(
       'auto-mora: shipper no pagó en plazo (10 días vencidos sobre 30).',
     );
+  });
+});
+
+describe('permisos por rol en cobra hoy', () => {
+  const dbVacia = () => {
+    const chain: Record<string, unknown> = {
+      from: vi.fn(() => chain),
+      where: vi.fn(() => chain),
+      orderBy: vi.fn(() => chain),
+      limit: vi.fn(async () => []),
+    };
+    return { select: vi.fn(() => chain) };
+  };
+
+  it.each(['visualizador', 'conductor', 'despachador'])(
+    '%s → 403 forbidden_role en las 3 rutas',
+    async (role) => {
+      const asg = makeAssignmentsApp({ withContext: true, role });
+      const cot = await asg.request('/assignments/asg-1/cobra-hoy/cotizacion');
+      const sol = await asg.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+      const hist = await makeMeApp({ withContext: true, db: dbVacia(), role }).request(
+        '/me/cobra-hoy/historial',
+      );
+      for (const res of [cot, sol, hist]) {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+      }
+      expect(cotizarSpy).not.toHaveBeenCalled();
+      expect(cobraHoySpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['dueno', 'admin'])('%s → puede cotizar, solicitar y ver historial', async (role) => {
+    cotizarSpy.mockResolvedValue({ status: 'assignment_not_found' });
+    cobraHoySpy.mockResolvedValue({ status: 'ya_solicitado', adelantoId: 'adel-1' });
+    const asg = makeAssignmentsApp({ withContext: true, role });
+    expect((await asg.request('/assignments/asg-1/cobra-hoy/cotizacion')).status).toBe(404);
+    expect((await asg.request('/assignments/asg-1/cobra-hoy', { method: 'POST' })).status).toBe(
+      200,
+    );
+    const hist = await makeMeApp({ withContext: true, db: dbVacia(), role }).request(
+      '/me/cobra-hoy/historial',
+    );
+    expect(hist.status).toBe(200);
+    expect(cobraHoySpy).toHaveBeenCalledTimes(1);
   });
 });
 
