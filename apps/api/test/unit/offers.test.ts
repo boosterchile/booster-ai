@@ -434,6 +434,44 @@ describe('POST /offers/:id/accept — permisos por rol', () => {
   });
 });
 
+describe('POST /offers/:id/reject — permisos por rol', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  const rechazar = async (role: string) => {
+    const app = await buildAppWith({
+      db: makeStubDbForList([]),
+      userContext: buildUserContext({ role }),
+    });
+    return app.request('/offers/off-1/reject', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  };
+
+  it.each(['visualizador', 'conductor'])('%s → 403 forbidden_role', async (role) => {
+    const actions = await import('../../src/services/offer-actions.js');
+    const res = await rechazar(role);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    expect(actions.rejectOffer).not.toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin', 'despachador'])('%s → puede rechazar la oferta', async (role) => {
+    const actions = await import('../../src/services/offer-actions.js');
+    vi.mocked(actions.rejectOffer).mockResolvedValueOnce({
+      id: 'off-1',
+      status: 'rechazada',
+      respondedAt: new Date(),
+      rejectionReason: null,
+    } as Awaited<ReturnType<typeof actions.rejectOffer>>);
+    const res = await rechazar(role);
+    expect(res.status).toBe(200);
+    expect(actions.rejectOffer).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('POST /offers/:id/reject', () => {
   beforeEach(() => {
     vi.clearAllMocks();

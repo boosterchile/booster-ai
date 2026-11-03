@@ -266,3 +266,22 @@ describe('pago y disputa — permisos por rol', () => {
     expect((await disputa(app)).status).toBe(201);
   });
 });
+
+describe('confirmar recepción — permisos por rol', () => {
+  it.each(['visualizador', 'conductor', 'despachador'])('%s → 403 forbidden_role', async (role) => {
+    const res = await confirmar(setup(role));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    expect(confirmarEntregaViaje).not.toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin'])('%s → confirma la recepción', async (role) => {
+    confirmarEntregaViaje.mockResolvedValue({
+      ok: true,
+      alreadyDelivered: false,
+      deliveredAt: new Date('2026-10-10T12:00:00Z'),
+    });
+    expect((await confirmar(setup(role))).status).toBe(200);
+    expect(confirmarEntregaViaje).toHaveBeenCalledTimes(1);
+  });
+});

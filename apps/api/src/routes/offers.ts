@@ -274,6 +274,10 @@ export function createOfferRoutes(opts: {
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
     }
+    const sinRol = exigirRol(c, active.membership.role, ROLES_ACEPTAR_OFERTA);
+    if (sinRol) {
+      return sinRol;
+    }
 
     const offerId = c.req.param('id');
     const body = c.req.valid('json');

@@ -762,6 +762,10 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    const sinRolRecepcion = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRolRecepcion) {
+      return sinRolRecepcion;
+    }
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
