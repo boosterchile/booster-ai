@@ -1011,7 +1011,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       status: conductorQ.data.status,
     });
     const actual = conductorQ.data.user.email;
-    setEmailContacto(esEmailDeRelleno(actual) ? '' : actual);
+    setEmailContacto(esEmailDeRelleno(actual) || actual.includes('***') ? '' : actual);
     setTelefonoContacto(conductorQ.data.user.phone ?? '');
   }, [conductorQ.data, reset]);
 
@@ -1126,7 +1126,10 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             )}
           </div>
 
-          <section className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+          <section
+            hidden={conductorQ.data.user.pendiente_aceptar}
+            className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+          >
             <div>
               <h2 className="font-semibold text-neutral-900">Email de contacto</h2>
               <p className="mt-1 text-neutral-600 text-sm">
@@ -1188,7 +1191,10 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             )}
           </section>
 
-          <section className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+          <section
+            hidden={conductorQ.data.user.pendiente_aceptar}
+            className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+          >
             <div>
               <h2 className="font-semibold text-neutral-900">Teléfono (WhatsApp)</h2>
               <p className="mt-1 text-neutral-600 text-sm">

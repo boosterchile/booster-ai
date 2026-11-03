@@ -434,6 +434,29 @@ describe('ConductoresNuevoRoute', () => {
 });
 
 describe('ConductoresDetalleRoute', () => {
+  it('ficha pendiente de aceptar: sin formularios de contacto', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: null,
+          rut: '*****111-1',
+          email: 'c***@example.com',
+          phone: null,
+          is_pending: true,
+          pendiente_aceptar: true,
+        },
+      }),
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(
+      await screen.findByRole('heading', { name: 'Invitación pendiente' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Email de contacto/ })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: /Teléfono \(WhatsApp\)/ })).toBeNull();
+  });
+
   it('ficha de un pendiente: textos neutros en nombre, teléfono y cancelación', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       conductor: buildConductor({
