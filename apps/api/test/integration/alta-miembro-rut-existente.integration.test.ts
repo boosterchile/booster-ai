@@ -190,6 +190,23 @@ describe('integration: alta de miembro con RUT existente', () => {
     const texto = JSON.stringify(await lista.json());
     expect(texto).not.toContain('p-real@test.invalid');
     expect(texto).not.toContain(rutP);
+    expect(texto).not.toContain('Persona P');
+  });
+
+  test('la lista del equipo no muestra datos de un miembro que no está activo', async () => {
+    const rutN = rutAleatorio();
+    const alta = await post(C, '/me/empresa/miembros', {
+      full_name: 'Persona Nueva',
+      rut: rutN,
+      email: 'nueva@test.invalid',
+      rol: 'despachador',
+    });
+    expect(alta.status).toBe(201);
+    const lista = await app(C).request('/me/empresa/miembros');
+    const texto = JSON.stringify(await lista.json());
+    expect(texto).not.toContain('Persona Nueva');
+    expect(texto).not.toContain('nueva@test.invalid');
+    expect(texto).not.toContain(rutN);
   });
 
   test('la activación queda acotada a la invitación original', async () => {

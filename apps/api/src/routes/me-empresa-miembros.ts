@@ -120,16 +120,17 @@ export function createMeEmpresaMiembrosRoutes(opts: {
 
     return c.json({
       miembros: filas.map((f) => {
-        // Persona que ya existía y no aceptó: sus datos de contacto no se muestran.
+        // Falla cerrado: fuera de 'activa' no se muestran datos de la persona.
+        const oculto = f.estado !== 'activa';
         const pendiente =
           f.estado === 'pendiente_invitacion' &&
           personaPrevia(f.personaCreadaEn, f.membresiaCreadaEn);
         return {
           membership_id: f.membershipId,
           user_id: f.userId,
-          full_name: f.fullName,
-          email: pendiente ? mascarEmail(f.email) : f.email,
-          rut: pendiente ? mascarRut(f.rut) : f.rut,
+          full_name: oculto ? null : f.fullName,
+          email: oculto ? mascarEmail(f.email) : f.email,
+          rut: oculto ? mascarRut(f.rut) : f.rut,
           rol: f.rol,
           estado: f.estado,
           invitado_en: f.invitadoEn,

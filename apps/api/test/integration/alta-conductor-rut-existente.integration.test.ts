@@ -134,6 +134,7 @@ describe('integration: alta de conductor con RUT existente', () => {
     const texto = JSON.stringify(await lista.json());
     expect(texto).not.toContain(p.email);
     expect(texto).not.toContain(p.rut ?? '');
+    expect(texto).not.toContain('Persona Previa');
   });
 
   test('alta de RUT existente no reemplaza ni prolonga una credencial anterior', async () => {
@@ -146,8 +147,13 @@ describe('integration: alta de conductor con RUT existente', () => {
   });
 
   test('alta de RUT nuevo sigue entregando el código', async () => {
-    const r = await post('/conductores', alta(rutAleatorio()));
+    const rutN = rutAleatorio();
+    const r = await post('/conductores', alta(rutN));
     expect(r.status).toBe(201);
     expect(r.json.activation_pin).toMatch(/^\d{6}$/);
+    const detalle = await app().request(`/conductores/${r.json.conductor.id}`);
+    const texto = JSON.stringify(await detalle.json());
+    expect(texto).not.toContain('Nombre Escrito');
+    expect(texto).not.toContain(rutN);
   });
 });

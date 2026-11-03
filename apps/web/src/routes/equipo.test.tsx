@@ -48,9 +48,9 @@ const MIEMBROS = [
   {
     membership_id: 'm2',
     user_id: 'u2',
-    full_name: 'Marta Rojas',
-    email: 'pendiente@empresa.cl',
-    rut: '17111222-3',
+    full_name: null,
+    email: 'p***@empresa.cl',
+    rut: '*****222-3',
     rol: 'despachador',
     estado: 'pendiente_invitacion',
     invitado_en: '2026-07-30T10:00:00Z',
@@ -81,6 +81,17 @@ describe('Equipo — listado', () => {
     // quién le falta entregar (o reenviar) el código.
     expect(screen.getByText('Pendiente de activar')).toBeInTheDocument();
     expect(screen.getByText('Activa')).toBeInTheDocument();
+  });
+
+  it('un miembro pendiente se muestra sin nombre y con su estado', async () => {
+    const pendiente = { ...MIEMBROS[1], pendiente_aceptar: true };
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: [pendiente] });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByText('Pendiente de aceptar')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('Marta Rojas')).toBeNull();
   });
 
   it('con equipo vacío explica qué hacer', async () => {

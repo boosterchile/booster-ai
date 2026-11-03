@@ -27,7 +27,7 @@ import {
 interface Miembro {
   membership_id: string;
   user_id: string;
-  full_name: string;
+  full_name: string | null;
   email: string;
   rut: string | null;
   rol: string;
@@ -150,7 +150,7 @@ function EquipoPage() {
             {miembros.map((m) => (
               <li key={m.membership_id} className="flex items-center justify-between gap-4 p-4">
                 <div className="min-w-0">
-                  <div className="font-medium text-neutral-900">{m.full_name}</div>
+                  <div className="font-medium text-neutral-900">{m.full_name ?? '—'}</div>
                   <div className="text-neutral-500 text-sm">
                     {m.email}
                     {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}

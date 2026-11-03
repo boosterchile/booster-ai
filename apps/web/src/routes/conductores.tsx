@@ -69,7 +69,7 @@ const STATUS_COLORS: Record<DriverStatus, string> = {
 
 interface ConductorUser {
   id: string;
-  full_name: string;
+  full_name: string | null;
   rut: string;
   email: string;
   phone: string | null;
@@ -213,7 +213,9 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       }
                     >
                       <Td>
-                        <div className="font-medium text-neutral-900">{c.user.full_name}</div>
+                        <div className="font-medium text-neutral-900">
+                          {c.user.full_name ?? '—'}
+                        </div>
                         {c.user.is_pending && (
                           <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                             <Clock className="h-3 w-3" aria-hidden />
@@ -270,7 +272,7 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-medium text-neutral-900">{c.user.full_name}</div>
+                      <div className="font-medium text-neutral-900">{c.user.full_name ?? '—'}</div>
                       <div className="text-neutral-500 text-xs">{c.user.rut}</div>
                     </div>
                     <span
@@ -1153,9 +1155,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             {pinReenviado && (
               <ActivationPinCard
                 pin={pinReenviado}
-                driverName={conductorQ.data.user.full_name}
+                driverName={conductorQ.data.user.full_name ?? ''}
                 driverRut={conductorQ.data.user.rut ?? ''}
-                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name}`}
+                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name ?? 'el conductor'}`}
                 onContinue={() => setPinReenviado(null)}
               />
             )}
@@ -1207,9 +1209,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             {pinTelefono && (
               <ActivationPinCard
                 pin={pinTelefono}
-                driverName={conductorQ.data.user.full_name}
+                driverName={conductorQ.data.user.full_name ?? ''}
                 driverRut={conductorQ.data.user.rut ?? ''}
-                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name}`}
+                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name ?? 'el conductor'}`}
                 onContinue={() => setPinTelefono(null)}
               />
             )}

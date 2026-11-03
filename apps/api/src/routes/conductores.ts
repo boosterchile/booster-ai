@@ -141,20 +141,35 @@ async function emailOcupadoPorOtro(
  * organización stakeholder, o tiene aquí un rol distinto de conductor.
  * Una membresía ya removida no cuenta.
  */
-/** Una persona que ya existía y no activó: la empresa ve sus datos enmascarados. */
+/**
+ * Falla cerrado: mientras la persona no active su cuenta, la empresa no ve
+ * su nombre ni sus datos de contacto. `pendiente_aceptar` solo guía la UI.
+ */
 function datosContacto(r: {
+  user_full_name: string;
   user_rut: string | null;
   user_email: string;
+  user_phone: string | null;
   user_firebase_uid: string;
   user_created_at: Date | null;
   created_at: Date | null;
 }) {
-  const oculto =
-    r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX) &&
-    personaPrevia(r.user_created_at, r.created_at);
+  const oculto = r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX);
   return oculto
-    ? { rut: mascarRut(r.user_rut), email: mascarEmail(r.user_email), pendiente_aceptar: true }
-    : { rut: r.user_rut, email: r.user_email, pendiente_aceptar: false };
+    ? {
+        full_name: null,
+        rut: mascarRut(r.user_rut),
+        email: mascarEmail(r.user_email),
+        phone: null,
+        pendiente_aceptar: personaPrevia(r.user_created_at, r.created_at),
+      }
+    : {
+        full_name: r.user_full_name,
+        rut: r.user_rut,
+        email: r.user_email,
+        phone: r.user_phone,
+        pendiente_aceptar: false,
+      };
 }
 
 async function emailIdentidadCompartida(
@@ -312,9 +327,7 @@ export function createConductoresRoutes(opts: {
         deleted_at: safeIsoString(r.deleted_at),
         user: {
           id: r.user_id,
-          full_name: r.user_full_name,
           ...datosContacto(r),
-          phone: r.user_phone,
           is_pending: r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX),
         },
       })),
@@ -376,9 +389,7 @@ export function createConductoresRoutes(opts: {
         deleted_at: safeIsoString(row.deleted_at),
         user: {
           id: row.user_id,
-          full_name: row.user_full_name,
           ...datosContacto(row),
-          phone: row.user_phone,
           is_pending: row.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX),
         },
       },
