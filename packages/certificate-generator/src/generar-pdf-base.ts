@@ -67,6 +67,17 @@ const DEFAULT_PLACEHOLDER_BYTES = 16384;
  * subtítulo · badge · fechas · Resultados · disclaimer · Metodología · resto.
  */
 export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint8Array> {
+  return (await generarPdfConCajas(params)).bytes;
+}
+
+/**
+ * Igual que `generarPdfBase`, pero además devuelve el bbox de cada elemento
+ * no textual (sello, badge, cajas, reglas y líneas). Los tests de márgenes lo
+ * usan junto con las posiciones de texto de pdfjs.
+ */
+export async function generarPdfConCajas(
+  params: ParametrosGenerarPdf,
+): Promise<{ bytes: Uint8Array; cajas: CajaDibujada[] }> {
   const pdfDoc = await PDFDocument.create();
   const f = await embeberFuentes(pdfDoc);
   const m = params.metricas;
@@ -87,6 +98,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   );
   c.y -= 48;
   // 2. Regla azul (igual para todos los niveles: el nivel no va en color de fondo).
+  c.caja(MX, c.y - 1.5, MX2 - MX, 3);
   c.page.drawLine({ start: { x: MX, y: c.y }, end: { x: MX2, y: c.y }, thickness: 3, color: AZUL });
   c.y -= 32;
 
@@ -99,7 +111,9 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     if (!cabe) {
       c.y -= 28;
     }
-    dibujarSello(c.page, cabe ? finTitulo : MX, c.y, anchoSello, f.bold);
+    const xSello = cabe ? finTitulo : MX;
+    dibujarSello(c.page, xSello, c.y, anchoSello, f.bold);
+    c.caja(xSello, c.y - 5, anchoSello, 20);
   }
   c.y -= 20;
   // 5. Subtítulo: metodología (versión de la emisión) + frase ISO.
@@ -110,6 +124,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
 
   // 6. Badge de calidad de datos.
   const ancho = f.semibold.widthOfTextAtSize(pres.badge, 9.5) + 20;
+  c.caja(MX, c.y - 12 - 18, ancho, 18);
   rectRedondeado(c.page, MX, c.y - 12 - 18, ancho, 18, 9, {
     color: pres.estimado ? hex('#FEF3E2') : hex('#E6F4EA'),
     borderColor: pres.estimado ? hex('#F0B46B') : hex('#86C79B'),
@@ -173,10 +188,13 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     }`,
   );
   for (const d of detalles) {
-    c.y -= 14;
-    c.texto(d, MX + 16, c.y, 9.5, f.regular, TEXTO);
+    for (const l of partir(d, f.regular, 9.5, MX2 - MX - 32)) {
+      c.y -= 14;
+      c.texto(l, MX + 16, c.y, 9.5, f.regular, TEXTO);
+    }
   }
   c.y -= 16;
+  c.caja(MX, c.y, MX2 - MX, topCaja - c.y);
   c.page.drawRectangle({
     x: MX,
     y: c.y,
@@ -197,6 +215,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     );
     const alto = 20 + 14 + lineas.length * 13;
     c.asegurar(alto);
+    c.caja(MX, c.y - alto, MX2 - MX, alto);
     c.page.drawRectangle({
       x: MX,
       y: c.y - alto,
@@ -320,11 +339,12 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     f.regular,
     GRIS,
   );
-  c.texto(`Verifica la firma en: ${params.verifyUrl}`, MX, c.y - 13, 8.5, f.semibold, AZUL);
+  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
+  lineasUrl.forEach((l, i) => c.texto(l, MX, c.y - 13 - i * 11, 8.5, f.semibold, AZUL));
   c.texto(
     'Documento emitido por Booster Chile SpA. Cualquier alteración invalida la firma.',
     MX,
-    c.y - 26,
+    c.y - 15 - lineasUrl.length * 11,
     8,
     f.regular,
     GRIS,
@@ -338,7 +358,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   // serializamos primero y reescribimos sobre el Buffer resultante.
   // ContactInfo y Reason van en el /Sig dictionary y son visibles en
   // Adobe Reader. Mantenerlos cortos.
-  dibujarPies(pdfDoc, f, params.viaje, pres.estimado);
+  dibujarPies(pdfDoc, f, params.viaje, pres.estimado, c.cajas);
   const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
   // subFilter explícito: el default de plainAddPlaceholder es
   // SUBFILTER_ADOBE_PKCS7_DETACHED (legacy Adobe), pero PAdES-B-B exige
@@ -353,7 +373,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     signatureLength: params.placeholderBytes ?? DEFAULT_PLACEHOLDER_BYTES,
     subFilter: SUBFILTER_ETSI_CADES_DETACHED,
   });
-  return new Uint8Array(pdfWithPlaceholder);
+  return { bytes: new Uint8Array(pdfWithPlaceholder), cajas: c.cajas };
 }
 
 // ============================================================
@@ -370,6 +390,22 @@ const TOPE = A4[1] - 40;
 /** Bajo esta y empieza la zona del pie (vN · Página X de Y). */
 const PISO = 56;
 
+/**
+ * Área útil de la hoja (pt). Laterales de 48 y superior de 40 (ux.md
+ * §Estructura); el inferior de 20 deja el pie («BOO-X · vN», baseline 24) a
+ * más de 7 mm del borde. Ningún texto ni caja puede salir de aquí.
+ */
+export const AREA_UTIL = { x0: MX, x1: MX2, y0: 20, y1: TOPE } as const;
+
+/** Bbox de un elemento no textual dibujado en la página `pagina` (0-based). */
+export interface CajaDibujada {
+  pagina: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 function hex(h: string): RGB {
   const n = Number.parseInt(h.slice(1), 16);
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
@@ -383,14 +419,20 @@ const AMBAR = hex('#B45309');
 class Cursor {
   page: Page;
   y = TOPE;
+  pagina = 0;
+  readonly cajas: CajaDibujada[] = [];
   constructor(private readonly doc: PDFDocument) {
     this.page = doc.addPage(A4);
   }
   asegurar(alto: number): void {
     if (this.y - alto < PISO) {
       this.page = this.doc.addPage(A4);
+      this.pagina += 1;
       this.y = TOPE;
     }
+  }
+  caja(x: number, y: number, w: number, h: number): void {
+    this.cajas.push({ pagina: this.pagina, x, y, w, h });
   }
   texto(t: string, x: number, y: number, size: number, font: PDFFont, color: RGB): void {
     this.page.drawText(t, { x, y, size, font, color });
@@ -404,7 +446,11 @@ class Cursor {
     this.texto(t, MX, this.y, 11, f.bold, AZUL);
     this.y -= 30;
   }
-  /** Una fila con uno o dos pares label/valor (8,5 gris / valor semibold). */
+  /**
+   * Una fila con uno o dos pares label/valor (8,5 gris / valor semibold). Los
+   * valores se parten al ancho de su columna (QA #873: direcciones largas y
+   * tipos de carga extremos se salían o pisaban la segunda columna).
+   */
   par(
     l1: string,
     v1: string,
@@ -413,15 +459,24 @@ class Cursor {
     f: FuentesCert,
     size = 10.5,
   ): void {
-    this.asegurar(30);
+    const dos = l2 !== null && v2 !== null;
+    const xCol2 = A4[0] / 2;
+    const lineas1 = partir(v1, f.semibold, size, dos ? xCol2 - MX - 12 : MX2 - MX);
+    const lineas2 = dos ? partir(v2, f.semibold, size, MX2 - xCol2) : [];
+    const interlinea = size * 1.3;
+    const extra = (Math.max(lineas1.length, lineas2.length) - 1) * interlinea;
+    this.asegurar(30 + extra);
+    // Tras un salto de página la etiqueta (12 pt sobre el valor) no puede pasar el tope.
+    this.y = Math.min(this.y, TOPE - 21);
     this.texto(l1, MX, this.y + 12, 8.5, f.regular, GRIS);
-    this.texto(v1, MX, this.y, size, f.semibold, TEXTO);
-    if (l2 !== null && v2 !== null) {
-      const x = A4[0] / 2;
-      this.texto(l2, x, this.y + 12, 8.5, f.regular, GRIS);
-      this.texto(v2, x, this.y, size, f.semibold, TEXTO);
+    lineas1.forEach((l, i) => this.texto(l, MX, this.y - i * interlinea, size, f.semibold, TEXTO));
+    if (dos) {
+      this.texto(l2, xCol2, this.y + 12, 8.5, f.regular, GRIS);
+      lineas2.forEach((l, i) =>
+        this.texto(l, xCol2, this.y - i * interlinea, size, f.semibold, TEXTO),
+      );
     }
-    this.y -= 30;
+    this.y -= 30 + extra;
   }
 }
 
@@ -451,11 +506,15 @@ function rectRedondeado(
   page.drawSvgPath(path, { x, y: y + h, ...opts });
 }
 
-/** Parte un texto en líneas que caben en `ancho` pt. */
+/**
+ * Parte un texto en líneas que caben en `ancho` pt. Una palabra que no cabe
+ * sola (token sin espacios) se corta por caracteres.
+ */
 function partir(t: string, font: PDFFont, size: number, ancho: number): string[] {
   const lineas: string[] = [];
   let actual = '';
-  for (const palabra of t.split(' ')) {
+  const palabras = t.split(' ').flatMap((p) => cortarPalabra(p, font, size, ancho));
+  for (const palabra of palabras) {
     const prueba = actual ? `${actual} ${palabra}` : palabra;
     if (font.widthOfTextAtSize(prueba, size) > ancho && actual) {
       lineas.push(actual);
@@ -470,16 +529,38 @@ function partir(t: string, font: PDFFont, size: number, ancho: number): string[]
   return lineas;
 }
 
+function cortarPalabra(p: string, font: PDFFont, size: number, ancho: number): string[] {
+  if (font.widthOfTextAtSize(p, size) <= ancho) {
+    return [p];
+  }
+  const trozos: string[] = [];
+  let actual = '';
+  for (const ch of p) {
+    if (actual && font.widthOfTextAtSize(actual + ch, size) > ancho) {
+      trozos.push(actual);
+      actual = ch;
+    } else {
+      actual += ch;
+    }
+  }
+  if (actual) {
+    trozos.push(actual);
+  }
+  return trozos;
+}
+
 /** Pie de todas las páginas: «BOO-X · vN[ · Estimado]» y «Página X de Y». */
 function dibujarPies(
   doc: PDFDocument,
   f: FuentesCert,
   viaje: DatosViajeCertificado,
   estimado: boolean,
+  cajas: CajaDibujada[],
 ): void {
   const paginas = doc.getPages();
   const izq = `${viaje.trackingCode} · v${viaje.version?.numero ?? 1}`;
   paginas.forEach((p, i) => {
+    cajas.push({ pagina: i, x: MX, y: 35.75, w: MX2 - MX, h: 0.5 });
     p.drawLine({
       start: { x: MX, y: 36 },
       end: { x: MX2, y: 36 },
