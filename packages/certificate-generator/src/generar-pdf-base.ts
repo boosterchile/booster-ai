@@ -360,7 +360,8 @@ export async function generarPdfConCajas(
   }
 
   // Verificación.
-  c.asegurar(50);
+  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
+  c.asegurar(50 + (lineasUrl.length - 1) * 11);
   c.y -= 6;
   c.texto(
     'Este documento está firmado digitalmente con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.',
@@ -370,7 +371,6 @@ export async function generarPdfConCajas(
     f.regular,
     GRIS,
   );
-  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
   lineasUrl.forEach((l, i) => c.texto(l, MX, c.y - 13 - i * 11, 8.5, f.semibold, AZUL));
   c.texto(
     'Documento emitido por Booster Chile SpA. Cualquier alteración invalida la firma.',
@@ -569,7 +569,8 @@ class Cursor {
       this.page = this.doc.addPage(A4);
       this.pagina += 1;
       registrarPagina(this.page, this.pagina, this.registro);
-      this.y = TOPE;
+      // El primer texto de la página nueva cuelga bajo el tope (alto ≤ 11 pt).
+      this.y = TOPE - 11;
     }
     if (titulo) {
       this.tituloPendiente = null;
