@@ -1,7 +1,9 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { NombreMiembro } from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
 import { ApiError, api } from '../lib/api-client.js';
 import {
   MENSAJE_ERROR_GENERICO,
@@ -26,12 +28,13 @@ import {
 interface Miembro {
   membership_id: string;
   user_id: string;
-  full_name: string;
+  full_name: string | null;
   email: string;
   rut: string | null;
   rol: string;
   estado: string;
   invitado_en: string;
+  pendiente_aceptar?: boolean;
 }
 
 interface AltaResponse {
@@ -148,17 +151,23 @@ function EquipoPage() {
             {miembros.map((m) => (
               <li key={m.membership_id} className="flex items-center justify-between gap-4 p-4">
                 <div className="min-w-0">
-                  <div className="font-medium text-neutral-900">{m.full_name}</div>
-                  <div className="text-neutral-500 text-sm">
-                    {m.email}
-                    {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}
-                  </div>
+                  {m.estado === 'activa' ? (
+                    <>
+                      <NombreMiembro nombre={m.full_name} pendiente={false} />
+                      <div className="text-neutral-500 text-sm">
+                        {m.email}
+                        {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <NombreMiembro nombre={m.full_name} pendiente rut={m.rut} />
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="text-neutral-600 text-sm">{ROL_LABEL[m.rol] ?? m.rol}</span>
                   {m.estado === 'pendiente_invitacion' ? (
                     <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700 text-xs">
-                      Pendiente de activar
+                      {m.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente de activar'}
                     </span>
                   ) : (
                     <span className="rounded bg-success-50 px-2 py-0.5 font-medium text-success-700 text-xs">
@@ -200,30 +209,7 @@ function CodigoEntregable({
   }
 
   if (!codigo) {
-    const yaActiva = alta.vinculo === 'cuenta_activa' || alta.estado === 'activa';
-    return (
-      <div className="mt-6 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="font-semibold text-amber-900">
-              {yaActiva ? `${alta.nombre} ya tiene cuenta` : `${alta.nombre} ya tiene un código`}
-            </div>
-            <p className="mt-1 text-amber-800 text-sm">
-              {yaActiva
-                ? 'Quedó en tu empresa. Entra con su RUT y su clave. No hay código nuevo: su clave no cambia.'
-                : 'No se reemplazó. Cuando lo use en Activar cuenta, también quedará en tu empresa.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onCerrar}
-            className="cursor-pointer text-amber-700 text-xs underline hover:text-amber-900"
-          >
-            Ocultar
-          </button>
-        </div>
-      </div>
-    );
+    return <SolicitudRegistrada volverLabel="Volver a Equipo" onVolver={onCerrar} />;
   }
 
   return (

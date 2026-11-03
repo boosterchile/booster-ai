@@ -18,7 +18,7 @@ import { generateActivationPin, hashActivationPin } from '../services/activation
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
-import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
+import { VINCULO_PERSONA_EXISTENTE, type VinculoPersona } from '../services/vinculo-persona.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
@@ -269,7 +269,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
     const existente = existingUsers[0];
     if (existente) {
       userId = existente.id;
-      vinculo = clasificarVinculoPersona(existente);
+      vinculo = VINCULO_PERSONA_EXISTENTE;
     } else {
       vinculo = 'nueva';
       const codigo = generateActivationPin();
@@ -312,17 +312,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
       return c.json({ error: 'already_member', membership_id: existingMembership[0].id }, 409);
     }
 
-    if (vinculo === 'provisoria_sin_codigo') {
-      const codigo = generateActivationPin();
-      codigoEmitido = codigo;
-      await opts.db
-        .update(users)
-        .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-        .where(eq(users.id, userId));
-    }
-
-    // Cuenta viva: la membresía nace activa. No hay código que reescriba su clave.
-    const yaActiva = vinculo === 'cuenta_activa';
+    // Persona existente: sin código nuevo. Toda invitación nace pendiente.
     const [membership] = await opts.db
       .insert(memberships)
       .values({
@@ -330,10 +320,10 @@ export function createAdminStakeholderOrgsRoutes(opts: {
         empresaId: null,
         organizacionStakeholderId: orgId,
         role: STAKEHOLDER_MEMBERSHIP_ROLE,
-        status: yaActiva ? 'activa' : 'pendiente_invitacion',
+        status: 'pendiente_invitacion',
         invitedByUserId: auth.adminUserId,
         invitedAt: new Date(),
-        joinedAt: yaActiva ? new Date() : null,
+        joinedAt: null,
       })
       .returning({ id: memberships.id });
     if (!membership) {
@@ -353,12 +343,11 @@ export function createAdminStakeholderOrgsRoutes(opts: {
     getBusinessCounter('alta_invitacion_stakeholder_total').add(1, { resultado: 'issued' });
 
     if (codigoEmitido !== null && opts.emailSender) {
-      // Persona provisoria: su correo registrado, no el que tipeó el admin.
       await enviarCorreoActivacionCuenta({
         sender: opts.emailSender,
         logger: opts.logger,
-        email: existente?.email ?? body.email.toLowerCase(),
-        nombre: existente?.fullName ?? body.full_name,
+        email: body.email.toLowerCase(),
+        nombre: body.full_name,
         rut,
         codigo: codigoEmitido,
         empresa: org.nombreLegal,
@@ -377,7 +366,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
         rut,
         email: body.email,
         full_name: body.full_name,
-        status: yaActiva ? 'activa' : 'pendiente_invitacion',
+        status: 'pendiente_invitacion',
         codigo_activacion: codigoEmitido,
         expira_en: expiraEn,
         vinculo,
