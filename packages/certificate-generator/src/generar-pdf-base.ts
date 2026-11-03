@@ -424,11 +424,21 @@ class Cursor {
   constructor(private readonly doc: PDFDocument) {
     this.page = doc.addPage(A4);
   }
+  /** Título de sección aún no dibujado: viaja con el primer bloque que lo sigue. */
+  private tituloPendiente: { t: string; f: FuentesCert } | null = null;
   asegurar(alto: number): void {
-    if (this.y - alto < PISO) {
+    const titulo = this.tituloPendiente;
+    if (this.y - alto - (titulo ? 30 : 0) < PISO) {
       this.page = this.doc.addPage(A4);
       this.pagina += 1;
       this.y = TOPE;
+    }
+    if (titulo) {
+      this.tituloPendiente = null;
+      // El alto del título (11 pt) va bajo el tope, no sobre él.
+      this.y = Math.min(this.y, TOPE - 11);
+      this.texto(titulo.t, MX, this.y, 11, titulo.f.bold, AZUL);
+      this.y -= 30;
     }
   }
   caja(x: number, y: number, w: number, h: number): void {
@@ -441,10 +451,10 @@ class Cursor {
     this.texto(t, MX2 - font.widthOfTextAtSize(t, size), y, size, font, color);
   }
   seccion(t: string, f: FuentesCert): void {
-    // El título no queda huérfano: exige espacio para él y una fila.
-    this.asegurar(70);
-    this.texto(t, MX, this.y, 11, f.bold, AZUL);
-    this.y -= 30;
+    // El título no queda huérfano: se dibuja en el próximo `asegurar`, junto
+    // con el bloque que lo sigue (QA #873: «Trayecto» quedaba solo al pie de
+    // la página 1 cuando el Origen largo saltaba a la 2).
+    this.tituloPendiente = { t, f };
   }
   /**
    * Una fila con uno o dos pares label/valor (8,5 gris / valor semibold). Los

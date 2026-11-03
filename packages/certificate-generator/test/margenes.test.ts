@@ -48,6 +48,24 @@ describe('valores largos', () => {
     }
   });
 
+  it.each(Object.keys(CASOS))('caso %s: ningún título de sección queda huérfano', async (caso) => {
+    const { bytes } = await generarPdfConCajas(CASOS[caso] as (typeof CASOS)['normal']);
+    const items = await itemsPorPagina(bytes);
+    for (const [titulo, siguiente] of [
+      ['Metodología', 'Estos resultados'],
+      ['Trayecto', 'Origen'],
+      ['Partes', 'Generador de carga'],
+    ] as const) {
+      // Items en orden de dibujo: el bloque que sigue al título es el primero tras él.
+      const ia = items.findIndex((i) => i.str === titulo);
+      const b = items
+        .slice(ia + 1)
+        .find((i) => i.str === siguiente || i.str.startsWith(`${siguiente} `));
+      expect(ia, titulo).toBeGreaterThanOrEqual(0);
+      expect(items[ia]?.pagina, `${titulo} y ${siguiente}`).toBe(b?.pagina);
+    }
+  });
+
   it('un tipo de carga extremo no pisa la columna «Peso»', async () => {
     const { bytes } = await generarPdfConCajas(CASOS.raro as (typeof CASOS)['normal']);
     const items = await itemsPorPagina(bytes);
