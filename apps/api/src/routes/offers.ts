@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
 import { offers, trips } from '../db/schema.js';
+import { ROLES_ACEPTAR_OFERTA, exigirRol } from '../lib/exigir-rol.js';
 import { zValidator } from '../lib/validation.js';
 import {
   OfferForbiddenForPreviewError,
@@ -125,6 +126,10 @@ export function createOfferRoutes(opts: {
     }
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
+    }
+    const sinRol = exigirRol(c, active.membership.role, ROLES_ACEPTAR_OFERTA);
+    if (sinRol) {
+      return sinRol;
     }
 
     const offerId = c.req.param('id');
@@ -268,6 +273,10 @@ export function createOfferRoutes(opts: {
     }
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
+    }
+    const sinRol = exigirRol(c, active.membership.role, ROLES_ACEPTAR_OFERTA);
+    if (sinRol) {
+      return sinRol;
     }
 
     const offerId = c.req.param('id');
