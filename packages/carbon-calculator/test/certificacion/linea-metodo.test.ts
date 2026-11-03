@@ -33,7 +33,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         coveragePct: 98.2,
         glecVersion: 'v3.0',
       }),
-    ).toBe('Combustible medido por CAN bus del vehículo · Ruta GPS del vehículo (cobertura 98 %)');
+    ).toBe('Combustible medido por CAN bus del vehículo · Ruta GPS del vehículo (cobertura 98%)');
   });
 
   it('secundario + teltonika_gps → distancia medida por GPS del vehículo, consumo modelado', () => {
@@ -45,7 +45,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         glecVersion: 'v3.0',
       }),
     ).toBe(
-      'Distancia medida por GPS del vehículo (cobertura 91 %) · Consumo modelado según GLEC v3.0',
+      'Distancia medida por GPS del vehículo (cobertura 91%) · Consumo modelado según GLEC v3.0',
     );
   });
 
@@ -58,7 +58,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         glecVersion: 'v3.0',
       }),
     ).toBe(
-      'Distancia medida por GPS del celular del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
+      'Distancia medida por GPS del celular del conductor (cobertura 100%) · Consumo modelado según GLEC v3.0',
     );
   });
 
@@ -104,7 +104,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
       coveragePct: 79.99,
       glecVersion: 'v3.0',
     });
-    expect(linea).toContain('(cobertura 79 %)');
+    expect(linea).toContain('(cobertura 79%)');
   });
 
   it('coveragePct fuera de [0, 100] lanza (misma validación que la matriz)', () => {

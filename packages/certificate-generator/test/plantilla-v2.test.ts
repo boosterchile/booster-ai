@@ -67,6 +67,9 @@ async function texto(metricas: DatosMetricasCertificado, v: DatosViajeCertificad
 /** El sello lleva tracking: pdfjs puede devolver «E S T I M A D O». */
 const SELLO = /E ?S ?T ?I ?M ?A ?D ?O/;
 const ISO = 'Estos resultados han sido establecidos de acuerdo con ISO 14083:2023.';
+import { suitePdf } from './pdf-suite.js';
+
+suitePdf();
 
 describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
   it('título único, las tres señales, pie Estimado y versión reemplazada', async () => {
@@ -93,6 +96,13 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
     );
     expect(todo.split(ISO).length - 1).toBeGreaterThanOrEqual(2);
     expect(todo).toContain('kg CO\u2082e');
+    // QA #873: etiquetas de Metodología fijadas (mutantes «Versión GLEC», «Fuente factores», «Factor»).
+    expect(todo).toMatch(/Metodología GLEC\s+v3\.0/);
+    expect(todo).toMatch(/Factor de emisión usado\s+3,24 kg CO\u2082e \/ unidad/);
+    expect(todo).toMatch(/Fuente de factores\s+GLEC v2\.0 \(2019\), Tabla 32/);
+    expect(todo).not.toContain('Versión GLEC');
+    expect(todo).not.toContain('Fuente factores');
+    expect(todo).toContain('cobertura 60%');
     expect(todo).toContain('429,25');
     expect(todo).toContain('(± 21,46 kg)');
   });

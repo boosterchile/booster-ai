@@ -7,6 +7,9 @@ import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import { embeberFuentes } from '../src/fuentes.js';
 import { TITULO_CERT } from '../src/render-helpers.js';
+import { suitePdf } from './pdf-suite.js';
+
+suitePdf();
 
 describe('header v2 — título + sello en una línea', () => {
   it('título 20 pt + 14 pt + sello (ESTIMADO 9,5 pt, tracking 1,5, padding 8) ≤ ancho útil', async () => {

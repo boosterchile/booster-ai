@@ -35,7 +35,8 @@ export interface LineaMetodoInput {
 export function lineaMetodoCertificacion(input: LineaMetodoInput): string {
   // Valida coveragePct (lanza fuera de [0, 100]) y decide el nivel.
   const nivel = derivarNivelCertificacion(input);
-  const cobertura = `cobertura ${Math.floor(input.coveragePct)} %`;
+  // Mismo formato que el badge del certificado («60%», ux.md §Badge).
+  const cobertura = `cobertura ${Math.floor(input.coveragePct)}%`;
 
   if (nivel === 'primario_verificable') {
     return `Combustible medido por CAN bus del vehículo · Ruta GPS del vehículo (${cobertura})`;
