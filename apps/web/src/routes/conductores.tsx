@@ -26,7 +26,14 @@ import { useForm } from 'react-hook-form';
 import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
+import {
+  CODIGO_REENVIADO,
+  NombreMiembro,
+  TELEFONO_PENDIENTE,
+  TEXTO_PENDIENTE,
+} from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -68,11 +75,12 @@ const STATUS_COLORS: Record<DriverStatus, string> = {
 
 interface ConductorUser {
   id: string;
-  full_name: string;
+  full_name: string | null;
   rut: string;
   email: string;
   phone: string | null;
   is_pending: boolean;
+  pendiente_aceptar?: boolean;
 }
 
 interface Conductor {
@@ -211,11 +219,11 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       }
                     >
                       <Td>
-                        <div className="font-medium text-neutral-900">{c.user.full_name}</div>
+                        <NombreMiembro nombre={c.user.full_name} pendiente={c.user.is_pending} />
                         {c.user.is_pending && (
                           <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                             <Clock className="h-3 w-3" aria-hidden />
-                            Pendiente login
+                            {c.user.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente login'}
                           </div>
                         )}
                         {c.is_extranjero && (
@@ -268,8 +276,14 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-medium text-neutral-900">{c.user.full_name}</div>
-                      <div className="text-neutral-500 text-xs">{c.user.rut}</div>
+                      {c.user.is_pending ? (
+                        <NombreMiembro nombre={c.user.full_name} pendiente rut={c.user.rut} />
+                      ) : (
+                        <>
+                          <NombreMiembro nombre={c.user.full_name} pendiente={false} />
+                          <div className="text-neutral-500 text-xs">{c.user.rut}</div>
+                        </>
+                      )}
                     </div>
                     <span
                       className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[c.status]}`}
@@ -288,7 +302,7 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       {c.user.is_pending && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                           <Clock className="h-3 w-3" aria-hidden />
-                          Pendiente login
+                          {c.user.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente login'}
                         </span>
                       )}
                       {c.is_extranjero && (
@@ -451,6 +465,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   // 2 memberships: dueño + conductor). Pre-fillea form con datos del me y
   // skipea la card de PIN al success (el dueño ya tiene email/password).
   const [selfMode, setSelfMode] = useState(false);
+  const [solicitud, setSolicitud] = useState(false);
   const [activationResult, setActivationResult] = useState<{
     pin: string;
     driverName: string;
@@ -486,8 +501,11 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           driverRut: variables.rut.trim(),
           reactivado: res.reactivado === true,
         });
-      } else {
+      } else if (selfMode) {
         void navigate({ to: '/app/conductores' });
+      } else {
+        // RUT que ya existe: la misma respuesta para cualquier persona.
+        setSolicitud(true);
       }
     },
     onError: (err: Error) => {
@@ -565,6 +583,17 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     // él la plataforma no puede comunicarse con el conductor (5 de 6 en
     // producción terminaron con un `@boosterchile.invalid`).
     createM.mutate({ ...values, rut: rutResult.data, email: values.email.trim() });
+  }
+
+  if (solicitud) {
+    return (
+      <Layout me={me} title="Nuevo conductor">
+        <SolicitudRegistrada
+          volverLabel="Volver a Conductores"
+          onVolver={() => void navigate({ to: '/app/conductores' })}
+        />
+      </Layout>
+    );
   }
 
   if (activationResult) {
@@ -866,6 +895,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       return res.conductor;
     },
   });
+  const pendiente = conductorQ.data?.user.is_pending === true;
 
   const updateM = useMutation({
     mutationFn: async (input: EditConductorForm) => {
@@ -981,7 +1011,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       status: conductorQ.data.status,
     });
     const actual = conductorQ.data.user.email;
-    setEmailContacto(esEmailDeRelleno(actual) ? '' : actual);
+    setEmailContacto(esEmailDeRelleno(actual) || actual.includes('***') ? '' : actual);
     setTelefonoContacto(conductorQ.data.user.phone ?? '');
   }, [conductorQ.data, reset]);
 
@@ -1012,28 +1042,39 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-            {conductorQ.data?.user.full_name ?? 'Conductor'}
+            {conductorQ.data?.user.is_pending
+              ? TEXTO_PENDIENTE
+              : (conductorQ.data?.user.full_name ?? 'Conductor')}
           </h1>
         </div>
         {canDelete && conductorQ.data && conductorQ.data.deleted_at == null && (
           <div className="flex items-center gap-2">
             {confirmDelete ? (
               <>
-                <span className="text-neutral-700 text-sm">¿Retirar a este conductor?</span>
+                <span className="text-neutral-700 text-sm">
+                  {pendiente ? (
+                    <>
+                      <strong>¿Cancelar esta invitación?</strong> La persona ya no podrá unirse con
+                      ella. Puedes invitarla de nuevo cuando quieras.
+                    </>
+                  ) : (
+                    '¿Retirar a este conductor?'
+                  )}
+                </span>
                 <button
                   type="button"
                   onClick={() => deleteM.mutate()}
                   disabled={deleteM.isPending}
                   className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                 >
-                  Sí, retirar
+                  {pendiente ? 'Cancelar invitación' : 'Sí, retirar'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(false)}
                   className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
                 >
-                  Cancelar
+                  {pendiente ? 'Volver' : 'Cancelar'}
                 </button>
               </>
             ) : (
@@ -1063,9 +1104,12 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             <div>
               <span className="text-neutral-500">Email:</span> {conductorQ.data.user.email}
             </div>
-            {conductorQ.data.user.phone && (
+            {(conductorQ.data.user.phone || pendiente) && (
               <div>
-                <span className="text-neutral-500">Teléfono:</span> {conductorQ.data.user.phone}
+                <span className="text-neutral-500">Teléfono:</span>{' '}
+                {conductorQ.data.user.phone ?? (
+                  <span className="text-neutral-500">{TELEFONO_PENDIENTE}</span>
+                )}
               </div>
             )}
             {conductorQ.data.user.is_pending && (
@@ -1082,7 +1126,10 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             )}
           </div>
 
-          <section className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+          <section
+            hidden={conductorQ.data.user.pendiente_aceptar}
+            className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+          >
             <div>
               <h2 className="font-semibold text-neutral-900">Email de contacto</h2>
               <p className="mt-1 text-neutral-600 text-sm">
@@ -1136,15 +1183,18 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             {pinReenviado && (
               <ActivationPinCard
                 pin={pinReenviado}
-                driverName={conductorQ.data.user.full_name}
-                driverRut={conductorQ.data.user.rut ?? ''}
-                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name}`}
+                driverName={conductorQ.data.user.full_name ?? 'esta persona'}
+                driverRut={pendiente ? '' : (conductorQ.data.user.rut ?? '')}
+                titulo={CODIGO_REENVIADO}
                 onContinue={() => setPinReenviado(null)}
               />
             )}
           </section>
 
-          <section className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+          <section
+            hidden={conductorQ.data.user.pendiente_aceptar}
+            className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+          >
             <div>
               <h2 className="font-semibold text-neutral-900">Teléfono (WhatsApp)</h2>
               <p className="mt-1 text-neutral-600 text-sm">
@@ -1190,9 +1240,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             {pinTelefono && (
               <ActivationPinCard
                 pin={pinTelefono}
-                driverName={conductorQ.data.user.full_name}
-                driverRut={conductorQ.data.user.rut ?? ''}
-                titulo={`Invitación reenviada a ${conductorQ.data.user.full_name}`}
+                driverName={conductorQ.data.user.full_name ?? 'esta persona'}
+                driverRut={pendiente ? '' : (conductorQ.data.user.rut ?? '')}
+                titulo={CODIGO_REENVIADO}
                 onContinue={() => setPinTelefono(null)}
               />
             )}
@@ -1362,7 +1412,7 @@ function ActivationPinCard({
   // Enlace ABSOLUTO y con el RUT: la empresa lo copia y se lo manda al
   // conductor. Un path relativo (que es lo que se mostraba antes, como texto
   // plano y sin dominio) no se puede pegar en un WhatsApp.
-  const enlaceActivacion = `${window.location.origin}/login/conductor?rut=${encodeURIComponent(driverRut)}`;
+  const enlaceActivacion = `${window.location.origin}/login/conductor${driverRut ? `?rut=${encodeURIComponent(driverRut)}` : ''}`;
 
   async function handleCopy() {
     try {
@@ -1394,8 +1444,12 @@ function ActivationPinCard({
               {titulo ?? `${driverName} fue creado correctamente`}
             </h2>
             <p className="mt-1 text-neutral-700 text-sm">
-              RUT: <span className="font-mono">{driverRut}</span>. Mándale el enlace y el PIN de
-              abajo: con eso activa su cuenta y crea su propia clave.
+              {driverRut && (
+                <>
+                  RUT: <span className="font-mono">{driverRut}</span>.{' '}
+                </>
+              )}
+              Mándale el enlace y el PIN de abajo: con eso activa su cuenta y crea su propia clave.
             </p>
             <div className="mt-3 rounded-md border border-neutral-200 bg-white p-3">
               <p className="text-neutral-500 text-xs">Enlace de activación</p>
