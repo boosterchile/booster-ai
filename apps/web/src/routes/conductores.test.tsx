@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { esperarPendientesLimpios } from '../components/NombreMiembro.test-helper.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -130,6 +131,49 @@ describe('ConductoresListRoute', () => {
     expect(screen.getAllByText('11.111.111-1')[0]).toBeInTheDocument();
     expect(screen.getAllByText('A5')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Activo')[0]).toBeInTheDocument();
+  });
+
+  it('conductor de RUT existente → «Pendiente de aceptar», sin Reenviar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      conductores: [
+        buildConductor({
+          user: {
+            id: 'u1',
+            full_name: 'Juan Pérez',
+            rut: '*****111-1',
+            email: 'j***@example.com',
+            phone: null,
+            is_pending: true,
+            pendiente_aceptar: true,
+          },
+        }),
+      ],
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<ConductoresListRoute />);
+    expect((await screen.findAllByText('Pendiente de aceptar'))[0]).toBeInTheDocument();
+    expect(screen.queryByText('Pendiente login')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reenviar/i })).not.toBeInTheDocument();
+  });
+
+  it('un pendiente sin nombre muestra «Invitación pendiente», nunca vacío', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      conductores: [
+        buildConductor({
+          user: {
+            id: 'u1',
+            full_name: null,
+            rut: '*****111-1',
+            email: 'j***@example.com',
+            phone: null,
+            is_pending: true,
+          },
+        }),
+      ],
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<ConductoresListRoute />);
+    await esperarPendientesLimpios();
   });
 
   it('conductor con user pendiente → muestra badge "Pendiente login"', async () => {
@@ -315,6 +359,25 @@ describe('ConductoresNuevoRoute', () => {
     await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
   }
 
+  it('alta de RUT existente muestra la solicitud registrada, sin PIN', async () => {
+    vi.spyOn(api, 'post').mockResolvedValueOnce({ conductor: buildConductor() });
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(await screen.findByText('Solicitud registrada')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora, avísale tú.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Volver a Conductores' })).toBeInTheDocument();
+    expect(screen.queryByText(/PIN de activación/)).not.toBeInTheDocument();
+    for (const viejo of [/ya tiene cuenta/i, /ya tiene un código/i, /quedará en/i]) {
+      expect(screen.queryByText(viejo)).not.toBeInTheDocument();
+    }
+  });
+
   it('reactivado con PIN → muestra el PIN igual que un alta', async () => {
     vi.spyOn(api, 'post').mockResolvedValueOnce({
       conductor: buildConductor(),
@@ -371,6 +434,55 @@ describe('ConductoresNuevoRoute', () => {
 });
 
 describe('ConductoresDetalleRoute', () => {
+  it('ficha pendiente de aceptar: sin formularios de contacto', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: null,
+          rut: '*****111-1',
+          email: 'c***@example.com',
+          phone: null,
+          is_pending: true,
+          pendiente_aceptar: true,
+        },
+      }),
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(
+      await screen.findByRole('heading', { name: 'Invitación pendiente' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Email de contacto/ })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: /Teléfono \(WhatsApp\)/ })).toBeNull();
+  });
+
+  it('ficha de un pendiente: textos neutros en nombre, teléfono y cancelación', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: null,
+          rut: '*****111-1',
+          email: 'c***@example.com',
+          phone: null,
+          is_pending: true,
+        },
+      }),
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(
+      await screen.findByRole('heading', { name: 'Invitación pendiente' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Se muestra cuando acepte')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Retirar/ }));
+    expect(screen.getByText('¿Cancelar esta invitación?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancelar invitación' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Volver' })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/null|undefined/);
+  });
+
   it('renderiza datos del conductor + form de edición', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({ conductor: buildConductor() });
     providedContext = { kind: 'onboarded', me: makeMe('admin') };
@@ -421,6 +533,10 @@ describe('ConductoresDetalleRoute', () => {
       }),
     );
     expect(await screen.findByText('482915')).toBeInTheDocument();
+    expect(
+      screen.getByText('Listo, generamos un código nuevo. Entrégaselo a la persona.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Camila Rojas/)).toBeNull();
   });
 
   it('email vacío o sin TLD: el reenvío queda deshabilitado y avisa en la ficha', async () => {

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { esperarPendientesLimpios } from '../components/NombreMiembro.test-helper.js';
 import { ApiError, api } from '../lib/api-client.js';
 
 /**
@@ -48,9 +49,9 @@ const MIEMBROS = [
   {
     membership_id: 'm2',
     user_id: 'u2',
-    full_name: 'Marta Rojas',
-    email: 'pendiente@empresa.cl',
-    rut: '17111222-3',
+    full_name: null,
+    email: 'p***@empresa.cl',
+    rut: '*****222-3',
     rol: 'despachador',
     estado: 'pendiente_invitacion',
     invitado_en: '2026-07-30T10:00:00Z',
@@ -81,6 +82,18 @@ describe('Equipo — listado', () => {
     // quién le falta entregar (o reenviar) el código.
     expect(screen.getByText('Pendiente de activar')).toBeInTheDocument();
     expect(screen.getByText('Activa')).toBeInTheDocument();
+  });
+
+  it('un miembro pendiente se muestra sin nombre y con su estado', async () => {
+    const pendiente = { ...MIEMBROS[1], pendiente_aceptar: true };
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: [pendiente] });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByText('Pendiente de aceptar')).toBeInTheDocument();
+    await esperarPendientesLimpios();
+    expect(screen.getByText('*****222-3')).toBeInTheDocument();
+    expect(screen.queryByText('Marta Rojas')).toBeNull();
   });
 
   it('con equipo vacío explica qué hacer', async () => {
@@ -157,23 +170,31 @@ describe('Equipo — alta', () => {
     ).toBeInTheDocument();
   });
 
-  it('si la persona ya tiene cuenta, no muestra un código nuevo', async () => {
+  it('alta de RUT existente muestra la solicitud registrada, sin código ni textos anteriores', async () => {
     vi.spyOn(api, 'post').mockResolvedValue({
       ok: true,
       user_id: 'u9',
       membership_id: 'm9',
       rol: 'admin',
-      estado: 'activa',
+      estado: 'pendiente_invitacion',
       codigo_activacion: null,
       expira_en: null,
-      vinculo: 'cuenta_activa',
+      vinculo: 'codigo_vigente',
     } as never);
 
     await abrirFormYCompletar();
     fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
 
-    expect(await screen.findByText(/ya tiene cuenta/i)).toBeInTheDocument();
-    expect(screen.getByText(/su clave no cambia/i)).toBeInTheDocument();
+    expect(await screen.findByText('Solicitud registrada')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora, avísale tú.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Volver a Equipo' })).toBeInTheDocument();
+    for (const viejo of [/ya tiene cuenta/i, /ya tiene un código/i, /quedará en/i]) {
+      expect(screen.queryByText(viejo)).not.toBeInTheDocument();
+    }
     expect(screen.queryByRole('button', { name: /Copiar código/i })).not.toBeInTheDocument();
   });
 
