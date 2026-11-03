@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 export const ROLES_COMERCIALES = ['dueno', 'admin'] as const;
 export const ROLES_ACEPTAR_OFERTA = ['dueno', 'admin', 'despachador'] as const;
+export const ROLES_CONFIRMAR_RECEPCION = ['dueno', 'admin', 'despachador'] as const;
 
 /**
  * Devuelve un 403 `forbidden_role` si el rol de la membresía activa no está

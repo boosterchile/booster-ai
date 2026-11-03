@@ -268,14 +268,14 @@ describe('pago y disputa — permisos por rol', () => {
 });
 
 describe('confirmar recepción — permisos por rol', () => {
-  it.each(['visualizador', 'conductor', 'despachador'])('%s → 403 forbidden_role', async (role) => {
+  it.each(['visualizador', 'conductor'])('%s → 403 forbidden_role', async (role) => {
     const res = await confirmar(setup(role));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
     expect(confirmarEntregaViaje).not.toHaveBeenCalled();
   });
 
-  it.each(['dueno', 'admin'])('%s → confirma la recepción', async (role) => {
+  it.each(['dueno', 'admin', 'despachador'])('%s → confirma la recepción', async (role) => {
     confirmarEntregaViaje.mockResolvedValue({
       ok: true,
       alreadyDelivered: false,
@@ -283,5 +283,49 @@ describe('confirmar recepción — permisos por rol', () => {
     });
     expect((await confirmar(setup(role))).status).toBe(200);
     expect(confirmarEntregaViaje).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['visualizador', 'conductor'])(
+    '%s con mandato encendido → 403 y no registra la recepción',
+    async (role) => {
+      appConfig.MANDATO_COBRO_ACTIVATED = true;
+      const res = await confirmar(setup(role));
+      expect(res.status).toBe(403);
+      expect(confirmarEntregaViaje).not.toHaveBeenCalled();
+      expect(registrarRecepcionConforme).not.toHaveBeenCalled();
+    },
+  );
+
+  it('despachador con mandato encendido → registra la recepción sin ver el pago', async () => {
+    appConfig.MANDATO_COBRO_ACTIVATED = true;
+    confirmarEntregaViaje.mockResolvedValue({
+      ok: true,
+      alreadyDelivered: false,
+      deliveredAt: new Date('2026-10-10T12:00:00Z'),
+    });
+    registrarRecepcionConforme.mockResolvedValue({ ok: true, pago: PAGO });
+    const res = await confirmar(setup('despachador'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body.pago).toBeUndefined();
+    expect(registrarRecepcionConforme).toHaveBeenCalledTimes(1);
+    expect(registrarRecepcionConforme.mock.calls[0]?.[1]).toMatchObject({
+      registradoPor: 'user-1',
+    });
+  });
+
+  it.each(['dueno', 'admin'])('%s con mandato encendido → ve el pago', async (role) => {
+    appConfig.MANDATO_COBRO_ACTIVATED = true;
+    confirmarEntregaViaje.mockResolvedValue({
+      ok: true,
+      alreadyDelivered: false,
+      deliveredAt: new Date('2026-10-10T12:00:00Z'),
+    });
+    registrarRecepcionConforme.mockResolvedValue({ ok: true, pago: PAGO });
+    const body = (await (await confirmar(setup(role))).json()) as {
+      pago: Record<string, unknown>;
+    };
+    expect(body.pago.cobro).toEqual(PAGO.cobro);
   });
 });
