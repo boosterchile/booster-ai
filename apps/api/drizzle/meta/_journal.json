@@ -498,6 +498,13 @@
       "when": 1780876800070,
       "tag": "0070_telemetria_gps_valido",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1780876800080,
+      "tag": "0071_membresias_puede_aceptar_ofertas",
+      "breakpoints": true
     }
   ]
 }
