@@ -62,8 +62,39 @@ variable "memory" {
 }
 
 variable "concurrency" {
-  type    = number
-  default = 80
+  type        = number
+  default     = 80
+  description = <<-EOT
+    SIN EFECTO: no está conectada al recurso (main.tf no la lee). Cloud Run usa
+    su default (80) o el valor que haya quedado vivo. Para fijar la
+    concurrencia usar `max_instance_request_concurrency`. Se deja tal cual
+    porque conectarla cambiaría servicios vivos (telemetry-processor declara 10
+    y corre con 160); unificar es un cambio aparte.
+  EOT
+}
+
+variable "max_instance_request_concurrency" {
+  type        = number
+  default     = null
+  description = <<-EOT
+    Requests simultáneos por instancia (`template.max_instance_request_concurrency`).
+    `null` (default) no lo gestiona: el provider lo trata como computed y no
+    genera diff sobre el valor vivo. Fijarlo en servicios donde cada request
+    ocupa mucha memoria, para que Cloud Run escale en vez de apilar requests
+    en una instancia (ADR-085, document-service).
+  EOT
+}
+
+variable "custom_audiences" {
+  type        = list(string)
+  default     = null
+  description = <<-EOT
+    Audiences extra que Cloud Run IAM acepta en el `aud` del ID token, además de
+    la URL run.app que el servicio ya acepta. `null` (default) no las gestiona.
+    Sirve para que el caller y el servicio compartan un `aud` que Terraform
+    conoce antes de crear el servicio, sin el ciclo de leer `uri` (ADR-085,
+    push de document-service).
+  EOT
 }
 
 variable "timeout_seconds" {

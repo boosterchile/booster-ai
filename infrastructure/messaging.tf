@@ -246,17 +246,45 @@ resource "google_pubsub_subscription" "telemetry_events_processor" {
   }
 }
 
-# F4-4a — Subscription pull dedicada del worker TED (apps/document-service, 4b).
-# Patrón idéntico a telemetry_events_processor: pull, DLQ tras 5 nack/timeout,
-# retry exponencial. El consumer se implementa en 4b; la infra se provisiona
-# acá (4a) para que el endpoint de subida ya pueda publicar al topic.
+# F4-4a — Subscription dedicada del worker TED (apps/document-service, 4b).
+# DLQ tras 5 nack/timeout, retry exponencial. ADR-085: pull o push según
+# var.document_service_push (el mismo flag fija el modo y el mínimo del
+# servicio en compute.tf). Cambiar entre pull y push es un update in-place:
+# los mensajes retenidos se quedan en la suscripción.
 resource "google_pubsub_subscription" "document_uploaded_processor" {
   name    = "document-uploaded-processor-sub"
   topic   = google_pubsub_topic.document_uploaded.name
   project = google_project.booster_ai.project_id
 
-  # 120s: rasterizar PDF + decodificar PDF417 + parsear TED puede tardar.
-  ack_deadline_seconds = 120
+  # En push es lo que Pub/Sub espera la respuesta HTTP, sin extensión de lease.
+  # Igual al timeout del request del servicio (compute.tf,
+  # local.document_service_request_timeout_s): Pub/Sub no reentrega mientras
+  # Cloud Run todavía deja correr el request original. Medido, un decode toma
+  # 0,05–0,2 s y el arranque en frío segundos
+  # (`.specs/document-service-push/verify.md`). En pull el cliente extiende el
+  # lease solo, así que el valor no cambia nada.
+  ack_deadline_seconds = local.document_service_request_timeout_s
+
+  # ADR-085 — push al worker.
+  #   - Endpoint = URL run.app por defecto del servicio (`uri`): con ingress
+  #     INTERNAL_ONLY, el push del mismo proyecto solo entra por una URL run.app
+  #     por defecto. Referenciar el módulo además ordena el apply: la revisión
+  #     nueva (con DOCUMENT_CONSUMER_MODE) queda lista antes de cambiar la
+  #     suscripción.
+  #   - Audience = local.cloud_run_document_url, sin path. El servicio la
+  #     declara como custom audience (Cloud Run IAM la acepta) y el worker la
+  #     exige (PUSH_OIDC_AUDIENCE). Si se omite, Pub/Sub usaría el endpoint con
+  #     path.
+  dynamic "push_config" {
+    for_each = var.document_service_push ? [1] : []
+    content {
+      push_endpoint = "${module.service_document.url}/pubsub/document-uploaded"
+      oidc_token {
+        service_account_email = google_service_account.document_push_invoker.email
+        audience              = local.cloud_run_document_url
+      }
+    }
+  }
 
   # 7 días de retención en el broker para tolerar downtime del worker.
   message_retention_duration = "604800s"
@@ -283,6 +311,70 @@ resource "google_pubsub_subscription" "document_uploaded_processor" {
     managed_by = "terraform"
     consumer   = "document-service"
   }
+
+  # El push no se activa hasta que Pub/Sub pueda firmar el OIDC y el SA pueda
+  # invocar el servicio; si no, los primeros envíos darían 403 y gastarían
+  # intentos de la DLQ.
+  depends_on = [
+    google_service_account_iam_member.pubsub_document_push_token_creator,
+    google_cloud_run_v2_service_iam_member.document_push_invoker,
+  ]
+}
+
+# ADR-085 — SA con el que Pub/Sub firma el OIDC del push de
+# `document-uploaded-processor-sub`. Identidad propia y de mínimo privilegio:
+# solo tiene run.invoker sobre booster-ai-document-service, y el worker exige
+# este email (PUSH_CALLER_SA, compute.tf). Se crea aunque el flag esté apagado:
+# la revisión pull también recibe el email para tener el endpoint listo.
+resource "google_service_account" "document_push_invoker" {
+  account_id   = "document-push-invoker"
+  display_name = "Document uploaded push invoker"
+  description  = "SA con el que Pub/Sub firma el OIDC de la push subscription document-uploaded-processor-sub → POST /pubsub/document-uploaded de booster-ai-document-service (ADR-085)."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+# El service agent de Pub/Sub emite los tokens OIDC como `document_push_invoker`.
+# Rol acotado a getOpenIdToken (no el Token Creator completo de safety-push, que
+# también da access tokens y signBlob/signJwt). Hoy roles/pubsub.serviceAgent
+# del proyecto ya trae getOpenIdToken; el binding explícito no depende de ese
+# rol administrado por Google.
+resource "google_service_account_iam_member" "pubsub_document_push_token_creator" {
+  service_account_id = google_service_account.document_push_invoker.name
+  role               = "roles/iam.serviceAccountOpenIdTokenCreator"
+  member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+# Único invoker explícito de document-service (public=false). Acotado al
+# servicio, no al proyecto.
+resource "google_cloud_run_v2_service_iam_member" "document_push_invoker" {
+  project  = google_project.booster_ai.project_id
+  location = var.region
+  name     = module.service_document.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.document_push_invoker.email}"
+}
+
+# ADR-085 — reenvío a la DLQ de `document-uploaded-processor-sub`. Pub/Sub solo
+# cuenta intentos y reenvía a `pubsub-dead-letter` si su service agent puede
+# publicar en el topic de la DLQ y confirmar en la suscripción de origen. Sin
+# estos dos bindings (verificado en vivo el 2026-10-21: no existían) un mensaje
+# que falla siempre se reintenta hasta vencer a los 7 días, y en push cada
+# reintento despierta una instancia. El publisher sobre el topic es compartido,
+# pero no habilita el reenvío de otras suscripciones: cada una necesita además
+# su propio subscriber.
+resource "google_pubsub_topic_iam_member" "dlq_publisher_pubsub_agent" {
+  project = google_project.booster_ai.project_id
+  topic   = google_pubsub_topic.dlq.name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+resource "google_pubsub_subscription_iam_member" "document_uploaded_dlq_subscriber" {
+  project      = google_project.booster_ai.project_id
+  subscription = google_pubsub_subscription.document_uploaded_processor.name
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }
 
 # Wave 2 — Subscriptions para los 4 topics de eventos AVL eventuales.

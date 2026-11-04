@@ -60,6 +60,7 @@ const {
   AssignmentNotMutableError,
   AssignmentNotOwnedError,
   DriverNotInCarrierError,
+  VehicleNotAssignableError,
 } = await import('../../src/services/asignar-conductor-a-assignment.js');
 
 const noop = (): void => undefined;
@@ -121,6 +122,7 @@ const ASSIGNMENT_DETAIL_ROW = {
   empresaLegalName: 'Carrier SpA',
   vehicleId: 'veh-uuid',
   vehiclePlate: 'AB-CD-12',
+  vehicleStatus: 'activo',
   vehicleType: 'camion_pequeno',
   driverUserId: 'driver-uuid',
   driverName: 'Pedro Conductor',
@@ -268,6 +270,13 @@ describe('GET /assignments/:id', () => {
     };
     expect(body.trip_request.tracking_code).toBe('TR-1');
     expect(body.assignment.ubicacion_actual).toBeNull();
+    const assignment = (
+      body as { assignment: { driver_user_id: string | null; vehicle_id: string | null } }
+    ).assignment;
+    expect(assignment.driver_user_id).toBe('driver-uuid');
+    expect(assignment.vehicle_id).toBeNull();
+    expect((body.assignment as { empresa_id?: string }).empresa_id).toBe(CARRIER_EMP);
+    expect((body.assignment as { vehicle_status?: string | null }).vehicle_status).toBeNull();
   });
 
   it('happy path con telemetría: retorna ubicacion_actual con last point', async () => {
@@ -294,6 +303,7 @@ describe('GET /assignments/:id', () => {
     };
     expect(body.assignment.ubicacion_actual?.latitude).toBeCloseTo(-33.45);
     expect(body.assignment.ubicacion_actual?.speed_kmh).toBe(85);
+    expect((body.assignment as { vehicle_status?: string | null }).vehicle_status).toBe('activo');
   });
 });
 
@@ -385,7 +395,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
 });
 
 describe('POST /assignments/:id/asignar-conductor', () => {
-  const VALID_BODY = { driver_user_id: '00000000-0000-0000-0000-000000000a05' };
+  const VALID_BODY = { driver_user_id: '00000000-0000-4000-8000-000000000a05' };
 
   // El test header VALID_CTX no incluía 'membership' (subobjeto), pero
   // el endpoint nuevo lee `auth.activeMembership.membership.role`. Para
@@ -500,6 +510,44 @@ describe('POST /assignments/:id/asignar-conductor', () => {
     expect(body.status).toBe('entregado');
   });
 
+  it('body con vehiculo_id uuid lo reenvía al servicio', async () => {
+    const vehiculoId = '00000000-0000-4000-8000-000000000a07';
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      assignmentId: ASSIGNMENT_ID,
+      previousDriverUserId: null,
+      newDriverUserId: VALID_BODY.driver_user_id,
+      driverName: 'Conductor pendiente',
+      driverPending: true,
+      previousVehicleId: '00000000-0000-4000-8000-000000000a08',
+      newVehicleId: vehiculoId,
+    });
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq({ ...VALID_BODY, vehiculo_id: vehiculoId }, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { driver_pending: boolean; new_vehicle_id: string };
+    expect(body.driver_pending).toBe(true);
+    expect(body.new_vehicle_id).toBe(vehiculoId);
+    expect(asignarConductorAAssignment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        driverUserId: VALID_BODY.driver_user_id,
+        vehiculoId,
+      }),
+    );
+  });
+
+  it('vehiculo_id que no es uuid → 400 y no llama al servicio', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq({ ...VALID_BODY, vehiculo_id: 'patente-no-uuid' }, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(400);
+    expect(asignarConductorAAssignment).not.toHaveBeenCalled();
+  });
+
   it('service DriverNotInCarrierError → 400', async () => {
     (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new DriverNotInCarrierError(VALID_BODY.driver_user_id, CARRIER_EMP),
@@ -513,6 +561,24 @@ describe('POST /assignments/:id/asignar-conductor', () => {
     expect((await res.json()) as { code: string }).toEqual(
       expect.objectContaining({ code: 'driver_not_in_carrier' }),
     );
+  });
+
+  it('service VehicleNotAssignableError → 400 vehicle_not_assignable', async () => {
+    const vehiculoId = '00000000-0000-4000-8000-000000000a07';
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new VehicleNotAssignableError(vehiculoId, 'not_motriz'),
+    );
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq({ ...VALID_BODY, vehiculo_id: vehiculoId }, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { code: string; reason: string }).toEqual({
+      error: 'vehicle_not_assignable',
+      code: 'vehicle_not_assignable',
+      reason: 'not_motriz',
+    });
   });
 });
 

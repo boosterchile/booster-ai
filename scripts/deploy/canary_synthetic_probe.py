@@ -4,7 +4,9 @@ Durante la ventana de espera manda GET /health y GET /health/signup-flow al
 URL del tag: _CANARY_MIN_REQUESTS más cinco, sin bajar el piso. No escribe
 datos de negocio y no pide datos de usuarios. Si el worker no atraviesa el
 ingress, emite un Job (imagen por digest) para correr la misma sonda desde
-la VPC del proyecto.
+la VPC del proyecto. El pod resuelve el host del tag a private.googleapis.com
+(199.36.153.8): el DNS público de *.run.app sale por Cloud NAT y el ingress
+INTERNAL_LOAD_BALANCER responde 404.
 
 Escribe el resultado en --result-out (por defecto /workspace/canary-probe.json):
 respuestas 5xx, timeouts y errores de conexión. canary-verify aborta si la
@@ -28,10 +30,29 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from canary_verify_decision import percentil_95
+
 RUTAS_SEGURAS = ('/health', '/health/signup-flow')
 USER_AGENT = 'booster-canary-probe'
 RUTA_RESULTADO = '/workspace/canary-probe.json'
 EXTRA_SONDA = 5
+# Mismo piso que _CANARY_MIN_REQUESTS. Unos 200 sueltos, por debajo, no
+# cuentan como llegada: el gate los vería como muestra corta y revertiría
+# el tag. Un 5xx se reporta igual aunque sean pocos.
+PISO_RESPUESTAS_EN_LOG = 30
+# private.googleapis.com (199.36.153.8/30). La subnet booster-ai-private tiene
+# Private Google Access: estos VIP no salen por Cloud NAT. El DNS público
+# de *.run.app sí.
+IPS_GOOGLE_PRIVADA = (
+    '199.36.153.8',
+    '199.36.153.9',
+    '199.36.153.10',
+    '199.36.153.11',
+)
+# El Job tiene que seguir existiendo cuando leemos logs. 600s lo borraba
+# mientras kubectl wait seguía hasta 1500s (NotFound).
+TTL_JOB_SEGUNDOS = 1800
+ESTADOS_JOB = ('ok', 'fallo', 'no_corrido', 'no_necesario', 'perdido')
 _IMAGEN_DIGEST = re.compile(r'^.+@sha256:[0-9a-f]{64}$')
 
 # Node del Job. Solo GET, solo RUTAS_SEGURAS, sin seguir redirects.
@@ -45,7 +66,19 @@ const host = (() => {
   try { return new URL(url).host; } catch (e) { return ''; }
 })();
 if (!host.startsWith(tag + '---') || !host.endsWith('.run.app')) {
-  console.log(JSON.stringify({ error: 'url' }));
+  console.log(JSON.stringify({
+    error: 'url',
+    resumen: {
+      llego_a_la_app: false,
+      cinco_xx: 0,
+      cuatro_xx: 0,
+      errores_transporte: 0,
+      respuestas_app: 0,
+      latencias_ms: [],
+      p95_ms: null,
+      total_plan: count,
+    },
+  }));
   process.exit(1);
 }
 function pausa(indice) {
@@ -55,44 +88,70 @@ function pausa(indice) {
   const ms = quedan <= 0 || margen <= 0 ? 0 : Math.min(60000, Math.max(0, margen / quedan));
   return new Promise((resolver) => setTimeout(resolver, ms));
 }
+function p95(valores) {
+  if (!valores.length) return null;
+  const orden = valores.slice().sort((a, b) => a - b);
+  const idx = Math.max(0, Math.ceil(0.95 * orden.length) - 1);
+  return orden[idx];
+}
 (async () => {
   let respuestasApp = 0;
   let cincoXx = 0;
+  let cuatroXx = 0;
   let erroresTransporte = 0;
   let llego = false;
+  let fallosSinLlegar = 0;
+  const latencias = [];
+  const reintentosAntesDeCortar = 3;
   for (let i = 0; i < count; i += 1) {
     await pausa(i);
     const path = paths[i % paths.length];
     if (!paths.includes(path)) process.exit(1);
     try {
+      const t0 = Date.now();
       const res = await fetch(url + path, {
         method: 'GET',
         redirect: 'manual',
         headers: { Accept: 'application/json', 'User-Agent': 'booster-canary-probe' },
       });
       await res.arrayBuffer();
+      const ms = Date.now() - t0;
       const status = res.status;
       if (status >= 500) {
         cincoXx += 1;
         respuestasApp += 1;
         llego = true;
+        latencias.push(ms);
       } else if (status >= 200 && status < 300) {
         respuestasApp += 1;
         llego = true;
+        latencias.push(ms);
+      } else if (status >= 400 && status < 500) {
+        cuatroXx += 1;
       }
-      console.log(JSON.stringify({ i, path, status }));
+      console.log(JSON.stringify({ i, path, status, ms }));
     } catch (err) {
       erroresTransporte += 1;
       const message = err && err.message ? err.message : String(err);
       console.log(JSON.stringify({ i, path, error: message }));
+    }
+    // Un blip no corta. Tras el primer fallo hay 3 reintentos; si ninguno
+    // llegó a la app, el resumen queda antes de que el TTL borre el Job.
+    // Un 4xx se cuenta y no marca llegada ni 5xx.
+    if (!llego) {
+      fallosSinLlegar += 1;
+      if (fallosSinLlegar > reintentosAntesDeCortar) break;
     }
   }
   console.log(JSON.stringify({
     resumen: {
       llego_a_la_app: llego,
       cinco_xx: cincoXx,
+      cuatro_xx: cuatroXx,
       errores_transporte: erroresTransporte,
       respuestas_app: respuestasApp,
+      latencias_ms: latencias,
+      p95_ms: p95(latencias),
       total_plan: count,
     },
   }));
@@ -210,13 +269,31 @@ def manifiesto_job(
         },
         'spec': {
             'backoffLimit': 0,
-            'ttlSecondsAfterFinished': 600,
+            'ttlSecondsAfterFinished': TTL_JOB_SEGUNDOS,
             'activeDeadlineSeconds': 1800,
             'template': {
-                'metadata': {'labels': {'app': 'canary-probe'}},
+                'metadata': {
+                    'labels': {'app': 'canary-probe'},
+                    # GKE Autopilot (build 20739610): el autoscaler mató el pod
+                    # con ScaleDown después de 34/34 HTTP 200 y antes del
+                    # resumen. backoffLimit 0 no reintenta. Sin esta anotación
+                    # el Job queda Failed y el gate no promueve.
+                    'annotations': {
+                        'cluster-autoscaler.kubernetes.io/safe-to-evict': 'false',
+                    },
+                },
                 'spec': {
                     'restartPolicy': 'Never',
                     'automountServiceAccountToken': False,
+                    # Sin esto el pod resuelve el tag por DNS público, Cloud NAT
+                    # lo saca a internet y el ingress responde el HTML 404.
+                    'hostAliases': [
+                        {
+                            'ip': ip,
+                            'hostnames': [urllib.parse.urlparse(url).hostname],
+                        }
+                        for ip in IPS_GOOGLE_PRIVADA
+                    ],
                     'containers': [
                         {
                             'name': 'probe',
@@ -293,20 +370,27 @@ def correr_plan(
         'llegaron': 0,
         'clase': 'transporte',
         'cinco_xx': 0,
+        'cuatro_xx': 0,
         'errores_transporte': 0,
         'llego_a_la_app': False,
+        'latencias_ms': [],
     }
     for indice, path in enumerate(rutas):
         pausa = espera_antes(indice, len(rutas), ahora(), deadline)
         if pausa > 0:
             dormir(pausa)
+        inicio = time.perf_counter()
         status, tipo, body = pedir(url, path)
+        transcurrido_ms = round((time.perf_counter() - inicio) * 1000.0, 1)
         clase_i = clasificar_respuesta(status, tipo, body)
+        if status is not None and 400 <= status < 500:
+            corrida['cuatro_xx'] += 1
         if status is None:
             corrida['errores_transporte'] += 1
         elif clase_i == 'aplicacion':
             corrida['llegaron'] += 1
             corrida['llego_a_la_app'] = True
+            corrida['latencias_ms'].append(transcurrido_ms)
             if status >= 500:
                 corrida['cinco_xx'] += 1
         if indice == 0:
@@ -323,37 +407,132 @@ def correr_plan(
 
 def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[str, Any]:
     llego = bool(corrida['llego_a_la_app'])
-    return {
+    latencias = [float(item) for item in corrida.get('latencias_ms') or []]
+    resultado: dict[str, Any] = {
         'version': 1,
         'url': url,
         'tenia_url': bool(url),
         'llego_a_la_app': llego,
         'respuestas_app': int(corrida['llegaron']),
         'cinco_xx': int(corrida['cinco_xx']),
+        'cuatro_xx': int(corrida['cuatro_xx']),
         'errores_transporte': int(corrida['errores_transporte']),
+        'latencias_ms': latencias,
+        'p95_ms': percentil_95(latencias),
         'total_plan': total_plan,
         'camino_directo': 'ok' if llego else str(corrida['clase']),
         'job': 'no_necesario' if llego else 'no_corrido',
     }
+    return resultado
+
+
+def _json_de_linea(linea: str) -> dict[str, Any] | None:
+    """Objeto JSON de la línea, aunque kubectl le haya puesto un prefijo."""
+    texto = linea.strip()
+    inicio = texto.find('{')
+    if inicio < 0:
+        return None
+    try:
+        payload, _fin = json.JSONDecoder().raw_decode(texto[inicio:])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    return None
 
 
 def _extraer_resumen(log: str) -> dict[str, Any] | None:
     for linea in reversed(log.splitlines()):
-        linea = linea.strip()
-        if not linea.startswith('{'):
+        payload = _json_de_linea(linea)
+        if payload is None:
             continue
-        try:
-            payload = json.loads(linea)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict) and isinstance(payload.get('resumen'), dict):
-            return payload['resumen']
+        resumen = payload.get('resumen')
+        if isinstance(resumen, dict):
+            return resumen
     return None
 
 
-def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
-    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló."""
+def _ms(valor: object) -> float | None:
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        return None
+    return float(valor)
+
+
+def _resumen_desde_eventos(log: str) -> dict[str, Any] | None:
+    """Si el objeto resumen no está, las líneas status=200/4xx/5xx deciden.
+
+    Solo se llama con el Job Complete. Un 404 cuenta en contra: mezclado
+    con 200 no es llegada. Un 5xx se reporta para que el gate falle.
+    """
+    respuestas = 0
+    cinco = 0
+    cuatro = 0
+    transporte = 0
+    latencias: list[float] = []
+    vio = False
+    for linea in log.splitlines():
+        payload = _json_de_linea(linea)
+        if payload is None or isinstance(payload.get('resumen'), dict):
+            continue
+        status = payload.get('status')
+        if isinstance(status, bool) or not isinstance(status, int):
+            if 'error' in payload:
+                transporte += 1
+                vio = True
+            continue
+        vio = True
+        demora = _ms(payload.get('ms'))
+        if status >= 500:
+            cinco += 1
+            respuestas += 1
+            if demora is not None:
+                latencias.append(demora)
+        elif 200 <= status < 300:
+            respuestas += 1
+            if demora is not None:
+                latencias.append(demora)
+        elif 400 <= status < 500:
+            cuatro += 1
+    if not vio:
+        return None
+    # En el respaldo los 404 cuentan en contra: sin el objeto resumen, 30
+    # respuestas 200 mezcladas con 404 no son llegada. El 5xx se entrega
+    # siempre. Por debajo del piso tampoco: el gate revertiría el tag.
+    if cinco == 0 and (cuatro > 0 or respuestas < PISO_RESPUESTAS_EN_LOG):
+        return {
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': cuatro,
+            'errores_transporte': transporte,
+            'respuestas_app': 0,
+            'latencias_ms': [],
+            'p95_ms': None,
+        }
+    return {
+        'llego_a_la_app': respuestas > 0,
+        'cinco_xx': cinco,
+        'cuatro_xx': cuatro,
+        'errores_transporte': transporte,
+        'respuestas_app': respuestas,
+        'latencias_ms': latencias,
+        'p95_ms': percentil_95(latencias),
+    }
+
+
+def aplicar_log_job(
+    resultado: dict[str, Any],
+    log: str,
+    estado_terminal: str = '',
+) -> dict[str, Any]:
+    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló.
+
+    El conteo por línea (sin objeto resumen) solo vale con el Job Complete.
+    Failed, pendiente o un log cortado no promueven: el pod desalojado con
+    backoffLimit 0 queda Failed y ese caso lo cubre safe-to-evict.
+    """
     resumen = _extraer_resumen(log)
+    if resumen is None and estado_terminal == 'completo':
+        resumen = _resumen_desde_eventos(log)
     if resumen is None:
         resultado['job'] = 'fallo'
         return resultado
@@ -363,20 +542,54 @@ def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
             resumen.get('errores_transporte') or 0
         )
         resultado['cinco_xx'] = int(resultado.get('cinco_xx') or 0) + int(resumen.get('cinco_xx') or 0)
+        resultado['cuatro_xx'] = int(resultado.get('cuatro_xx') or 0) + int(resumen.get('cuatro_xx') or 0)
         return resultado
     resultado['job'] = 'ok'
     resultado['llego_a_la_app'] = True
     resultado['cinco_xx'] = int(resumen.get('cinco_xx') or 0)
+    resultado['cuatro_xx'] = int(resumen.get('cuatro_xx') or 0)
     resultado['errores_transporte'] = int(resumen.get('errores_transporte') or 0)
     resultado['respuestas_app'] = int(resumen.get('respuestas_app') or 0)
+    latencias = resumen.get('latencias_ms')
+    resultado['latencias_ms'] = latencias if isinstance(latencias, list) else []
+    resultado['p95_ms'] = resumen.get('p95_ms')
     return resultado
 
 
 def marcar_job(resultado: dict[str, Any], estado: str) -> dict[str, Any]:
-    if estado not in ('ok', 'fallo', 'no_corrido', 'no_necesario'):
+    if estado not in ESTADOS_JOB:
         raise ValueError(estado)
     resultado['job'] = estado
     return resultado
+
+
+def clasificar_job(doc: dict[str, Any] | None) -> str:
+    """Estado del Job para dejar de esperarlo y leer logs enseguida.
+
+    completo / fallido: condición terminal. ausente: el objeto ya no está
+    (TTL o delete). pendiente: sigue corriendo.
+    """
+    if not isinstance(doc, dict) or not doc:
+        return 'ausente'
+    status = doc.get('status') if isinstance(doc.get('status'), dict) else {}
+    if not isinstance(status, dict):
+        status = {}
+    vistos: set[str] = set()
+    for cond in status.get('conditions') or []:
+        if not isinstance(cond, dict) or cond.get('status') != 'True':
+            continue
+        tipo = str(cond.get('type') or '')
+        if tipo in ('Complete', 'Failed'):
+            vistos.add(tipo)
+    if 'Complete' in vistos:
+        return 'completo'
+    if 'Failed' in vistos:
+        return 'fallido'
+    if int(status.get('succeeded') or 0) > 0:
+        return 'completo'
+    if int(status.get('failed') or 0) > 0:
+        return 'fallido'
+    return 'pendiente'
 
 
 def _escribir(path: str, payload: dict[str, Any]) -> None:
@@ -424,7 +637,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--log-file', default='')
     parser.add_argument('--marcar-job', default='')
     parser.add_argument('--job-estado', default='')
+    parser.add_argument('--estado-job', action='store_true')
     args = parser.parse_args(argv)
+
+    if args.estado_job:
+        raw = sys.stdin.read()
+        try:
+            payload = json.loads(raw) if raw.strip() else None
+        except json.JSONDecodeError:
+            payload = None
+        if payload is not None and not isinstance(payload, dict):
+            payload = None
+        sys.stdout.write(clasificar_job(payload))
+        return 0
 
     if args.aplicar_log_job:
         if not args.log_file:
@@ -433,11 +658,14 @@ def main(argv: list[str] | None = None) -> int:
         resultado = _leer_resultado(args.aplicar_log_job)
         with open(args.log_file, encoding='utf-8') as fh:
             log = fh.read()
-        _escribir(args.aplicar_log_job, aplicar_log_job(resultado, log))
+        _escribir(
+            args.aplicar_log_job,
+            aplicar_log_job(resultado, log, args.job_estado),
+        )
         return 0
 
     if args.marcar_job:
-        if args.job_estado not in ('ok', 'fallo', 'no_corrido', 'no_necesario'):
+        if args.job_estado not in ESTADOS_JOB:
             print('canary-probe: --job-estado inválido', file=sys.stderr)
             return 1
         try:

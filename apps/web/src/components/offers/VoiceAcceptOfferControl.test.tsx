@@ -6,6 +6,9 @@ import { ApiError, api } from '../../lib/api-client.js';
 import type {
   RecognitionState,
   RecognizedCommand,
+  SpeechRecognitionErrorEventLike,
+  SpeechRecognitionEventLike,
+  SpeechRecognitionLike,
   VoiceCommandController,
 } from '../../services/voice-commands.js';
 import { VoiceAcceptOfferControl } from './VoiceAcceptOfferControl.js';
@@ -61,6 +64,53 @@ function makeRecognizer(initial: RecognitionState = 'idle') {
 
 const OFFER_ID = 'o-1';
 const TRACKING_CODE = 'BOO-XYZ987';
+
+function instalarSpeechMock() {
+  const instances: MockSpeech[] = [];
+
+  class MockSpeech implements SpeechRecognitionLike {
+    lang = '';
+    interimResults = false;
+    continuous = false;
+    maxAlternatives = 1;
+    onresult: ((event: SpeechRecognitionEventLike) => void) | null = null;
+    onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null = null;
+    onstart: (() => void) | null = null;
+    onend: (() => void) | null = null;
+    onnomatch: (() => void) | null = null;
+    abort = vi.fn();
+    stop = vi.fn();
+    start = vi.fn(() => {
+      this.onstart?.();
+    });
+
+    constructor() {
+      instances.push(this);
+    }
+
+    emitir(transcript: string): void {
+      this.onresult?.({
+        resultIndex: 0,
+        results: {
+          length: 1,
+          0: {
+            isFinal: true,
+            length: 1,
+            0: { transcript, confidence: 1 },
+          },
+        },
+      });
+    }
+  }
+
+  Object.assign(window, { webkitSpeechRecognition: MockSpeech });
+  return {
+    instances,
+    quitar: () => {
+      Object.assign(window, { webkitSpeechRecognition: undefined });
+    },
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -245,6 +295,93 @@ describe('VoiceAcceptOfferControl', () => {
     });
     fireEvent.click(screen.getByTestId('voice-accept-confirm'));
     await waitFor(() => expect(screen.getByText(/la oferta expiró/i)).toBeInTheDocument());
+  });
+
+  it('SpeechRecognition: "aceptar oferta" confirma y "aceptar" hace el POST', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({});
+    const speech = instalarSpeechMock();
+    try {
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VoiceAcceptOfferControl offerId="o-test" trackingCode="BOO-TEST01" />
+        </Wrapper>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Activar comando por voz' }));
+      const escuchando = speech.instances[0];
+      expect(escuchando).toBeDefined();
+      expect(escuchando?.abort).not.toHaveBeenCalled();
+
+      act(() => {
+        escuchando?.emitir('aceptar oferta');
+      });
+      expect(screen.getByText(/confirma diciendo "aceptar" otra vez/i)).toBeInTheDocument();
+      expect(postSpy).not.toHaveBeenCalled();
+
+      act(() => {
+        escuchando?.emitir('aceptar');
+      });
+      await waitFor(() => expect(postSpy).toHaveBeenCalledWith('/offers/o-test/accept', {}));
+      expect(screen.getByTestId('voice-accept-success')).toBeInTheDocument();
+    } finally {
+      speech.quitar();
+    }
+  });
+
+  it('en confirmación, una negación o una frase larga no hace POST', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({});
+    const Wrapper = makeWrapper();
+    const r = makeRecognizer();
+    render(
+      <Wrapper>
+        <VoiceAcceptOfferControl
+          offerId={OFFER_ID}
+          trackingCode={TRACKING_CODE}
+          recognizer={r.ctrl}
+        />
+      </Wrapper>,
+    );
+    act(() => {
+      r.emitCommand({ intent: 'aceptar_oferta', transcript: 'aceptar oferta', confidence: 1 });
+    });
+    expect(screen.getByTestId('voice-accept-confirm')).toBeInTheDocument();
+
+    for (const transcript of [
+      'no acepto',
+      'no, no lo acepto',
+      'acepto… mejor no',
+      'no acepto la oferta',
+      'rechazo',
+      'acepto la oferta',
+    ]) {
+      act(() => {
+        r.emitCommand({ intent: 'aceptar_oferta', transcript, confidence: 1 });
+      });
+    }
+
+    expect(postSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('voice-accept-confirm')).toBeInTheDocument();
+  });
+
+  it('SpeechRecognition: "aceptar" suelto en reposo no abre la confirmación', () => {
+    const speech = instalarSpeechMock();
+    try {
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VoiceAcceptOfferControl offerId="o-test" trackingCode="BOO-TEST01" />
+        </Wrapper>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Activar comando por voz' }));
+      act(() => {
+        speech.instances[0]?.emitir('aceptar');
+      });
+      expect(screen.queryByTestId('voice-accept-confirm')).not.toBeInTheDocument();
+      expect(screen.getByText(/solo aparece cuando hay una sola oferta/i)).toBeInTheDocument();
+    } finally {
+      speech.quitar();
+    }
   });
 
   it('error de red (no ApiError) → mensaje genérico de conexión', async () => {

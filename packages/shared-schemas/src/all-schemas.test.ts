@@ -89,8 +89,8 @@ describe('primitives/chile', () => {
   it('rutSchema valida check digit + normaliza (quita puntos, K uppercase)', () => {
     expect(chile.rutSchema.parse('11.111.111-1')).toBe('11111111-1');
     expect(chile.rutSchema.parse('11111111-1')).toBe('11111111-1');
-    expect(() => chile.rutSchema.parse('11111111-2')).toThrow(/Dígito/);
-    expect(() => chile.rutSchema.parse('abc')).toThrow(/formato/);
+    expect(() => chile.rutSchema.parse('11111111-2')).toThrow(/dígito después del guion/);
+    expect(() => chile.rutSchema.parse('abc')).toThrow(/Ingresa un RUT válido/);
   });
 
   it('normalizeRut quita puntos y uppercase K', () => {
@@ -825,5 +825,24 @@ describe('alta de conductor — email obligatorio (Fase B)', () => {
     expect(() => schema.parse({ ...base, email: null })).toThrow();
     expect(() => schema.parse({ ...base, email: '' })).toThrow();
     expect(() => schema.parse({ ...base, email: 'no-es-email' })).toThrow();
+    expect(() => schema.parse({ ...base, email: 'a@b' })).toThrow();
+    expect(() => schema.parse({ ...base, email: 'a@b.c' })).toThrow();
+    expect(() => schema.parse({ ...base, email: 'abc' })).toThrow();
+    const sinTld = schema.safeParse({ ...base, email: 'a@b' });
+    expect(sinTld.success).toBe(false);
+    if (!sinTld.success) {
+      expect(sinTld.error.issues.some((issue) => issue.message.includes('nombre@dominio.cl'))).toBe(
+        true,
+      );
+    }
+    expect(() =>
+      schema.parse({ ...base, email: 'pending-rut-111111111@boosterchile.invalid' }),
+    ).toThrow();
+    expect(() =>
+      schema.parse({ ...base, email: 'drivers+111111111@boosterchile.invalid' }),
+    ).toThrow();
+    expect(schema.parse({ ...base, email: '  Usuario@Example.COM ' }).email).toBe(
+      'usuario@example.com',
+    );
   });
 });

@@ -230,6 +230,7 @@ export function VehiculoHub({
           cargando={conImei && resumenQ.isLoading}
           error={conImei && resumenQ.isError}
           ubicacion={ubicacionQ.data ?? null}
+          ubicacionCargando={conImei && ubicacionQ.isLoading}
           ubicacionError={conImei && ubicacionQ.isError}
           alturaMapa={alturaMapa}
           onAbrirConfig={onAbrirConfig}
@@ -269,6 +270,7 @@ function Operacion({
   cargando,
   error,
   ubicacion,
+  ubicacionCargando,
   ubicacionError,
   alturaMapa,
   onAbrirConfig,
@@ -282,6 +284,7 @@ function Operacion({
   cargando: boolean;
   error: boolean;
   ubicacion: UbicacionHub | null;
+  ubicacionCargando: boolean;
   ubicacionError: boolean;
   alturaMapa: number;
   onAbrirConfig: () => void;
@@ -329,6 +332,7 @@ function Operacion({
           puedeConfigurar={puedeConfigurar}
           ultimo={resumen?.ultimo_trayecto ?? null}
           ubicacion={ubicacion}
+          ubicacionCargando={ubicacionCargando}
           ubicacionError={ubicacionError}
           altura={alturaMapa}
           onAbrirConfig={onAbrirConfig}
@@ -590,6 +594,7 @@ function MapaPreview({
   puedeConfigurar,
   ultimo,
   ubicacion,
+  ubicacionCargando,
   ubicacionError,
   altura,
   onAbrirConfig,
@@ -601,6 +606,7 @@ function MapaPreview({
   puedeConfigurar: boolean;
   ultimo: TrayectoHub | null;
   ubicacion: UbicacionHub | null;
+  ubicacionCargando: boolean;
   ubicacionError: boolean;
   altura: number;
   onAbrirConfig: () => void;
@@ -643,7 +649,16 @@ function MapaPreview({
             height={altura}
           />
         ) : null}
-        {!hayTraza && !hayPunto ? (
+        {!hayTraza && !hayPunto && ubicacionCargando ? (
+          <output
+            className="block rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4 font-medium text-neutral-900 text-sm"
+            style={{ minHeight: altura }}
+            data-testid="hub-mapa-cargando"
+          >
+            Cargando posición…
+          </output>
+        ) : null}
+        {!hayTraza && !hayPunto && !ubicacionCargando ? (
           <div
             className="rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
             style={{ minHeight: altura }}

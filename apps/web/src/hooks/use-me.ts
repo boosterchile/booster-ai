@@ -82,6 +82,12 @@ export interface MeRegistered {
   user: MeUser;
   memberships: MembershipPayload[];
   active_membership: MembershipPayload | null;
+  /**
+   * True si el usuario tiene ficha viva en `conductores` de la empresa
+   * activa. Opcional: un `/me` cacheado de antes de este campo se trata
+   * como false. No autoriza aceptar ofertas.
+   */
+  tiene_ficha_conductor?: boolean;
 }
 
 export type MeResponse = MeNeedsOnboarding | MeRegistered;

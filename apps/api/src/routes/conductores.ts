@@ -1,21 +1,41 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  MENSAJE_TELEFONO_CONDUCTOR,
+  corregirEmailConductorBodySchema,
   createDriverBodySchema,
+  esEmailDeRelleno,
   rutSchema,
+  telefonoMovilConductorSchema,
   updateDriverBodySchema,
 } from '@booster-ai/shared-schemas';
 import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { conductores, users } from '../db/schema.js';
+import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
+import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
+import { zValidator, zodErrorBody } from '../lib/validation.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import {
+  type AccionFirebaseConductor,
+  type IdentidadFirebaseAuth,
+  IdentidadFirebaseEnConflicto,
+  reconciliarIdentidadFirebaseConductor,
+} from '../services/identidad-firebase-conductor.js';
 import { enviarCorreoActivacionConductor } from '../services/notifications/conductor-activacion-email.js';
 import { enviarWhatsAppActivacionConductor } from '../services/notifications/conductor-activacion-whatsapp.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import { clasificarVinculoPersona } from '../services/vinculo-persona.js';
+import {
+  cuentaYaActivada,
+  mascarEmail,
+  mascarRut,
+  personaPrevia,
+} from '../services/vinculo-persona.js';
+import { driverSyntheticEmail } from './auth-driver.js';
 
 /**
  * Endpoints CRUD de conductores. Solo accesibles desde la interfaz del
@@ -24,18 +44,23 @@ import { clasificarVinculoPersona } from '../services/vinculo-persona.js';
  *   GET    /conductores         → lista de conductores de la empresa activa
  *   GET    /conductores/:id     → detalle (con datos del user enlazado)
  *   POST   /conductores         → crear (lookup-or-create user por RUT)
- *   PATCH  /conductores/:id     → actualizar licencia / status
- *   DELETE /conductores/:id     → soft delete (set eliminado_en)
+ *   PATCH  /conductores/:id          → actualizar licencia / status
+ *   POST   /conductores/:id/telefono → WhatsApp y reenvío de invitación
+ *   DELETE /conductores/:id          → soft delete (set eliminado_en)
  *
  * **Creación con lookup-or-create**:
  *   El carrier provee RUT del conductor. El backend:
  *   1. Normaliza el RUT.
  *   2. Busca user con ese RUT.
- *      - Si existe: chequea que no haya conductor activo asociado (UNIQUE
- *        usuario_id). Si lo hay → 409 user_already_driver.
+ *      - Si existe: busca la fila de conductor (UNIQUE usuario_id, también
+ *        con soft delete).
+ *        - Activo → 409 user_already_driver.
+ *        - Retirado de otra empresa → 409 conductor_retirado_otra_empresa.
+ *        - Retirado de esta empresa → reactiva esa fila (UPDATE). Si la
+ *          identidad está compartida → 409 identidad_vinculada, sin escribir.
  *      - Si no existe: crea user "pendiente" con firebase_uid placeholder
  *        `pending-rut:<RUT>` (idempotente — mismo RUT → mismo placeholder).
- *   3. Inserta el conductor.
+ *   3. Inserta el conductor, o actualiza la fila retirada de esta empresa.
  *
  *   El placeholder firebase_uid se reemplaza cuando el conductor completa
  *   el flujo de login por RUT (D9). Hasta entonces el user no puede
@@ -93,6 +118,96 @@ function safeDateString(value: unknown): string | null {
   return null;
 }
 
+async function emailOcupadoPorOtro(
+  tx: Pick<Db, 'select'>,
+  email: string,
+  exceptoUserId: string | null,
+): Promise<boolean> {
+  const rows = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${email}`)
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    return false;
+  }
+  return row.id !== exceptoUserId;
+}
+
+/**
+ * `usuarios.email` es global. Un despachador de esta empresa no puede
+ * reescribirlo si la persona también pertenece a otra empresa, a una
+ * organización stakeholder, o tiene aquí un rol distinto de conductor.
+ * Una membresía ya removida no cuenta.
+ */
+/**
+ * Falla cerrado: mientras la persona no active su cuenta, la empresa no ve
+ * su nombre ni sus datos de contacto. `pendiente_aceptar` solo guía la UI.
+ */
+function datosContacto(r: {
+  user_full_name: string;
+  user_rut: string | null;
+  user_email: string;
+  user_phone: string | null;
+  user_firebase_uid: string;
+  user_created_at: Date | null;
+  created_at: Date | null;
+}) {
+  const oculto = r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX);
+  return oculto
+    ? {
+        full_name: null,
+        rut: mascarRut(r.user_rut),
+        email: mascarEmail(r.user_email),
+        phone: null,
+        pendiente_aceptar: personaPrevia(r.user_created_at, r.created_at),
+      }
+    : {
+        full_name: r.user_full_name,
+        rut: r.user_rut,
+        email: r.user_email,
+        phone: r.user_phone,
+        pendiente_aceptar: false,
+      };
+}
+
+async function emailIdentidadCompartida(
+  db: Pick<Db, 'select'>,
+  userId: string,
+  empresaId: string,
+): Promise<boolean> {
+  const vinculos = await db
+    .select({
+      empresaId: memberships.empresaId,
+      role: memberships.role,
+      organizacionId: memberships.organizacionStakeholderId,
+      status: memberships.status,
+    })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), isNull(memberships.removedAt)));
+  return vinculos.some((vinculo) => {
+    if (vinculo.status === 'removida') {
+      return false;
+    }
+    if (vinculo.organizacionId != null) {
+      return true;
+    }
+    if (vinculo.empresaId !== empresaId) {
+      return true;
+    }
+    return vinculo.role !== 'conductor';
+  });
+}
+
+/** El alta no mueve un conductor que otra empresa ya retiró. */
+const MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA =
+  'Este conductor fue retirado de otra empresa. No lo puedes reactivar desde aquí.';
+
+const corregirTelefonoConductorBodySchema = z.object({
+  phone: telefonoMovilConductorSchema,
+});
+
 export function createConductoresRoutes(opts: {
   db: Db;
   logger: Logger;
@@ -103,6 +218,11 @@ export function createConductoresRoutes(opts: {
    */
   emailSender?: EmailSender;
   webAppUrl?: string;
+  /**
+   * Admin SDK para alinear una cuenta Firebase creada con el email de
+   * relleno. Ausente en tests que no ejercitan esa rama.
+   */
+  firebaseAuth?: IdentidadFirebaseAuth;
   /**
    * WhatsApp es el canal PRINCIPAL hacia el conductor (decisión del PO,
    * 2026-08-03): en la operación de carga chilena usan WhatsApp, no correo.
@@ -171,6 +291,7 @@ export function createConductoresRoutes(opts: {
         user_email: users.email,
         user_phone: users.phone,
         user_firebase_uid: users.firebaseUid,
+        user_created_at: users.createdAt,
       })
       .from(conductores)
       .innerJoin(users, eq(conductores.userId, users.id))
@@ -192,10 +313,7 @@ export function createConductoresRoutes(opts: {
         deleted_at: safeIsoString(r.deleted_at),
         user: {
           id: r.user_id,
-          full_name: r.user_full_name,
-          rut: r.user_rut,
-          email: r.user_email,
-          phone: r.user_phone,
+          ...datosContacto(r),
           is_pending: r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX),
         },
       })),
@@ -231,6 +349,7 @@ export function createConductoresRoutes(opts: {
         user_email: users.email,
         user_phone: users.phone,
         user_firebase_uid: users.firebaseUid,
+        user_created_at: users.createdAt,
       })
       .from(conductores)
       .innerJoin(users, eq(conductores.userId, users.id))
@@ -256,10 +375,7 @@ export function createConductoresRoutes(opts: {
         deleted_at: safeIsoString(row.deleted_at),
         user: {
           id: row.user_id,
-          full_name: row.user_full_name,
-          rut: row.user_rut,
-          email: row.user_email,
-          phone: row.user_phone,
+          ...datosContacto(row),
           is_pending: row.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX),
         },
       },
@@ -268,8 +384,21 @@ export function createConductoresRoutes(opts: {
 
   // ---------------------------------------------------------------------
   // POST / — crear conductor (lookup-or-create user por RUT).
+  // La reactivación de un retirado de esta empresa pasa por el mismo POST.
   // ---------------------------------------------------------------------
-  app.post('/', zValidator('json', createDriverBodySchema), async (c) => {
+  const validarAltaConductor = zValidator('json', createDriverBodySchema, (result, c) => {
+    if (!result.success) {
+      const issues = result.error.issues;
+      const soloTelefono = issues.length > 0 && issues.every((issue) => issue.path[0] === 'phone');
+      if (soloTelefono) {
+        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
+      }
+      return c.json(zodErrorBody(result.error), 400);
+    }
+    return undefined;
+  });
+
+  app.post('/', validarAltaConductor, async (c) => {
     const auth = requireWriteRole(c);
     if (!auth.ok) {
       return auth.response;
@@ -286,12 +415,13 @@ export function createConductoresRoutes(opts: {
 
     // D9/D10 — PIN de activación de 6 dígitos.
     //
-    // El PIN se genera **solo si** el conductor que se está creando es un
-    // user nuevo o un user-placeholder (firebase_uid `pending-rut:...`). Si
-    // ya es un user real activado (e.g. el dueño de la empresa que también
-    // se registra como conductor — flujo D10), NO generamos PIN: el dueño
-    // ya tiene su email/password y puede entrar a `/app/conductor`
-    // directamente sin re-autenticarse.
+    // Alta nueva: el PIN se genera si el user es nuevo o un placeholder sin
+    // código (`provisoria_sin_codigo`). Una cuenta ya activada (dueño que
+    // también se registra como conductor) no recibe PIN.
+    //
+    // Reactivación en la misma empresa: si la cuenta no está activa, el PIN
+    // se regenera siempre — el anterior deja de servir — y el envío de
+    // WhatsApp y correo es el de un alta normal.
     //
     // El plaintext del PIN NUNCA persiste; sólo se devuelve UNA vez en la
     // respuesta del POST para que el carrier lo muestre al conductor.
@@ -307,12 +437,20 @@ export function createConductoresRoutes(opts: {
             firebaseUid: users.firebaseUid,
             claveNumericaHash: users.claveNumericaHash,
             activationPinHash: users.activationPinHash,
+            email: users.email,
+            phone: users.phone,
+            createdAt: users.createdAt,
           })
           .from(users)
           .where(eq(users.rut, rut))
           .limit(1);
 
         let userId: string;
+        let reemplazoRelleno: {
+          emailAnterior: string;
+          accionFirebase: AccionFirebaseConductor;
+        } | null = null;
+        let reactivacion: { conductorId: string } | null = null;
 
         if (existingUsers.length > 0) {
           const existingUser = existingUsers[0];
@@ -321,27 +459,106 @@ export function createConductoresRoutes(opts: {
           }
           userId = existingUser.id;
 
-          // Si ya hay conductor (no eliminado) para este user → conflicto.
-          // rls-allowlist: chequeo global de unicidad user→conductor cross-empresa
+          // rls-allowlist: chequeo global de unicidad user→conductor cross-empresa.
+          // El UNIQUE de usuario_id incluye la fila retirada: reactivar es un
+          // UPDATE, no un INSERT.
           const existingDriver = await tx
-            .select({ id: conductores.id, deletedAt: conductores.deletedAt })
+            .select({
+              id: conductores.id,
+              deletedAt: conductores.deletedAt,
+              empresaId: conductores.empresaId,
+              createdAt: conductores.createdAt,
+            })
             .from(conductores)
             .where(eq(conductores.userId, userId))
             .limit(1);
-          if (existingDriver.length > 0 && existingDriver[0]?.deletedAt == null) {
-            return { ok: false as const, code: 'user_already_driver' };
+          const filaExistente = existingDriver[0];
+          if (filaExistente && filaExistente.deletedAt == null) {
+            return { ok: false as const, code: 'user_already_driver' as const };
+          }
+          if (filaExistente && filaExistente.empresaId !== empresaId) {
+            return {
+              ok: false as const,
+              code: 'conductor_retirado_otra_empresa' as const,
+              message: MENSAJE_CONDUCTOR_RETIRADO_OTRA_EMPRESA,
+            };
+          }
+          if (filaExistente) {
+            if (await emailIdentidadCompartida(tx, userId, empresaId)) {
+              return { ok: false as const, code: 'identidad_vinculada' as const };
+            }
+            reactivacion = { conductorId: filaExistente.id };
           }
 
-          // Solo el primer código. Una cuenta viva o un placeholder que ya
-          // tiene pin no se reescribe: otra empresa no elige su clave.
-          if (clasificarVinculoPersona(existingUser) === 'provisoria_sin_codigo') {
+          if (await emailOcupadoPorOtro(tx, body.email, userId)) {
+            return { ok: false as const, code: 'email_already_registered' as const };
+          }
+
+          const cuentaActiva = cuentaYaActivada({
+            firebaseUid: existingUser.firebaseUid,
+            claveNumericaHash: existingUser.claveNumericaHash,
+          });
+          // Solo una persona creada junto con el conductor de esta empresa
+          // recibe PIN o cambios de contacto; una que ya existía, nunca.
+          const propia =
+            filaExistente != null &&
+            !personaPrevia(existingUser.createdAt, filaExistente.createdAt);
+          const pendiente = !cuentaActiva && propia;
+          const emailActual =
+            typeof existingUser.email === 'string' ? existingUser.email.trim().toLowerCase() : '';
+          const reemplazaRelleno =
+            emailActual.length > 0 &&
+            pendiente &&
+            esEmailDeRelleno(emailActual) &&
+            emailActual !== body.email;
+          const telefono = propia ? { phone: body.phone } : {};
+
+          if (reemplazaRelleno) {
+            const accionFirebase = await reconciliarIdentidadFirebaseConductor({
+              auth: opts.firebaseAuth ?? null,
+              cuentaActiva: false,
+              emailAnterior: emailActual,
+              rut,
+              syntheticEmail: driverSyntheticEmail(rut),
+            });
             activationPin = generateActivationPin();
             await tx
               .update(users)
-              .set({ activationPinHash: hashActivationPin(activationPin), updatedAt: sql`now()` })
+              .set({
+                email: body.email,
+                activationPinHash: hashActivationPin(activationPin),
+                updatedAt: sql`now()`,
+                ...telefono,
+              })
+              .where(eq(users.id, userId));
+            reemplazoRelleno = { emailAnterior: emailActual, accionFirebase };
+          } else if (reactivacion) {
+            // Conductor retirado de esta misma empresa: la cuenta pendiente
+            // recibe un PIN nuevo y el anterior deja de servir.
+            if (pendiente) {
+              activationPin = generateActivationPin();
+            }
+            await tx
+              .update(users)
+              .set({
+                ...(activationPin !== null
+                  ? { activationPinHash: hashActivationPin(activationPin) }
+                  : {}),
+                ...telefono,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(users.id, userId));
+          } else {
+            // Persona existente: no se emite PIN ni se toca el que tenga.
+            await tx
+              .update(users)
+              .set({ ...telefono, updatedAt: sql`now()` })
               .where(eq(users.id, userId));
           }
         } else {
+          if (await emailOcupadoPorOtro(tx, body.email, null)) {
+            return { ok: false as const, code: 'email_already_registered' as const };
+          }
           // 2. Crear user "pending" con PIN de activación.
           activationPin = generateActivationPin();
           const insertedUsers = await tx
@@ -368,28 +585,87 @@ export function createConductoresRoutes(opts: {
           userId = newUser.id;
         }
 
-        // 3. Insertar conductor.
-        const insertedDrivers = await tx
-          .insert(conductores)
-          .values({
-            userId,
-            empresaId,
-            licenseClass: body.license_class,
-            licenseNumber: body.license_number,
-            licenseExpiry: body.license_expiry,
-            isExtranjero: body.is_extranjero,
-            driverStatus: 'activo',
-          })
-          .returning();
-        const newDriver = insertedDrivers[0];
+        // 3. Alta nueva, o reactivación de la fila retirada de esta empresa.
+        // El INSERT chocaría con UNIQUE(usuario_id) si la fila sigue ahí.
+        const filasConductor = reactivacion
+          ? await tx
+              .update(conductores)
+              .set({
+                licenseClass: body.license_class,
+                licenseNumber: body.license_number,
+                licenseExpiry: body.license_expiry,
+                isExtranjero: body.is_extranjero,
+                driverStatus: 'activo',
+                deletedAt: null,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(conductores.id, reactivacion.conductorId))
+              .returning()
+          : await tx
+              .insert(conductores)
+              .values({
+                userId,
+                empresaId,
+                licenseClass: body.license_class,
+                licenseNumber: body.license_number,
+                licenseExpiry: body.license_expiry,
+                isExtranjero: body.is_extranjero,
+                driverStatus: 'activo',
+              })
+              .returning();
+        const newDriver = filasConductor[0];
         if (!newDriver) {
-          throw new Error('Conductor insert returned no row');
+          throw new Error(
+            reactivacion ? 'Conductor update returned no row' : 'Conductor insert returned no row',
+          );
         }
-        return { ok: true as const, driver: newDriver, userId };
+        if (reemplazoRelleno) {
+          const auditoria = await tx
+            .insert(auditoriaEmailConductor)
+            .values({
+              conductorId: newDriver.id,
+              usuarioId: userId,
+              empresaId,
+              actorUsuarioId: auth.userContext.user.id,
+              emailAnterior: reemplazoRelleno.emailAnterior,
+              emailNuevo: body.email,
+              invitacionReenviada: activationPin !== null,
+              accionFirebase: reemplazoRelleno.accionFirebase,
+            })
+            .returning({ id: auditoriaEmailConductor.id });
+          if (!auditoria[0]) {
+            throw new Error('auditoria_email_conductor_vacia');
+          }
+        }
+
+        return {
+          ok: true as const,
+          driver: newDriver,
+          userId,
+          reactivado: reactivacion !== null,
+        };
       });
 
       if (!result.ok) {
-        return c.json({ error: 'user_already_driver', code: result.code }, 409);
+        return c.json(
+          {
+            error: result.code,
+            code: result.code,
+            ...('message' in result ? { message: result.message } : {}),
+          },
+          409,
+        );
+      }
+
+      if (result.reactivado) {
+        opts.logger.info(
+          {
+            conductorId: result.driver.id,
+            userId: result.userId,
+            empresaId,
+          },
+          'conductor retirado reactivado',
+        );
       }
 
       // El conductor se entera por su propio correo, no por el WhatsApp de su
@@ -447,21 +723,26 @@ export function createConductoresRoutes(opts: {
            * PIN de activación de 6 dígitos en plaintext. Se devuelve UNA
            * SOLA VEZ — el carrier debe mostrarlo al conductor inmediatamente
            * (botón "copiar" + recordatorio). No se puede recuperar después.
-           * Si se pierde, hay que retirar al conductor y crearlo de nuevo.
+           * Si se pierde, se reenvía desde la ficha: el código anterior deja de servir.
            *
            * D10 — Undefined cuando el user ya estaba activado (e.g. dueño
            * que se agrega a sí mismo como conductor): el dueño ya tiene
            * email/password y no necesita PIN.
            */
           ...(activationPin !== null ? { activation_pin: activationPin } : {}),
+          ...(result.reactivado ? { reactivado: true as const } : {}),
         },
-        201,
+        result.reactivado ? 200 : 201,
       );
     } catch (err) {
+      if (err instanceof IdentidadFirebaseEnConflicto) {
+        return c.json({ error: 'conflict', code: err.code }, 409);
+      }
       // Captura específico de errores de unicidad de PG.
-      const errCode = (err as { code?: string } | null)?.code;
+      const errCode = pgErrorCode(err);
       if (errCode === '23505') {
-        return c.json({ error: 'duplicate', code: 'duplicate' }, 409);
+        const code = esEmailDuplicado(err) ? 'email_already_registered' : 'duplicate';
+        return c.json({ error: code, code }, 409);
       }
       opts.logger.error(
         {
@@ -546,6 +827,333 @@ export function createConductoresRoutes(opts: {
       },
     });
   });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/email — email real + reenvío de invitación si sigue pendiente.
+  // ---------------------------------------------------------------------
+  app.post('/:id/email', zValidator('json', corregirEmailConductorBodySchema), async (c) => {
+    const auth = requireWriteRole(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    return await withBusinessSpan(
+      {
+        name: 'conductor.corregir_email',
+        attributes: { 'booster.empresa_id': empresaId, 'booster.conductor_id': id },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('conductor_email_corregido_total').add(1, { resultado });
+          setResultAttributes(span, { 'conductor.email_resultado': resultado });
+        };
+
+        const encontrados = await opts.db
+          .select({
+            conductorId: conductores.id,
+            deletedAt: conductores.deletedAt,
+            userId: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            rut: users.rut,
+            phone: users.phone,
+            firebaseUid: users.firebaseUid,
+            claveNumericaHash: users.claveNumericaHash,
+            personaCreadaEn: users.createdAt,
+            conductorCreadoEn: conductores.createdAt,
+          })
+          .from(conductores)
+          .innerJoin(users, eq(conductores.userId, users.id))
+          .where(and(eq(conductores.id, id), eq(conductores.empresaId, empresaId)))
+          .limit(1);
+        const fila = encontrados[0];
+        if (!fila) {
+          record('not_found');
+          return c.json({ error: 'conductor_not_found', code: 'conductor_not_found' }, 404);
+        }
+        if (fila.deletedAt != null) {
+          record('deleted');
+          return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
+        }
+
+        if (await emailOcupadoPorOtro(opts.db, body.email, fila.userId)) {
+          record('email_already_registered');
+          return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+        }
+
+        const cuentaActiva = cuentaYaActivada({
+          firebaseUid: fila.firebaseUid,
+          claveNumericaHash: fila.claveNumericaHash,
+        });
+        const emailAnterior = fila.email.trim().toLowerCase();
+        const emailCambio = emailAnterior !== body.email;
+
+        if (cuentaActiva && !emailCambio) {
+          record('sin_cambio');
+          return c.json({
+            email: body.email,
+            invitacion_reenviada: false,
+            cuenta_activa: true,
+          });
+        }
+
+        // Una persona que ya existía antes de este conductor conserva su contacto.
+        if (
+          personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn) ||
+          (await emailIdentidadCompartida(opts.db, fila.userId, empresaId))
+        ) {
+          record('identidad_vinculada');
+          return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
+        }
+
+        let accionFirebase: AccionFirebaseConductor = 'omitida_cuenta_activa';
+        if (!cuentaActiva) {
+          try {
+            accionFirebase = await reconciliarIdentidadFirebaseConductor({
+              auth: opts.firebaseAuth ?? null,
+              cuentaActiva: false,
+              emailAnterior,
+              rut: fila.rut,
+              syntheticEmail: fila.rut ? driverSyntheticEmail(fila.rut) : emailAnterior,
+            });
+          } catch (err) {
+            if (err instanceof IdentidadFirebaseEnConflicto) {
+              record('identidad_firebase_en_conflicto');
+              return c.json({ error: 'conflict', code: err.code }, 409);
+            }
+            opts.logger.error(
+              {
+                err,
+                conductorId: id,
+                errMessage: err instanceof Error ? err.message : String(err),
+              },
+              'reconciliar firebase del conductor falló',
+            );
+            record('firebase_error');
+            return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+          }
+        }
+
+        const activationPin = cuentaActiva ? null : generateActivationPin();
+        const invitacionReenviada = activationPin !== null;
+
+        try {
+          await opts.db.transaction(async (tx) => {
+            const actualizado = await tx
+              .update(users)
+              .set({
+                email: body.email,
+                ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
+                updatedAt: sql`now()`,
+              })
+              .where(eq(users.id, fila.userId))
+              .returning({ id: users.id });
+            if (!actualizado[0]) {
+              throw new Error('update email conductor vacío');
+            }
+            const auditoria = await tx
+              .insert(auditoriaEmailConductor)
+              .values({
+                conductorId: fila.conductorId,
+                usuarioId: fila.userId,
+                empresaId,
+                actorUsuarioId: auth.userContext.user.id,
+                emailAnterior,
+                emailNuevo: body.email,
+                invitacionReenviada,
+                accionFirebase,
+              })
+              .returning({ id: auditoriaEmailConductor.id });
+            if (!auditoria[0]) {
+              throw new Error('auditoria_email_conductor_vacia');
+            }
+          });
+        } catch (err) {
+          if (pgErrorCode(err) === '23505') {
+            if (esEmailDuplicado(err)) {
+              record('email_already_registered');
+              return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+            }
+            record('duplicate');
+            return c.json({ error: 'duplicate', code: 'duplicate' }, 409);
+          }
+          throw err;
+        }
+
+        if (activationPin !== null && fila.rut) {
+          await enviarWhatsAppActivacionConductor({
+            client: opts.whatsappClient,
+            contentSid: opts.activacionContentSid,
+            logger: opts.logger,
+            telefono: fila.phone,
+            nombre: fila.fullName,
+            rut: fila.rut,
+            empresa: auth.activeMembership.empresa.legalName ?? 'Tu empresa',
+          });
+          if (opts.emailSender) {
+            await enviarCorreoActivacionConductor({
+              sender: opts.emailSender,
+              logger: opts.logger,
+              email: body.email,
+              nombre: fila.fullName,
+              rut: fila.rut,
+              pin: activationPin,
+              empresa: auth.activeMembership.empresa.legalName ?? 'Tu empresa',
+              webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+            });
+          }
+        }
+
+        opts.logger.info(
+          {
+            conductorId: id,
+            usuarioId: fila.userId,
+            actorId: auth.userContext.user.id,
+            empresaId,
+            invitacionReenviada,
+            accionFirebase,
+          },
+          'email de conductor actualizado',
+        );
+        record(invitacionReenviada ? 'invitacion_reenviada' : 'contacto_actualizado');
+
+        return c.json({
+          email: body.email,
+          invitacion_reenviada: invitacionReenviada,
+          cuenta_activa: cuentaActiva,
+          ...(activationPin !== null ? { activation_pin: activationPin } : {}),
+        });
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/telefono — WhatsApp + reenvío si el conductor sigue pendiente.
+  // Separado de PATCH /:id: guardar el número puede regenerar el PIN.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/:id/telefono',
+    zValidator('json', corregirTelefonoConductorBodySchema, (result, c) => {
+      if (!result.success) {
+        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
+      }
+      return undefined;
+    }),
+    async (c) => {
+      const auth = requireWriteRole(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const id = c.req.param('id');
+      const body = c.req.valid('json');
+      const empresaId = auth.activeMembership.empresa.id;
+
+      return await withBusinessSpan(
+        {
+          name: 'conductor.corregir_telefono',
+          attributes: { 'booster.empresa_id': empresaId, 'booster.conductor_id': id },
+        },
+        async (span) => {
+          const record = (resultado: string) => {
+            getBusinessCounter('conductor_telefono_corregido_total').add(1, { resultado });
+            setResultAttributes(span, { 'conductor.telefono_resultado': resultado });
+          };
+
+          const encontrados = await opts.db
+            .select({
+              conductorId: conductores.id,
+              deletedAt: conductores.deletedAt,
+              userId: users.id,
+              email: users.email,
+              fullName: users.fullName,
+              rut: users.rut,
+              phone: users.phone,
+              firebaseUid: users.firebaseUid,
+              claveNumericaHash: users.claveNumericaHash,
+              personaCreadaEn: users.createdAt,
+              conductorCreadoEn: conductores.createdAt,
+            })
+            .from(conductores)
+            .innerJoin(users, eq(conductores.userId, users.id))
+            .where(and(eq(conductores.id, id), eq(conductores.empresaId, empresaId)))
+            .limit(1);
+          const fila = encontrados[0];
+          if (!fila) {
+            record('not_found');
+            return c.json({ error: 'conductor_not_found', code: 'conductor_not_found' }, 404);
+          }
+          if (fila.deletedAt != null) {
+            record('deleted');
+            return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
+          }
+
+          // Una persona que ya existía antes de este conductor conserva su contacto.
+          if (
+            personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn) ||
+            (await emailIdentidadCompartida(opts.db, fila.userId, empresaId))
+          ) {
+            record('identidad_vinculada');
+            return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
+          }
+
+          const cuentaActiva = cuentaYaActivada({
+            firebaseUid: fila.firebaseUid,
+            claveNumericaHash: fila.claveNumericaHash,
+          });
+          const activationPin = cuentaActiva ? null : generateActivationPin();
+          const invitacionReenviada = activationPin !== null;
+
+          const actualizado = await opts.db
+            .update(users)
+            .set({
+              phone: body.phone,
+              ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
+              updatedAt: sql`now()`,
+            })
+            .where(eq(users.id, fila.userId))
+            .returning({ id: users.id });
+          if (!actualizado[0]) {
+            throw new Error('update teléfono conductor vacío');
+          }
+
+          if (activationPin !== null && fila.rut) {
+            await enviarWhatsAppActivacionConductor({
+              client: opts.whatsappClient,
+              contentSid: opts.activacionContentSid,
+              logger: opts.logger,
+              telefono: body.phone,
+              nombre: fila.fullName,
+              rut: fila.rut,
+              empresa: auth.activeMembership.empresa.legalName ?? 'Tu empresa',
+            });
+          }
+
+          opts.logger.info(
+            {
+              conductorId: id,
+              usuarioId: fila.userId,
+              actorId: auth.userContext.user.id,
+              empresaId,
+              invitacionReenviada,
+            },
+            'teléfono de conductor actualizado',
+          );
+          record(invitacionReenviada ? 'invitacion_reenviada' : 'contacto_actualizado');
+
+          return c.json({
+            phone: body.phone,
+            email: fila.email,
+            invitacion_reenviada: invitacionReenviada,
+            cuenta_activa: cuentaActiva,
+            ...(activationPin !== null ? { activation_pin: activationPin } : {}),
+          });
+        },
+      );
+    },
+  );
 
   // ---------------------------------------------------------------------
   // DELETE /:id — soft delete.

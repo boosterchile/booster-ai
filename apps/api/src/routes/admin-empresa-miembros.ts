@@ -7,7 +7,6 @@ import {
   invitarMiembroEmpresaSchema,
   reemitirCodigoActivacionResponseSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
@@ -15,13 +14,18 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
+import {
+  VINCULO_PERSONA_EXISTENTE,
+  type VinculoPersona,
+  personaPrevia,
+} from '../services/vinculo-persona.js';
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -661,15 +665,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             );
           }
           userId = existente.id;
-          vinculo = clasificarVinculoPersona(existente);
-          if (vinculo === 'provisoria_sin_codigo') {
-            const codigo = generateActivationPin();
-            codigoEmitido = codigo;
-            await opts.db
-              .update(users)
-              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-              .where(eq(users.id, existente.id));
-          }
+          // Persona existente: sin código nuevo y sin revelar el estado de su cuenta.
+          vinculo = VINCULO_PERSONA_EXISTENTE;
         } else {
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const porEmail = await opts.db
@@ -715,17 +712,16 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           userId = created.id;
         }
 
-        const yaActiva = vinculo === 'cuenta_activa';
         const insertedMembership = await opts.db
           .insert(memberships)
           .values({
             userId,
             empresaId,
             role: body.rol,
-            status: yaActiva ? 'activa' : 'pendiente_invitacion',
+            status: 'pendiente_invitacion',
             invitedByUserId: admin.userContext.user.id,
             invitedAt: new Date(),
-            joinedAt: yaActiva ? new Date() : null,
+            joinedAt: null,
           })
           .returning({ id: memberships.id });
         const membership = insertedMembership[0];
@@ -751,12 +747,11 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         record('issued');
 
         if (codigoEmitido !== null && opts.emailSender) {
-          // Persona provisoria: su correo registrado, no el que tipeó el admin.
           await enviarCorreoActivacionCuenta({
             sender: opts.emailSender,
             logger: opts.logger,
-            email: existente?.email ?? email,
-            nombre: existente?.fullName ?? body.full_name,
+            email,
+            nombre: body.full_name,
             rut: body.rut,
             codigo: codigoEmitido,
             empresa: empresa.razonSocial,
@@ -776,7 +771,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             user_id: userId,
             membership_id: membership.id,
             rol: body.rol,
-            estado: yaActiva ? 'activa' : 'pendiente_invitacion',
+            estado: 'pendiente_invitacion',
             codigo_activacion: codigoEmitido,
             expira_en: expiraEn,
             vinculo,
@@ -825,6 +820,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               nombre: users.fullName,
               rut: users.rut,
               razonSocial: empresas.legalName,
+              personaCreadaEn: users.createdAt,
+              membresiaCreadaEn: memberships.createdAt,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -840,7 +837,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           const siguePendiente =
             fila.estado === 'pendiente_invitacion' &&
             fila.claveNumericaHash === null &&
-            fila.firebaseUid.startsWith('pending-rut:');
+            fila.firebaseUid.startsWith('pending-rut:') &&
+            !personaPrevia(fila.personaCreadaEn, fila.membresiaCreadaEn);
           if (!siguePendiente) {
             record('already_activated');
             return c.json({ error: 'conflict', code: 'already_activated' }, 409);

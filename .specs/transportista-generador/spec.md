@@ -35,7 +35,7 @@ La auditoría sigue el patrón de gestión de flota (`gestion_flota_activada_en`
    - Log estructurado con el email del admin, el id de empresa y el antes/después. Columnas `generador_carga_activado_en` y `generador_carga_activado_por` solo en la transición false → true.
 2. En Empresas del platform-admin, la fila transportista sin el rol muestra «Generar carga». Al confirmar, la fila pasa a «generador de carga» y el botón desaparece.
 3. Cobro UF: ninguna empresa con los dos roles suma `suscripcion_generador`. Paga lo mismo que pagaba como transportista. Un generador puro sigue pagando su UF. Quedó en ADR-079 §4 el 2026-10-19: generar carga entra en la suscripción del transportista.
-4. Migración `0065` aditiva (dos columnas nulas) y su `down` manual. `0063` y `0064` los ocupan #793 y #794; este branch las trae iguales para que el journal no tenga huecos.
+4. Migración `0069` aditiva (dos columnas nulas) y su `down` manual. Se renumeró desde `0065` el 2026-11-04 porque `main` ya ocupaba 0065–0068.
 
 ## Fuera de alcance
 

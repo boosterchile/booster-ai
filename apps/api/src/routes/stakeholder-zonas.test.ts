@@ -37,7 +37,7 @@ const noopLogger = {
 } as unknown as Logger;
 
 const FB_UID = 'fb-stakeholder-uid';
-const USER_ID = '11111111-1111-1111-1111-111111111111';
+const USER_ID = '11111111-1111-4111-8111-111111111111';
 const ZONA_SLUG = 'polo-quilicura';
 
 interface ZonaRow {

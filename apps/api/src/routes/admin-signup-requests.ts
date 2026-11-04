@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import type { Auth } from 'firebase-admin/auth';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { emitirAltaExencion } from '../services/emitir-alta-exencion.js';
