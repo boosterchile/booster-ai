@@ -10,6 +10,11 @@ export * from './primitives/ids.js';
 export * from './primitives/chile.js';
 export * from './primitives/geo.js';
 export * from './primitives/dates.js';
+export * from './primitives/comunas-chile.js';
+export * from './primitives/punto-mapa.js';
+export * from './primitives/interpretar-lugar.js';
+export * from './primitives/bounded-array.js';
+export * from './primitives/mensajes.js';
 
 // Dominio — multi-tenant + ops (slice B pre-launch)
 export * from './domain/stakeholder.js';
@@ -17,6 +22,7 @@ export * from './domain/organizacion-stakeholder.js';
 export * from './domain/empresa.js';
 export * from './domain/plan.js';
 export * from './domain/membership.js';
+export * from './domain/capacidades.js';
 export * from './domain/zone.js';
 export * from './domain/zona-stakeholder.js';
 export * from './domain/offer.js';

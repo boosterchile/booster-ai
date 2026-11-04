@@ -85,7 +85,7 @@ export function createAdminMatchingBacktestRoutes(opts: { db: Db; logger: Logger
     const bodyRaw = await c.req.json().catch(() => ({}));
     const parsed = runRequestSchema.safeParse(bodyRaw);
     if (!parsed.success) {
-      return c.json({ error: 'validation', detail: parsed.error.format() }, 400);
+      return c.json({ error: 'validation', detail: z.treeifyError(parsed.error) }, 400);
     }
 
     opts.logger.info(

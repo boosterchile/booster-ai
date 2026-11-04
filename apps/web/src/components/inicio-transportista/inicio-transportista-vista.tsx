@@ -19,7 +19,13 @@ import { AvisosCard, AvisosChips } from './avisos-chips.js';
 import { BloqueNegocio, CtaVerde, ErrorBloque, EsqueletoBloque } from './bloque-negocio.js';
 import { ListaProximos } from './lista-proximos.js';
 import { MiniMapaFlota } from './mini-mapa-flota.js';
-import type { AccesoVista, FuenteReintento, InicioVista, PasoAlta } from './modelo.js';
+import type {
+  AccesoVista,
+  EstadoCobraHoy as EstadoCobraHoyVista,
+  FuenteReintento,
+  InicioVista,
+  PasoAlta,
+} from './modelo.js';
 import { type AvisoNegocio, INICIO_PLATA_ACTIVA, type NegocioHoy } from './negocio.js';
 
 const ICONO_ACCESO: Record<string, LucideIcon> = {
@@ -52,6 +58,7 @@ export function InicioTransportistaVista({
   return (
     <div data-testid="inicio-transportista" className="min-w-0">
       <Saludo vista={vista} />
+      <EstadoCobraHoy estado={vista.cobraHoy} />
       {vista.modo === 'empresa-nueva' && vista.pasos ? (
         <div className="mt-6">
           <Alta pasos={vista.pasos} />
@@ -92,6 +99,19 @@ function avisosListos(negocio: NegocioHoy): AvisoNegocio[] {
     avisos.push(negocio.documentos.valor);
   }
   return avisos;
+}
+
+function EstadoCobraHoy({ estado }: { estado: EstadoCobraHoyVista }) {
+  if (estado !== 'apagado' && estado !== 'error') {
+    return null;
+  }
+  return (
+    <output data-testid="inicio-cobra-hoy" className="mt-4 block text-neutral-600 text-sm">
+      {estado === 'apagado'
+        ? 'Cobra hoy todavía no está disponible.'
+        : 'Cobra hoy no está disponible ahora. El resto del Inicio sigue funcionando.'}
+    </output>
+  );
 }
 
 function Ofertas({

@@ -1,0 +1,447 @@
+import type { RegionCode } from './chile.js';
+
+/**
+ * Comunas de Chile con código DPA / CUT del INE (5 dígitos). Cabe en
+ * `viajes.origen_codigo_comuna` / `destino_codigo_comuna` (varchar 10).
+ * Fuente: códigos únicos territoriales vigentes (346 comunas, 16 regiones).
+ * El nombre se muestra en el selector; el código es lo que se persiste.
+ */
+export interface ComunaChile {
+  readonly code: string;
+  readonly name: string;
+  readonly region: RegionCode;
+}
+
+const FILAS = [
+  // XV (4)
+  ['XV', '15101', 'Arica'],
+  ['XV', '15102', 'Camarones'],
+  ['XV', '15201', 'Putre'],
+  ['XV', '15202', 'General Lagos'],
+  // I (7)
+  ['I', '01101', 'Iquique'],
+  ['I', '01107', 'Alto Hospicio'],
+  ['I', '01401', 'Pozo Almonte'],
+  ['I', '01402', 'Camiña'],
+  ['I', '01403', 'Colchane'],
+  ['I', '01404', 'Huara'],
+  ['I', '01405', 'Pica'],
+  // II (9)
+  ['II', '02101', 'Antofagasta'],
+  ['II', '02102', 'Mejillones'],
+  ['II', '02103', 'Sierra Gorda'],
+  ['II', '02104', 'Taltal'],
+  ['II', '02201', 'Calama'],
+  ['II', '02202', 'Ollagüe'],
+  ['II', '02203', 'San Pedro de Atacama'],
+  ['II', '02301', 'Tocopilla'],
+  ['II', '02302', 'María Elena'],
+  // III (9)
+  ['III', '03101', 'Copiapó'],
+  ['III', '03102', 'Caldera'],
+  ['III', '03103', 'Tierra Amarilla'],
+  ['III', '03201', 'Chañaral'],
+  ['III', '03202', 'Diego de Almagro'],
+  ['III', '03301', 'Vallenar'],
+  ['III', '03302', 'Alto del Carmen'],
+  ['III', '03303', 'Freirina'],
+  ['III', '03304', 'Huasco'],
+  // IV (15)
+  ['IV', '04101', 'La Serena'],
+  ['IV', '04102', 'Coquimbo'],
+  ['IV', '04103', 'Andacollo'],
+  ['IV', '04104', 'La Higuera'],
+  ['IV', '04105', 'Paiguano'],
+  ['IV', '04106', 'Vicuña'],
+  ['IV', '04201', 'Illapel'],
+  ['IV', '04202', 'Canela'],
+  ['IV', '04203', 'Los Vilos'],
+  ['IV', '04204', 'Salamanca'],
+  ['IV', '04301', 'Ovalle'],
+  ['IV', '04302', 'Combarbalá'],
+  ['IV', '04303', 'Monte Patria'],
+  ['IV', '04304', 'Punitaqui'],
+  ['IV', '04305', 'Río Hurtado'],
+  // V (38)
+  ['V', '05101', 'Valparaíso'],
+  ['V', '05102', 'Casablanca'],
+  ['V', '05103', 'Concón'],
+  ['V', '05104', 'Juan Fernández'],
+  ['V', '05105', 'Puchuncaví'],
+  ['V', '05107', 'Quintero'],
+  ['V', '05109', 'Viña del Mar'],
+  ['V', '05201', 'Isla de Pascua'],
+  ['V', '05301', 'Los Andes'],
+  ['V', '05302', 'Calle Larga'],
+  ['V', '05303', 'Rinconada'],
+  ['V', '05304', 'San Esteban'],
+  ['V', '05401', 'La Ligua'],
+  ['V', '05402', 'Cabildo'],
+  ['V', '05403', 'Papudo'],
+  ['V', '05404', 'Petorca'],
+  ['V', '05405', 'Zapallar'],
+  ['V', '05501', 'Quillota'],
+  ['V', '05502', 'Calera'],
+  ['V', '05503', 'Hijuelas'],
+  ['V', '05504', 'La Cruz'],
+  ['V', '05506', 'Nogales'],
+  ['V', '05601', 'San Antonio'],
+  ['V', '05602', 'Algarrobo'],
+  ['V', '05603', 'Cartagena'],
+  ['V', '05604', 'El Quisco'],
+  ['V', '05605', 'El Tabo'],
+  ['V', '05606', 'Santo Domingo'],
+  ['V', '05701', 'San Felipe'],
+  ['V', '05702', 'Catemu'],
+  ['V', '05703', 'Llaillay'],
+  ['V', '05704', 'Panquehue'],
+  ['V', '05705', 'Putaendo'],
+  ['V', '05706', 'Santa María'],
+  ['V', '05801', 'Quilpué'],
+  ['V', '05802', 'Limache'],
+  ['V', '05803', 'Olmué'],
+  ['V', '05804', 'Villa Alemana'],
+  // XIII (52)
+  ['XIII', '13101', 'Santiago'],
+  ['XIII', '13102', 'Cerrillos'],
+  ['XIII', '13103', 'Cerro Navia'],
+  ['XIII', '13104', 'Conchalí'],
+  ['XIII', '13105', 'El Bosque'],
+  ['XIII', '13106', 'Estación Central'],
+  ['XIII', '13107', 'Huechuraba'],
+  ['XIII', '13108', 'Independencia'],
+  ['XIII', '13109', 'La Cisterna'],
+  ['XIII', '13110', 'La Florida'],
+  ['XIII', '13111', 'La Granja'],
+  ['XIII', '13112', 'La Pintana'],
+  ['XIII', '13113', 'La Reina'],
+  ['XIII', '13114', 'Las Condes'],
+  ['XIII', '13115', 'Lo Barnechea'],
+  ['XIII', '13116', 'Lo Espejo'],
+  ['XIII', '13117', 'Lo Prado'],
+  ['XIII', '13118', 'Macul'],
+  ['XIII', '13119', 'Maipú'],
+  ['XIII', '13120', 'Ñuñoa'],
+  ['XIII', '13121', 'Pedro Aguirre Cerda'],
+  ['XIII', '13122', 'Peñalolén'],
+  ['XIII', '13123', 'Providencia'],
+  ['XIII', '13124', 'Pudahuel'],
+  ['XIII', '13125', 'Quilicura'],
+  ['XIII', '13126', 'Quinta Normal'],
+  ['XIII', '13127', 'Recoleta'],
+  ['XIII', '13128', 'Renca'],
+  ['XIII', '13129', 'San Joaquín'],
+  ['XIII', '13130', 'San Miguel'],
+  ['XIII', '13131', 'San Ramón'],
+  ['XIII', '13132', 'Vitacura'],
+  ['XIII', '13201', 'Puente Alto'],
+  ['XIII', '13202', 'Pirque'],
+  ['XIII', '13203', 'San José de Maipo'],
+  ['XIII', '13301', 'Colina'],
+  ['XIII', '13302', 'Lampa'],
+  ['XIII', '13303', 'Tiltil'],
+  ['XIII', '13401', 'San Bernardo'],
+  ['XIII', '13402', 'Buin'],
+  ['XIII', '13403', 'Calera de Tango'],
+  ['XIII', '13404', 'Paine'],
+  ['XIII', '13501', 'Melipilla'],
+  ['XIII', '13502', 'Alhué'],
+  ['XIII', '13503', 'Curacaví'],
+  ['XIII', '13504', 'María Pinto'],
+  ['XIII', '13505', 'San Pedro'],
+  ['XIII', '13601', 'Talagante'],
+  ['XIII', '13602', 'El Monte'],
+  ['XIII', '13603', 'Isla de Maipo'],
+  ['XIII', '13604', 'Padre Hurtado'],
+  ['XIII', '13605', 'Peñaflor'],
+  // VI (33)
+  ['VI', '06101', 'Rancagua'],
+  ['VI', '06102', 'Codegua'],
+  ['VI', '06103', 'Coinco'],
+  ['VI', '06104', 'Coltauco'],
+  ['VI', '06105', 'Doñihue'],
+  ['VI', '06106', 'Graneros'],
+  ['VI', '06107', 'Las Cabras'],
+  ['VI', '06108', 'Machalí'],
+  ['VI', '06109', 'Malloa'],
+  ['VI', '06110', 'Mostazal'],
+  ['VI', '06111', 'Olivar'],
+  ['VI', '06112', 'Peumo'],
+  ['VI', '06113', 'Pichidegua'],
+  ['VI', '06114', 'Quinta de Tilcoco'],
+  ['VI', '06115', 'Rengo'],
+  ['VI', '06116', 'Requínoa'],
+  ['VI', '06117', 'San Vicente'],
+  ['VI', '06201', 'Pichilemu'],
+  ['VI', '06202', 'La Estrella'],
+  ['VI', '06203', 'Litueche'],
+  ['VI', '06204', 'Marchihue'],
+  ['VI', '06205', 'Navidad'],
+  ['VI', '06206', 'Paredones'],
+  ['VI', '06301', 'San Fernando'],
+  ['VI', '06302', 'Chépica'],
+  ['VI', '06303', 'Chimbarongo'],
+  ['VI', '06304', 'Lolol'],
+  ['VI', '06305', 'Nancagua'],
+  ['VI', '06306', 'Palmilla'],
+  ['VI', '06307', 'Peralillo'],
+  ['VI', '06308', 'Placilla'],
+  ['VI', '06309', 'Pumanque'],
+  ['VI', '06310', 'Santa Cruz'],
+  // VII (30)
+  ['VII', '07101', 'Talca'],
+  ['VII', '07102', 'Constitución'],
+  ['VII', '07103', 'Curepto'],
+  ['VII', '07104', 'Empedrado'],
+  ['VII', '07105', 'Maule'],
+  ['VII', '07106', 'Pelarco'],
+  ['VII', '07107', 'Pencahue'],
+  ['VII', '07108', 'Río Claro'],
+  ['VII', '07109', 'San Clemente'],
+  ['VII', '07110', 'San Rafael'],
+  ['VII', '07201', 'Cauquenes'],
+  ['VII', '07202', 'Chanco'],
+  ['VII', '07203', 'Pelluhue'],
+  ['VII', '07301', 'Curicó'],
+  ['VII', '07302', 'Hualañé'],
+  ['VII', '07303', 'Licantén'],
+  ['VII', '07304', 'Molina'],
+  ['VII', '07305', 'Rauco'],
+  ['VII', '07306', 'Romeral'],
+  ['VII', '07307', 'Sagrada Familia'],
+  ['VII', '07308', 'Teno'],
+  ['VII', '07309', 'Vichuquén'],
+  ['VII', '07401', 'Linares'],
+  ['VII', '07402', 'Colbún'],
+  ['VII', '07403', 'Longaví'],
+  ['VII', '07404', 'Parral'],
+  ['VII', '07405', 'Retiro'],
+  ['VII', '07406', 'San Javier'],
+  ['VII', '07407', 'Villa Alegre'],
+  ['VII', '07408', 'Yerbas Buenas'],
+  // XVI (21)
+  ['XVI', '16101', 'Chillán'],
+  ['XVI', '16102', 'Bulnes'],
+  ['XVI', '16103', 'Chillán Viejo'],
+  ['XVI', '16104', 'El Carmen'],
+  ['XVI', '16105', 'Pemuco'],
+  ['XVI', '16106', 'Pinto'],
+  ['XVI', '16107', 'Quillón'],
+  ['XVI', '16108', 'San Ignacio'],
+  ['XVI', '16109', 'Yungay'],
+  ['XVI', '16201', 'Quirihue'],
+  ['XVI', '16202', 'Cobquecura'],
+  ['XVI', '16203', 'Coelemu'],
+  ['XVI', '16204', 'Ninhue'],
+  ['XVI', '16205', 'Portezuelo'],
+  ['XVI', '16206', 'Ranquil'],
+  ['XVI', '16207', 'Trehuaco'],
+  ['XVI', '16301', 'San Carlos'],
+  ['XVI', '16302', 'Coihueco'],
+  ['XVI', '16303', 'Ñiquén'],
+  ['XVI', '16304', 'San Fabián'],
+  ['XVI', '16305', 'San Nicolás'],
+  // VIII (33)
+  ['VIII', '08101', 'Concepción'],
+  ['VIII', '08102', 'Coronel'],
+  ['VIII', '08103', 'Chiguayante'],
+  ['VIII', '08104', 'Florida'],
+  ['VIII', '08105', 'Hualqui'],
+  ['VIII', '08106', 'Lota'],
+  ['VIII', '08107', 'Penco'],
+  ['VIII', '08108', 'San Pedro de la Paz'],
+  ['VIII', '08109', 'Santa Juana'],
+  ['VIII', '08110', 'Talcahuano'],
+  ['VIII', '08111', 'Tomé'],
+  ['VIII', '08112', 'Hualpén'],
+  ['VIII', '08201', 'Lebu'],
+  ['VIII', '08202', 'Arauco'],
+  ['VIII', '08203', 'Cañete'],
+  ['VIII', '08204', 'Contulmo'],
+  ['VIII', '08205', 'Curanilahue'],
+  ['VIII', '08206', 'Los Álamos'],
+  ['VIII', '08207', 'Tirúa'],
+  ['VIII', '08301', 'Los Ángeles'],
+  ['VIII', '08302', 'Antuco'],
+  ['VIII', '08303', 'Cabrero'],
+  ['VIII', '08304', 'Laja'],
+  ['VIII', '08305', 'Mulchén'],
+  ['VIII', '08306', 'Nacimiento'],
+  ['VIII', '08307', 'Negrete'],
+  ['VIII', '08308', 'Quilaco'],
+  ['VIII', '08309', 'Quilleco'],
+  ['VIII', '08310', 'San Rosendo'],
+  ['VIII', '08311', 'Santa Bárbara'],
+  ['VIII', '08312', 'Tucapel'],
+  ['VIII', '08313', 'Yumbel'],
+  ['VIII', '08314', 'Alto Biobío'],
+  // IX (32)
+  ['IX', '09101', 'Temuco'],
+  ['IX', '09102', 'Carahue'],
+  ['IX', '09103', 'Cunco'],
+  ['IX', '09104', 'Curarrehue'],
+  ['IX', '09105', 'Freire'],
+  ['IX', '09106', 'Galvarino'],
+  ['IX', '09107', 'Gorbea'],
+  ['IX', '09108', 'Lautaro'],
+  ['IX', '09109', 'Loncoche'],
+  ['IX', '09110', 'Melipeuco'],
+  ['IX', '09111', 'Nueva Imperial'],
+  ['IX', '09112', 'Padre Las Casas'],
+  ['IX', '09113', 'Perquenco'],
+  ['IX', '09114', 'Pitrufquén'],
+  ['IX', '09115', 'Pucón'],
+  ['IX', '09116', 'Saavedra'],
+  ['IX', '09117', 'Teodoro Schmidt'],
+  ['IX', '09118', 'Toltén'],
+  ['IX', '09119', 'Vilcún'],
+  ['IX', '09120', 'Villarrica'],
+  ['IX', '09121', 'Cholchol'],
+  ['IX', '09201', 'Angol'],
+  ['IX', '09202', 'Collipulli'],
+  ['IX', '09203', 'Curacautín'],
+  ['IX', '09204', 'Ercilla'],
+  ['IX', '09205', 'Lonquimay'],
+  ['IX', '09206', 'Los Sauces'],
+  ['IX', '09207', 'Lumaco'],
+  ['IX', '09208', 'Purén'],
+  ['IX', '09209', 'Renaico'],
+  ['IX', '09210', 'Traiguén'],
+  ['IX', '09211', 'Victoria'],
+  // XIV (12)
+  ['XIV', '14101', 'Valdivia'],
+  ['XIV', '14102', 'Corral'],
+  ['XIV', '14103', 'Lanco'],
+  ['XIV', '14104', 'Los Lagos'],
+  ['XIV', '14105', 'Máfil'],
+  ['XIV', '14106', 'Mariquina'],
+  ['XIV', '14107', 'Paillaco'],
+  ['XIV', '14108', 'Panguipulli'],
+  ['XIV', '14201', 'La Unión'],
+  ['XIV', '14202', 'Futrono'],
+  ['XIV', '14203', 'Lago Ranco'],
+  ['XIV', '14204', 'Río Bueno'],
+  // X (30)
+  ['X', '10101', 'Puerto Montt'],
+  ['X', '10102', 'Calbuco'],
+  ['X', '10103', 'Cochamó'],
+  ['X', '10104', 'Fresia'],
+  ['X', '10105', 'Frutillar'],
+  ['X', '10106', 'Los Muermos'],
+  ['X', '10107', 'Llanquihue'],
+  ['X', '10108', 'Maullín'],
+  ['X', '10109', 'Puerto Varas'],
+  ['X', '10201', 'Castro'],
+  ['X', '10202', 'Ancud'],
+  ['X', '10203', 'Chonchi'],
+  ['X', '10204', 'Curaco de Vélez'],
+  ['X', '10205', 'Dalcahue'],
+  ['X', '10206', 'Puqueldón'],
+  ['X', '10207', 'Queilén'],
+  ['X', '10208', 'Quellón'],
+  ['X', '10209', 'Quemchi'],
+  ['X', '10210', 'Quinchao'],
+  ['X', '10301', 'Osorno'],
+  ['X', '10302', 'Puerto Octay'],
+  ['X', '10303', 'Purranque'],
+  ['X', '10304', 'Puyehue'],
+  ['X', '10305', 'Río Negro'],
+  ['X', '10306', 'San Juan de la Costa'],
+  ['X', '10307', 'San Pablo'],
+  ['X', '10401', 'Chaitén'],
+  ['X', '10402', 'Futaleufú'],
+  ['X', '10403', 'Hualaihué'],
+  ['X', '10404', 'Palena'],
+  // XI (10)
+  ['XI', '11101', 'Coyhaique'],
+  ['XI', '11102', 'Lago Verde'],
+  ['XI', '11201', 'Aysén'],
+  ['XI', '11202', 'Cisnes'],
+  ['XI', '11203', 'Guaitecas'],
+  ['XI', '11301', 'Cochrane'],
+  ['XI', '11302', "O'Higgins"],
+  ['XI', '11303', 'Tortel'],
+  ['XI', '11401', 'Chile Chico'],
+  ['XI', '11402', 'Río Ibáñez'],
+  // XII (11)
+  ['XII', '12101', 'Punta Arenas'],
+  ['XII', '12102', 'Laguna Blanca'],
+  ['XII', '12103', 'Río Verde'],
+  ['XII', '12104', 'San Gregorio'],
+  ['XII', '12201', 'Cabo de Hornos'],
+  ['XII', '12202', 'Antártica'],
+  ['XII', '12301', 'Porvenir'],
+  ['XII', '12302', 'Primavera'],
+  ['XII', '12303', 'Timaukel'],
+  ['XII', '12401', 'Natales'],
+  ['XII', '12402', 'Torres del Paine'],
+] as const satisfies ReadonlyArray<readonly [RegionCode, string, string]>;
+
+export const COMUNAS_CHILE: readonly ComunaChile[] = FILAS.map(([regionCode, code, name]) => ({
+  region: regionCode,
+  code,
+  name,
+}));
+
+const POR_CODIGO = new Map(COMUNAS_CHILE.map((c) => [c.code, c]));
+const POR_REGION = new Map<RegionCode, ComunaChile[]>();
+for (const comuna of COMUNAS_CHILE) {
+  const lista = POR_REGION.get(comuna.region) ?? [];
+  lista.push(comuna);
+  POR_REGION.set(comuna.region, lista);
+}
+
+/**
+ * Nombres que Google (y la gente) usa y no coinciden letra por letra con el
+ * catálogo del INE. La clave ya está normalizada.
+ */
+const ALIAS_A_CODIGO: Readonly<Record<string, string>> = {
+  'la calera': '05502',
+  'til til': '13303',
+  'til-til': '13303',
+  paihuano: '04105',
+  coihaique: '11101',
+  marchigue: '06204',
+  'san vicente de tagua tagua': '06117',
+};
+
+/** Minúsculas, sin tildes ni puntuación, para comparar nombres de comuna. */
+export function normalizarNombreLugar(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function comunasDeRegion(regionCode: RegionCode): readonly ComunaChile[] {
+  return POR_REGION.get(regionCode) ?? [];
+}
+
+export function comunaPorCodigo(code: string): ComunaChile | undefined {
+  return POR_CODIGO.get(code);
+}
+
+/**
+ * Busca una comuna por el nombre que devuelve el geocoder. Si hay región,
+ * desempata dentro de ella (hay nombres repetidos entre regiones).
+ */
+export function comunaPorNombre(
+  nombre: string,
+  regionCode?: RegionCode | null,
+): ComunaChile | undefined {
+  const clave = normalizarNombreLugar(nombre);
+  if (!clave) {
+    return undefined;
+  }
+  const alias = ALIAS_A_CODIGO[clave];
+  if (alias) {
+    const porAlias = POR_CODIGO.get(alias);
+    if (porAlias && (regionCode == null || porAlias.region === regionCode)) {
+      return porAlias;
+    }
+  }
+  const universo = regionCode ? comunasDeRegion(regionCode) : COMUNAS_CHILE;
+  return universo.find((c) => normalizarNombreLugar(c.name) === clave);
+}

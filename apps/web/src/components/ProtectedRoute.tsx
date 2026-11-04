@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import { useImpersonation } from '../hooks/use-impersonation.js';
 import { type MeResponse, useMe } from '../hooks/use-me.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { RotarClaveModal } from './auth/RotarClaveModal.js';
 
 export interface ProtectedRouteProps {
@@ -113,6 +114,12 @@ export function ProtectedRoute({
       flags.auth_universal_v1_activated &&
       me.user.has_clave_numerica === false &&
       impersonation.active !== true;
+    // CHEQUEOS_REEMPLAZADOS nav-gestion: el conductor empleado no usa el shell.
+    const capacidades = flagsDe(me);
+    const path = typeof window !== 'undefined' ? window.location.pathname : '';
+    if (capacidades.ctx && !capacidades.menuGestion && !path.startsWith('/app/conductor')) {
+      return <Navigate to="/app/conductor" />;
+    }
     return (
       <>
         {children({ kind: 'onboarded', me })}

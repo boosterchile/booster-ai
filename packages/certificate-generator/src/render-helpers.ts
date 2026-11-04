@@ -11,113 +11,76 @@ import type { DatosMetricasCertificado } from './tipos.js';
 
 export type NivelCertificacion = NonNullable<DatosMetricasCertificado['certificationLevel']>;
 
-/**
- * Geometría del header del PDF (banda superior). Única fuente de verdad para
- * `generar-pdf-base.ts` y para `test/header-layout.test.ts`, que verifica con
- * el font real que el título nunca pise la marca.
- *
- * Todo en puntos PDF (1/72 in), página A4 (595,28 × 841,89).
- */
-export const HEADER_LAYOUT = {
-  /** x del borde izquierdo del título y del subtítulo. */
-  tituloX: 40,
-  /** Texto de la marca dibujado a la derecha del header. */
-  marcaTexto: 'Booster Chile SpA',
-  /** Tamaño del texto de la marca (HelveticaBold). */
-  marcaTamano: 12,
-  /** La marca empieza en `anchoPagina − marcaOffsetDerecha`. */
-  marcaOffsetDerecha: 180,
-  /** Espacio libre mínimo exigido entre el fin del título y el inicio de la marca. */
-  separacionMinimaTituloMarca: 12,
-} as const;
+/** HC-004 — título único para todos los niveles (decisión de Felipe, 14:41). */
+export const TITULO_CERT = 'Certificado de huella de carbono';
 
-/** x donde empieza la marca del header para una página de `anchoPagina` pt. */
-export function posicionXMarcaHeader(anchoPagina: number): number {
-  return anchoPagina - HEADER_LAYOUT.marcaOffsetDerecha;
+/** Frase ISO exacta de Felipe: subtítulo L2 y Metodología. */
+export const FRASE_ISO = 'Estos resultados han sido establecidos de acuerdo con ISO 14083:2023.';
+
+export const TITULO_DISCLAIMER = 'IMPORTANTE — DATOS SECUNDARIOS MODELADOS';
+
+/** Subtítulo L1 con la versión GLEC (metodología) guardada en la emisión. */
+export function subtituloMetodologia(glecVersion: string): string {
+  return `GLEC Framework ${glecVersion} · ISO 14083:2023 · Well-to-Wheel (combustión + upstream)`;
+}
+
+export interface PresentacionNivel {
+  /** true → sello ESTIMADO + disclaimer + «Estimado» en el pie. */
+  estimado: boolean;
+  badge: string;
 }
 
 /**
- * Título principal del header del PDF según el nivel de certificación.
- *
- * - `primario_verificable` → "CERTIFICADO" (cert auditable bajo SBTi/CDP)
- * - `secundario_*` → "REPORTE ESTIMATIVO" (no auditable)
- *
- * El cambio de palabra es deliberado: "Reporte" comunica al cliente que
- * NO es un certificado en sentido estricto bajo GLEC §4.4 nivel 1.
+ * Única fuente del badge, el sello y el disclaimer (ux.md §Badge): así no
+ * puede salir un badge primario con sello Estimado. La verdad es la emisión
+ * (`certificationLevel`); el % es la cobertura con piso (nunca sube a 100).
  */
-export function tituloHeader(nivel: NivelCertificacion): string {
-  return nivel === 'primario_verificable'
-    ? 'CERTIFICADO DE HUELLA DE CARBONO'
-    : 'REPORTE ESTIMATIVO DE HUELLA DE CARBONO';
+export function presentacionNivel(m: {
+  certificationLevel?: NivelCertificacion;
+  coveragePct?: number;
+}): PresentacionNivel {
+  const pct = Math.min(100, Math.max(0, Math.floor(m.coveragePct ?? 0)));
+  const estimado = m.certificationLevel !== 'primario_verificable';
+  return {
+    estimado,
+    badge: estimado
+      ? `Estimado · datos secundarios modelados · ${pct}% telemetría`
+      : `\u2713 Dato primario medido · ${pct}% telemetría`,
+  };
+}
+
+/** Cuerpo del disclaimer: texto exacto de Felipe con fuente y versión de la emisión. */
+export function textoDisclaimer(fuenteFactores: string, glecVersion: string): string {
+  return `Cálculo basado en datos secundarios modelados (Google Routes API + factores ${fuenteFactores} + GLEC Framework ${glecVersion}). NO auditable como dato primario bajo SBTi, CDP o CSRD assurance. Para certificado verificable con datos primarios (telemetría Teltonika), contactar a Booster.`;
+}
+
+/** Número es-CL: coma decimal y punto de miles (ux.md §Tipografía). */
+export function numeroEsCl(n: number, decimales = 2): string {
+  return n.toLocaleString('es-CL', {
+    minimumFractionDigits: decimales,
+    maximumFractionDigits: decimales,
+  });
 }
 
 /**
- * Subtítulo del header. Aclara la metodología y la calidad del dato.
+ * Número principal del cert: valor (22 pt) y detalle «kg CO₂e (± Y kg)».
+ * El ± es kgWtw × uncertaintyFactor (GLEC v3 Annex B); fuera de [0, 1] lanza
+ * en vez de imprimir algo sin sentido en un cert firmado.
  */
-export function subtituloHeader(nivel: NivelCertificacion): string {
-  return nivel === 'primario_verificable'
-    ? 'GLEC Framework v3.0  ·  Datos primarios verificables'
-    : 'GLEC Framework v3.0  ·  Datos secundarios modelados';
-}
-
-/**
- * Tamaño del texto del título. Reducido en modo secundario porque la
- * cadena es más larga ("REPORTE ESTIMATIVO..." vs "CERTIFICADO...") y
- * debe caber a la izquierda de la marca "Booster Chile SpA" en el header.
- *
- * Medido con HelveticaBold en A4: a 16 pt el título secundario terminaba en
- * x≈426,8 y pisaba la marca (x=415,28); a 14 pt termina en x≈378,5 y deja
- * ~37 pt libres. El invariante lo vigila `test/header-layout.test.ts`.
- */
-export function tamanoTitulo(nivel: NivelCertificacion): number {
-  return nivel === 'primario_verificable' ? 18 : 14;
-}
-
-/**
- * `true` si el cert debe llevar disclaimer prominente de "datos secundarios
- * modelados, no auditable bajo SBTi/CDP". Es el mecanismo de greenwashing
- * prevention de ADR-028 §4.
- */
-export function muestraDisclaimerSecundario(nivel: NivelCertificacion): boolean {
-  return nivel !== 'primario_verificable';
-}
-
-/**
- * Líneas del disclaimer secundario, ya partidas para no overflowear el
- * ancho del rectángulo en el PDF. Cualquier cambio del copy debe
- * mantener: (a) mención explícita "datos secundarios modelados",
- * (b) mención "NO auditable como dato primario", (c) path de upgrade
- * vía Teltonika.
- */
-export const DISCLAIMER_SECUNDARIO_LINEAS: readonly string[] = [
-  'Cálculo basado en datos secundarios modelados (Google Routes API + factores SEC Chile 2024).',
-  'NO auditable como dato primario bajo SBTi/CDP. Para certificado verificable bajo GLEC §4.4',
-  'nivel 1, contactar a Booster para activar telemetría Teltonika en su flota.',
-] as const;
-
-/**
- * Formatea el número principal de emisiones publicado en el cert.
- *
- * - Si no hay factor de incertidumbre o es 0 → "X.XX kg CO2e"
- * - Si hay factor en (0, 1] → "X.XX ± Y.YY kg CO2e"
- *
- * El intervalo simétrico (kgWtw × factor) sigue el estándar GLEC v3
- * Annex B: "publicar el factor de incertidumbre como ± absoluto en las
- * mismas unidades del valor reportado".
- *
- * Validación defensiva: factor fuera de [0, 1] tira error en vez de
- * imprimir un valor sin sentido en un cert firmado.
- */
-export function formatearNumeroPrincipal(kgWtw: number, uncertaintyFactor?: number): string {
+export function formatearNumeroPrincipal(
+  kgWtw: number,
+  uncertaintyFactor?: number,
+): { valor: string; detalle: string } {
+  const valor = numeroEsCl(kgWtw);
   if (uncertaintyFactor === undefined || uncertaintyFactor === 0) {
-    return `${kgWtw.toFixed(2)} kg CO2e`;
+    return { valor, detalle: 'kg CO\u2082e' };
   }
   if (uncertaintyFactor < 0 || uncertaintyFactor > 1 || Number.isNaN(uncertaintyFactor)) {
     throw new Error(
       `uncertaintyFactor debe estar en [0, 1], recibido ${uncertaintyFactor} (ADR-028 §3)`,
     );
   }
-  return `${kgWtw.toFixed(2)} ± ${(kgWtw * uncertaintyFactor).toFixed(2)} kg CO2e`;
+  return { valor, detalle: `kg CO\u2082e (± ${numeroEsCl(kgWtw * uncertaintyFactor)} kg)` };
 }
 
 /**

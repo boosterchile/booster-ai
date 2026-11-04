@@ -41,6 +41,11 @@ export const LIVE_TRACKING_QUERY = {
 /** Estados en los que GET /public/tracking devuelve posición viva. */
 const LIVE_PUBLIC_TRACKING_STATUSES = new Set(['asignado', 'en_proceso']);
 
+/** true si el viaje está en seguimiento vivo (asignado | en_proceso). */
+export function isLiveTrackingStatus(status: string | null | undefined): boolean {
+  return status != null && LIVE_PUBLIC_TRACKING_STATUSES.has(status);
+}
+
 /**
  * Enlace absoluto `/tracking/:token` para compartir el seguimiento.
  * Null si no hay token o el viaje no está en seguimiento vivo. El
@@ -54,7 +59,7 @@ export function publicTrackingShareUrl(
   if (token == null || token.length === 0) {
     return null;
   }
-  if (tripStatus == null || !LIVE_PUBLIC_TRACKING_STATUSES.has(tripStatus)) {
+  if (!isLiveTrackingStatus(tripStatus)) {
     return null;
   }
   const base = origin.endsWith('/') ? origin.slice(0, -1) : origin;

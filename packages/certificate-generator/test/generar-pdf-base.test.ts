@@ -8,6 +8,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { generarPdfBase } from '../src/generar-pdf-base.js';
+import { suitePdf } from './pdf-suite.js';
+
+suitePdf();
 
 describe('generarPdfBase', () => {
   const viajeMinimo = {
@@ -40,7 +43,7 @@ describe('generarPdfBase', () => {
   };
 
   const empresaMinimo = {
-    id: '00000000-0000-0000-0000-000000000001',
+    id: '00000000-0000-4000-8000-000000000001',
     legalName: 'Logística del Sur SpA',
     rut: '76.123.456-K',
   };

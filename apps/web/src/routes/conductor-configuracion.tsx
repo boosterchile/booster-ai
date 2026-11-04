@@ -16,6 +16,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { loadAutoplayPreference, saveAutoplayPreference } from '../services/coaching-voice.js';
 import {
   type PermissionState,
@@ -75,7 +76,8 @@ export function ConductorConfiguracionRoute() {
         }
         // Gate por rol, igual que /app/conductor: esta configuración es del
         // conductor; cualquier otro rol vuelve a su shell.
-        if (ctx.me.active_membership?.role !== 'conductor') {
+        // CHEQUEOS_REEMPLAZADOS panel-conductor-config: antes role !== 'conductor'.
+        if (!flagsDe(ctx.me).panelConductor) {
           return <Navigate to="/app" />;
         }
         return <ConductorConfiguracionPage me={ctx.me} />;

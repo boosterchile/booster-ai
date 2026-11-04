@@ -180,6 +180,25 @@ describe('AppRoute', () => {
     expect(screen.getByTestId('inicio-accesos')).toHaveClass('md:hidden');
   });
 
+  it('empresa dual ve en un solo inicio las ofertas de su flota y sus cargas', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, true) };
+    renderWithQueryClient(<AppRoute />);
+    expect(await screen.findByTestId('inicio-mixta')).toBeInTheDocument();
+    expect(screen.getByText('Ofertas para tu flota')).toBeInTheDocument();
+    expect(screen.getByText('Mis cargas publicadas')).toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
+  });
+
+  it('transportista puro no ve las cards de generador', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('dashboard-link-ofertas')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Como generador de carga' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
+  });
+
   it('shipper → muestra el inicio del generador y la CTA de publicar', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);

@@ -6,6 +6,7 @@ import { InicioTransportista } from '../components/inicio-transportista/inicio-t
 import { InicioGenerador } from '../components/inicio/inicio-generador.js';
 import { InicioMixta } from '../components/inicio/inicio-mixta.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -75,6 +76,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
           legalName={activeEmpresa.legal_name}
           esAdmin={isAdmin}
           soloLectura={soloLectura}
+          veFinanzas={flagsDe(me).verFinanzas}
         />
       ) : null}
 

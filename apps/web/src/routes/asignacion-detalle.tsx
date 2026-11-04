@@ -29,7 +29,8 @@ import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js'
 import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
-import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
+import { flagsDe } from '../lib/capacidades.js';
+import { esConductorDelViaje } from '../lib/es-conductor-del-viaje.js';
 
 interface AssignmentDetail {
   trip_request: {
@@ -45,9 +46,13 @@ interface AssignmentDetail {
   assignment: {
     id: string;
     status: string;
+    empresa_id?: string | null;
     empresa_legal_name: string | null;
+    vehicle_id: string | null;
     vehicle_plate: string | null;
+    vehicle_status?: string | null;
     vehicle_type: string | null;
+    driver_user_id: string | null;
     driver_name: string | null;
   };
 }
@@ -75,14 +80,31 @@ export function AsignacionDetalleRoute() {
             </div>
           );
         }
-        const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
-        return <AsignacionDetallePage canWriteDocs={canWriteDocs} />;
+        const flags = flagsDe(ctx.me);
+        return (
+          <AsignacionDetallePage
+            canWriteDocs={flags.documentos}
+            puedeAsignar={flags.asignar}
+            puedeCobraHoy={flags.pedirCobraHoy}
+            viewerUserId={ctx.me.user.id}
+          />
+        );
       }}
     </ProtectedRoute>
   );
 }
 
-function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
+function AsignacionDetallePage({
+  canWriteDocs,
+  puedeAsignar,
+  puedeCobraHoy,
+  viewerUserId,
+}: {
+  canWriteDocs: boolean;
+  puedeAsignar: boolean;
+  puedeCobraHoy: boolean;
+  viewerUserId: string;
+}) {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
 
   // GET /assignments/:id devuelve trip + assignment metadata.
@@ -94,6 +116,7 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
   });
 
   const trip = tripQ.data?.trip_request;
+  const assignment = tripQ.data?.assignment;
   const tripCode = trip?.tracking_code ?? assignmentId.slice(0, 8);
   const subtitle = trip
     ? `${trip.origin.address_raw} → ${trip.destination.address_raw}`
@@ -102,18 +125,34 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
   // Phase 4 PR-K4 — confirmación de entrega via voz hands-free.
   // Surface visible mientras el trip está activo (asignado | en_proceso).
   const isConfirmable = trip?.status === 'asignado' || trip?.status === 'en_proceso';
+  // Entrega e incidente son de quien conduce este viaje (el usuario
+  // asignado). El rol de la empresa no alcanza: un dueño que no es ese
+  // conductor administra, no maneja.
   // ADR-029 v1 / ADR-032 — "Cobra hoy" sólo aplica cuando el viaje ya
   // fue entregado. El service backend valida liquidación + flag; si el
   // flag está off, el modal muestra mensaje claro. Si no hay liquidación
   // (todavía no se calculó), el modal explica que falta ese paso.
   const isDelivered = trip?.status === 'entregado';
   const otroLado = trip?.shipper_legal_name ?? 'generador de carga';
+  // Paso de asignación: el viaje sigue `asignado` y todavía no hay conductor.
+  // Ahí el transportista solo elige camión y conductor. La ejecución del
+  // viaje (ruta, entrega, incidentes, documentos, chat) vuelve cuando ya
+  // hay conductor, o si el viaje ya avanzó o se cerró.
+  const enPasoAsignacion =
+    assignment != null && assignment.driver_user_id == null && assignment.status === 'asignado';
+  const mostrarEjecucion = assignment != null && !enPasoAsignacion;
+  const conduceEsteViaje = esConductorDelViaje(viewerUserId, assignment?.driver_user_id);
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100">
-      {/* Header global */}
-      <div className="border-neutral-200 border-b bg-white">
-        <PushSubscribeBanner />
+      {/* Header global. El inset va en este <header> aunque no haya banner
+          (push ya concedido o descartado): si no, en la PWA de iOS el título
+          queda bajo la barra de estado. El banner no suma otro pt-safe. */}
+      <header
+        className="border-neutral-200 border-b bg-white pt-safe"
+        data-testid="asignacion-header"
+      >
+        <PushSubscribeBanner reservaInset={false} />
         <div className="flex items-center gap-3 px-4 py-3">
           <Link
             to="/app/ofertas"
@@ -127,7 +166,7 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
             <p className="text-neutral-500 text-xs">Carga {tripCode}</p>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Asignar conductor — visible mientras el assignment esté
           mutable (asignado | recogido). Antes de aceptar este componente
@@ -135,78 +174,82 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
           driver_user_id=NULL y no había forma de setearlo después.
           Sin conductor asignado, el endpoint /assignments/:id/driver-position
           rechaza con 403 y el conductor no puede reportar GPS. */}
-      {tripQ.data?.assignment && (
+      {assignment && puedeAsignar && (
         <DriverAssignmentCard
           assignmentId={assignmentId}
-          currentDriverName={tripQ.data.assignment.driver_name}
-          assignmentStatus={tripQ.data.assignment.status}
+          currentDriverName={assignment.driver_name}
+          currentVehicleId={assignment.vehicle_id}
+          currentVehiclePlate={assignment.vehicle_plate}
+          currentVehicleStatus={assignment.vehicle_status ?? null}
+          carrierEmpresaId={assignment.empresa_id ?? null}
+          assignmentStatus={assignment.status}
         />
       )}
 
-      {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
+      {mostrarEjecucion && (
+        <div data-testid="asignacion-ejecucion" className="flex min-h-0 flex-1 flex-col">
+          {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
           Collapsed por default; el driver expande on-tap para ver la
           polyline de Routes API sobre el mapa. Cierra el loop
           carrier→driver: misma ruta que vio antes de aceptar, ahora
           disponible durante el viaje para navegación consciente de
           huella. Visible para cualquier trip activo o entregado (la
           ruta sigue siendo informativa post-entrega para revisar). */}
-      {!isClosed && <AssignmentEcoRouteCard assignmentId={assignmentId} />}
+          {!isClosed && <AssignmentEcoRouteCard assignmentId={assignmentId} />}
 
-      {/* Capa 2 — recorrido REAL de la carga (traza + ruta esperada + resumen).
+          {/* Capa 2 — recorrido REAL de la carga (traza + ruta esperada + resumen).
           Collapsed por default (mapa pesado); expand-on-tap fetches la traza.
           Útil durante el viaje y post-entrega para revisar el recorrido real.
           Solo con vehículo asignado (si no, no hay telemetría posible). */}
-      {tripQ.data?.assignment && <TrazaCargaCard assignmentId={assignmentId} />}
+          {tripQ.data?.assignment && <TrazaCargaCard assignmentId={assignmentId} />}
 
-      {/* Phase 4 PR-K4 — confirmación de entrega hands-free (voz +
-          botón visual). Visible para el carrier mientras el trip está
-          asignado o en_proceso. Doble confirmación dentro del componente
-          previene falsos positivos. */}
-      {isConfirmable && <DeliveryConfirmCard assignmentId={assignmentId} />}
+          {/* Confirmación de entrega (voz + botón). Solo quien conduce
+          este viaje. Doble confirmación dentro del componente. */}
+          {isConfirmable && conduceEsteViaje && <DeliveryConfirmCard assignmentId={assignmentId} />}
 
-      {/* Phase 4 PR-K6b — reportar incidente operacional (accidente,
-          demora, falla mecánica, etc.). Voice command "marcar
-          incidente" abre panel de selección. Visible mientras el trip
-          esté activo (mismo predicate que delivery confirm). */}
-      {isConfirmable && <IncidentReportCard assignmentId={assignmentId} />}
+          {/* Incidente operacional. Misma compuerta: el administrador
+          de la empresa no reporta un viaje que maneja otra persona. */}
+          {isConfirmable && conduceEsteViaje && <IncidentReportCard assignmentId={assignmentId} />}
 
-      {/* Behavior score card — Phase 2 PR-I5. Solo se muestra cuando
+          {/* Behavior score card — Phase 2 PR-I5. Solo se muestra cuando
           el trip está cerrado, porque el score se calcula post-entrega.
           Para trips en curso, el componente igual maneja el estado
           "no disponible" pero lo escondemos para no agregar ruido a
           la surface activa. */}
-      {isClosed && <BehaviorScoreCard assignmentId={assignmentId} />}
+          {isClosed && <BehaviorScoreCard assignmentId={assignmentId} />}
 
-      {/* ADR-029 v1 / ADR-032 — Botón "Cobra hoy" para el carrier una
+          {/* ADR-029 v1 / ADR-032 — Botón "Cobra hoy" para el carrier una
           vez que el viaje fue entregado. El service backend valida
           flag + liquidación + shipper credit; si el flag está off
           (entornos no-prod por default), el modal lo comunica. */}
-      {isDelivered && (
-        <div className="border-neutral-200 border-b bg-white px-4 py-3">
-          <div className="flex flex-col gap-1">
-            <span className="font-medium text-neutral-700 text-sm">Pronto pago disponible</span>
-            <span className="text-neutral-500 text-xs">
-              Recibe el monto neto del viaje hoy mismo, descontando una tarifa transparente.
-            </span>
-            <div className="mt-2">
-              <CobraHoyButton asignacionId={assignmentId} />
+          {isDelivered && puedeCobraHoy && (
+            <div className="border-neutral-200 border-b bg-white px-4 py-3">
+              <div className="flex flex-col gap-1">
+                <span className="font-medium text-neutral-700 text-sm">Pronto pago disponible</span>
+                <span className="text-neutral-500 text-xs">
+                  Recibe el monto neto del viaje hoy mismo, descontando una tarifa transparente.
+                </span>
+                <div className="mt-2">
+                  <CobraHoyButton asignacionId={assignmentId} />
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment. */}
+          {trip?.id && <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />}
+
+          {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
+          <div className="flex-1 overflow-hidden">
+            <ChatPanel
+              assignmentId={assignmentId}
+              title={`Chat con ${otroLado}`}
+              {...(subtitle ? { subtitle } : {})}
+              readOnly={isClosed}
+            />
           </div>
         </div>
       )}
-
-      {/* Gestor documental F4-4a — tripId es el viaje, no el assignment. */}
-      {trip?.id && <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />}
-
-      {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
-      <div className="flex-1 overflow-hidden">
-        <ChatPanel
-          assignmentId={assignmentId}
-          title={`Chat con ${otroLado}`}
-          {...(subtitle ? { subtitle } : {})}
-          readOnly={isClosed}
-        />
-      </div>
     </div>
   );
 }
