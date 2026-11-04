@@ -3,6 +3,7 @@ import {
   clasificarVinculoPersona,
   cuentaYaActivada,
   invitacionesVigentes,
+  personaPrevia,
 } from './vinculo-persona.js';
 
 describe('clasificarVinculoPersona', () => {
@@ -66,5 +67,20 @@ describe('invitacionesVigentes', () => {
     const reciente = { id: 'nueva', invitedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) };
     const vieja = { id: 'vieja', invitedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) };
     expect(invitacionesVigentes([vieja, reciente]).map((row) => row.id)).toEqual(['nueva']);
+  });
+});
+
+describe('personaPrevia', () => {
+  const vinculo = new Date('2026-05-01T12:00:00Z');
+  it('persona creada en la misma alta: no es previa', () => {
+    expect(personaPrevia(new Date(vinculo.getTime() - 30_000), vinculo)).toBe(false);
+    expect(personaPrevia(vinculo, vinculo)).toBe(false);
+  });
+  it('persona creada antes del vínculo: es previa', () => {
+    expect(personaPrevia(new Date(vinculo.getTime() - 2 * 86_400_000), vinculo)).toBe(true);
+  });
+  it('sin fechas: es previa', () => {
+    expect(personaPrevia(null, vinculo)).toBe(true);
+    expect(personaPrevia(vinculo, undefined)).toBe(true);
   });
 });

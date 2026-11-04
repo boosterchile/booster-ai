@@ -36,7 +36,7 @@ vi.mock('../hooks/use-auth.js', () => ({
 const { PlatformAdminMatchingRoute } = await import('./platform-admin-matching.js');
 
 const SAMPLE_RUN = {
-  id: '11111111-1111-1111-1111-111111111111',
+  id: '11111111-1111-4111-8111-111111111111',
   createdAt: '2026-05-12T12:00:00Z',
   createdByEmail: 'admin@boosterchile.com',
   estado: 'completada' as const,
@@ -45,7 +45,7 @@ const SAMPLE_RUN = {
 };
 
 const SAMPLE_DETAIL = {
-  id: '11111111-1111-1111-1111-111111111111',
+  id: '11111111-1111-4111-8111-111111111111',
   createdAt: '2026-05-12T12:00:00Z',
   completedAt: '2026-05-12T12:00:30Z',
   createdByEmail: 'admin@boosterchile.com',

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { correoEs, textoEs } from '../primitives/mensajes.js';
 
 /**
  * Solicitudes de registro — signup público gated por admin-approval (SEC-001
@@ -32,14 +33,14 @@ export const signupRequestSchema = z.object({
    * 64 + @ + domain 255 = 320). Validación lowercase a cargo del service
    * layer (T8) para evitar duplicates `Foo@x.cl` vs `foo@x.cl`.
    */
-  email: z.string().email().max(320),
+  email: correoEs(320),
   /**
    * Nombre del solicitante tal como lo escribió en el form. Plain text;
    * se usa como `displayName` en Firebase `auth.createUser` post-approve
    * (T10). Max 200 chars para permitir nombres compuestos chilenos sin
    * truncate prematuro.
    */
-  nombreCompleto: z.string().min(1).max(200),
+  nombreCompleto: textoEs(1, 200),
   estado: signupRequestEstadoSchema,
   /**
    * Timestamp de la solicitud (INSERT). Default `now()` en BD.

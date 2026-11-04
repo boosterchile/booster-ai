@@ -104,7 +104,7 @@ export function createAdminObservabilityRoutes(opts: AdminObservabilityRoutesOpt
     }
     const parsed = rangeQuerySchema.safeParse({ days: c.req.query('days') });
     if (!parsed.success) {
-      return c.json({ error: 'invalid_query', details: parsed.error.flatten() }, 400);
+      return c.json({ error: 'invalid_query', details: z.flattenError(parsed.error) }, 400);
     }
     try {
       const result = await opts.costsService.getByService(parsed.data.days);
@@ -125,7 +125,7 @@ export function createAdminObservabilityRoutes(opts: AdminObservabilityRoutesOpt
     }
     const parsed = rangeQuerySchema.safeParse({ days: c.req.query('days') });
     if (!parsed.success) {
-      return c.json({ error: 'invalid_query', details: parsed.error.flatten() }, 400);
+      return c.json({ error: 'invalid_query', details: z.flattenError(parsed.error) }, 400);
     }
     try {
       const result = await opts.costsService.getByProject(parsed.data.days);
@@ -146,7 +146,7 @@ export function createAdminObservabilityRoutes(opts: AdminObservabilityRoutesOpt
     }
     const parsed = rangeQuerySchema.safeParse({ days: c.req.query('days') });
     if (!parsed.success) {
-      return c.json({ error: 'invalid_query', details: parsed.error.flatten() }, 400);
+      return c.json({ error: 'invalid_query', details: z.flattenError(parsed.error) }, 400);
     }
     try {
       const result = await opts.costsService.getTrend(parsed.data.days);
@@ -167,7 +167,7 @@ export function createAdminObservabilityRoutes(opts: AdminObservabilityRoutesOpt
     }
     const parsed = limitQuerySchema.safeParse({ limit: c.req.query('limit') });
     if (!parsed.success) {
-      return c.json({ error: 'invalid_query', details: parsed.error.flatten() }, 400);
+      return c.json({ error: 'invalid_query', details: z.flattenError(parsed.error) }, 400);
     }
     try {
       const result = await opts.costsService.getTopSkus(parsed.data.limit);
@@ -188,7 +188,7 @@ export function createAdminObservabilityRoutes(opts: AdminObservabilityRoutesOpt
     }
     const parsed = monthsQuerySchema.safeParse({ months: c.req.query('months') });
     if (!parsed.success) {
-      return c.json({ error: 'invalid_query', details: parsed.error.flatten() }, 400);
+      return c.json({ error: 'invalid_query', details: z.flattenError(parsed.error) }, 400);
     }
     try {
       const items = await opts.costsService.getMonthlyHistory(parsed.data.months);

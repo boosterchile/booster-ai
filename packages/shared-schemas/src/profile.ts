@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { chileanPhoneSchema, rutSchema } from './primitives/chile.js';
+import { textoEs } from './primitives/mensajes.js';
 
 /**
  * Schema del body PATCH /me/profile.
@@ -21,7 +22,7 @@ import { chileanPhoneSchema, rutSchema } from './primitives/chile.js';
  */
 export const profileUpdateInputSchema = z
   .object({
-    full_name: z.string().min(1).max(200).optional(),
+    full_name: textoEs(1, 200).optional(),
     phone: chileanPhoneSchema.optional(),
     whatsapp_e164: chileanPhoneSchema.optional(),
     rut: rutSchema.optional(),
@@ -32,7 +33,7 @@ export const profileUpdateInputSchema = z
       data.phone !== undefined ||
       data.whatsapp_e164 !== undefined ||
       data.rut !== undefined,
-    { message: 'Al menos un campo debe estar presente' },
+    { message: 'Cambia al menos un dato antes de guardar' },
   );
 
 export type ProfileUpdateInput = z.infer<typeof profileUpdateInputSchema>;

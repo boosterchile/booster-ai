@@ -129,7 +129,7 @@ export type DataModeRaw = z.infer<typeof dataModeRawSchema>;
 // MAP { id → schema } — usado por interpret() para validar de forma genérica
 // =============================================================================
 
-export const LOW_PRIORITY_RAW_SCHEMAS: Record<AvlIdLowPriority, z.ZodTypeAny> = {
+export const LOW_PRIORITY_RAW_SCHEMAS: Record<AvlIdLowPriority, z.ZodType<number>> = {
   [AVL_ID.IGNITION]: ignitionRawSchema,
   [AVL_ID.MOVEMENT]: movementRawSchema,
   [AVL_ID.SLEEP_MODE]: sleepModeRawSchema,

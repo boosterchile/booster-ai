@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import {
+  KM_MINIMOS_KM_POR_LITRO,
+  LITROS_MINIMOS_KM_POR_LITRO,
+  kmPorLitroMaxConfiable,
+} from './combustible/rendimiento.js';
+import {
   COBERTURA_TELEMETRIA_MINIMA_PCT,
   DISTANCIA_MINIMA_AVISO_ROBO_KM,
   GAP_CORTE_MS,
-  KM_MINIMOS_KM_POR_LITRO,
-  LITROS_MINIMOS_KM_POR_LITRO,
   LITROS_MINIMOS_NIVEL_AVISO_ROBO,
   NIVEL_PCT_MINIMO_AVISO_ROBO,
   NOTA_COBERTURA_PARCIAL,
@@ -22,7 +25,6 @@ import {
   RAZON_SIN_SENSOR_COMBUSTIBLE,
   RAZON_SOBRE_TOPE,
   UMBRAL_ROBO_BASE_L,
-  kmPorLitroMaxConfiable,
   notaKmPorLitroNoConfiable,
   razonExclusionKmPorLitro,
   resumirCombustibleVehiculos,
@@ -1601,6 +1603,34 @@ describe('guardrail de km/L', () => {
       kmPorLitro: null,
       notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
     });
+  });
+
+  it('la fila y el hub usan los mismos litros: 62,4 km / 9,96 L se publica como 6,24', () => {
+    // 6 puntos de IO 89 × 166 L = 9,96 L. Con esos litros el km/L daría 6,27,
+    // pero se publica 10,0 L y el hub cuenta con 10,0. Las dos cuentas usan 10,0.
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        fuenteCombustibleCan: '89',
+        capacidadEstanqueL: 166,
+        io: { '239': 1, '240': 1, '89': 66 },
+      }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.45 - 0.5611759,
+        fuenteCombustibleCan: '89',
+        capacidadEstanqueL: 166,
+        io: { '239': 1, '240': 1, '89': 60 },
+      }),
+    ]);
+    const fila = trayectos[0];
+    expect(fila).toMatchObject({
+      litrosConsumidos: 10,
+      kmPorLitro: 6.24,
+      litrosPor100Km: 16,
+      notaCombustible: null,
+    });
+    expect(fila && razonExclusionKmPorLitro(fila)).toBeNull();
   });
 
   it('6,23 km/L, justo bajo el tope, se muestra', () => {

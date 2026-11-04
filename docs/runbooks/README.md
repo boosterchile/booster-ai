@@ -10,11 +10,11 @@
 | `apps/web` | Cloud Run (`booster-ai-web`) | [`service-web.md`](service-web.md) | PWA estática (nginx). Config build-time. |
 | `apps/telemetry-tcp-gateway` | **GKE Autopilot** | [`service-telemetry-tcp-gateway.md`](service-telemetry-tcp-gateway.md) | TCP Teltonika (5027/5061). Único servicio con `kubectl`. |
 | `apps/telemetry-processor` | Cloud Run (`booster-ai-telemetry-processor`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) | Consumer Pub/Sub pull. **Requiere min-instances≥1 + CPU always-on.** |
-| `apps/document-service` | Cloud Run (`booster-ai-document-service`) | [`service-document-service.md`](service-document-service.md) | Consumer Pub/Sub pull. Decodifica TED (PDF417). **Requiere min-instances≥1 + CPU always-on.** Bucket `documents` retención 6 años. |
+| `apps/document-service` | Cloud Run (`booster-ai-document-service`) | [`service-document-service.md`](service-document-service.md) | Consumer Pub/Sub de `document.uploaded`, pull o push según `var.document_service_push` (ADR-085). Decodifica TED (PDF417). **En pull requiere min-instances≥1 + CPU always-on; en push escala a cero.** Bucket `documents` retención 6 años. |
 | `apps/whatsapp-bot` | Cloud Run (`booster-ai-whatsapp-bot`) | [`service-whatsapp-bot.md`](service-whatsapp-bot.md) | Webhook Twilio WhatsApp + conversación XState en Redis. |
 | `apps/sms-fallback-gateway` | Cloud Run (`booster-ai-sms-fallback-gateway`) | [`service-sms-fallback-gateway.md`](service-sms-fallback-gateway.md) | Webhook Twilio SMS → Pub/Sub `telemetry-events`. Ingress abierto (Twilio postea directo). |
 | `apps/matching-engine` | Cloud Run (`booster-ai-matching-engine`) | [`service-matching-engine.md`](service-matching-engine.md) | `POST /ranking` (cómputo puro, T10-21). Sombra o ranking real según flags del api, con fallback local en el api. Orquestación y offers siguen en `apps/api`. |
-| `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | Consumer Pub/Sub pull del canal WhatsApp (T10-21). Sombra o entrega real según flags del api. **Requiere min-instances≥1 + CPU always-on.** Web Push/email siguen en `apps/api`. |
+| `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | Consumer Pub/Sub pull del canal WhatsApp (T10-21). Sombra o entrega real según flags del api. **Con un flag encendido requiere min-instances=1 + CPU always-on** (Terraform deriva el mínimo de los flags; con los dos apagados queda en 0). Web Push/email siguen en `apps/api`. |
 
 ## Alerta → runbook
 
@@ -27,7 +27,8 @@
 | `crash_trace_persistence_failures` (`crash-traces.tf`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) §Crash trace |
 | `telemetry_gateway_down_p1`, `gateway_enrollment_rate_limited_p1`, `gateway_connection_cap_reached_p2`, `parser_errors_p1` (`telemetry-monitoring.tf`) | [`service-telemetry-tcp-gateway.md`](service-telemetry-tcp-gateway.md) + [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) |
 | crash/unplug/jamming P0 (`telemetry-monitoring.tf`) | [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) (respuesta a evento de seguridad física) |
-| `Pub/Sub DLQ has messages` (`monitoring.tf`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) / [`service-document-service.md`](service-document-service.md) (según el origen del mensaje) |
+| `Pub/Sub DLQ has messages` (`monitoring.tf`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) / [`service-document-service.md`](service-document-service.md) (según el origen del mensaje). **Hoy no se dispara**: mira un topic sin suscripción (`.specs/_followups/pubsub-dlq-proyecto.md`) |
+| `document_uploaded_dead_lettered`, `document_uploaded_stalled` (`document-service.tf`) | [`service-document-service.md`](service-document-service.md) §Push y §Los documentos no se procesan |
 | `signup_probe_failure` (`signup-probe.tf`) | [`service-api.md`](service-api.md) (`/health/signup-flow`) |
 
 ## Runbooks de procedimiento (no por servicio)

@@ -21,7 +21,9 @@ T10-05 exige al menos un viaje real con CAN + Teltonika y cobertura ≥ 95 % que
 
 ## 3. Salidas
 
-1. **Función pura `consumoCanSegmento`** (`apps/api/src/domain/consumo-can-segmento.ts`). Recibe las lecturas del segmento (posición + IO) y la distancia real del segmento, y devuelve los litros consumidos o un motivo de no-uso. Reglas, en orden:
+> **HC-005 (#871):** `consumoCanSegmento` se borró. La validación del 83 vive solo en `guardrail83` (`apps/api/src/domain/decidir-fuente-huella.ts`), con los motivos `can_*`; el mínimo de 5 L / 10 km es `can_muestra_insuficiente` y la banda pasó a [15, 70] L/100 km. Lo que sigue es el diseño original de T10-05.
+
+1. **Función pura `consumoCanSegmento`** (borrada en HC-005; ver `guardrail83`). Recibe las lecturas del segmento (posición + IO) y la distancia real del segmento, y devuelve los litros consumidos o un motivo de no-uso. Reglas, en orden:
    - menos de 2 lecturas válidas del 83 → `sin_lecturas`;
    - Δ = última − primera; Δ < 0 → `contador_retrocedio` (reinicio del equipo o desborde); Δ = 0 → `contador_sin_avance`;
    - la distancia recorrida entre la primera y la última lectura cubre < 95 % de la distancia del segmento → `cobertura_insuficiente`. Es el mismo umbral que exige `primario_verificable`: el combustible tiene que cubrir lo mismo que la posición;
