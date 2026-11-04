@@ -33,7 +33,12 @@ describe('integration: alta de conductor con RUT existente', () => {
         memberships: [],
         activeMembership: {
           membership: { id: 'm-int', role: 'dueno' },
-          empresa: { id: empresaId, legal_name: 'Transportes Int' },
+          empresa: {
+            id: empresaId,
+            legal_name: 'Transportes Int',
+            isTransportista: true,
+            isGeneradorCarga: false,
+          },
         },
       } as never);
       await next();

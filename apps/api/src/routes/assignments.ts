@@ -195,13 +195,9 @@ export function createAssignmentsRoutes(opts: {
     if (!ctxLista) {
       return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
     }
-    const filtrosLista = [
-      eq(assignments.empresaId, auth.activeMembership.empresa.id),
-      inArray(assignments.status, ACTIVE_STATUSES),
-    ];
-    if (veSoloSuViaje(ctxLista)) {
-      filtrosLista.push(eq(assignments.driverUserId, auth.userContext.user.id));
-    }
+    const filtroConductor = veSoloSuViaje(ctxLista)
+      ? [eq(assignments.driverUserId, auth.userContext.user.id)]
+      : [];
     const rows = await opts.db
       .select({
         assignmentId: assignments.id,
@@ -229,7 +225,13 @@ export function createAssignmentsRoutes(opts: {
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
       .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
-      .where(and(...filtrosLista))
+      .where(
+        and(
+          eq(assignments.empresaId, auth.activeMembership.empresa.id),
+          inArray(assignments.status, ACTIVE_STATUSES),
+          ...filtroConductor,
+        ),
+      )
       .orderBy(desc(assignments.acceptedAt));
 
     return c.json({
