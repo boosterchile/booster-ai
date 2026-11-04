@@ -34,7 +34,7 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { posicionesMovilConductor, telemetryPoints } from '../db/schema.js';
-import type { LecturaSegmentoCan } from '../domain/consumo-can-segmento.js';
+import type { LecturaSegmentoCan } from '../domain/resumen-can-segmento.js';
 import { esCoordenadaGpsValida } from './coordenada-gps.js';
 
 /** Punto de posición uniforme para el cálculo (distancia real, cobertura, backfill). */
@@ -185,10 +185,11 @@ export async function resolverPosicionesSegmento(
 const ioDataSchema = z.record(z.string(), z.union([z.number(), z.string()]));
 
 /**
- * Lecturas del contador CAN de combustible (AVL 83) en `[desde, hasta]`, de
- * la MISMA fuente que la posición del segmento (T10-05, ADR-077 §2). Solo
- * filas Teltonika que traen el 83; el móvil del conductor no tiene CAN → `[]`.
- * El `io` devuelto lleva solo el 83, como número crudo (×0,1 L).
+ * Lecturas CAN de combustible en `[desde, hasta]`, de la MISMA fuente que la
+ * posición del segmento (T10-05, ADR-077 §2): contador 83 y nivel 89 (HC-001
+ * parte 2, chequeo cruzado). Solo filas Teltonika que traen alguno de los dos;
+ * el móvil del conductor no tiene CAN → `[]`. El `io` devuelto lleva solo el
+ * 83 (crudo, ×0,1 L) y/o el 89 (%), como números.
  */
 export async function cargarLecturasConsumoCan(
   opts: ResolverPosicionesSegmentoOptions,
@@ -216,7 +217,7 @@ export async function cargarLecturasConsumoCan(
         porFuente,
         gte(telemetryPoints.timestampDevice, desde),
         lte(telemetryPoints.timestampDevice, hasta),
-        sql`(${telemetryPoints.ioData} -> '83') is not null`,
+        sql`((${telemetryPoints.ioData} -> '83') is not null or (${telemetryPoints.ioData} -> '89') is not null)`,
       ),
     )
     .orderBy(asc(telemetryPoints.timestampDevice));
@@ -224,12 +225,18 @@ export async function cargarLecturasConsumoCan(
   const lecturas: LecturaSegmentoCan[] = [];
   for (const row of rows) {
     const io = ioDataSchema.safeParse(row.io);
-    const raw = io.success ? Number(io.data['83']) : Number.NaN;
     const [ping] = proyectarPings([row]);
-    if (!ping || !Number.isFinite(raw)) {
+    const can: Record<string, number> = {};
+    for (const id of ['83', '89'] as const) {
+      const v = io.success ? Number(io.data[id]) : Number.NaN;
+      if (Number.isFinite(v)) {
+        can[id] = v;
+      }
+    }
+    if (!ping || Object.keys(can).length === 0) {
       continue;
     }
-    lecturas.push({ ...ping, io: { '83': raw } });
+    lecturas.push({ ...ping, io: can });
   }
   return lecturas;
 }

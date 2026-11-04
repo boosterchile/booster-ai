@@ -19,7 +19,6 @@ import {
   unitTypeSchema,
   validarCoherenciaUnidadVehiculo,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -32,6 +31,7 @@ import {
   telemetryPoints,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
@@ -1539,7 +1539,7 @@ export function createVehiculosRoutes(opts: {
 
     // Última posición VÁLIDA: descarta null + "null island" (0,0, GPS sin fix)
     // para no devolver el marcador en el Golfo de Guinea. Índice parcial
-    // 0066: no camina los pings sin fix. La temperatura (IO 72) se resuelve
+    // 0070: no camina los pings sin fix. La temperatura (IO 72) se resuelve
     // aparte, sin este filtro (es independiente del fix GPS).
     const [last] = await queryUltimaPosicionGpsValida(
       opts.db,

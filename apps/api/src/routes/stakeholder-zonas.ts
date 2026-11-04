@@ -1,5 +1,4 @@
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { type SQL, and, arrayContains, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -16,6 +15,7 @@ import {
   vehicles,
   zonasStakeholder,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 import { recordStakeholderAccess } from '../services/consent.js';
 import {

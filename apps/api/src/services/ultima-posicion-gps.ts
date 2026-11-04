@@ -14,7 +14,7 @@ import { coordenadaGpsValidaSql } from './coordenada-gps.js';
  *
  * Estos dos índices parciales solo contienen filas que pasan
  * `coordenadaGpsValidaSql`. El `LIMIT 1` es un salto al más nuevo, no un
- * barrido. El predicado del índice (migración 0066) tiene que ser el mismo
+ * barrido. El predicado del índice (migración 0070) tiene que ser el mismo
  * que el WHERE: si se afloja, el planner deja de usarlo.
  */
 export const INDICE_GPS_VALIDO_VEHICULO = 'idx_telemetria_vehiculo_gps_valido';

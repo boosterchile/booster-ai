@@ -1,5 +1,5 @@
 -- MANUAL-APPLY-ONLY. El auto-migrator no lee este directorio (ADR-066).
--- Revierte 0066: saca los índices parciales de la última posición válida.
+-- Revierte 0070: saca los índices parciales de la última posición válida.
 -- La lectura vuelve al índice general y puede volver a caminar pings sin fix.
 --
 -- Los DROP INDEX IF EXISTS de abajo sirven fuera de producción, o dentro

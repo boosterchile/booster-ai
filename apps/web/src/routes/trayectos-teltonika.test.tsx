@@ -127,6 +127,7 @@ const listadoConRobo = {
       litros_iniciales: 80,
       litros_finales: 70,
       km_por_litro: 4.25,
+      litros_por_100_km: 23.5,
       nota_combustible: null,
       posible_robo_combustible: true,
       event_lat: null,
@@ -192,12 +193,35 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.getByText('80,0 L')).toBeInTheDocument();
     expect(screen.getByText('70,0 L')).toBeInTheDocument();
     expect(screen.getByText('4,25 km/L')).toBeInTheDocument();
-    // 10 L / 42,5 km × 100 = 23,529… → un decimal
+    // La API manda 23,5 (10 L / 42,5 km × 100)
     expect(screen.getByText('23,5 L/100 km')).toBeInTheDocument();
     expect(screen.getByText(/armas el costo de operación por tu cuenta/)).toBeInTheDocument();
     expect(screen.queryByText(/CLP|\$/)).not.toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('muestra el L/100 km de la API y no lo deriva del km/L redondeado', async () => {
+    const [base] = listadoConRobo.trayectos;
+    // 100 / 3,34 = 29,9; la API calcula 30 L / 100,05 km × 100 = 30,0.
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      trayectos: [{ ...base, km_por_litro: 3.34, litros_por_100_km: 30 }],
+    });
+    renderPage();
+    expect(await screen.findByText('3,34 km/L')).toBeInTheDocument();
+    expect(screen.getByText('30,0 L/100 km')).toBeInTheDocument();
+    expect(screen.queryByText('29,9 L/100 km')).not.toBeInTheDocument();
+  });
+
+  it('con una API sin litros_por_100_km no inventa el L/100 km', async () => {
+    const [base] = listadoConRobo.trayectos;
+    const { litros_por_100_km: _omitido, ...sinCampo } = base ?? {};
+    vi.spyOn(api, 'get').mockResolvedValue({ ...listadoConRobo, trayectos: [sinCampo] });
+    renderPage();
+    expect(await screen.findByText('4,25 km/L')).toBeInTheDocument();
+    // El encabezado nombra «L/100 km»; lo que no debe aparecer es un valor.
+    expect(screen.queryByText(/^[\d.,]+ L\/100 km$/)).not.toBeInTheDocument();
   });
 
   it('sin sensor muestra la CTA y no inventa km/L', async () => {
@@ -446,6 +470,7 @@ const listadoConDato = {
       litros_iniciales: null,
       litros_finales: null,
       km_por_litro: 2.54,
+      litros_por_100_km: 39.4,
       fuente_combustible: 'consumo_can',
       litros_consumidos: 137.5,
       nivel_pct_inicial: 90,

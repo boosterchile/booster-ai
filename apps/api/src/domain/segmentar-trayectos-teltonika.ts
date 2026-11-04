@@ -19,6 +19,12 @@ import {
   haversineKm,
 } from '../services/calcular-cobertura-telemetria.js';
 import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
+import {
+  KM_MINIMOS_KM_POR_LITRO,
+  LITROS_MINIMOS_KM_POR_LITRO,
+  rendimiento,
+  superaTopeConfiable,
+} from './combustible/rendimiento.js';
 
 /**
  * Segmenta trayectos de flota a partir de pings Teltonika ya leídos.
@@ -82,27 +88,9 @@ export const VELOCIDAD_ROBO_MAX_KMH = 5;
 export const UMBRAL_MOVIMIENTO_KMH = 5;
 export const GAP_CORTE_MS = 15 * 60 * 1000;
 export const VENTANA_IO250_MS = 2 * 60 * 1000;
-export const EPSILON_L = 1e-6;
 /** Fracción mínima de la distancia del trayecto que tiene que cubrir la lectura. */
 export const COBERTURA_MINIMA = 0.9;
-/**
- * Muestra mínima para un km/L: el 83 viene en pasos de 0,5 L y el 84 oscila
- * con el oleaje. Con menos litros o menos km el número no es confiable.
- */
-export const LITROS_MINIMOS_KM_POR_LITRO = 5;
-export const KM_MINIMOS_KM_POR_LITRO = 10;
-/**
- * Baseline diésel del diagnóstico JLKT54 (32 L/100 km → 3,125 km/L).
- * Por encima de 2× ese rendimiento el km/L no se publica.
- */
-export const CONSUMO_BASE_DIESEL_L_POR_100_KM = 32;
-export const FACTOR_MAX_KM_POR_LITRO_CONFIABLE = 2;
 export const NOTA_KM_POR_LITRO_NO_CONFIABLE = 'dato no confiable';
-
-/** 2 × (100 / 32) = 6,25 km/L. El valor redondeado que iguala el tope se muestra. */
-export function kmPorLitroMaxConfiable(): number {
-  return FACTOR_MAX_KM_POR_LITRO_CONFIABLE * (100 / CONSUMO_BASE_DIESEL_L_POR_100_KM);
-}
 
 /** Misma barra que `THRESHOLD_SECUNDARIO_MODELED_PCT` (ADR-028). 80 entra; 79 no. */
 export const COBERTURA_TELEMETRIA_MINIMA_PCT = THRESHOLD_SECUNDARIO_MODELED_PCT;
@@ -139,7 +127,7 @@ export function coberturaTelemetriaBaja(coberturaPct: number | null): boolean {
 /**
  * Por qué un segmento no entra al Σkm/ΣL. `sin_sensor` manda. La cobertura
  * baja solo excluye si hay litros medidos: sin litros no había km/L que ocultar.
- * `sobre_tope` es el km/L de `kmCubiertos / litros` redondeado por encima de 6,25.
+ * `sobre_tope` usa el mismo `rendimiento` que la fila, sobre los valores publicados.
  */
 export function razonExclusionKmPorLitro(trayecto: {
   coberturaPct: number | null;
@@ -157,18 +145,11 @@ export function razonExclusionKmPorLitro(trayecto: {
   ) {
     return RAZON_COBERTURA_BAJA;
   }
-  if (kmPorLitroSuperaTope(trayecto.kmCubiertos, trayecto.litrosConsumidos)) {
+  const r = rendimiento(trayecto.kmCubiertos, trayecto.litrosConsumidos);
+  if (r && superaTopeConfiable(r.kmPorLitro)) {
     return RAZON_SOBRE_TOPE;
   }
   return null;
-}
-
-/** Misma cuenta que `consumoCubierto`: km cubiertos / litros, a 2 decimales. */
-function kmPorLitroSuperaTope(kmCubiertos: number | null, litros: number | null): boolean {
-  if (kmCubiertos == null || litros == null || !(litros > 0)) {
-    return false;
-  }
-  return redondear(kmCubiertos / litros, 2) > kmPorLitroMaxConfiable();
 }
 
 /**
@@ -264,6 +245,8 @@ export interface TrayectoTeltonika {
   litrosIniciales: number | null;
   litrosFinales: number | null;
   kmPorLitro: number | null;
+  /** L/100 km del mismo tramo que `kmPorLitro`. Null cuando `kmPorLitro` es null. */
+  litrosPor100Km: number | null;
   /** `null` = el trayecto no trae ninguna lectura de combustible usable. */
   fuenteCombustible: FuenteCombustible | null;
   /** ΔL del 84 o Δ del contador 83 en el tramo leído. Null sin baja, sin cobertura o bajo 5 L / 10 km. */
@@ -853,7 +836,7 @@ export function consumoAcumuladoDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_CONSUMED_L).fuelConsumedL ?? null;
 }
 
-function nivelPctDe(io: Record<string, number>): number | null {
+export function nivelPctDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_PCT).fuelLevelPct ?? null;
 }
 
@@ -955,6 +938,7 @@ type CombustibleTrayecto = Pick<
   | 'litrosIniciales'
   | 'litrosFinales'
   | 'kmPorLitro'
+  | 'litrosPor100Km'
   | 'fuenteCombustible'
   | 'litrosConsumidos'
   | 'nivelPctInicial'
@@ -974,6 +958,7 @@ function baseCombustible(
     litrosIniciales: null,
     litrosFinales: null,
     kmPorLitro: null,
+    litrosPor100Km: null,
     fuenteCombustible: null,
     litrosConsumidos: null,
     nivelPctInicial,
@@ -1162,43 +1147,49 @@ function consumoCubierto(
   hastaIdx: number,
   litros: number,
   distanciaTotalKm: number,
-): Pick<TrayectoTeltonika, 'litrosConsumidos' | 'kmCubiertos' | 'kmPorLitro' | 'notaCombustible'> {
+): Pick<
+  TrayectoTeltonika,
+  'litrosConsumidos' | 'kmCubiertos' | 'kmPorLitro' | 'litrosPor100Km' | 'notaCombustible'
+> {
+  const sinRendimiento = { kmPorLitro: null, litrosPor100Km: null };
   const cubiertaKm = distanciaDe(puntos.slice(desdeIdx, hastaIdx + 1));
   if (cubiertaKm + 1e-9 < COBERTURA_MINIMA * distanciaTotalKm) {
     return {
       litrosConsumidos: null,
       kmCubiertos: null,
-      kmPorLitro: null,
+      ...sinRendimiento,
       notaCombustible: NOTA_COBERTURA_PARCIAL,
     };
   }
   if (litros + 1e-9 < LITROS_MINIMOS_KM_POR_LITRO || cubiertaKm + 1e-9 < KM_MINIMOS_KM_POR_LITRO) {
-    return { litrosConsumidos: null, kmCubiertos: null, kmPorLitro: null, notaCombustible: null };
+    return { litrosConsumidos: null, kmCubiertos: null, ...sinRendimiento, notaCombustible: null };
   }
   const kmCubiertos = redondear(cubiertaKm, 3);
-  const kmPorLitro = redondear(kmCubiertos / Math.max(litros, EPSILON_L), 2);
   const litrosConsumidos = redondear(litros, 1);
+  // Misma cuenta que `razonExclusionKmPorLitro` y el hub: sobre los valores publicados.
+  const r = rendimiento(kmCubiertos, litrosConsumidos);
   const cobertura = coberturaTelemetriaPct(puntos, distanciaTotalKm);
   if (coberturaTelemetriaBaja(cobertura)) {
     return {
       litrosConsumidos,
       kmCubiertos,
-      kmPorLitro: null,
+      ...sinRendimiento,
       notaCombustible: notaKmPorLitroNoConfiable([RAZON_COBERTURA_BAJA]),
     };
   }
-  if (kmPorLitro > kmPorLitroMaxConfiable()) {
+  if (!r || superaTopeConfiable(r.kmPorLitro)) {
     return {
       litrosConsumidos,
       kmCubiertos,
-      kmPorLitro: null,
+      ...sinRendimiento,
       notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
     };
   }
   return {
     litrosConsumidos,
     kmCubiertos,
-    kmPorLitro,
+    kmPorLitro: r.kmPorLitro,
+    litrosPor100Km: r.litrosPor100Km,
     notaCombustible: null,
   };
 }

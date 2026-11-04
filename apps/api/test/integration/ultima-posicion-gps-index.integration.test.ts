@@ -9,7 +9,7 @@ import {
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
- * Migración 0066. No mide tiempo de pared: bajo coverage V8 el mismo plan
+ * Migración 0070. No mide tiempo de pared: bajo coverage V8 el mismo plan
  * cambia de milisegundos. La evidencia es el plan: el índice parcial y
  * cero filas descartadas por filtro, con miles de pings 0,0 más nuevos
  * que el único fix válido.
@@ -28,7 +28,7 @@ function nodos(nodo: NodoPlan): NodoPlan[] {
   return [nodo, ...hijos.flatMap(nodos)];
 }
 
-describe('integration: última posición válida usa el índice parcial (0066)', () => {
+describe('integration: última posición válida usa el índice parcial (0070)', () => {
   let handle: TestDbHandle;
 
   beforeAll(() => {

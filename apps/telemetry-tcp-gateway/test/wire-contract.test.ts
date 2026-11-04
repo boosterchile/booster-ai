@@ -16,7 +16,7 @@ describe('contrato wire gateway → telemetry-events → processor', () => {
   function makeMsg(overrides?: Partial<RecordMessage>): RecordMessage {
     return {
       imei: '356307042441013',
-      vehicleId: '11111111-2222-3333-4444-555555555555',
+      vehicleId: '11111111-2222-4333-8444-555555555555',
       record: {
         timestampMs: 1700000000000n, // BigInt real, como sale del parser
         priority: 1,

@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { teltonikaImeiSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { pendingDevices, vehicles } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 
 /**
  * Asociación de un Teltonika que la empresa ya tiene en la mano.

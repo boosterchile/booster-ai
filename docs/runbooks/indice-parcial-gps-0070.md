@@ -1,6 +1,6 @@
-# Runbook — Índices parciales de GPS válido (0066)
+# Runbook — Índices parciales de GPS válido (0070)
 
-Antes del deploy que trae la migración `0066_telemetria_gps_valido`, Ops crea
+Antes del deploy que trae la migración `0070_telemetria_gps_valido`, Ops crea
 los dos índices con `CONCURRENTLY`. El migrator del API corre dentro de una
 transacción y no puede usar `CONCURRENTLY`: si los índices ya existen, son
 válidos y tienen esta misma definición, su `CREATE INDEX IF NOT EXISTS` es un
@@ -11,7 +11,7 @@ el del migrador. No uses el rol de solo lectura. Cada statement va solo, con
 autocommit. No abras `BEGIN`.
 
 `IF NOT EXISTS` mira el nombre, no la definición. El `WHERE` de acá tiene que
-ser el mismo que el de `apps/api/drizzle/0066_telemetria_gps_valido.sql`.
+ser el mismo que el de `apps/api/drizzle/0070_telemetria_gps_valido.sql`.
 
 ## 1. Crear
 
@@ -85,7 +85,7 @@ dan `indisvalid = true`.
 ## 4. Deploy
 
 Con los dos índices válidos, el deploy puede seguir. El migrator registra
-`0066` y no reconstruye los índices.
+`0070` y no reconstruye los índices.
 
 Si este paso no se corrió, el migrator igual los crea (`IF NOT EXISTS`, sin
 `CONCURRENTLY`) y toma lock de `telemetria_puntos` mientras los construye.

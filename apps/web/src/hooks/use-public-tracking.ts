@@ -4,6 +4,7 @@ import {
   LIVE_TRACKING_FETCH,
   LIVE_TRACKING_QUERY,
   type PositionSource,
+  isLiveTrackingStatus,
 } from '../lib/live-tracking.js';
 import { useRefetchWhenVisible } from './use-refetch-when-visible.js';
 
@@ -30,7 +31,6 @@ export type PublicTrackingPosition = {
   speed_kmh: number | null;
 };
 
-/** Phase 5 PR-L2 — opcional hasta que #121 merge en main; type-safe via optional. */
 export interface PublicTrackingProgress {
   avg_speed_kmh_last_15min: number | null;
   last_position_age_seconds: number | null;
@@ -55,17 +55,19 @@ export interface PublicTrackingFoundResponse {
    * un API anterior a `tracking-live-unificado` no lo envía.
    */
   position_source?: PositionSource | null;
-  /** Opcional — disponible cuando #121 merge. */
-  progress?: PublicTrackingProgress;
+  progress: PublicTrackingProgress;
   eta_minutes: number | null;
 }
-
-const ACTIVE_TRIP_STATUSES = new Set(['asignado', 'en_proceso']);
 
 /** 30s para trips activos: tope del requisito de seguimiento en vivo. */
 const POLL_ACTIVE_MS = 30_000;
 /** 5min para trips cerrados — la posición no cambia. */
 const POLL_CLOSED_MS = 300_000;
+
+/** 404 = token no existe; 410 = expirado. Ninguno cambia al reintentar. */
+function isTokenGone(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || error.status === 410);
+}
 
 export function usePublicTracking(token: string, opts: { enabled?: boolean } = {}) {
   const enabled = opts.enabled !== false && token.length > 0;
@@ -75,16 +77,18 @@ export function usePublicTracking(token: string, opts: { enabled?: boolean } = {
       api.get<PublicTrackingFoundResponse>(`/public/tracking/${token}`, LIVE_TRACKING_FETCH),
     enabled,
     refetchInterval: (query) => {
+      if (isTokenGone(query.state.error)) {
+        return false;
+      }
       const data = query.state.data;
       if (!data) {
         return POLL_ACTIVE_MS;
       }
-      return ACTIVE_TRIP_STATUSES.has(data.trip.status) ? POLL_ACTIVE_MS : POLL_CLOSED_MS;
+      return isLiveTrackingStatus(data.trip.status) ? POLL_ACTIVE_MS : POLL_CLOSED_MS;
     },
     ...LIVE_TRACKING_QUERY,
     retry: (failureCount, error) => {
-      // 404 = token no existe / formato inválido. No retry.
-      if (error instanceof ApiError && error.status === 404) {
+      if (isTokenGone(error)) {
         return false;
       }
       return failureCount < 2;

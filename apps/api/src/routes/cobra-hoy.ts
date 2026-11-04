@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { adelantosCarrier } from '../db/schema.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { cobraHoy, cotizarCobraHoy } from '../services/cobra-hoy.js';
 import type { UserContext } from '../services/user-context.js';
 
@@ -40,6 +41,10 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
+    }
+    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const asignacionId = c.req.param('id');
@@ -84,6 +89,10 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
+    }
+    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const asignacionId = c.req.param('id');
@@ -192,6 +201,10 @@ export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
+    }
+    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const rows = await opts.db

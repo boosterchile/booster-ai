@@ -26,9 +26,9 @@ describe('queryUltimaPosicionGpsValida', () => {
     expect(porImei.params.filter((param) => param !== 1)).toEqual(['860000000000001']);
   });
 
-  it('0066 es IF NOT EXISTS y el runbook repite la misma definición', () => {
+  it('0070 es IF NOT EXISTS y el runbook repite la misma definición', () => {
     const migracion = sentenciasCreate(
-      readFileSync(resolve(__dirname, '../../drizzle/0066_telemetria_gps_valido.sql'), 'utf8'),
+      readFileSync(resolve(__dirname, '../../drizzle/0070_telemetria_gps_valido.sql'), 'utf8'),
     );
     expect(migracion).toHaveLength(2);
     expect(migracion[0]).toContain(`IF NOT EXISTS "${INDICE_GPS_VALIDO_VEHICULO}"`);
@@ -36,7 +36,7 @@ describe('queryUltimaPosicionGpsValida', () => {
     expect(whereDe(migracion[0] ?? '')).toBe(whereDe(migracion[1] ?? ''));
 
     const runbook = readFileSync(
-      resolve(__dirname, '../../../../docs/runbooks/indice-parcial-gps-0066.md'),
+      resolve(__dirname, '../../../../docs/runbooks/indice-parcial-gps-0070.md'),
       'utf8',
     );
     const concurrentes = [...runbook.matchAll(/```sql\n(CREATE INDEX CONCURRENTLY[\s\S]*?);/g)].map(
@@ -47,7 +47,7 @@ describe('queryUltimaPosicionGpsValida', () => {
     expect(definicion(concurrentes[1] ?? '')).toBe(definicion(migracion[1] ?? ''));
 
     const down = readFileSync(
-      resolve(__dirname, '../../drizzle/down/0066_telemetria_gps_valido.down.sql'),
+      resolve(__dirname, '../../drizzle/down/0070_telemetria_gps_valido.down.sql'),
       'utf8',
     );
     expect(down).toContain('DROP INDEX IF EXISTS "idx_telemetria_vehiculo_gps_valido"');

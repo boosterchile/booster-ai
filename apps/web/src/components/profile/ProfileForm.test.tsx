@@ -64,7 +64,9 @@ describe('ProfileForm — validación', () => {
     const input = screen.getByLabelText(/Teléfono celular/);
     fireEvent.change(input, { target: { value: 'no-es-tel' } });
     fireEvent.blur(input);
-    expect(await screen.findByText(/Número de teléfono Chile inválido/)).toBeInTheDocument();
+    expect(
+      await screen.findByText('Ingresa un teléfono válido, como +56912345678'),
+    ).toBeInTheDocument();
   });
 
   it('full_name vacío al blur → error', async () => {

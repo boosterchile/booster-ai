@@ -3,12 +3,12 @@ import {
   empresaCarbonMeasurementPatchSchema,
   empresaUmbralesRoboCombustiblePatchSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { empresas } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import type { UserContext } from '../services/user-context.js';

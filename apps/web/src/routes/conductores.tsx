@@ -1,4 +1,11 @@
-import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import {
+  MENSAJE_TELEFONO_CONDUCTOR,
+  conductorContactEmailSchema,
+  ensureRutHasDash,
+  esEmailDeRelleno,
+  rutSchema,
+  telefonoMovilConductorSchema,
+} from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -19,10 +26,17 @@ import { useForm } from 'react-hook-form';
 import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
+import {
+  CODIGO_REENVIADO,
+  NombreMiembro,
+  TELEFONO_PENDIENTE,
+  TEXTO_PENDIENTE,
+} from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -61,11 +75,12 @@ const STATUS_COLORS: Record<DriverStatus, string> = {
 
 interface ConductorUser {
   id: string;
-  full_name: string;
+  full_name: string | null;
   rut: string;
   email: string;
   phone: string | null;
   is_pending: boolean;
+  pendiente_aceptar?: boolean;
 }
 
 interface Conductor {
@@ -204,11 +219,11 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       }
                     >
                       <Td>
-                        <div className="font-medium text-neutral-900">{c.user.full_name}</div>
+                        <NombreMiembro nombre={c.user.full_name} pendiente={c.user.is_pending} />
                         {c.user.is_pending && (
                           <div className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                             <Clock className="h-3 w-3" aria-hidden />
-                            Pendiente login
+                            {c.user.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente login'}
                           </div>
                         )}
                         {c.is_extranjero && (
@@ -261,8 +276,14 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-medium text-neutral-900">{c.user.full_name}</div>
-                      <div className="text-neutral-500 text-xs">{c.user.rut}</div>
+                      {c.user.is_pending ? (
+                        <NombreMiembro nombre={c.user.full_name} pendiente rut={c.user.rut} />
+                      ) : (
+                        <>
+                          <NombreMiembro nombre={c.user.full_name} pendiente={false} />
+                          <div className="text-neutral-500 text-xs">{c.user.rut}</div>
+                        </>
+                      )}
                     </div>
                     <span
                       className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[c.status]}`}
@@ -281,7 +302,7 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       {c.user.is_pending && (
                         <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 text-xs">
                           <Clock className="h-3 w-3" aria-hidden />
-                          Pendiente login
+                          {c.user.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente login'}
                         </span>
                       )}
                       {c.is_extranjero && (
@@ -354,6 +375,17 @@ interface NewConductorForm {
   is_extranjero: boolean;
 }
 
+function altaLista(values: NewConductorForm): boolean {
+  return (
+    values.rut.trim().length > 0 &&
+    values.full_name.trim().length > 0 &&
+    conductorContactEmailSchema.safeParse(values.email).success &&
+    telefonoMovilConductorSchema.safeParse(values.phone.trim()).success &&
+    values.license_number.trim().length > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(values.license_expiry)
+  );
+}
+
 const EMPTY_NEW: NewConductorForm = {
   rut: '',
   full_name: '',
@@ -391,6 +423,38 @@ interface CreateConductorResponse {
   // D10 — PIN no se devuelve si el user ya estaba activado (e.g. dueño-conductor
   // que se agrega a sí mismo). En ese caso no hay que mostrar la card de PIN.
   activation_pin?: string;
+  /** true cuando el POST reactivó una fila retirada de esta empresa (200). */
+  reactivado?: boolean;
+}
+
+function codigoDeError(err: Error): string {
+  if (err instanceof ApiError && err.code) {
+    return err.code;
+  }
+  return err.message;
+}
+
+function mensajeErrorAltaConductor(err: Error): string {
+  const codigo = codigoDeError(err);
+  if (codigo.includes('user_already_driver')) {
+    return 'Ese RUT ya está asociado a un conductor activo. Si dejó la empresa, primero retíralo desde su perfil.';
+  }
+  if (codigo.includes('conductor_retirado_otra_empresa')) {
+    return 'Este conductor fue retirado de otra empresa. No lo puedes reactivar desde aquí.';
+  }
+  if (codigo.includes('identidad_vinculada')) {
+    return 'Esta persona también está en otra empresa o tiene otro rol. No la puedes dar de alta ni reactivar desde aquí.';
+  }
+  if (codigo.includes('email_already_registered')) {
+    return 'Ese email ya está registrado en otra persona.';
+  }
+  if (codigo.includes('rut_invalido')) {
+    return 'El RUT no es válido (revisa el dígito verificador).';
+  }
+  if (codigo.includes('duplicate')) {
+    return 'Ese RUT ya figura como conductor. Si lo retiraste de esta empresa, vuelve a intentar el alta.';
+  }
+  return err.message;
 }
 
 function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
@@ -401,10 +465,12 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   // 2 memberships: dueño + conductor). Pre-fillea form con datos del me y
   // skipea la card de PIN al success (el dueño ya tiene email/password).
   const [selfMode, setSelfMode] = useState(false);
+  const [solicitud, setSolicitud] = useState(false);
   const [activationResult, setActivationResult] = useState<{
     pin: string;
     driverName: string;
     driverRut: string;
+    reactivado: boolean;
   } | null>(null);
 
   const createM = useMutation({
@@ -433,21 +499,17 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           pin: res.activation_pin,
           driverName: variables.full_name.trim(),
           driverRut: variables.rut.trim(),
+          reactivado: res.reactivado === true,
         });
-      } else {
+      } else if (selfMode) {
         void navigate({ to: '/app/conductores' });
+      } else {
+        // RUT que ya existe: la misma respuesta para cualquier persona.
+        setSolicitud(true);
       }
     },
     onError: (err: Error) => {
-      if (err.message.includes('user_already_driver')) {
-        setError(
-          'Ese RUT ya está asociado a un conductor activo. Si dejó la empresa, primero retíralo desde su perfil.',
-        );
-      } else if (err.message.includes('rut_invalido')) {
-        setError('El RUT no es válido (revisa el dígito verificador).');
-      } else {
-        setError(err.message);
-      }
+      setError(mensajeErrorAltaConductor(err));
     },
   });
 
@@ -456,6 +518,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     handleSubmit,
     setValue,
     setError: setFieldError,
+    watch,
     formState: { errors, submitCount },
   } = useForm<NewConductorForm>({
     mode: 'onSubmit',
@@ -490,6 +553,20 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
 
   useScrollToFirstError(errors, submitCount);
 
+  const valores = watch();
+  const emailParse = conductorContactEmailSchema.safeParse(valores.email);
+  const emailMensaje =
+    valores.email.trim().length > 0 && !emailParse.success
+      ? emailParse.error.issues[0]?.message
+      : errors.email?.message;
+  const telefonoAlta = valores.phone.trim();
+  const telefonoAltaValido = telefonoMovilConductorSchema.safeParse(telefonoAlta).success;
+  const phoneMensaje =
+    telefonoAlta.length > 0 && !telefonoAltaValido
+      ? MENSAJE_TELEFONO_CONDUCTOR
+      : errors.phone?.message;
+  const puedeCrear = altaLista(valores);
+
   function onSubmit(values: NewConductorForm) {
     // ensureRutHasDash: si el operador tipea solo dígitos (teclado
     // móvil bloquea `-`), normalizar antes de validar. Persistir el
@@ -508,14 +585,26 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     createM.mutate({ ...values, rut: rutResult.data, email: values.email.trim() });
   }
 
-  if (activationResult) {
+  if (solicitud) {
     return (
-      <Layout me={me} title="Conductor creado">
+      <Layout me={me} title="Nuevo conductor">
+        <SolicitudRegistrada
+          volverLabel="Volver a Conductores"
+          onVolver={() => void navigate({ to: '/app/conductores' })}
+        />
+      </Layout>
+    );
+  }
+
+  if (activationResult) {
+    const tituloPagina = activationResult.reactivado ? 'Conductor reactivado' : 'Conductor creado';
+    return (
+      <Layout me={me} title={tituloPagina}>
         <div className="mb-6 flex items-center gap-3">
           <Link to="/app/conductores" className="text-neutral-500 hover:text-neutral-900">
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
-          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Conductor creado</h1>
+          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">{tituloPagina}</h1>
         </div>
 
         <ActivationPinCard
@@ -526,6 +615,9 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
             setActivationResult(null);
             void navigate({ to: '/app/conductores' });
           }}
+          {...(activationResult.reactivado
+            ? { titulo: `${activationResult.driverName} volvió a estar activo` }
+            : {})}
         />
       </Layout>
     );
@@ -613,7 +705,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
             label="Email"
             required
             hint="El correo del conductor. Booster lo usa para comunicarse con él."
-            error={errors.email?.message}
+            error={emailMensaje}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -621,6 +713,10 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
                 type="email"
                 {...register('email', {
                   required: 'El email del conductor es obligatorio: es su canal con Booster.',
+                  validate: (value) => {
+                    const parsed = conductorContactEmailSchema.safeParse(value);
+                    return parsed.success ? true : (parsed.error.issues[0]?.message ?? true);
+                  },
                 })}
                 className={fieldInputClass(!!errors.email)}
                 placeholder="conductor@ejemplo.cl"
@@ -631,7 +727,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           <FormField
             label="Teléfono"
             required
-            error={errors.phone?.message}
+            error={phoneMensaje}
             hint="Su WhatsApp. Por aquí le llega el enlace para activar la cuenta. El PIN va por correo y queda en esta pantalla."
             render={({ id, describedBy }) => (
               <input
@@ -641,13 +737,11 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
                 {...register('phone', {
                   required:
                     'El teléfono del conductor es obligatorio: WhatsApp es el canal principal con él.',
-                  pattern: {
-                    // Mismo formato que exige el backend (chileanPhoneSchema).
-                    value: /^\+56[2-9]\d{8}$/,
-                    message: 'Número chileno en formato +56912345678.',
-                  },
+                  validate: (value) =>
+                    telefonoMovilConductorSchema.safeParse(value.trim()).success ||
+                    MENSAJE_TELEFONO_CONDUCTOR,
                 })}
-                className={fieldInputClass(!!errors.phone)}
+                className={fieldInputClass(!!phoneMensaje)}
                 placeholder="+56912345678"
               />
             )}
@@ -729,7 +823,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           </Link>
           <button
             type="submit"
-            disabled={createM.isPending}
+            disabled={!puedeCrear || createM.isPending}
             className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
           >
             {createM.isPending ? 'Creando…' : 'Crear conductor'}
@@ -771,6 +865,25 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [emailContacto, setEmailContacto] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const emailParse = conductorContactEmailSchema.safeParse(emailContacto);
+  const emailMensaje =
+    emailError ??
+    (emailContacto.trim().length > 0 && !emailParse.success
+      ? emailParse.error.issues[0]?.message
+      : undefined);
+  const puedeGuardarEmail = emailParse.success;
+  const [pinReenviado, setPinReenviado] = useState<string | null>(null);
+  const [telefonoContacto, setTelefonoContacto] = useState('');
+  const [telefonoError, setTelefonoError] = useState<string | null>(null);
+  const [pinTelefono, setPinTelefono] = useState<string | null>(null);
+  const [telefonoGuardado, setTelefonoGuardado] = useState(false);
+  const telefonoNormalizado = telefonoContacto.trim();
+  const telefonoValido = telefonoMovilConductorSchema.safeParse(telefonoNormalizado).success;
+  const telefonoMensaje =
+    telefonoError ??
+    (telefonoNormalizado.length > 0 && !telefonoValido ? MENSAJE_TELEFONO_CONDUCTOR : undefined);
 
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
@@ -783,6 +896,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       return res.conductor;
     },
   });
+  const pendiente = conductorQ.data?.user.is_pending === true;
 
   const updateM = useMutation({
     mutationFn: async (input: EditConductorForm) => {
@@ -795,6 +909,81 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     },
     onError: (err: Error) => setError(err.message),
   });
+
+  const emailM = useMutation({
+    mutationFn: async (email: string) => {
+      return await api.post<{
+        email: string;
+        invitacion_reenviada: boolean;
+        cuenta_activa: boolean;
+        activation_pin?: string;
+      }>(`/conductores/${id}/email`, { email });
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['conductores'] });
+      queryClient.invalidateQueries({ queryKey: ['conductores', id] });
+      setPinReenviado(res.activation_pin ?? null);
+      setEmailError(null);
+      setEmailContacto(res.email);
+    },
+    onError: (err: Error) => {
+      setPinReenviado(null);
+      if (err.message.includes('email_already_registered')) {
+        setEmailError('Ese email ya está registrado en otra persona.');
+      } else if (err.message.includes('identidad_vinculada')) {
+        setEmailError(
+          'Esta persona también está en otra empresa o tiene otro rol. El email no se puede cambiar desde esta ficha.',
+        );
+      } else if (err.message.includes('identidad_firebase_en_conflicto')) {
+        setEmailError(
+          'No pudimos actualizar el acceso sin duplicar la cuenta. Avísale a Booster antes de reintentar.',
+        );
+      } else {
+        setEmailError(err.message);
+      }
+    },
+  });
+
+  const telefonoM = useMutation({
+    mutationFn: async (input: { phone: string; reenviarInvitacion: boolean }) => {
+      return await api.post<{
+        phone: string;
+        email: string;
+        invitacion_reenviada: boolean;
+        cuenta_activa: boolean;
+        activation_pin?: string;
+      }>(`/conductores/${id}/telefono`, {
+        phone: input.phone,
+        reenviar_invitacion: input.reenviarInvitacion,
+      });
+    },
+    onSuccess: (res) => {
+      queryClient.setQueryData<Conductor>(['conductores', id], (current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          user: {
+            ...current.user,
+            phone: res.phone,
+            email: res.email,
+          },
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['conductores'], exact: true });
+      setPinTelefono(res.activation_pin ?? null);
+      setTelefonoGuardado(!res.invitacion_reenviada);
+      setTelefonoError(null);
+      setTelefonoContacto(res.phone);
+    },
+    onError: (err: Error) => {
+      setPinTelefono(null);
+      setTelefonoGuardado(false);
+      setTelefonoError(err.message);
+    },
+  });
+  const reenviandoInvitacion = telefonoM.isPending && telefonoM.variables?.reenviarInvitacion;
 
   const deleteM = useMutation({
     mutationFn: async () => await api.delete<{ ok: boolean }>(`/conductores/${id}`),
@@ -828,7 +1017,30 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       is_extranjero: conductorQ.data.is_extranjero,
       status: conductorQ.data.status,
     });
+    const actual = conductorQ.data.user.email;
+    setEmailContacto(esEmailDeRelleno(actual) || actual.includes('***') ? '' : actual);
+    setTelefonoContacto(conductorQ.data.user.phone ?? '');
   }, [conductorQ.data, reset]);
+
+  function guardarEmail() {
+    const parsed = conductorContactEmailSchema.safeParse(emailContacto);
+    if (!parsed.success) {
+      setEmailError(parsed.error.issues[0]?.message ?? 'Ingresa un email válido.');
+      return;
+    }
+    setEmailError(null);
+    emailM.mutate(parsed.data);
+  }
+
+  function guardarTelefono(reenviarInvitacion: boolean) {
+    if (!telefonoValido) {
+      setTelefonoError(MENSAJE_TELEFONO_CONDUCTOR);
+      return;
+    }
+    setTelefonoError(null);
+    setTelefonoGuardado(false);
+    telefonoM.mutate({ phone: telefonoNormalizado, reenviarInvitacion });
+  }
 
   return (
     <Layout me={me} title="Detalle conductor">
@@ -838,28 +1050,39 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-            {conductorQ.data?.user.full_name ?? 'Conductor'}
+            {conductorQ.data?.user.is_pending
+              ? TEXTO_PENDIENTE
+              : (conductorQ.data?.user.full_name ?? 'Conductor')}
           </h1>
         </div>
         {canDelete && conductorQ.data && conductorQ.data.deleted_at == null && (
           <div className="flex items-center gap-2">
             {confirmDelete ? (
               <>
-                <span className="text-neutral-700 text-sm">¿Retirar a este conductor?</span>
+                <span className="text-neutral-700 text-sm">
+                  {pendiente ? (
+                    <>
+                      <strong>¿Cancelar esta invitación?</strong> La persona ya no podrá unirse con
+                      ella. Puedes invitarla de nuevo cuando quieras.
+                    </>
+                  ) : (
+                    '¿Retirar a este conductor?'
+                  )}
+                </span>
                 <button
                   type="button"
                   onClick={() => deleteM.mutate()}
                   disabled={deleteM.isPending}
                   className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                 >
-                  Sí, retirar
+                  {pendiente ? 'Cancelar invitación' : 'Sí, retirar'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(false)}
                   className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
                 >
-                  Cancelar
+                  {pendiente ? 'Volver' : 'Cancelar'}
                 </button>
               </>
             ) : (
@@ -889,9 +1112,12 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             <div>
               <span className="text-neutral-500">Email:</span> {conductorQ.data.user.email}
             </div>
-            {conductorQ.data.user.phone && (
+            {(conductorQ.data.user.phone || pendiente) && (
               <div>
-                <span className="text-neutral-500">Teléfono:</span> {conductorQ.data.user.phone}
+                <span className="text-neutral-500">Teléfono:</span>{' '}
+                {conductorQ.data.user.phone ?? (
+                  <span className="text-neutral-500">{TELEFONO_PENDIENTE}</span>
+                )}
               </div>
             )}
             {conductorQ.data.user.is_pending && (
@@ -907,6 +1133,142 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
               </div>
             )}
           </div>
+
+          <section
+            hidden={conductorQ.data.user.pendiente_aceptar}
+            className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+          >
+            <div>
+              <h2 className="font-semibold text-neutral-900">Email de contacto</h2>
+              <p className="mt-1 text-neutral-600 text-sm">
+                {conductorQ.data.user.is_pending
+                  ? 'Con este email le llega el PIN. En el login de conductor lo canjea y crea su clave de 6 dígitos.'
+                  : 'Este conductor ya activó su acceso. Cambiar el email actualiza el contacto: no cambia su RUT ni su clave.'}
+              </p>
+            </div>
+            {esEmailDeRelleno(conductorQ.data.user.email) && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900 text-sm">
+                Hoy tiene un email de relleno. Escríbele el correo real para poder invitarlo.
+              </div>
+            )}
+            <FormField
+              label="Email de contacto"
+              required
+              error={emailMensaje}
+              render={({ id: fieldId, describedBy }) => (
+                <input
+                  id={fieldId}
+                  aria-describedby={describedBy}
+                  type="email"
+                  value={emailContacto}
+                  onChange={(event) => {
+                    setEmailContacto(event.target.value);
+                    setEmailError(null);
+                  }}
+                  disabled={!canWrite || conductorQ.data.deleted_at != null || emailM.isPending}
+                  className={fieldInputClass(!!emailMensaje)}
+                  placeholder="conductor@correo.cl"
+                  autoComplete="email"
+                />
+              )}
+            />
+            {canWrite && conductorQ.data.deleted_at == null && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={guardarEmail}
+                  disabled={!puedeGuardarEmail || emailM.isPending}
+                  className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {emailM.isPending
+                    ? 'Guardando…'
+                    : conductorQ.data.user.is_pending
+                      ? 'Guardar email y reenviar invitación'
+                      : 'Guardar email'}
+                </button>
+              </div>
+            )}
+            {pinReenviado && (
+              <ActivationPinCard
+                pin={pinReenviado}
+                driverName={conductorQ.data.user.full_name ?? 'esta persona'}
+                driverRut={pendiente ? '' : (conductorQ.data.user.rut ?? '')}
+                titulo={CODIGO_REENVIADO}
+                onContinue={() => setPinReenviado(null)}
+              />
+            )}
+          </section>
+
+          <section
+            hidden={conductorQ.data.user.pendiente_aceptar}
+            className="mb-6 space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+          >
+            <div>
+              <h2 className="font-semibold text-neutral-900">Teléfono (WhatsApp)</h2>
+              <p className="mt-1 text-neutral-600 text-sm">
+                {conductorQ.data.user.is_pending
+                  ? 'Por este WhatsApp le llega el enlace de activación. «Guardar teléfono» solo cambia el número: el PIN que ya tiene sigue sirviendo. «Guardar y reenviar invitación» le manda el enlace con un PIN nuevo, y el anterior deja de servir.'
+                  : 'Este conductor ya activó su acceso. Cambiar el teléfono actualiza el contacto: no cambia su RUT ni su clave.'}
+              </p>
+            </div>
+            <FormField
+              label="Teléfono (WhatsApp)"
+              required
+              error={telefonoMensaje}
+              render={({ id: fieldId, describedBy }) => (
+                <input
+                  id={fieldId}
+                  aria-describedby={describedBy}
+                  type="tel"
+                  inputMode="tel"
+                  value={telefonoContacto}
+                  onChange={(event) => {
+                    setTelefonoContacto(event.target.value);
+                    setTelefonoError(null);
+                    setTelefonoGuardado(false);
+                  }}
+                  disabled={!canWrite || conductorQ.data.deleted_at != null || telefonoM.isPending}
+                  className={fieldInputClass(!!telefonoMensaje)}
+                  placeholder="+56912345678"
+                  autoComplete="tel"
+                />
+              )}
+            />
+            {canWrite && conductorQ.data.deleted_at == null && (
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {telefonoGuardado && (
+                  <output className="mr-auto text-sm text-success-700">Teléfono guardado.</output>
+                )}
+                {conductorQ.data.user.is_pending && (
+                  <button
+                    type="button"
+                    onClick={() => guardarTelefono(true)}
+                    disabled={!telefonoValido || telefonoM.isPending}
+                    className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-100 disabled:opacity-50"
+                  >
+                    {reenviandoInvitacion ? 'Reenviando…' : 'Guardar y reenviar invitación'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => guardarTelefono(false)}
+                  disabled={!telefonoValido || telefonoM.isPending}
+                  className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {telefonoM.isPending && !reenviandoInvitacion ? 'Guardando…' : 'Guardar teléfono'}
+                </button>
+              </div>
+            )}
+            {pinTelefono && (
+              <ActivationPinCard
+                pin={pinTelefono}
+                driverName={conductorQ.data.user.full_name ?? 'esta persona'}
+                driverRut={pendiente ? '' : (conductorQ.data.user.rut ?? '')}
+                titulo={CODIGO_REENVIADO}
+                onContinue={() => setPinTelefono(null)}
+              />
+            )}
+          </section>
 
           <form
             onSubmit={handleSubmit((v) => {
@@ -1050,19 +1412,21 @@ function NoPermission() {
 /**
  * Card que se muestra UNA SOLA VEZ después de crear un conductor.
  * Contiene el PIN de activación en plaintext. Después de "Continuar" se
- * pierde — la BD solo guarda el hash. Si el PIN se extravía hay que retirar
- * al conductor y crearlo de nuevo.
+ * pierde — la BD solo guarda el hash. Si el PIN se extravía, se reenvía
+ * desde la ficha del conductor: el código anterior deja de servir.
  */
 function ActivationPinCard({
   pin,
   driverName,
   driverRut,
   onContinue,
+  titulo,
 }: {
   pin: string;
   driverName: string;
   driverRut: string;
   onContinue: () => void;
+  titulo?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -1070,7 +1434,7 @@ function ActivationPinCard({
   // Enlace ABSOLUTO y con el RUT: la empresa lo copia y se lo manda al
   // conductor. Un path relativo (que es lo que se mostraba antes, como texto
   // plano y sin dominio) no se puede pegar en un WhatsApp.
-  const enlaceActivacion = `${window.location.origin}/login/conductor?rut=${encodeURIComponent(driverRut)}`;
+  const enlaceActivacion = `${window.location.origin}/login/conductor${driverRut ? `?rut=${encodeURIComponent(driverRut)}` : ''}`;
 
   async function handleCopy() {
     try {
@@ -1099,11 +1463,15 @@ function ActivationPinCard({
           <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-success-700" aria-hidden />
           <div>
             <h2 className="font-semibold text-neutral-900">
-              {driverName} fue creado correctamente
+              {titulo ?? `${driverName} fue creado correctamente`}
             </h2>
             <p className="mt-1 text-neutral-700 text-sm">
-              RUT: <span className="font-mono">{driverRut}</span>. Mándale el enlace y el PIN de
-              abajo: con eso activa su cuenta y crea su propia clave.
+              {driverRut && (
+                <>
+                  RUT: <span className="font-mono">{driverRut}</span>.{' '}
+                </>
+              )}
+              Mándale el enlace y el PIN de abajo: con eso activa su cuenta y crea su propia clave.
             </p>
             <div className="mt-3 rounded-md border border-neutral-200 bg-white p-3">
               <p className="text-neutral-500 text-xs">Enlace de activación</p>
@@ -1147,8 +1515,8 @@ function ActivationPinCard({
           </button>
         </div>
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900 text-sm">
-          <strong>Importante:</strong> este PIN no se vuelve a mostrar. Si el conductor lo pierde
-          tendrás que retirarlo y crearlo de nuevo.
+          <strong>Importante:</strong> este PIN no se vuelve a mostrar. Si el conductor lo pierde,
+          reenvía la invitación desde su ficha: el código anterior deja de servir.
         </div>
       </div>
 

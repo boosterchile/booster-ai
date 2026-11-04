@@ -32,6 +32,9 @@ export function OfertasRoute() {
 function OfertasPage({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
   const isCarrier = activeEmpresa?.is_transportista ?? false;
+  // Voz solo para el dueño que también conduce («Soy yo el conductor»).
+  // Aceptar y Rechazar de cada oferta no pasan por este gate.
+  const veTarjetaVoz = me.active_membership?.role === 'dueno' && me.tiene_ficha_conductor === true;
 
   const offersQuery = useOffersMine({ enabled: isCarrier });
 
@@ -102,12 +105,11 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
 
       {isCarrier && offersQuery.data && offersQuery.data.offers.length > 0 && (
         <div className="mt-6 space-y-4">
-          {/* Phase 4 PR-K7 — control de aceptación por voz. Solo se
-                  renderiza cuando hay EXACTAMENTE 1 oferta pendiente —
-                  para >1 sería ambiguo qué oferta el comando "aceptar"
-                  refiere. Doble confirmación protege contra falsos
-                  positivos (aceptar oferta es contrato). */}
-          {offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
+          {/* Voz solo con rol dueno y ficha propia en conductores, y
+                  con exactamente 1 oferta pendiente (con más, «aceptar»
+                  sería ambiguo). Los botones Aceptar/Rechazar no usan
+                  este gate. */}
+          {veTarjetaVoz && offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
             <VoiceAcceptOfferControl
               offerId={offersQuery.data.offers[0].id}
               trackingCode={offersQuery.data.offers[0].trip_request.tracking_code}

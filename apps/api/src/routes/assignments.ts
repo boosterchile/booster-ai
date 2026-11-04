@@ -10,13 +10,14 @@
  *
  * Auth: ambas rutas requieren membership transportista activa que sea dueña
  * del assignment (assignment.empresa_id === activeMembership.empresa.id).
+ * Confirmar la entrega y reportar un incidente exigen además que el usuario
+ * autenticado sea el conductor asignado (assignment.driver_user_id).
  * El shipper tiene su propio surface en /trip-requests-v2/:tripId — desde
  * ahí ve el assignment como sub-objeto.
  */
 
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
@@ -33,6 +34,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import {
@@ -40,6 +42,7 @@ import {
   AssignmentNotMutableError,
   AssignmentNotOwnedError,
   DriverNotInCarrierError,
+  VehicleNotAssignableError,
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
 import { explicarCoberturaCero } from '../services/clasificar-cobertura-cero.js';
@@ -295,6 +298,7 @@ export function createAssignmentsRoutes(opts: {
         empresaLegalName: empresasTable.legalName,
         vehicleId: assignments.vehicleId,
         vehiclePlate: vehicles.plate,
+        vehicleStatus: vehicles.vehicleStatus,
         vehicleType: vehicles.vehicleType,
         driverUserId: assignments.driverUserId,
         driverName: usersTable.fullName,
@@ -398,9 +402,13 @@ export function createAssignmentsRoutes(opts: {
         picked_up_at: row.pickedUpAt?.toISOString() ?? null,
         delivered_at: row.deliveredAt?.toISOString() ?? null,
         cancelled_at: row.cancelledAt?.toISOString() ?? null,
+        empresa_id: row.empresaIdAssign,
         empresa_legal_name: row.empresaLegalName,
+        vehicle_id: row.vehicleId,
         vehicle_plate: row.vehiclePlate,
+        vehicle_status: row.vehicleId ? (row.vehicleStatus ?? null) : null,
         vehicle_type: row.vehicleType,
+        driver_user_id: row.driverUserId,
         driver_name: row.driverName,
         ubicacion_actual: ubicacionActual,
       },
@@ -579,6 +587,12 @@ export function createAssignmentsRoutes(opts: {
   // El servicio interno valida que el assignment pertenezca al carrier
   // (assignment.empresa_id === activeMembership.empresa.id) y dispara
   // el mismo lifecycle que el endpoint shipper.
+  //
+  // Quién puede llamarlo: solo el conductor asignado
+  // (assignment.driver_user_id === users.id autenticado). La oficina
+  // (dueño, admin, despachador) no cierra la entrega de otro conductor.
+  // Si driver_user_id es null, tampoco. El generador sigue cerrando por
+  // PATCH /trip-requests-v2/:id/confirmar-recepcion, que no pasa por acá.
   // ---------------------------------------------------------------------
   app.patch('/:id/confirmar-entrega', async (c) => {
     const auth = requireCarrierAuth(c);
@@ -592,7 +606,11 @@ export function createAssignmentsRoutes(opts: {
     // necesite saber el tripId directamente (su URL natural es por
     // assignment, no por trip).
     const rows = await opts.db
-      .select({ tripId: assignments.tripId, empresaId: assignments.empresaId })
+      .select({
+        tripId: assignments.tripId,
+        empresaId: assignments.empresaId,
+        driverUserId: assignments.driverUserId,
+      })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
       .limit(1);
@@ -601,9 +619,15 @@ export function createAssignmentsRoutes(opts: {
       return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
     }
     // Doble check de ownership (defensa en profundidad — el servicio
-    // también valida).
+    // también valida). Va antes del conductor: otra empresa sigue
+    // recibiendo forbidden_owner_mismatch, no not_assigned_driver.
     if (row.empresaId !== auth.activeMembership.empresa.id) {
       return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
+    }
+    // null y cualquier otro users.id se rechazan igual. El rol no abre
+    // el permiso: un dueño solo pasa si él es el conductor asignado.
+    if (row.driverUserId !== auth.userContext.user.id) {
+      return c.json({ error: 'not_assigned_driver', code: 'not_assigned_driver' }, 403);
     }
 
     const result = await confirmarEntregaViaje({
@@ -659,7 +683,9 @@ export function createAssignmentsRoutes(opts: {
   // Persiste como tripEvent (audit-only), NO bloquea el lifecycle del
   // viaje. La cancelación es un flujo separado.
   //
-  // Auth: carrier owner del assignment. 401/403 estándar.
+  // Auth: carrier dueño del assignment Y conductor asignado
+  // (driver_user_id === users.id). 401/403 estándar. Sin conductor
+  // asignado, 403 not_assigned_driver.
   // ---------------------------------------------------------------------
   const incidentBodySchema = z.object({
     incident_type: z.enum(INCIDENT_TYPES),
@@ -1030,6 +1056,26 @@ export function createAssignmentsRoutes(opts: {
     const assignmentId = c.req.param('id');
     const body = c.req.valid('json');
 
+    const rows = await opts.db
+      .select({
+        empresaId: assignments.empresaId,
+        driverUserId: assignments.driverUserId,
+      })
+      .from(assignments)
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (row.empresaId !== auth.activeMembership.empresa.id) {
+      return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
+    }
+    // Misma regla que confirmar-entrega: solo el conductor asignado.
+    if (row.driverUserId !== auth.userContext.user.id) {
+      return c.json({ error: 'not_assigned_driver', code: 'not_assigned_driver' }, 403);
+    }
+
     const result = await reportarIncidente({
       db: opts.db,
       logger: opts.logger,
@@ -1197,10 +1243,12 @@ export function createAssignmentsRoutes(opts: {
   // Auth: carrier owner del assignment. Rol requerido: dueno, admin,
   // despachador (no operador genérico — esto es decisión de operación).
   //
-  // Body: { driver_user_id: UUID }
+  // Body: { driver_user_id: UUID, vehiculo_id?: UUID }
+  // `vehiculo_id` es el camión de la flota. Ausente → se conserva el de la oferta.
   // ---------------------------------------------------------------------
   const asignarConductorBodySchema = z.object({
     driver_user_id: z.string().uuid(),
+    vehiculo_id: z.string().uuid().optional(),
   });
 
   app.post('/:id/asignar-conductor', zValidator('json', asignarConductorBodySchema), async (c) => {
@@ -1217,7 +1265,7 @@ export function createAssignmentsRoutes(opts: {
     }
 
     const assignmentId = c.req.param('id');
-    const { driver_user_id } = c.req.valid('json');
+    const { driver_user_id, vehiculo_id } = c.req.valid('json');
 
     try {
       const result = await asignarConductorAAssignment({
@@ -1225,6 +1273,7 @@ export function createAssignmentsRoutes(opts: {
         logger: opts.logger,
         assignmentId,
         driverUserId: driver_user_id,
+        ...(vehiculo_id ? { vehiculoId: vehiculo_id } : {}),
         empresaId: auth.activeMembership.empresa.id,
         actingUserId: auth.userContext.user.id,
       });
@@ -1234,6 +1283,9 @@ export function createAssignmentsRoutes(opts: {
         previous_driver_user_id: result.previousDriverUserId,
         new_driver_user_id: result.newDriverUserId,
         driver_name: result.driverName,
+        driver_pending: result.driverPending,
+        previous_vehicle_id: result.previousVehicleId,
+        new_vehicle_id: result.newVehicleId,
       });
     } catch (err) {
       if (err instanceof AssignmentNotFoundError) {
@@ -1254,6 +1306,16 @@ export function createAssignmentsRoutes(opts: {
       }
       if (err instanceof DriverNotInCarrierError) {
         return c.json({ error: 'driver_not_in_carrier', code: 'driver_not_in_carrier' }, 400);
+      }
+      if (err instanceof VehicleNotAssignableError) {
+        return c.json(
+          {
+            error: 'vehicle_not_assignable',
+            code: 'vehicle_not_assignable',
+            reason: err.reason,
+          },
+          400,
+        );
       }
       opts.logger.error({ err, assignmentId }, 'asignar-conductor failed');
       return c.json({ error: 'internal_server_error' }, 500);
