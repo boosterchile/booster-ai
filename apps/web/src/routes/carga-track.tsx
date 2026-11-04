@@ -190,7 +190,7 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
           role="presentation"
         >
           <div
-            className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-xl"
+            className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-xl [&:not(:has([data-push-banner]))]:pt-safe"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             role="presentation"

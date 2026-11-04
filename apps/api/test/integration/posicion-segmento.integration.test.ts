@@ -213,13 +213,14 @@ describe('integration: resolverPosicionesSegmento (enrutamiento por dispositivo)
   });
 
   // T10-05 (ADR-077 §2): las lecturas del contador CAN (AVL 83) del segmento,
-  // de la misma fuente que la posición. Solo filas que traen el 83.
-  test('cargarLecturasConsumoCan: solo filas con el 83 en la ventana, ascendentes, por la fuente del vehículo', async () => {
+  // de la misma fuente que la posición. Filas que traen el 83 o el 89 (HC-001 p2).
+  test('cargarLecturasConsumoCan: filas con el 83 o el 89 en la ventana, ascendentes, por la fuente del vehículo', async () => {
     const { imei, vehA, vehB, vehC } = await fixture();
     await telemetriaConIo(vehA.id, imei, t('09:59'), { '83': 9990 }); // fuera
     await telemetriaConIo(vehA.id, imei, t('10:30'), { '83': '10080', '66': 12000 }); // string → número
     await telemetriaConIo(vehA.id, imei, t('10:10'), { '83': 10000 });
-    await telemetriaConIo(vehA.id, imei, t('10:20'), { '84': 1500 }); // sin 83: no entra
+    await telemetriaConIo(vehA.id, imei, t('10:15'), { '89': 55, '66': 1 }); // solo-89: entra
+    await telemetriaConIo(vehA.id, imei, t('10:20'), { '84': 1500 }); // solo-84: no entra
     await telemetriaConIo(vehA.id, imei, t('12:01'), { '83': 10200 }); // fuera
 
     const a = await cargarLecturasConsumoCan({
@@ -228,11 +229,11 @@ describe('integration: resolverPosicionesSegmento (enrutamiento por dispositivo)
       desde: DESDE,
       hasta: HASTA,
     });
-    expect(a.map((l) => [l.tMs, l.io['83']])).toEqual([
-      [t('10:10').getTime(), 10000],
-      [t('10:30').getTime(), 10080],
+    expect(a.map((l) => [l.tMs, l.io])).toEqual([
+      [t('10:10').getTime(), { '83': 10000 }],
+      [t('10:15').getTime(), { '89': 55 }],
+      [t('10:30').getTime(), { '83': 10080 }],
     ]);
-    expect(a[0]?.io).toEqual({ '83': 10000 });
 
     const b = await cargarLecturasConsumoCan({
       db: handle.db,
@@ -240,7 +241,7 @@ describe('integration: resolverPosicionesSegmento (enrutamiento por dispositivo)
       desde: DESDE,
       hasta: HASTA,
     });
-    expect(b).toHaveLength(2);
+    expect(b).toHaveLength(3);
 
     const c = await cargarLecturasConsumoCan({
       db: handle.db,

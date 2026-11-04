@@ -19,7 +19,7 @@ describe('calcularModelado — escenarios de referencia', () => {
     // Carga 12000 / 25000 = 0.48 → α MDV default = 0.10
     //   correccion = 1 + 0.10 × (0.48 − 0.5) = 0.998
     // Consumo total ≈ 28 × 0.998 × 3.5 ≈ 97.8 L
-    // Emisiones WTW ≈ 97.8 × 3.25 ≈ 318 kg CO2e (factor GLEC v3.0 + IPCC AR6)
+    // Emisiones WTW ≈ 97.8 × 3.24 ≈ 317 kg CO2e (GLEC v2.0 2019, Tabla 32 EU)
     // Intensidad ≈ 318000 g / (350 km × 12 ton) ≈ 75.7 g/(t·km)
     expect(r.combustibleConsumido).toBeGreaterThan(95);
     expect(r.combustibleConsumido).toBeLessThan(100);

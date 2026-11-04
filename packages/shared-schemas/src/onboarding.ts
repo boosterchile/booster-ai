@@ -3,6 +3,7 @@ import { claveNumericaSchema } from './auth.js';
 import { planSlugSchema } from './domain/plan.js';
 import { chileanPhoneSchema, rutSchema } from './primitives/chile.js';
 import { addressSchema } from './primitives/geo.js';
+import { correoEs, textoEs } from './primitives/mensajes.js';
 
 /**
  * Schema del body POST /empresas/onboarding.
@@ -28,7 +29,7 @@ export const empresaOnboardingInputSchema = z
      * algo y el piloto pierde su valor.
      */
     user: z.object({
-      full_name: z.string().min(1).max(200),
+      full_name: textoEs(1, 200),
       phone: chileanPhoneSchema,
       whatsapp_e164: chileanPhoneSchema,
       /**
@@ -48,9 +49,9 @@ export const empresaOnboardingInputSchema = z
     }),
     /** Datos legales de la empresa. */
     empresa: z.object({
-      legal_name: z.string().min(1).max(200),
+      legal_name: textoEs(1, 200),
       rut: rutSchema,
-      contact_email: z.string().email(),
+      contact_email: correoEs(),
       contact_phone: chileanPhoneSchema,
       address: addressSchema,
       is_generador_carga: z.boolean(),

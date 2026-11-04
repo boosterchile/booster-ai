@@ -98,6 +98,7 @@ describe('PublicTrackingRoute', () => {
         longitude: -70.6063,
         speed_kmh: 65,
       },
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
       eta_minutes: null,
     });
     render(renderWithRouter(VALID_TOKEN));
@@ -124,6 +125,7 @@ describe('PublicTrackingRoute', () => {
       },
       vehicle: { type: 'camion_pequeno', plate_partial: '***GR99' },
       position: null,
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
       eta_minutes: null,
     });
     const { container } = render(renderWithRouter(VALID_TOKEN));
@@ -144,6 +146,7 @@ describe('PublicTrackingRoute', () => {
       },
       vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
       position: null,
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
       eta_minutes: null,
     });
     render(renderWithRouter(VALID_TOKEN));
@@ -244,6 +247,7 @@ describe('PublicTrackingRoute', () => {
       },
       vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
       position: null,
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
       eta_minutes: null,
     });
     render(renderWithRouter(VALID_TOKEN));
@@ -265,6 +269,7 @@ describe('PublicTrackingRoute', () => {
       },
       vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
       position: null,
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
       eta_minutes: null,
     });
     render(renderWithRouter(VALID_TOKEN));

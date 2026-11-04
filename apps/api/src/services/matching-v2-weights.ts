@@ -47,7 +47,7 @@ export function resolveMatchingV2Weights(logger: Logger): WeightsV2 {
   const parsed = weightsSchema.safeParse(parsedJson);
   if (!parsed.success) {
     logger.warn(
-      { errors: parsed.error.format() },
+      { errors: z.treeifyError(parsed.error) },
       'MATCHING_V2_WEIGHTS_JSON: shape inválido — usando DEFAULT_WEIGHTS_V2',
     );
     return DEFAULT_WEIGHTS_V2;
