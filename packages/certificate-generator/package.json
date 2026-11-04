@@ -12,7 +12,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:coverage": "vitest run --coverage --passWithNoTests"
+    "test:coverage": "vitest run --coverage --passWithNoTests",
+    "test:presupuesto": "PDF_PRESUPUESTO=1 vitest run test/presupuesto-pdf.test.ts --coverage.enabled=false"
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",
