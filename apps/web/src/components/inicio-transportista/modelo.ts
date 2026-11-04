@@ -83,6 +83,9 @@ export interface VehiculoFlotaInicio {
   longitude: number | null;
 }
 
+/** Cobra hoy en el Inicio: nunca tumba la página. Sin montos. */
+export type EstadoCobraHoy = 'cargando' | 'apagado' | 'error' | 'disponible';
+
 export interface DatosInicio {
   ofertas: Carga<OfertaInicio[]>;
   servicios: Carga<AsignacionInicio[]>;
@@ -90,6 +93,7 @@ export interface DatosInicio {
   flota: Carga<VehiculoFlotaInicio[]>;
   vehiculos: Carga<number>;
   conductores: Carga<number>;
+  cobraHoy: EstadoCobraHoy;
 }
 
 export interface ContextoInicio {
@@ -185,6 +189,7 @@ export interface InicioVista {
   conectados: KpiConectados | null;
   accesos: AccesoVista[];
   pasos: PasoAlta[] | null;
+  cobraHoy: EstadoCobraHoy;
 }
 
 export function horaEnZona(ahora: Date, timeZone = ZONA_INICIO): number {
@@ -720,21 +725,11 @@ function buildAtencion(datos: DatosInicio, ahora: Date): AtencionVista {
   const todasListas = fuentes.every((fuente) => fuente.estado === 'listo');
   return {
     tipo: 'filas',
-    pendientes: todasListas ? sumaPendientes(datos, ahora.getTime()) : null,
+    // El número del encabezado es la cantidad de filas que se ven.
+    // Una fila puede agrupar varios vehículos, ofertas o documentos.
+    pendientes: todasListas ? filas.length : null,
     filas,
   };
-}
-
-function sumaPendientes(datos: DatosInicio, ahoraMs: number): number {
-  const ofertas = datos.ofertas.estado === 'listo' ? datos.ofertas.valor.length : 0;
-  const sinConductor =
-    datos.servicios.estado === 'listo'
-      ? datos.servicios.valor.filter((item) => item.sinConductor).length
-      : 0;
-  const vencidos = datos.cumplimiento.estado === 'listo' ? datos.cumplimiento.valor.vencidos : 0;
-  const sinSenal =
-    datos.flota.estado === 'listo' ? contarFlota(datos.flota.valor, ahoraMs).sinSenal : 0;
-  return ofertas + sinConductor + vencidos + sinSenal;
 }
 
 function kpiEnRuta(carga: Carga<AsignacionInicio[]>): KpiEnRuta {
@@ -897,5 +892,6 @@ export function buildInicioVista(datos: DatosInicio, ctx: ContextoInicio): Inici
     conectados,
     accesos: buildAccesos(datos, ctx.esAdmin),
     pasos: empresaNueva ? pasosAlta({ vehiculos: 0, conductores: 0, documentos: 0 }) : null,
+    cobraHoy: datos.cobraHoy,
   };
 }
