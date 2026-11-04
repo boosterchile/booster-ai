@@ -86,7 +86,9 @@ describe('CobraHoyHistorialRoute — gating', () => {
     providedContext = { kind: 'onboarded', me: makeMe(false) };
     renderRoute();
     expect(screen.getByText(/Sin permisos/)).toBeInTheDocument();
-    expect(screen.getByText(/exclusivo de empresas transportistas/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/dueño y el administrador de una empresa transportista/i),
+    ).toBeInTheDocument();
   });
 });
 

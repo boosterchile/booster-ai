@@ -10,16 +10,19 @@ export function InicioTransportista({
   nombreCompleto,
   legalName,
   esAdmin,
+  veFinanzas,
 }: {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
+  veFinanzas: boolean;
 }) {
   const { datos, reintentar } = useDatosInicio();
   const vista = buildInicioVista(datos, {
     nombreCompleto,
     legalName,
     esAdmin,
+    veFinanzas,
     ahora: new Date(),
   });
   return <InicioTransportistaVista vista={vista} onReintentar={reintentar} />;

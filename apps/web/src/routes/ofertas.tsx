@@ -6,6 +6,7 @@ import { OfferCard } from '../components/offers/OfferCard.js';
 import { VoiceAcceptOfferControl } from '../components/offers/VoiceAcceptOfferControl.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useOffersMine } from '../hooks/use-offers.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -32,9 +33,9 @@ export function OfertasRoute() {
 function OfertasPage({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
   const isCarrier = activeEmpresa?.is_transportista ?? false;
-  // Voz solo para el dueño que también conduce («Soy yo el conductor»).
-  // Aceptar y Rechazar de cada oferta no pasan por este gate.
-  const veTarjetaVoz = me.active_membership?.role === 'dueno' && me.tiene_ficha_conductor === true;
+  // CHEQUEOS_REEMPLAZADOS ofertas-voz: antes role === dueno && tiene_ficha_conductor.
+  const flags = flagsDe(me);
+  const veTarjetaVoz = flags.aceptarPorVoz;
 
   const offersQuery = useOffersMine({ enabled: isCarrier });
 
@@ -116,7 +117,7 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
             />
           )}
           {offersQuery.data.offers.map((o) => (
-            <OfferCard key={o.id} offer={o} />
+            <OfferCard key={o.id} offer={o} puedeDecidir={flags.aceptarOferta} />
           ))}
         </div>
       )}

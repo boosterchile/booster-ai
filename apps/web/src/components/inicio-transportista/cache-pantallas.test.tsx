@@ -244,6 +244,7 @@ describe('caché del inicio compatible con las pantallas dueñas', () => {
         nombreCompleto="Felipe Vicencio"
         legalName="Transportes Van Oosterwyk"
         esAdmin={false}
+        veFinanzas={false}
       />,
     );
     expect(await screen.findByText('2 ofertas por responder')).toBeInTheDocument();
@@ -329,6 +330,7 @@ describe('caché del inicio compatible con las pantallas dueñas', () => {
         nombreCompleto="Felipe Vicencio"
         legalName="Transportes Van Oosterwyk"
         esAdmin={false}
+        veFinanzas={false}
       />,
     );
     expect(await screen.findByText('2 ofertas por responder')).toBeInTheDocument();
