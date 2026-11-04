@@ -198,9 +198,10 @@ variable "strict_migration_ordering" {
 # Budget alert
 # -----------------------------------------------------------------------------
 variable "monthly_budget_usd" {
-  description = "Límite de budget mensual en USD. Alertas a 50/75/90/100%."
+  description = "Equivalente en USD del budget mensual de la cuenta de facturación (CLP 450.000, gestionado fuera de Terraform: ver project.tf). Solo alimenta la pestaña Forecast del dashboard (MONTHLY_BUDGET_USD × dólar del día)."
   type        = number
-  default     = 500
+  # CLP 450.000 / 964 CLP por USD (dólar observado del 2026-09-28) ≈ 467.
+  default = 467
 }
 
 variable "alert_email" {
@@ -723,4 +724,18 @@ variable "matching_via_microservice" {
   description = "El ranking que decide las offers lo calcula matching-engine (timeout 3 s, fallback local). Precede a matching_shadow."
   type        = bool
   default     = false
+}
+
+# ADR-085 — document-service consume `document.uploaded` por push en vez de
+# StreamingPull (.specs/document-service-push/spec.md). Un solo flag mueve
+# juntos la suscripción (push_config), el modo del worker
+# (DOCUMENT_CONSUMER_MODE), min_instances y cpu_idle. OFF = pull como hoy
+# (min=1, CPU siempre asignada). Encenderlo solo después del release que trae
+# el endpoint push; rollback: apagar y re-aplicar.
+# Encendido 2026-10-23 (decisión del PO, ADR-085 §11.1): el release
+# 39875352139 de main 18ce8e22 ya trae el endpoint push. Rollback: spec §10.
+variable "document_service_push" {
+  description = "document-service recibe document.uploaded por push (Pub/Sub → POST /pubsub/document-uploaded) y escala a cero. false = StreamingPull con min_instances=1."
+  type        = bool
+  default     = true
 }

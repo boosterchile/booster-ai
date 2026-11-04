@@ -176,6 +176,11 @@ class ManifiestoTest(unittest.TestCase):
         self.assertIn('cpu', recursos)
         self.assertIn('memory', recursos)
         self.assertEqual(doc['spec']['backoffLimit'], 0)
+        anotaciones = doc['spec']['template']['metadata']['annotations']
+        self.assertEqual(
+            anotaciones['cluster-autoscaler.kubernetes.io/safe-to-evict'],
+            'false',
+        )
         host = URL.split('//', 1)[1]
         alias = doc['spec']['template']['spec']['hostAliases']
         self.assertEqual(
@@ -344,6 +349,7 @@ class CloudBuildTest(unittest.TestCase):
     def test_piso_y_sonda_en_la_ventana(self) -> None:
         texto = CLOUDBUILD.read_text(encoding='utf-8')
         self.assertIn("_CANARY_MIN_REQUESTS: '30'", texto)
+        self.assertEqual(sonda.PISO_RESPUESTAS_EN_LOG, 30)
         self.assertIn('canary_synthetic_probe.py', texto)
         self.assertNotIn('FAIL muestra insuficiente', texto)
         inicio = texto.index('id: canary-sleep')
@@ -366,6 +372,10 @@ class CloudBuildTest(unittest.TestCase):
             'Camino directo: 404 de ingress; el Job es el camino que llega',
             script,
         )
+        # Un log con HTTP 200 se parsea aunque no traiga la clave "resumen".
+        self.assertNotIn("grep -q '\"resumen\"'", script)
+        aplicar = script.index('--aplicar-log-job')
+        self.assertIn('--job-estado', script[aplicar:aplicar + 180])
         self.assertNotIn('/etc/hosts', script)
         self.assertIn('timeout -k 5 30 gcloud container clusters get-credentials', script)
         self.assertIn('kubectl --request-timeout=20s get job', script)
@@ -515,6 +525,160 @@ class ResultadoSondaTest(unittest.TestCase):
         self.assertEqual(merged['job'], 'ok')
         codigo, _lineas = decidir_resultado_sonda(merged)
         self.assertNotEqual(codigo, 0)
+
+    def test_http_200_sin_resumen_no_se_marca_como_fallo(self) -> None:
+        # El Job puede salir 0 y loguear status 200 sin que la última línea
+        # (el objeto resumen) llegue al archivo. Hoy eso se lee como fallo.
+        lineas = [
+            f'2026-10-20T13:00:00.000000000Z {{"i":{i},"path":"/health","status":200,"ms":12.5}}'
+            for i in range(35)
+        ]
+        base = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': 1,
+            'errores_transporte': 0,
+            'respuestas_app': 0,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+        merged = aplicar_log_job(base, '\n'.join(lineas), 'completo')
+        self.assertEqual(merged['job'], 'ok')
+        self.assertTrue(merged['llego_a_la_app'])
+        self.assertEqual(merged['respuestas_app'], 35)
+        self.assertEqual(merged['cinco_xx'], 0)
+        self.assertEqual(merged['cuatro_xx'], 0)
+        codigo, lineas_gate = decidir_gate(merged, 0, 30, {}, [])
+        self.assertEqual(codigo, 0)
+        self.assertIn('OK', lineas_gate[-1])
+        self.assertNotIn('REVERTIR_TAG', '\n'.join(lineas_gate))
+
+    def test_resumen_con_prefijo_de_log_sigue_siendo_llegada(self) -> None:
+        log = (
+            '2026-10-20T13:00:01Z {"i":0,"path":"/health","status":200,"ms":12}\n'
+            '2026-10-20T13:00:02Z {"resumen":{"llego_a_la_app":true,"cinco_xx":0,'
+            '"cuatro_xx":0,"errores_transporte":0,"respuestas_app":35,'
+            '"latencias_ms":[12],"p95_ms":12,"total_plan":35}}'
+        )
+        base = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'errores_transporte': 0,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+        merged = aplicar_log_job(base, log)
+        self.assertEqual(merged['job'], 'ok')
+        self.assertEqual(merged['respuestas_app'], 35)
+        codigo, _lineas = decidir_resultado_sonda(merged)
+        self.assertEqual(codigo, 0)
+
+    def test_pocos_200_sin_resumen_no_promueven_ni_revierten(self) -> None:
+        lineas = [f'{{"i":{i},"path":"/health","status":200,"ms":12}}' for i in range(29)]
+        base = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': 1,
+            'errores_transporte': 0,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+        merged = aplicar_log_job(base, '\n'.join(lineas), 'completo')
+        self.assertEqual(merged['job'], 'fallo')
+        self.assertFalse(merged['llego_a_la_app'])
+        codigo, lineas_gate = decidir_gate(merged, 0, 30, {}, [])
+        self.assertNotEqual(codigo, 0)
+        self.assertNotIn('REVERTIR_TAG', '\n'.join(lineas_gate))
+        self.assertNotIn('Promoviendo', '\n'.join(lineas_gate))
+
+    def _base_ingress(self) -> dict[str, object]:
+        return {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': 1,
+            'errores_transporte': 0,
+            'respuestas_app': 0,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+
+    def test_treinta_200_con_job_fallido_no_promueve(self) -> None:
+        lineas = [f'{{"i":{i},"path":"/health","status":200,"ms":12}}' for i in range(30)]
+        merged = aplicar_log_job(self._base_ingress(), '\n'.join(lineas), 'fallido')
+        self.assertEqual(merged['job'], 'fallo')
+        self.assertFalse(merged['llego_a_la_app'])
+        codigo, lineas_gate = decidir_gate(merged, 0, 30, {}, [])
+        self.assertNotEqual(codigo, 0)
+        texto = '\n'.join(lineas_gate)
+        self.assertNotIn('Promoviendo', texto)
+        self.assertNotIn('OK', texto)
+
+    def test_job_pendiente_no_promueve(self) -> None:
+        lineas = [f'{{"i":{i},"path":"/health","status":200,"ms":12}}' for i in range(35)]
+        merged = aplicar_log_job(self._base_ingress(), '\n'.join(lineas), 'pendiente')
+        self.assertEqual(merged['job'], 'fallo')
+        self.assertFalse(merged['llego_a_la_app'])
+        codigo, lineas_gate = decidir_gate(merged, 0, 30, {}, [])
+        self.assertNotEqual(codigo, 0)
+        texto = '\n'.join(lineas_gate)
+        self.assertNotIn('Promoviendo', texto)
+        self.assertNotIn('OK', texto)
+
+    def test_treinta_200_y_veinte_404_no_pasan(self) -> None:
+        lineas = [
+            *[f'{{"i":{i},"path":"/health","status":200,"ms":12}}' for i in range(30)],
+            *[
+                f'{{"i":{i},"path":"/health/signup-flow","status":404,"ms":8}}'
+                for i in range(30, 50)
+            ],
+        ]
+        merged = aplicar_log_job(self._base_ingress(), '\n'.join(lineas), 'completo')
+        self.assertNotEqual(merged['job'], 'ok')
+        self.assertFalse(merged['llego_a_la_app'])
+        codigo, lineas_gate = decidir_gate(merged, 0, 30, {}, [])
+        self.assertNotEqual(codigo, 0)
+        texto = '\n'.join(lineas_gate)
+        self.assertNotIn('Promoviendo', texto)
+        self.assertNotIn('OK', texto)
+
+    def test_404_y_500_del_job_siguen_siendo_fallo(self) -> None:
+        base = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': 1,
+            'errores_transporte': 0,
+            'respuestas_app': 0,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+        solo_404 = '\n'.join(
+            f'{{"i":{i},"path":"/health","status":404,"ms":8}}' for i in range(35)
+        )
+        merged_404 = aplicar_log_job(dict(base), solo_404, 'completo')
+        self.assertNotEqual(merged_404['job'], 'ok')
+        self.assertFalse(merged_404['llego_a_la_app'])
+        codigo_404, lineas_404 = decidir_gate(merged_404, 0, 30, {}, [])
+        self.assertNotEqual(codigo_404, 0)
+        self.assertNotIn('OK', '\n'.join(lineas_404))
+        self.assertNotIn('Promoviendo', '\n'.join(lineas_404))
+
+        con_500 = '\n'.join(
+            [
+                *[f'{{"i":{i},"path":"/health","status":200,"ms":12}}' for i in range(34)],
+                '{"i":34,"path":"/health","status":500,"ms":20}',
+            ]
+        )
+        merged_500 = aplicar_log_job(dict(base), con_500, 'completo')
+        self.assertGreater(merged_500['cinco_xx'], 0)
+        codigo_500, lineas_500 = decidir_resultado_sonda(merged_500)
+        self.assertNotEqual(codigo_500, 0)
+        self.assertIn('5xx', '\n'.join(lineas_500))
+        self.assertNotIn('REVERTIR_TAG', '\n'.join(lineas_500))
 
     def test_los_4xx_se_cuentan_y_no_hacen_fallar(self) -> None:
         log = '\n'.join(

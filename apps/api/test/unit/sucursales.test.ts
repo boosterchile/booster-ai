@@ -28,8 +28,8 @@ const noopLogger = {
   typeof import('../../src/routes/sucursales.js').createSucursalesRoutes
 >[0]['logger'];
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
-const SUCURSAL_ID = '22222222-2222-2222-2222-222222222222';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
+const SUCURSAL_ID = '22222222-2222-4222-8222-222222222222';
 
 function buildSucursalRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {

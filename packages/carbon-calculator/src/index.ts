@@ -51,6 +51,10 @@ export { calcularExactoCanbus } from './modos/exacto-canbus.js';
 export { calcularModelado } from './modos/modelado.js';
 export { calcularPorDefecto } from './modos/por-defecto.js';
 export { obtenerFactorEmision, factorWtw } from './factores/sec-chile-2024.js';
+export {
+  COMBUSTIBLES_REFERENCIA_HUELLACHILE,
+  REFERENCIA_HUELLACHILE_2025,
+} from './factores/referencia-huellachile-2025.js';
 export { DEFAULTS_POR_TIPO } from './factores/defaults-por-tipo.js';
 export {
   calcularFactorCorreccionPorCarga,

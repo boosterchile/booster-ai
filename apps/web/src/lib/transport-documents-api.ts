@@ -148,7 +148,7 @@ function parseOrThrow<T>(schema: z.ZodType<T>, payload: unknown, label: string):
     throw new ApiError(
       500,
       'invalid_response',
-      parsed.error.flatten(),
+      z.flattenError(parsed.error),
       `Respuesta inválida (${label})`,
     );
   }

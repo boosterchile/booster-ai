@@ -519,3 +519,74 @@ describe('admin/observability — error paths', () => {
     expect(res.status).toBe(502);
   });
 });
+
+describe('admin/observability — contrato del 400 (TRK-003)', () => {
+  it('GET /costs/by-service?days=abc → 400 invalid_query con error.flatten()', async () => {
+    const app = makeApp(buildOpts(), { withContext: true });
+    const res = await app.request('/admin/observability/costs/by-service?days=abc');
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": {
+            "fieldErrors": {
+              "days": [
+                "Invalid input: expected number, received NaN",
+              ],
+            },
+            "formErrors": [],
+          },
+          "error": "invalid_query",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('las otras 4 rutas con query inválida → 400 invalid_query con error.flatten()', async () => {
+    const app = makeApp(buildOpts(), { withContext: true });
+    const get = async (p: string) => {
+      const res = await app.request(`/admin/observability/costs/${p}`);
+      return { status: res.status, body: await res.json() };
+    };
+    // by-project y trend comparten rangeQuerySchema con by-service (snapshot de arriba).
+    const byService = await get('by-service?days=abc');
+    expect(await get('by-project?days=abc')).toEqual(byService);
+    expect(await get('trend?days=abc')).toEqual(byService);
+    const results = {
+      'monthly-history': await get('monthly-history?months=abc'),
+      'top-skus': await get('top-skus?limit=abc'),
+    };
+    expect(results).toMatchInlineSnapshot(`
+      {
+        "monthly-history": {
+          "body": {
+            "details": {
+              "fieldErrors": {
+                "months": [
+                  "Invalid input: expected number, received NaN",
+                ],
+              },
+              "formErrors": [],
+            },
+            "error": "invalid_query",
+          },
+          "status": 400,
+        },
+        "top-skus": {
+          "body": {
+            "details": {
+              "fieldErrors": {
+                "limit": [
+                  "Invalid input: expected number, received NaN",
+                ],
+              },
+              "formErrors": [],
+            },
+            "error": "invalid_query",
+          },
+          "status": 400,
+        },
+      }
+    `);
+  });
+});

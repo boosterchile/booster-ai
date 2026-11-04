@@ -51,6 +51,7 @@ export function DeliveryConfirmCard({
 }: DeliveryConfirmCardProps) {
   const [localState, setLocalState] = useState<LocalState>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [puedeReintentar, setPuedeReintentar] = useState(true);
   const [confirmTimer, setConfirmTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const mutation = useConfirmarEntregaMutation();
@@ -96,18 +97,28 @@ export function DeliveryConfirmCard({
               current_status?: string;
             };
             if (err.code === 'invalid_status' || details.code === 'invalid_status') {
+              setPuedeReintentar(true);
               setErrorMsg(
                 `Este viaje está en estado "${details.current_status ?? 'desconocido'}". No se puede confirmar entrega.`,
               );
             } else if (
+              err.code === 'not_assigned_driver' ||
+              details.code === 'not_assigned_driver'
+            ) {
+              setPuedeReintentar(false);
+              setErrorMsg('Solo el conductor asignado puede confirmar esta entrega.');
+            } else if (
               err.code === 'forbidden_owner_mismatch' ||
               details.code === 'forbidden_owner_mismatch'
             ) {
+              setPuedeReintentar(true);
               setErrorMsg('No tienes permisos para confirmar este viaje.');
             } else {
+              setPuedeReintentar(true);
               setErrorMsg('No se pudo confirmar la entrega. Intenta otra vez.');
             }
           } else {
+            setPuedeReintentar(true);
             setErrorMsg('Sin conexión. Verifica tu red e intenta otra vez.');
           }
         },
@@ -177,59 +188,61 @@ export function DeliveryConfirmCard({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        <VoiceCommandButton
-          acceptedIntents={new Set(['confirmar_entrega', 'cancelar'])}
-          onCommand={onVoiceCommand}
-          {...(recognizer ? { recognizer } : {})}
-          idleLabel='Di "entregado"'
-        />
+      {(localState !== 'error' || puedeReintentar) && (
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <VoiceCommandButton
+            acceptedIntents={new Set(['confirmar_entrega', 'cancelar'])}
+            onCommand={onVoiceCommand}
+            {...(recognizer ? { recognizer } : {})}
+            idleLabel='Di "entregado"'
+          />
 
-        <div className="flex flex-1 flex-col gap-2">
-          {localState === 'idle' && (
-            <button
-              type="button"
-              onClick={handleFirstConfirm}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-50 px-4 py-3 font-medium text-primary-700 text-sm ring-1 ring-primary-700/30 hover:bg-primary-100"
-            >
-              Sí, ya entregué
-            </button>
-          )}
-          {localState === 'confirming' && (
-            <>
+          <div className="flex flex-1 flex-col gap-2">
+            {localState === 'idle' && (
               <button
                 type="button"
-                onClick={handleRatify}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-success-700 px-4 py-3 font-semibold text-sm text-white shadow hover:bg-success-800"
+                onClick={handleFirstConfirm}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-50 px-4 py-3 font-medium text-primary-700 text-sm ring-1 ring-primary-700/30 hover:bg-primary-100"
               >
-                <CheckCircle2 className="h-4 w-4" aria-hidden /> Confirmar entrega
+                Sí, ya entregué
               </button>
+            )}
+            {localState === 'confirming' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleRatify}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-success-700 px-4 py-3 font-semibold text-sm text-white shadow hover:bg-success-800"
+                >
+                  <CheckCircle2 className="h-4 w-4" aria-hidden /> Confirmar entrega
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="text-neutral-500 text-xs underline"
+                >
+                  Cancelar (volver atrás)
+                </button>
+              </>
+            )}
+            {localState === 'submitting' && (
+              <div className="inline-flex items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 py-3 text-neutral-600 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Confirmando…
+              </div>
+            )}
+            {localState === 'error' && (
               <button
                 type="button"
-                onClick={handleCancel}
-                className="text-neutral-500 text-xs underline"
+                onClick={handleFirstConfirm}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-50 px-4 py-3 font-medium text-amber-800 text-sm ring-1 ring-amber-500 hover:bg-amber-100"
               >
-                Cancelar (volver atrás)
+                Reintentar
               </button>
-            </>
-          )}
-          {localState === 'submitting' && (
-            <div className="inline-flex items-center justify-center gap-2 rounded-md bg-neutral-100 px-4 py-3 text-neutral-600 text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              Confirmando…
-            </div>
-          )}
-          {localState === 'error' && (
-            <button
-              type="button"
-              onClick={handleFirstConfirm}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-50 px-4 py-3 font-medium text-amber-800 text-sm ring-1 ring-amber-500 hover:bg-amber-100"
-            >
-              Reintentar
-            </button>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

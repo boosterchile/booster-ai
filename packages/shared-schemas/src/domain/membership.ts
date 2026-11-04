@@ -46,7 +46,7 @@ export const membershipSchema = z.object({
   role: membershipRoleSchema,
   /**
    * El despachador acepta o rechaza ofertas solo si este flag está en
-   * true. Dueño y admin no lo necesitan. Default false (migración 0065).
+   * true. Dueño y admin no lo necesitan. Default false (migración 0071).
    * Opcional en el contrato para filas leídas antes de esa columna.
    */
   puede_aceptar_ofertas: z.boolean().optional(),

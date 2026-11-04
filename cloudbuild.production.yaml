@@ -14,7 +14,7 @@
 #     apps/telemetry-tcp-gateway (GKE), apps/telemetry-processor,
 #     apps/sms-fallback-gateway.
 #   - apps/document-service (worker TED, consumer de `document.uploaded`;
-#     T10-21, ADR-083).
+#     T10-21, ADR-083; pull o push según ADR-085).
 #   - apps/notification-service (canal WhatsApp extraído; consumer de
 #     `notification-events`. T10-21, ADR-083).
 #   - apps/matching-engine (POST /ranking, ranking de matching; T10-21,
@@ -26,12 +26,18 @@
 # públicas por diseño — viajan en el bundle al cliente). Setear via
 # --substitutions en gcloud builds submit, o defaults aquí abajo.
 
+# OPS-002 — imágenes de los pasos fijadas por digest (nada de :latest ni sin tag).
+# cloud-sdk queda en 591.0.0: desde 592.0.0 (3-nov-2026) la imagen ya no trae
+# python3 del sistema y canary-sleep/canary-verify lo usan (build 72502745).
+# Para subir de versión: validar `python3 --version`, `kubectl version --client`
+# y `gke-gcloud-auth-plugin --version` dentro de la imagen nueva, y cambiar
+# tag y digest juntos en todos los pasos.
 steps:
   # =========================================================================
   # Build images en paralelo
   # =========================================================================
   - id: build-api
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -42,7 +48,7 @@ steps:
     waitFor: ['-']
 
   - id: build-whatsapp-bot
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -55,7 +61,7 @@ steps:
   # apps/web — PWA Vite. Las VITE_* env vars se inyectan a build-time
   # como --build-arg porque Vite las reemplaza textualmente en el bundle.
   - id: build-web
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -84,7 +90,7 @@ steps:
   # vacío y el paso de upload se salta — el deploy NO cambia. Crear el secret
   # (consola/Terraform, PO) activa la subida sin tocar este archivo.
   - id: fetch-sentry-token
-    name: gcr.io/cloud-builders/gcloud
+    name: gcr.io/cloud-builders/gcloud@sha256:114a8a3f347d78125ab539fc46b49999979e8b5f9ddeaf963cc4c5fe6b3c699e
     entrypoint: bash
     args:
       - -c
@@ -92,6 +98,9 @@ steps:
         gcloud secrets versions access latest --secret=sentry-auth-token \
           > /workspace/.sentry-token 2>/dev/null \
           || { echo "[sourcemaps] sentry-auth-token no disponible — upload se saltará"; : > /workspace/.sentry-token; }
+    # OPS-SENTRY-NOBLOCK — Sentry nunca bloquea el deploy.
+    allowFailure: true
+    timeout: 180s
     waitFor: ['-']
 
   # ADR-074 — upload de sourcemaps del web a Sentry (org booster-chile,
@@ -99,18 +108,22 @@ steps:
   # Dockerfile (apartados del runtime image); se extraen reusando el layer
   # cache del build-web. Sin token o sin DSN: skip explícito, exit 0.
   - id: upload-sourcemaps-web
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     entrypoint: bash
     args:
       - -c
       - |
-        set -euo pipefail
-        TOKEN=$$(cat /workspace/.sentry-token)
+        # OPS-SENTRY-NOBLOCK: cualquier fallo de Sentry (504, token inválido,
+        # cuelgue) sale 0 con WARNING; el build y el deploy siguen.
+        trap 'echo "WARNING: [sourcemaps] subida de sourcemaps saltada (exit $$?); re-subir con: docker run --rm -v <dir>:/work -e SENTRY_AUTH_TOKEN=<token> getsentry/sentry-cli:2 sourcemaps upload --org=booster-chile --project=javascript-react --release=${_COMMIT_SHA} --url-prefix=~/assets /work/sourcemaps-web /work/dist-web/assets (ver PR OPS-SENTRY-NOBLOCK)"; exit 0' ERR
+        set -eEuo pipefail
+        TOKEN=$$(cat /workspace/.sentry-token 2>/dev/null || true)
         if [ -z "$$TOKEN" ] || [ -z "${_VITE_SENTRY_DSN}" ]; then
           echo "[sourcemaps] skip (token o DSN ausente) — deploy sigue idéntico"
           exit 0
         fi
-        docker build --file=apps/web/Dockerfile --target=build \
+        # 420s tope del docker build (máx. observado 389s); 420 + 150 < 600.
+        timeout 420 docker build --file=apps/web/Dockerfile --target=build \
           --build-arg=VITE_API_URL=${_VITE_API_URL} \
           --build-arg=VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY} \
           --build-arg=VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN} \
@@ -127,17 +140,20 @@ steps:
         docker cp webbuild:/app/sourcemaps ./sourcemaps-web
         docker cp webbuild:/app/apps/web/dist ./dist-web
         docker rm webbuild
-        docker run --rm -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
-          getsentry/sentry-cli:2 \
+        timeout 150 docker run --rm --init -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
+          getsentry/sentry-cli:2@sha256:2a60d341709d8ae040b842556c66f98443cc6d59101cab751f9811f3a1df9362 \
           sourcemaps upload --org=booster-chile --project=javascript-react \
           --release=${_COMMIT_SHA} --url-prefix='~/assets' \
           /work/sourcemaps-web /work/dist-web/assets
+    allowFailure: true
+    # 600s: margen para el docker build (79-389s); el corte a Sentry es el timeout 150.
+    timeout: 600s
     waitFor: ['build-web', 'fetch-sentry-token']
 
   # apps/telemetry-tcp-gateway — TCP server para devices Teltonika.
   # Va a GKE Autopilot (no Cloud Run; el deploy es kubectl set image).
   - id: build-telemetry-tcp-gateway
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -153,7 +169,7 @@ steps:
 
   # apps/telemetry-processor — consumer Pub/Sub. Cloud Run.
   - id: build-telemetry-processor
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -165,7 +181,7 @@ steps:
 
   # apps/sms-fallback-gateway — Cloud Run webhook receiver para SMS Twilio.
   - id: build-sms-fallback-gateway
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -175,9 +191,9 @@ steps:
       - .
     waitFor: ['-']
 
-  # apps/document-service — worker TED (consumer Pub/Sub pull). T10-21.
+  # apps/document-service — worker TED (consumer Pub/Sub, pull o push según ADR-085). T10-21.
   - id: build-document-service
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -189,7 +205,7 @@ steps:
 
   # apps/notification-service — consumer Pub/Sub pull (canal WhatsApp). T10-21.
   - id: build-notification-service
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -201,7 +217,7 @@ steps:
 
   # apps/matching-engine — POST /ranking (cómputo puro). T10-21.
   - id: build-matching-engine
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args:
       - build
       - --no-cache
@@ -215,47 +231,47 @@ steps:
   # Push a Artifact Registry
   # =========================================================================
   - id: push-api
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/api']
     waitFor: [build-api]
 
   - id: push-whatsapp-bot
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/whatsapp-bot']
     waitFor: [build-whatsapp-bot]
 
   - id: push-web
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/web']
     waitFor: [build-web]
 
   - id: push-telemetry-tcp-gateway
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/telemetry-tcp-gateway']
     waitFor: [build-telemetry-tcp-gateway]
 
   - id: push-telemetry-processor
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/telemetry-processor']
     waitFor: [build-telemetry-processor]
 
   - id: push-sms-fallback-gateway
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/sms-fallback-gateway']
     waitFor: [build-sms-fallback-gateway]
 
   - id: push-document-service
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/document-service']
     waitFor: [build-document-service]
 
   - id: push-notification-service
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/notification-service']
     waitFor: [build-notification-service]
 
   - id: push-matching-engine
-    name: gcr.io/cloud-builders/docker
+    name: gcr.io/cloud-builders/docker@sha256:fbc05705e6f24467e40ae8a4097ab9b8fae1116551f838fa2c55f4367427fc36
     args: [push, '--all-tags', '${_REGISTRY}/matching-engine']
     waitFor: [build-matching-engine]
 
@@ -311,7 +327,7 @@ steps:
   # el tag del commit o el digest que Artifact Registry da para
   # `api:${_COMMIT_SHA}`; cualquier otra imagen sigue abortando.
   - id: deploy-canary
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: bash
     args:
       - -c
@@ -356,7 +372,7 @@ steps:
     waitFor: [push-api]
 
   - id: route-canary
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: bash
     # Rutea 1% del traffic al tag canary-signup-<sha-12>. El resto (99%)
     # permanece en la revision LATEST que estaba antes del deploy. Cloud
@@ -377,7 +393,7 @@ steps:
     waitFor: [deploy-canary]
 
   - id: canary-sleep
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: bash
     # La ventana es 1800s. Los 300s de más cubren gcloud (timeout 30) y
     # kubectl (--request-timeout=20s). Si algo se cuelga, el step se corta.
@@ -506,10 +522,15 @@ steps:
               TERMINAL="sin_credenciales"
             fi
             tail -n 3 /tmp/canary-probe-job.log || true
-            if [ -s /tmp/canary-probe-job.log ] && grep -q '"resumen"' /tmp/canary-probe-job.log; then
+            # El conteo por línea solo si TERMINAL=completo. Failed o
+            # pendiente no promueven aunque haya 200 en el log. El pod lleva
+            # safe-to-evict=false para que el autoscaler no lo mate antes
+            # del resumen. Un 404 en ese conteo, o un 5xx, sigue siendo fallo.
+            if [ -s /tmp/canary-probe-job.log ]; then
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --aplicar-log-job "$$RESULT" \
-                --log-file /tmp/canary-probe-job.log
+                --log-file /tmp/canary-probe-job.log \
+                --job-estado "$$TERMINAL"
             elif [ "$$TERMINAL" = "ausente" ]; then
               echo "canary-probe: el job desapareció antes de leer logs — no se promueve"
               python3 scripts/deploy/canary_synthetic_probe.py \
@@ -545,7 +566,7 @@ steps:
     waitFor: [route-canary]
 
   - id: canary-verify
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: bash
     # 480s: token 30s, hasta 4 lecturas de Monitoring (30s, 20s entre ellas)
     # y el revertir. Describe y cada update-traffic van a 30s, 3 intentos,
@@ -798,7 +819,7 @@ steps:
   # whatsapp-bot]` (step watch-deploy line ~298) depende de este id para
   # resolver. Cambiar el id rompe la pipeline. Per plan T13 round 2 P1-1 fix.
   - id: deploy-api
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: bash
     # Promueve la revisión a 100% (--to-latest) y luego limpia los tags
     # canary-signup-* viejos (cloud-run-canary-tag-cleanup, Opción A). El
@@ -851,7 +872,7 @@ steps:
   # =========================================================================
 
   - id: deploy-whatsapp-bot
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -865,7 +886,7 @@ steps:
     waitFor: [push-whatsapp-bot]
 
   - id: deploy-web
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -883,7 +904,7 @@ steps:
   # (ver compute.tf / incidente 2026-06-07). Explícitos acá para idempotencia y
   # auto-documentación, aunque `update --image` ya preserva la config existente.
   - id: deploy-telemetry-processor
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -901,7 +922,7 @@ steps:
     waitFor: [push-telemetry-processor]
 
   - id: deploy-sms-fallback-gateway
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -914,13 +935,16 @@ steps:
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-sms-fallback-gateway]
 
-  # apps/document-service — Cloud Run PULL consumer de `document.uploaded`.
-  # min-instances=1 + no-cpu-throttling son obligatorios para un consumer pull
-  # (mismo motivo que telemetry-processor; ver compute.tf `service_document`).
+  # apps/document-service — consumer de `document.uploaded`, pull o push según
+  # `var.document_service_push` (ADR-085). --min-instances y
+  # --[no-]cpu-throttling NO van aquí: Terraform los fija junto con el modo
+  # (pull: min=1 + CPU siempre asignada; push: min=0 + CPU solo en requests;
+  # compute.tf `service_document`), y `services update` conserva el valor vivo
+  # cuando no se le pasa. Fijarlos acá devolvía min=1 en cada release.
   # Rollback: `gcloud run services update-traffic booster-ai-document-service
   # --to-revisions=<anterior>=100` (docs/runbooks/rollback-drill-microservicios.md).
   - id: deploy-document-service
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -930,19 +954,20 @@ steps:
       - --image=${_REGISTRY}/document-service:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --min-instances=1
-      - --no-cpu-throttling
       - --cpu=1
       - --memory=1Gi
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-document-service]
 
   # apps/notification-service — Cloud Run PULL consumer de `notification-events`.
-  # min-instances=1 + no-cpu-throttling obligatorios (consumer pull; ver
-  # compute.tf `service_notification`). El tráfico real lo decide el flag
+  # no-cpu-throttling es obligatorio para el consumer pull. --min-instances NO
+  # va aquí: lo decide Terraform según los flags notifications_* del api (1 si
+  # alguno está encendido, 0 si no; compute.tf `service_notification`), y
+  # `services update` conserva el valor vivo cuando no se le pasa. Fijarlo acá
+  # deshacía ese valor en cada release. El tráfico real lo decide el flag
   # `notifications_via_microservice` del api, no este deploy.
   - id: deploy-notification-service
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -952,7 +977,6 @@ steps:
       - --image=${_REGISTRY}/notification-service:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --min-instances=1
       - --no-cpu-throttling
       - --cpu=1
       - --memory=512Mi
@@ -964,15 +988,18 @@ steps:
     # falla. Así el release sigue y el servicio queda en la revisión anterior.
     allowFailure: true
 
-  # apps/matching-engine — request-driven (min-instances=1 contra cold start
-  # en el camino síncrono del matching). El tráfico real lo deciden los flags
+  # apps/matching-engine — request-driven. --min-instances NO va aquí: lo
+  # decide Terraform según los flags matching_* del api (1 contra el cold start
+  # si alguno está encendido, 0 si nadie lo llama; compute.tf
+  # `service_matching_engine`), y `services update` conserva el valor vivo
+  # cuando no se le pasa. El tráfico real lo deciden los flags
   # matching_shadow / matching_via_microservice del api, no este deploy. Sin
   # waitFor cruzado, el engine queda arriba antes que el api (que espera 30
   # min de canary): durante esa ventana, en modo microservicio el engine es la
   # fuente del algoritmo, y en sombra un cambio de algoritmo se ve como
   # divergencia transitoria (runbook service-matching-engine.md).
   - id: deploy-matching-engine
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: gcloud
     args:
       - run
@@ -982,7 +1009,6 @@ steps:
       - --image=${_REGISTRY}/matching-engine:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --min-instances=1
       - --cpu=1
       - --memory=512Mi
       - --update-labels=commit=${_COMMIT_SHA}
@@ -1008,7 +1034,7 @@ steps:
   # Break-glass: scripts/deploy-telemetry-gateway.sh sigue disponible desde una
   # laptop autorizada si la ruta de Cloud Build falla.
   - id: gke-deploy
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
     entrypoint: bash
     env:
       - USE_GKE_GCLOUD_AUTH_PLUGIN=True
@@ -1042,7 +1068,7 @@ steps:
   # toda la cadena LB/cert/DNS.
   # =========================================================================
   - id: smoke-api-health
-    name: gcr.io/cloud-builders/curl
+    name: gcr.io/cloud-builders/curl@sha256:d1d325efc7e322ab5bc391b5606ddb805d1d4e3194c353b2330e331d03bf33e9
     entrypoint: bash
     args:
       - -c

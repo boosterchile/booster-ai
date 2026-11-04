@@ -13,7 +13,7 @@ Un módulo puro en `packages/shared-schemas` (`capacidades.ts`). La web arma el 
 
 `GET /me` devuelve `ficha_conductor_mismo_rut` y `puede_aceptar_ofertas` en cada membresía.
 
-Migración 0067, aditiva: `membresias.puede_aceptar_ofertas boolean NOT NULL DEFAULT false`. 0065 y 0066 están reservadas por #795 y #799; el journal de esta rama las incluye con el mismo SQL para no dejar hueco de idx. `when` de 0067: 1780876800031.
+Migración 0071, aditiva: `membresias.puede_aceptar_ofertas boolean NOT NULL DEFAULT false`. Se escribió como 0067 y se renumeró el 2026-11-04, después de 0069 (#795) y 0070 (#799).
 
 ## Reglas
 

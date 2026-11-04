@@ -23,6 +23,8 @@ interface Trayecto {
   litros_iniciales: number | null;
   litros_finales: number | null;
   km_por_litro: number | null;
+  /** La calcula la API con los mismos km y litros. Ausente en una API anterior. */
+  litros_por_100_km?: number | null;
   fuente_combustible?: FuenteCombustible | null;
   litros_consumidos?: number | null;
   nivel_pct_inicial?: number | null;
@@ -753,7 +755,7 @@ function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {
       </span>
     );
   }
-  const porCien = litrosPorCienKm(trayecto);
+  const porCien = trayecto.litros_por_100_km;
   return (
     <span>
       {fmtNum(trayecto.km_por_litro, 2)} km/L
@@ -762,15 +764,6 @@ function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {
       )}
     </span>
   );
-}
-
-/** L/100 km = 100 / km/L: sale del mismo tramo leído que el km/L. */
-function litrosPorCienKm(trayecto: Trayecto): number | null {
-  const kmPorLitro = trayecto.km_por_litro;
-  if (kmPorLitro == null || !(kmPorLitro > 0)) {
-    return null;
-  }
-  return 100 / kmPorLitro;
 }
 
 function fmtFecha(iso: string): string {

@@ -52,8 +52,8 @@ function buildSpyLogger() {
   };
 }
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
-const VEHICLE_ID = '22222222-2222-2222-2222-222222222222';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
+const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
 
 function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -882,7 +882,7 @@ describe('vehiculos routes', () => {
     });
 
     it('mergea último punto por vehículo con su position', async () => {
-      const otherVehicleId = '33333333-3333-3333-3333-333333333333';
+      const otherVehicleId = '33333333-3333-4333-8333-333333333333';
       const stub = makeFlotaStub({
         vehicleRows: [
           {

@@ -1,8 +1,12 @@
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import {
+  MENSAJES,
+  abrirDisputaSchema,
+  errorOpcion,
+  tripRequestCreateInputSchema,
+} from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -21,6 +25,8 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
+import { issuesPublicos, zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
@@ -89,8 +95,11 @@ function generateTrackingCode(): string {
 
 /** ADR-079 §1 — cotización previa a publicar (query string). */
 const cotizacionQuerySchema = z.object({
-  precio_transportista_clp: z.coerce.number().int().nonnegative(),
-  modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+  precio_transportista_clp: z.coerce
+    .number({ error: MENSAJES.numero })
+    .int(MENSAJES.numero)
+    .nonnegative(MENSAJES.numero),
+  modalidad_carga: z.enum(['spot', 'programada'], { error: errorOpcion }).default('spot'),
 });
 
 const cancelBodySchema = z.object({
@@ -227,7 +236,7 @@ export function createTripRequestsV2Routes(opts: {
     }
     const query = cotizacionQuerySchema.safeParse(c.req.query());
     if (!query.success) {
-      return c.json({ error: 'invalid_query', issues: query.error.issues }, 400);
+      return c.json({ error: 'invalid_query', issues: issuesPublicos(query.error.issues) }, 400);
     }
     const contratoEn = auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null;
     if (!modalidadPermitida(query.data.modalidad_carga, contratoEn)) {
@@ -764,6 +773,12 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: confirmar recepción es escritura.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
+    const rolRecepcion = auth.activeMembership.membership.role;
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
@@ -827,7 +842,11 @@ export function createTripRequestsV2Routes(opts: {
           },
         );
         if (recepcion.ok) {
-          mandato = { pago: pagoParaGenerador(recepcion.pago) };
+          // El despachador confirma la recepción, pero el pago solo lo ven
+          // dueño y admin (igual que GET /:id/pago).
+          mandato = (ROLES_COMERCIALES as readonly string[]).includes(rolRecepcion)
+            ? { pago: pagoParaGenerador(recepcion.pago) }
+            : {};
         } else if (recepcion.code !== 'no_es_mandato') {
           opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
           mandato = { recepcion_conforme_pendiente: recepcion.code };
@@ -863,6 +882,10 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    const sinRol = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
+    }
     const pago = await leerPagoDelGenerador(
       opts.db,
       c.req.param('id'),
@@ -881,6 +904,10 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    const sinRolDisputa = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRolDisputa) {
+      return sinRolDisputa;
     }
     const r = await abrirDisputa(
       { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },
