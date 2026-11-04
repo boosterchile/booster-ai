@@ -39,7 +39,7 @@ function makeDb(opts: MakeDbOpts = {}) {
     if (opts.throwOnInsert) {
       throw opts.throwOnInsert;
     }
-    return [{ id: opts.insertedId ?? 'a1b2c3d4-1111-2222-3333-444455556666' }];
+    return [{ id: opts.insertedId ?? 'a1b2c3d4-1111-4222-8333-444455556666' }];
   });
   const insertValues = vi.fn(() => ({ returning: insertReturning }));
   const insert = vi.fn(() => ({ values: insertValues }));

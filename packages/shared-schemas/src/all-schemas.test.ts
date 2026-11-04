@@ -89,8 +89,8 @@ describe('primitives/chile', () => {
   it('rutSchema valida check digit + normaliza (quita puntos, K uppercase)', () => {
     expect(chile.rutSchema.parse('11.111.111-1')).toBe('11111111-1');
     expect(chile.rutSchema.parse('11111111-1')).toBe('11111111-1');
-    expect(() => chile.rutSchema.parse('11111111-2')).toThrow(/Dígito/);
-    expect(() => chile.rutSchema.parse('abc')).toThrow(/formato/);
+    expect(() => chile.rutSchema.parse('11111111-2')).toThrow(/dígito después del guion/);
+    expect(() => chile.rutSchema.parse('abc')).toThrow(/Ingresa un RUT válido/);
   });
 
   it('normalizeRut quita puntos y uppercase K', () => {

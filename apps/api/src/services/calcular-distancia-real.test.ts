@@ -4,6 +4,7 @@ import { haversineKm } from './calcular-cobertura-telemetria.js';
 // (.specs/distancia-real-hibrida/spec.md). El test falla al resolver el import
 // hasta que se implemente calcularDistanciaHibrida.
 import {
+  DERIVA_MAX_HUECO_DETENIDO_M,
   type DistanciaHibridaResultado,
   MAX_HUECOS_ROUTES,
   type PingGps,
@@ -107,6 +108,65 @@ describe('calcularDistanciaHibrida', () => {
     await expect(calcularDistanciaHibrida([p1, p2], estimarHueco)).rejects.toThrow(
       'Routes API timeout',
     );
+  });
+});
+
+/**
+ * Ping a `metros` al norte de `base`. En el mismo meridiano el haversine es
+ * exactamente R·Δlat, así que la distancia del fixture es la que se pide.
+ */
+const alNorte = (base: PingGps, metros: number, dtMs: number): PingGps => ({
+  tMs: base.tMs + dtMs,
+  lat: base.lat + ((metros / 1000 / 6371) * 180) / Math.PI,
+  lng: base.lng,
+});
+
+describe('hueco detenido con deriva del GPS (≤ 25 m — enmienda 2026-10-29, .specs/hueco-detenido-deriva/)', () => {
+  it('el umbral de deriva es 25 m', () => {
+    expect(DERIVA_MAX_HUECO_DETENIDO_M).toBe(25);
+  });
+
+  it('caso BOO-HC7DJX: parada de 183 s con 6,94 m de deriva → 0 km, sin llamar al resolver', async () => {
+    // Prod 2026-10-20: el hueco no tenía extremos idénticos, fue a Routes, Routes
+    // respondió sin distancia y el resolver lanzó → se perdieron 468 km medidos.
+    const deriva = alNorte(p1, 6.94, 183_000);
+    const estimarHueco = vi.fn(async () => {
+      throw new Error('Routes: sin ruta para el hueco');
+    });
+
+    const r = await calcularDistanciaHibrida([p0, p1, deriva], estimarHueco);
+
+    expect(estimarHueco).not.toHaveBeenCalled();
+    const obs = haversineKm(p0.lat, p0.lng, p1.lat, p1.lng);
+    expect(r.kmObservado).toBeCloseTo(obs, 6);
+    expect(r.kmEstimado).toBe(0);
+    expect(r.distanciaTotalKm).toBeCloseTo(obs, 6);
+    expect(r.coberturaObservadaPct).toBe(100);
+    expect(r.segmentos.at(-1)).toMatchObject({ tipo: 'estimado', km: 0 });
+  });
+
+  it('borde: a 24,9 m el hueco es detenido; a 25,1 m va al resolver', async () => {
+    const adentro = vi.fn(async () => 999);
+    await calcularDistanciaHibrida([p1, alNorte(p1, 24.9, 120_000)], adentro);
+    expect(adentro).not.toHaveBeenCalled();
+
+    const afuera = vi.fn(async () => 0.03);
+    const lejos = alNorte(p1, 25.1, 120_000);
+    const r = await calcularDistanciaHibrida([p1, lejos], afuera);
+    expect(afuera).toHaveBeenCalledTimes(1);
+    expect(afuera).toHaveBeenCalledWith(p1, lejos);
+    expect(r.kmEstimado).toBeCloseTo(0.03, 9);
+  });
+
+  it('un hueco con extremos a más de 25 m se resuelve como antes (resolver con sus extremos)', async () => {
+    const estimarHueco = vi.fn(async () => 0.5);
+    const lejos = alNorte(p1, 120, 300_000);
+
+    const r = await calcularDistanciaHibrida([p0, p1, lejos], estimarHueco);
+
+    expect(estimarHueco).toHaveBeenCalledWith(p1, lejos);
+    expect(r.kmEstimado).toBe(0.5);
+    expect(r.distanciaTotalKm).toBeCloseTo(r.kmObservado + 0.5, 9);
   });
 });
 
@@ -249,6 +309,25 @@ describe('computarEscrituraDistanciaReal — integración: política de fallo y 
     }
     for (let i = 1; i <= 5; i++) {
       pings.push({ tMs: ultimo.tMs + i * 120_000, lat: ultimo.lat, lng: ultimo.lng });
+    }
+    const estimarHueco = vi.fn(async () => 5);
+
+    const w = await computarEscrituraDistanciaReal(pings, estimarHueco);
+
+    expect(w).not.toBeNull();
+    expect(estimarHueco).toHaveBeenCalledTimes(MAX_HUECOS_ROUTES);
+  });
+
+  it('CAP — las paradas con deriva ≤ 25 m tampoco cuentan para MAX_HUECOS_ROUTES', async () => {
+    // MAX huecos en movimiento + 5 paradas que derivan 10 m cada vez: con la
+    // regla exacta sumaban 5 huecos más y el viaje abortaba por costo.
+    const pings = pingsConHuecos(MAX_HUECOS_ROUTES);
+    for (let i = 0; i < 5; i++) {
+      const ultimo = pings[pings.length - 1];
+      if (!ultimo) {
+        throw new Error('fixture sin pings');
+      }
+      pings.push(alNorte(ultimo, 10, 120_000));
     }
     const estimarHueco = vi.fn(async () => 5);
 

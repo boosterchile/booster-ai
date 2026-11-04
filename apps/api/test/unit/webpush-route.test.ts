@@ -239,3 +239,60 @@ describe('GET /webpush/vapid-public-key (público)', () => {
     expect(body.public_key).toBe('BPubKeyXYZ');
   });
 });
+
+describe('POST /me/push-subscription — contrato del 400 de zValidator (TRK-003)', () => {
+  async function postInvalido(body: unknown) {
+    const app = await buildPrivApp(makeDb());
+    const res = await app.request('/me/push-subscription', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-userctx': VALID_USER_CTX },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: await res.json() };
+  }
+
+  it('campo faltante (keys) y tipo incorrecto (endpoint)', async () => {
+    expect(await postInvalido({ endpoint: VALID_BODY.endpoint })).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_type",
+                "expected": "object",
+                "message": "Invalid input: expected object, received undefined",
+                "path": [
+                  "keys",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+    expect(await postInvalido({ ...VALID_BODY, endpoint: 123 })).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_type",
+                "expected": "string",
+                "message": "Invalid input: expected string, received number",
+                "path": [
+                  "endpoint",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+  });
+});

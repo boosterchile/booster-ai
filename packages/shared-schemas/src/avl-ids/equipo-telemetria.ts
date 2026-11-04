@@ -61,12 +61,11 @@ export interface CapacidadesEquipo {
 const DALLAS_MAX_SENSORES = Object.keys(AVL_ID_DALLAS).length;
 
 function techoEntero(schema: z.ZodNumber): number {
-  const checks = schema._def.checks;
-  const techo = checks.find((check) => check.kind === 'max');
-  if (techo === undefined || techo.kind !== 'max') {
+  const techo = schema.maxValue;
+  if (techo === null || !Number.isFinite(techo)) {
     throw new Error('el schema numérico no declara techo');
   }
-  return techo.value;
+  return techo;
 }
 
 function capacidadCan(): CapacidadCan {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createDriverBodySchema } from './driver.js';
+import { chileanPhoneSchema, rutSchema } from '../primitives/chile.js';
+import { createDriverBodySchema, telefonoMovilConductorSchema } from './driver.js';
 
 /**
  * El teléfono pasa a ser obligatorio.
@@ -41,12 +42,22 @@ describe('createDriverBodySchema — teléfono obligatorio (canal WhatsApp)', ()
     expect(r.success).toBe(false);
     if (!r.success) {
       expect(
-        r.error.issues.some((issue) => issue.message === 'Ingresa un teléfono válido (+569...)'),
+        r.error.issues.some(
+          (issue) => issue.message === 'Ingresa un teléfono válido, como +56912345678',
+        ),
       ).toBe(true);
     }
   });
 
   it('null explícito tampoco pasa', () => {
     expect(createDriverBodySchema.safeParse({ ...base, phone: null }).success).toBe(false);
+  });
+});
+
+describe('ejemplos del copy UX', () => {
+  it('el teléfono y el RUT de los mensajes pasan sus schemas', () => {
+    expect(chileanPhoneSchema.safeParse('+56912345678').success).toBe(true);
+    expect(telefonoMovilConductorSchema.safeParse('+56912345678').success).toBe(true);
+    expect(rutSchema.safeParse('12.345.678-5').success).toBe(true);
   });
 });

@@ -1,6 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
 import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
@@ -16,6 +15,7 @@ import {
   users,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { extractClientIp } from '../middleware/client-ip.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 

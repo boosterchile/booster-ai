@@ -20,7 +20,7 @@ internacionales y encontró:
 1. **Bug científico real** en el factor TTW diesel (3.16 kg CO₂e/L) — el
    comentario del código mezclaba **NOx (no es GHG)** con **N₂O (sí es
    GHG)** al sumar al CO₂ puro. Valor correcto según IPCC AR6 GWP-100:
-   2.70 kg CO₂e/L.
+   2.70 kg CO₂e/L (histórico; enmendado a 2,67 en HC-003, PR #872).
 2. **Factor WTT diesel inflado** (0.61 vs ~0.55 GLEC EU/Chile B5).
 3. **Hipótesis del playbook parcialmente errada**: el "60-100 g CO₂e/t·km"
    esperado aplica a HDV long-haul; 5000 kg en camion_pequeno cae
@@ -33,6 +33,14 @@ El Product Owner confirmó (2026-05-05) que **los certificados emitidos
 hasta esta fecha NO tienen validez comercial**, por lo que cualquier cambio
 de metodología puede aplicarse sin migración retro-emisiva.
 
+
+> **Enmienda 2026-11-02 (HC-003, PR #872):** el factor diésel vigente ya no es
+> 2.70/0.55/3.25. Pasa a TTW **2,67** · WTT **0,57** · WTW **3,24** kg CO₂e/L,
+> según GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32
+> (EU), p. 87, fila «Diesel». El híbrido diésel sigue en 70 % del diésel. La
+> metodología sigue siendo GLEC v3.0 (`versionGlec`); el certificado cita la
+> versión de los factores por separado. Los valores de la tabla de abajo son históricos.
+
 ## Decisión
 
 Migrar `packages/carbon-calculator/` a **GLEC Framework v3.0** completo,
@@ -42,12 +50,14 @@ con tres ejes:
 
 | Combustible | TTW antes | TTW después | WTT antes | WTT después | WTW antes | WTW después |
 |---|---|---|---|---|---|---|
-| diesel | 3.16 | **2.70** | 0.61 | **0.55** | 3.77 | **3.25** |
+| diesel | 3.16 | **2.70** ¹ | 0.61 | **0.55** ¹ | 3.77 | **3.25** ¹ |
 | gasolina | 2.35 | 2.31 | 0.49 | 0.45 | 2.84 | 2.76 |
 | gas_glp | 1.66 | 1.61 | 0.34 | 0.30 | 2.00 | 1.91 |
 | gas_gnc | 2.13 | 2.05 | 0.40 | 0.36 | 2.53 | 2.41 |
 | eléctrico | 0.00 | 0.00 | 0.34 | 0.34 | 0.34 | 0.34 |
 | hidrógeno | 0.00 | 0.00 | 10.0 | 10.0 | 10.0 | 10.0 |
+
+¹ Histórico. Vigente desde 2026-11-02 (HC-003, PR #872): 2,67 / 0,57 / 3,24, GLEC v2.0 Tabla 32 p. 87. Ver la enmienda arriba.
 
 Los híbridos siguen como proxy 70% del puro (estándar interno mientras no
 haya tracking por modelo).

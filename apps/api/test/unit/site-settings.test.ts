@@ -298,7 +298,7 @@ describe('POST /admin/site-settings/publish', () => {
     const res = await app.request('/admin/site-settings/publish', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: '00000000-0000-0000-0000-000000000001' }),
+      body: JSON.stringify({ id: '00000000-0000-4000-8000-000000000001' }),
     });
     expect(res.status).toBe(200);
   });
@@ -313,7 +313,7 @@ describe('POST /admin/site-settings/publish', () => {
     const res = await app.request('/admin/site-settings/publish', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: '00000000-0000-0000-0000-000000000001' }),
+      body: JSON.stringify({ id: '00000000-0000-4000-8000-000000000001' }),
     });
     expect(res.status).toBe(500);
   });

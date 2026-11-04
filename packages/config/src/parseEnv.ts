@@ -5,7 +5,7 @@ import type { z } from 'zod';
  * que extraerlo de `z.infer`. Acepta cualquier ZodType (incluyendo schemas
  * con `.default()` que tienen input `T | undefined`).
  */
-export type EnvSchema<T> = z.ZodType<T, z.ZodTypeDef, unknown>;
+export type EnvSchema<T> = z.ZodType<T, unknown>;
 
 /**
  * Parsea `process.env` contra un schema Zod. Si falla, logea el error
@@ -14,10 +14,10 @@ export type EnvSchema<T> = z.ZodType<T, z.ZodTypeDef, unknown>;
  * Este comportamiento es intencional: preferimos crash al arranque que
  * servidor corriendo con config inválida.
  *
- * Generic firma `<T extends z.ZodTypeAny>` permite que TS infiera el tipo
+ * Generic firma `<T extends z.ZodType>` permite que TS infiera el tipo
  * de output (con defaults aplicados) en lugar de requerir que input == output.
  */
-export function parseEnv<T extends z.ZodTypeAny>(
+export function parseEnv<T extends z.ZodType>(
   schema: T,
   source: NodeJS.ProcessEnv = process.env,
 ): z.infer<T> {

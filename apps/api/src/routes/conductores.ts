@@ -9,7 +9,6 @@ import {
   updateDriverBodySchema,
 } from '@booster-ai/shared-schemas';
 import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -17,6 +16,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
 import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
+import { zValidator, zodErrorBody } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
@@ -29,7 +29,12 @@ import {
 import { enviarCorreoActivacionConductor } from '../services/notifications/conductor-activacion-email.js';
 import { enviarWhatsAppActivacionConductor } from '../services/notifications/conductor-activacion-whatsapp.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import { clasificarVinculoPersona, cuentaYaActivada } from '../services/vinculo-persona.js';
+import {
+  cuentaYaActivada,
+  mascarEmail,
+  mascarRut,
+  personaPrevia,
+} from '../services/vinculo-persona.js';
 import { driverSyntheticEmail } from './auth-driver.js';
 
 /**
@@ -136,6 +141,37 @@ async function emailOcupadoPorOtro(
  * organización stakeholder, o tiene aquí un rol distinto de conductor.
  * Una membresía ya removida no cuenta.
  */
+/**
+ * Falla cerrado: mientras la persona no active su cuenta, la empresa no ve
+ * su nombre ni sus datos de contacto. `pendiente_aceptar` solo guía la UI.
+ */
+function datosContacto(r: {
+  user_full_name: string;
+  user_rut: string | null;
+  user_email: string;
+  user_phone: string | null;
+  user_firebase_uid: string;
+  user_created_at: Date | null;
+  created_at: Date | null;
+}) {
+  const oculto = r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX);
+  return oculto
+    ? {
+        full_name: null,
+        rut: mascarRut(r.user_rut),
+        email: mascarEmail(r.user_email),
+        phone: null,
+        pendiente_aceptar: personaPrevia(r.user_created_at, r.created_at),
+      }
+    : {
+        full_name: r.user_full_name,
+        rut: r.user_rut,
+        email: r.user_email,
+        phone: r.user_phone,
+        pendiente_aceptar: false,
+      };
+}
+
 async function emailIdentidadCompartida(
   db: Pick<Db, 'select'>,
   userId: string,
@@ -162,20 +198,6 @@ async function emailIdentidadCompartida(
     }
     return vinculo.role !== 'conductor';
   });
-}
-
-/**
- * El alta no pisa un WhatsApp que la persona ya tenía. Solo completa el
- * dato cuando la fila llegó vacía (alta vieja o usuario creado sin número).
- */
-function phoneSiEstaVacio(
-  actual: string | null | undefined,
-  incoming: string,
-): { phone: string } | Record<string, never> {
-  if (typeof actual === 'string' && actual.trim() !== '') {
-    return {};
-  }
-  return { phone: incoming };
 }
 
 /** El alta no mueve un conductor que otra empresa ya retiró. */
@@ -269,6 +291,7 @@ export function createConductoresRoutes(opts: {
         user_email: users.email,
         user_phone: users.phone,
         user_firebase_uid: users.firebaseUid,
+        user_created_at: users.createdAt,
       })
       .from(conductores)
       .innerJoin(users, eq(conductores.userId, users.id))
@@ -290,10 +313,7 @@ export function createConductoresRoutes(opts: {
         deleted_at: safeIsoString(r.deleted_at),
         user: {
           id: r.user_id,
-          full_name: r.user_full_name,
-          rut: r.user_rut,
-          email: r.user_email,
-          phone: r.user_phone,
+          ...datosContacto(r),
           is_pending: r.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX),
         },
       })),
@@ -329,6 +349,7 @@ export function createConductoresRoutes(opts: {
         user_email: users.email,
         user_phone: users.phone,
         user_firebase_uid: users.firebaseUid,
+        user_created_at: users.createdAt,
       })
       .from(conductores)
       .innerJoin(users, eq(conductores.userId, users.id))
@@ -354,10 +375,7 @@ export function createConductoresRoutes(opts: {
         deleted_at: safeIsoString(row.deleted_at),
         user: {
           id: row.user_id,
-          full_name: row.user_full_name,
-          rut: row.user_rut,
-          email: row.user_email,
-          phone: row.user_phone,
+          ...datosContacto(row),
           is_pending: row.user_firebase_uid.startsWith(PENDING_FIREBASE_UID_PREFIX),
         },
       },
@@ -375,6 +393,7 @@ export function createConductoresRoutes(opts: {
       if (soloTelefono) {
         return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_CONDUCTOR }, 400);
       }
+      return c.json(zodErrorBody(result.error), 400);
     }
     return undefined;
   });
@@ -420,6 +439,7 @@ export function createConductoresRoutes(opts: {
             activationPinHash: users.activationPinHash,
             email: users.email,
             phone: users.phone,
+            createdAt: users.createdAt,
           })
           .from(users)
           .where(eq(users.rut, rut))
@@ -447,6 +467,7 @@ export function createConductoresRoutes(opts: {
               id: conductores.id,
               deletedAt: conductores.deletedAt,
               empresaId: conductores.empresaId,
+              createdAt: conductores.createdAt,
             })
             .from(conductores)
             .where(eq(conductores.userId, userId))
@@ -477,7 +498,12 @@ export function createConductoresRoutes(opts: {
             firebaseUid: existingUser.firebaseUid,
             claveNumericaHash: existingUser.claveNumericaHash,
           });
-          const pendiente = !cuentaActiva;
+          // Solo una persona creada junto con el conductor de esta empresa
+          // recibe PIN o cambios de contacto; una que ya existía, nunca.
+          const propia =
+            filaExistente != null &&
+            !personaPrevia(existingUser.createdAt, filaExistente.createdAt);
+          const pendiente = !cuentaActiva && propia;
           const emailActual =
             typeof existingUser.email === 'string' ? existingUser.email.trim().toLowerCase() : '';
           const reemplazaRelleno =
@@ -485,14 +511,9 @@ export function createConductoresRoutes(opts: {
             pendiente &&
             esEmailDeRelleno(emailActual) &&
             emailActual !== body.email;
-          const telefono = reactivacion
-            ? { phone: body.phone }
-            : phoneSiEstaVacio(existingUser.phone, body.phone);
+          const telefono = propia ? { phone: body.phone } : {};
 
           if (reemplazaRelleno) {
-            if (!reactivacion && (await emailIdentidadCompartida(tx, userId, empresaId))) {
-              return { ok: false as const, code: 'identidad_vinculada' as const };
-            }
             const accionFirebase = await reconciliarIdentidadFirebaseConductor({
               auth: opts.firebaseAuth ?? null,
               cuentaActiva: false,
@@ -512,9 +533,9 @@ export function createConductoresRoutes(opts: {
               .where(eq(users.id, userId));
             reemplazoRelleno = { emailAnterior: emailActual, accionFirebase };
           } else if (reactivacion) {
-            // En el alta normal un placeholder que ya tiene PIN no se reescribe.
-            // Acá la cuenta pendiente siempre recibe uno nuevo: el anterior deja de servir.
-            if (!cuentaActiva) {
+            // Conductor retirado de esta misma empresa: la cuenta pendiente
+            // recibe un PIN nuevo y el anterior deja de servir.
+            if (pendiente) {
               activationPin = generateActivationPin();
             }
             await tx
@@ -523,21 +544,15 @@ export function createConductoresRoutes(opts: {
                 ...(activationPin !== null
                   ? { activationPinHash: hashActivationPin(activationPin) }
                   : {}),
-                phone: body.phone,
+                ...telefono,
                 updatedAt: sql`now()`,
               })
               .where(eq(users.id, userId));
-          } else if (clasificarVinculoPersona(existingUser) === 'provisoria_sin_codigo') {
-            // Solo el primer código. Una cuenta viva o un placeholder que ya
-            // tiene pin no se reescribe: otra empresa no elige su clave.
-            activationPin = generateActivationPin();
+          } else {
+            // Persona existente: no se emite PIN ni se toca el que tenga.
             await tx
               .update(users)
-              .set({
-                activationPinHash: hashActivationPin(activationPin),
-                updatedAt: sql`now()`,
-                ...phoneSiEstaVacio(existingUser.phone, body.phone),
-              })
+              .set({ ...telefono, updatedAt: sql`now()` })
               .where(eq(users.id, userId));
           }
         } else {
@@ -847,6 +862,8 @@ export function createConductoresRoutes(opts: {
             phone: users.phone,
             firebaseUid: users.firebaseUid,
             claveNumericaHash: users.claveNumericaHash,
+            personaCreadaEn: users.createdAt,
+            conductorCreadoEn: conductores.createdAt,
           })
           .from(conductores)
           .innerJoin(users, eq(conductores.userId, users.id))
@@ -883,7 +900,11 @@ export function createConductoresRoutes(opts: {
           });
         }
 
-        if (await emailIdentidadCompartida(opts.db, fila.userId, empresaId)) {
+        // Una persona que ya existía antes de este conductor conserva su contacto.
+        if (
+          personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn) ||
+          (await emailIdentidadCompartida(opts.db, fila.userId, empresaId))
+        ) {
           record('identidad_vinculada');
           return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
         }
@@ -1052,6 +1073,8 @@ export function createConductoresRoutes(opts: {
               phone: users.phone,
               firebaseUid: users.firebaseUid,
               claveNumericaHash: users.claveNumericaHash,
+              personaCreadaEn: users.createdAt,
+              conductorCreadoEn: conductores.createdAt,
             })
             .from(conductores)
             .innerJoin(users, eq(conductores.userId, users.id))
@@ -1067,7 +1090,11 @@ export function createConductoresRoutes(opts: {
             return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
           }
 
-          if (await emailIdentidadCompartida(opts.db, fila.userId, empresaId)) {
+          // Una persona que ya existía antes de este conductor conserva su contacto.
+          if (
+            personaPrevia(fila.personaCreadaEn, fila.conductorCreadoEn) ||
+            (await emailIdentidadCompartida(opts.db, fila.userId, empresaId))
+          ) {
             record('identidad_vinculada');
             return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
           }
