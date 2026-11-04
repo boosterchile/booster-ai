@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { regionCodeSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { sucursalesEmpresa } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 
 /**
  * Endpoints CRUD de sucursales de la empresa activa (shipper). Solo

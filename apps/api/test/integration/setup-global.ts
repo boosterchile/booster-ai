@@ -1,6 +1,7 @@
 import { createLogger } from '@booster-ai/logger';
 import pg from 'pg';
 import { runMigrations } from '../../src/db/migrator.js';
+import { assertTestDbUrl } from '../helpers/test-db-guard.js';
 
 /**
  * vitest globalSetup para integration tests. Corre UNA vez antes del primer
@@ -29,14 +30,10 @@ export default async function setup(): Promise<() => Promise<void>> {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) {
     throw new Error(
-      'TEST_DATABASE_URL no está definido. Exporta una conexión a Postgres local antes de correr tests integration. Ver apps/api/test/integration/README.md (T5b).',
+      'TEST_DATABASE_URL no está definido. Exporta una conexión a Postgres local antes de correr tests integration. En local: `pnpm --filter @booster-ai/api test:integration:local`.',
     );
   }
-  if (/prod|staging/i.test(url)) {
-    throw new Error(
-      `TEST_DATABASE_URL parece apuntar a una BD compartida (prod/staging). Aborto. URL: ${url.replace(/:[^:@]*@/, ':***@')}`,
-    );
-  }
+  assertTestDbUrl(url);
 
   const logger = createLogger({
     service: 'integration-test-setup',
@@ -45,9 +42,19 @@ export default async function setup(): Promise<() => Promise<void>> {
     pretty: false,
   });
 
-  const pool = new pg.Pool({ connectionString: url, max: 2 });
+  const pool = new pg.Pool({ connectionString: url, max: 2, connectionTimeoutMillis: 5_000 });
   try {
-    const client = await pool.connect();
+    const client = await pool.connect().catch((err: unknown) => {
+      let host = 'URL inválida';
+      try {
+        host = new URL(url).host;
+      } catch {
+        // se informa como URL inválida, sin exponer credenciales
+      }
+      throw new Error(
+        `No pude conectar a Postgres en TEST_DATABASE_URL (${host}): ${err instanceof Error ? err.message : String(err)}. En local levántalo con \`pnpm --filter @booster-ai/api test:integration:local\` (docker-compose.test.yml).`,
+      );
+    });
     try {
       await client.query('DROP SCHEMA IF EXISTS public CASCADE');
       await client.query('DROP SCHEMA IF EXISTS drizzle CASCADE');

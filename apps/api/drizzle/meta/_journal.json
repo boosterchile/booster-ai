@@ -442,6 +442,48 @@
       "when": 1780876800026,
       "tag": "0062_sugerencias_ruta",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1780876800027,
+      "tag": "0063_auditoria_email_conductor",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1780876800028,
+      "tag": "0064_viajes_destination_latlng",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1780876800029,
+      "tag": "0065_metricas_viaje_decision_fuente",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1780876800030,
+      "tag": "0066_metricas_viaje_alertas_decision",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1780876800040,
+      "tag": "0067_certificados_viaje",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1780876800050,
+      "tag": "0068_metricas_viaje_desglose_ttw_wtt",
+      "breakpoints": true
     }
   ]
 }

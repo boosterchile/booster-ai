@@ -83,7 +83,7 @@ export const tripEventSchema = z.object({
    * Payload JSON con detalles del evento. Schema específico por event_type
    * se documenta en el handler que lo emite.
    */
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   source: tripEventSourceSchema,
   /**
    * Usuario que disparó el evento si aplica. Null para eventos del

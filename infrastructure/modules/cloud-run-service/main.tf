@@ -7,11 +7,18 @@ resource "google_cloud_run_v2_service" "service" {
   # servicios servidos vía GCLB lo restringen a internal-and-cloud-LB.
   ingress = var.ingress
 
+  # null = sin custom audiences (lo de siempre). Ver variables.tf.
+  custom_audiences = var.custom_audiences
+
   deletion_protection = var.deletion_protection
 
   template {
     service_account = var.service_account_email
     timeout         = "${var.timeout_seconds}s"
+
+    # null = no gestionado (computed en el provider): sin diff en los servicios
+    # que no lo fijan. Ver variables.tf.
+    max_instance_request_concurrency = var.max_instance_request_concurrency
 
     scaling {
       min_instance_count = var.min_instances

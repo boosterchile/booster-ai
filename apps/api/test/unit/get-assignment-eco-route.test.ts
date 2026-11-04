@@ -41,9 +41,9 @@ vi.mock('../../src/services/routes-api.js', () => ({
 const { computeRoutes, RoutesApiError } = await import('../../src/services/routes-api.js');
 const { getAssignmentEcoRoute } = await import('../../src/services/get-assignment-eco-route.js');
 
-const ASSIGNMENT_ID = '00000000-0000-0000-0000-000000000a01';
-const EMPRESA_ID = '00000000-0000-0000-0000-000000000e01';
-const OTHER_EMPRESA_ID = '00000000-0000-0000-0000-000000000e02';
+const ASSIGNMENT_ID = '00000000-0000-4000-8000-000000000a01';
+const EMPRESA_ID = '00000000-0000-4000-8000-000000000e01';
+const OTHER_EMPRESA_ID = '00000000-0000-4000-8000-000000000e02';
 
 interface JoinRow {
   assignmentId: string;

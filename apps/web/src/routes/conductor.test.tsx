@@ -845,6 +845,48 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     expect(alerta.textContent ?? '').toMatch(/señal|conexión/i);
   });
 
+  it('403 not_assigned_driver → solo el conductor asignado, sin volver a ofrecer confirmar', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          status: 'recogido',
+          vehicle: { id: 'veh-1', plate: 'TEST01', has_teltonika: true },
+        },
+      ],
+    });
+    apiPatchSpy.mockRejectedValue(
+      new ApiError(403, 'not_assigned_driver', { code: 'not_assigned_driver' }),
+    );
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
+
+    const alerta = await screen.findByText(/solo el conductor asignado puede confirmar/i);
+    expect(alerta.textContent ?? '').not.toMatch(/reintent|intenta de nuevo|señal/i);
+    expect(screen.queryByRole('button', { name: /^Confirmar entrega$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reintentar/i })).not.toBeInTheDocument();
+  });
+
+  it('403 not_assigned_driver en por recoger no deja el enlace de entrega', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(
+      new ApiError(403, 'not_assigned_driver', { code: 'not_assigned_driver' }),
+    );
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByTestId('entrega-sin-recogida'));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/solo el conductor asignado puede confirmar/i);
+    expect(screen.queryByTestId('entrega-sin-recogida')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirmar recogida/i })).toBeInTheDocument();
+  });
+
   it('ya entregada (409 invalid_status) no queda como error del conductor', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });

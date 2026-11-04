@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { z } from 'zod';
 import {
   MENSAJE_CAPACIDAD_ESTANQUE,
   MENSAJE_FUENTE_COMBUSTIBLE_CAN,
   type VehicleUnitConfigInput,
   bodyTypeSchema,
   capacidadEstanqueLInputSchema,
+  capacidadEstanqueLSchema,
   derivarUnidadDesdeTipoLegacy,
   esConfiguracionCompatible,
   fuenteCombustibleCanSchema,
@@ -426,5 +428,26 @@ describe('capacidad de estanque y fuente CAN', () => {
     if (!parsed.success) {
       expect(parsed.error.issues[0]?.message).toBe(MENSAJE_FUENTE_COMBUSTIBLE_CAN);
     }
+  });
+});
+
+describe('mensajes custom de combustible — contrato (TRK-003)', () => {
+  function primerMensaje(schema: z.ZodType, valor: unknown): string | undefined {
+    const parsed = schema.safeParse(valor);
+    return parsed.success ? undefined : parsed.error.issues[0]?.message;
+  }
+
+  const FUENTE = 'La fuente CAN tiene que ser 84, 83, 89 o sin_sensor.';
+  const CAPACIDAD =
+    'La capacidad del estanque tiene que ser un número mayor que 0 y de hasta 2000 litros.';
+
+  it('fuente CAN faltante o de tipo incorrecto usa el errorMap', () => {
+    expect(primerMensaje(fuenteCombustibleCanSchema, undefined)).toBe(FUENTE);
+    expect(primerMensaje(fuenteCombustibleCanSchema, 84)).toBe(FUENTE);
+  });
+
+  it('capacidad faltante usa required_error; de tipo incorrecto, invalid_type_error', () => {
+    expect(primerMensaje(capacidadEstanqueLSchema, undefined)).toBe(CAPACIDAD);
+    expect(primerMensaje(capacidadEstanqueLSchema, '200')).toBe(CAPACIDAD);
   });
 });

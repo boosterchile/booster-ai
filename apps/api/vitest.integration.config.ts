@@ -16,9 +16,8 @@ import { defineConfig } from 'vitest/config';
  *   - `globalSetup` queda vacío en T1 (no hay migrations todavía); T1b lo
  *     apunta a `test/integration/setup-global.ts`.
  *
- * Coverage stays out of this config — integration coverage se mide por
- * separado si T6 lo requiere; por defecto los integration tests son
- * "smoke" sobre paths reales, no apuntan a cubrir lógica.
+ * Coverage v8 SIN umbral (AUD-P5): solo informa qué toca la integración. Sale a
+ * coverage/integration (gitignored). Sin `passWithNoTests`: 0 tests = rojo.
  */
 export default defineConfig({
   test: {
@@ -49,5 +48,13 @@ export default defineConfig({
       concurrent: false,
     },
     testTimeout: 30_000,
+    coverage: {
+      enabled: true,
+      provider: 'v8',
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: './coverage/integration',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.d.ts'],
+    },
   },
 });

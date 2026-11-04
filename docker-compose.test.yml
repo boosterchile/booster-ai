@@ -1,0 +1,15 @@
+# Postgres + Redis desechables para `pnpm --filter @booster-ai/api test:integration:local`.
+# Mismas imágenes y credenciales que el job integration-tests de ci.yml. Los puertos
+# NO son 5432/6379 a propósito: no chocan con un Postgres local, que globalSetup borraría
+# (DROP SCHEMA public CASCADE). Bajar con: docker compose -f docker-compose.test.yml down -v
+name: booster-api-test
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment: { POSTGRES_USER: test, POSTGRES_PASSWORD: test, POSTGRES_DB: test }
+    ports: ['127.0.0.1:55433:5432']
+    healthcheck: { test: [CMD, pg_isready, -U, test, -d, test], interval: 2s, retries: 30 }
+  redis:
+    image: redis:7-alpine
+    ports: ['127.0.0.1:56380:6379']
+    healthcheck: { test: [CMD, redis-cli, ping], interval: 2s, retries: 30 }

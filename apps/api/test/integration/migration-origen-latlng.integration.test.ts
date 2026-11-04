@@ -44,6 +44,28 @@ describe('integration: columnas lat/lng del origen del viaje (0054)', () => {
     expect(result.rows[0].column_default).toBeNull();
   });
 
+  test('viajes.destination_latitude: numeric(10,7) nullable sin default', async () => {
+    const result = await handle.pool.query<ColumnRow>(COLUMN_QUERY, ['destination_latitude']);
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].data_type).toBe('numeric');
+    expect(result.rows[0].numeric_precision).toBe(10);
+    expect(result.rows[0].numeric_scale).toBe(7);
+    expect(result.rows[0].is_nullable).toBe('YES');
+    expect(result.rows[0].column_default).toBeNull();
+  });
+
+  test('viajes.destination_longitude: numeric(10,7) nullable sin default', async () => {
+    const result = await handle.pool.query<ColumnRow>(COLUMN_QUERY, ['destination_longitude']);
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].data_type).toBe('numeric');
+    expect(result.rows[0].numeric_precision).toBe(10);
+    expect(result.rows[0].numeric_scale).toBe(7);
+    expect(result.rows[0].is_nullable).toBe('YES');
+    expect(result.rows[0].column_default).toBeNull();
+  });
+
   test('viajes.origin_longitude: numeric(10,7) nullable sin default', async () => {
     const result = await handle.pool.query<ColumnRow>(COLUMN_QUERY, ['origin_longitude']);
 

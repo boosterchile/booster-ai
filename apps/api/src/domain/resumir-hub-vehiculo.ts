@@ -1,3 +1,4 @@
+import { type TramoRendimiento, rendimientoAgregado } from './combustible/rendimiento.js';
 import {
   type RazonKmPorLitroNoConfiable,
   type TrayectoTeltonika,
@@ -50,38 +51,6 @@ function tieneAlerta(trayecto: TrayectoTeltonika): boolean {
   return trayecto.posibleRoboCombustible || trayecto.posibleRoboHormiga;
 }
 
-function kmPorLitroDeVentana(trayectos: readonly TrayectoTeltonika[]): {
-  kmPorLitro: number | null;
-  motivoKmPorLitro: string | null;
-} {
-  const razones = new Set<RazonKmPorLitroNoConfiable>();
-  const conLitros: TrayectoTeltonika[] = [];
-  for (const trayecto of trayectos) {
-    const razon = razonExclusionKmPorLitro(trayecto);
-    if (razon) {
-      razones.add(razon);
-      continue;
-    }
-    if (
-      trayecto.litrosConsumidos != null &&
-      trayecto.litrosConsumidos > 0 &&
-      trayecto.kmCubiertos != null
-    ) {
-      conLitros.push(trayecto);
-    }
-  }
-  const litros = conLitros.reduce((suma, t) => suma + (t.litrosConsumidos ?? 0), 0);
-  if (!(litros > 0)) {
-    return {
-      kmPorLitro: null,
-      motivoKmPorLitro: razones.size > 0 ? notaKmPorLitroNoConfiable([...razones]) : null,
-    };
-  }
-  const km = conLitros.reduce((suma, t) => suma + (t.kmCubiertos ?? 0), 0);
-  const kmPorLitro = Math.round((km / litros + Number.EPSILON) * 100) / 100;
-  return { kmPorLitro, motivoKmPorLitro: null };
-}
-
 /**
  * Arma el resumen del hub a partir de trayectos ya segmentados.
  * No detecta robos ni recalcula litros. El km/L de la ventana es Σ kmCubiertos / ΣL.
@@ -96,7 +65,19 @@ export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): Res
     conLitros.length > 0
       ? conLitros.reduce((suma, t) => suma + (t.litrosConsumidos ?? 0), 0)
       : null;
-  const { kmPorLitro, motivoKmPorLitro } = kmPorLitroDeVentana(ordenados);
+  const razones = new Set<RazonKmPorLitroNoConfiable>();
+  const tramos: TramoRendimiento[] = [];
+  for (const t of ordenados) {
+    const razon = razonExclusionKmPorLitro(t);
+    if (razon) {
+      razones.add(razon);
+    } else if (t.kmCubiertos != null && t.litrosConsumidos != null && t.litrosConsumidos > 0) {
+      tramos.push({ km: t.kmCubiertos, litros: t.litrosConsumidos });
+    }
+  }
+  const kmPorLitro = rendimientoAgregado(tramos)?.kmPorLitro ?? null;
+  const motivoKmPorLitro =
+    kmPorLitro == null && razones.size > 0 ? notaKmPorLitroNoConfiable([...razones]) : null;
   const conAlerta = ordenados.filter(tieneAlerta);
   return {
     ultimo,

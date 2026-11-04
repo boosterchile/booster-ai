@@ -35,7 +35,7 @@ vi.mock('@tanstack/react-router', () => ({
 const { PlatformAdminSignupRequestsRoute } = await import('./platform-admin-signup-requests.js');
 
 const PENDING_REQUEST = {
-  id: '11111111-1111-1111-1111-111111111111',
+  id: '11111111-1111-4111-8111-111111111111',
   email: 'nuevo@cliente.cl',
   nombre_completo: 'Nuevo Cliente',
   estado: 'pendiente_aprobacion' as const,
