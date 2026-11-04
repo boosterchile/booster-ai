@@ -1,10 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { denegarFinanzas } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { adelantosCarrier } from '../db/schema.js';
-import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { cobraHoy, cotizarCobraHoy } from '../services/cobra-hoy.js';
 import type { UserContext } from '../services/user-context.js';
 
@@ -42,9 +42,10 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS cobra-hoy-api: la cotización muestra montos y no tenía rol.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const asignacionId = c.req.param('id');
@@ -90,9 +91,10 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS cobra-hoy-api: el POST (cobra-hoy.ts) no tenía rol.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const asignacionId = c.req.param('id');
@@ -202,9 +204,10 @@ export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS cobra-hoy-api: el historial no tenía rol.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const rows = await opts.db

@@ -42,10 +42,12 @@ const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
 const USER_CTX: UserContext = {
   user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
   activeMembership: {
-    id: 'm1',
-    membership: { role: 'dueno' },
-    role: 'dueno',
-    status: 'activa',
+    membership: {
+      id: 'm1',
+      role: 'dueno',
+      status: 'activa',
+      puedeAceptarOfertas: false,
+    },
     empresa: {
       id: EMPRESA_ID,
       legalName: 'E',
@@ -417,7 +419,7 @@ describe('permisos por rol en cobra hoy', () => {
   };
 
   it.each(['visualizador', 'conductor', 'despachador'])(
-    '%s → 403 forbidden_role en las 3 rutas',
+    '%s → 403 capability_denied en las 3 rutas',
     async (role) => {
       const asg = makeAssignmentsApp({ withContext: true, role });
       const cot = await asg.request('/assignments/asg-1/cobra-hoy/cotizacion');
@@ -427,7 +429,11 @@ describe('permisos por rol en cobra hoy', () => {
       );
       for (const res of [cot, sol, hist]) {
         expect(res.status).toBe(403);
-        expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+        expect(await res.json()).toEqual({
+          error: 'forbidden',
+          code: 'capability_denied',
+          capability: 'puedeVerFinanzas',
+        });
       }
       expect(cotizarSpy).not.toHaveBeenCalled();
       expect(cobraHoySpy).not.toHaveBeenCalled();

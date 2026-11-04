@@ -2,10 +2,10 @@ import type { Logger } from '@booster-ai/logger';
 import { PRICING_METHODOLOGY_VERSION_V3 } from '@booster-ai/pricing-engine';
 import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { denegarFinanzas } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { assignments, liquidaciones, trips } from '../db/schema.js';
-import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { leerPagoViaje } from '../services/mandato-cobro/eventos-pago.js';
 import type { UserContext } from '../services/user-context.js';
 
@@ -54,9 +54,10 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
     if (!activeEmpresa.isTransportista) {
       return c.json({ error: 'forbidden_no_transportista' }, 403);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS liquidaciones: antes bastaba con ser transportista.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = activeEmpresa.id;
 
