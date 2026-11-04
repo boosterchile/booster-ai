@@ -9,6 +9,7 @@ import {
   fetchAsignaciones,
   fetchConductores,
   fetchCumplimiento,
+  fetchEstadoCobraHoy,
   fetchFlota,
   fetchOfertasPendientes,
 } from '../../lib/consultas-transportista.js';
@@ -107,13 +108,16 @@ export function useDatosInicio(): {
 } {
   const scope = useEmpresaScope();
 
+  // Sin refetchInterval: el Inicio y los badges del sidebar observan las
+  // mismas claves. Cada observer con intervalo tenía su propio timer
+  // (flota cada 20 s, ofertas y servicios cada 30 s) y una sesión quieta
+  // acumulaba cientos de GET. La pantalla dueña sigue poleando cuando está abierta.
   const ofertasQ = useQuery({
     queryKey: scope.key('offers', 'mine', 'pendiente'),
     queryFn: () => fetchOfertasPendientes(scope.init),
     select: seleccionarOfertas,
     retry: false,
     staleTime: 15_000,
-    refetchInterval: 30_000,
   });
 
   const serviciosQ = useQuery({
@@ -121,7 +125,6 @@ export function useDatosInicio(): {
     queryFn: () => fetchAsignaciones(scope.init),
     select: seleccionarServicios,
     retry: false,
-    refetchInterval: 30_000,
   });
 
   const cumplimientoQ = useQuery({
@@ -136,7 +139,6 @@ export function useDatosInicio(): {
     queryFn: () => fetchFlota(scope.init),
     select: seleccionarFlota,
     retry: false,
-    refetchInterval: 20_000,
   });
 
   const vehiculosQ = useQuery({
@@ -150,6 +152,14 @@ export function useDatosInicio(): {
     queryKey: scope.key('conductores'),
     queryFn: () => fetchConductores(scope.init),
     select: contarConductores,
+    retry: false,
+  });
+
+  // Clave distinta a la del historial: ahí la caché es `{ adelantos }`.
+  // Acá guardamos solo el estado local (apagado / error / disponible).
+  const cobraHoyQ = useQuery({
+    queryKey: scope.key('cobra-hoy', 'inicio'),
+    queryFn: () => fetchEstadoCobraHoy(scope.init),
     retry: false,
   });
 
@@ -185,6 +195,7 @@ export function useDatosInicio(): {
       flota: aCarga(flotaQ),
       vehiculos: aCarga(vehiculosQ),
       conductores: aCarga(conductoresQ),
+      cobraHoy: cobraHoyQ.data ?? 'cargando',
     },
     reintentar,
   };
