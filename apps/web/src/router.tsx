@@ -599,6 +599,15 @@ const aparienciaInicioGeneradorRoute = createRoute({
   ),
 });
 
+const aparienciaInicioMixtaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-mixta',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-mixta.js'),
+    'AparienciaInicioMixtaRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -665,6 +674,7 @@ const routeTree = rootRoute.addChildren([
   aparienciaImpersonacionRoute,
   aparienciaInicioRoute,
   aparienciaInicioGeneradorRoute,
+  aparienciaInicioMixtaRoute,
 ]);
 
 export const router = createRouter({
