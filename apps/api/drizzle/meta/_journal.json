@@ -484,6 +484,13 @@
       "when": 1780876800050,
       "tag": "0068_metricas_viaje_desglose_ttw_wtt",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1780876800060,
+      "tag": "0069_empresas_generador_activado",
+      "breakpoints": true
     }
   ]
 }
