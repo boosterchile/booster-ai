@@ -33,6 +33,7 @@ function datosVacios(sobre: Partial<DatosInicio> = {}): DatosInicio {
     flota: { estado: 'listo', valor: [] },
     vehiculos: { estado: 'listo', valor: 4 },
     conductores: { estado: 'listo', valor: 2 },
+    cobraHoy: 'disponible',
     ...sobre,
   };
 }
@@ -195,7 +196,8 @@ describe('buildInicioVista', () => {
     const vista = buildInicioVista(datosVacios(), ctx);
     expect(vista.modo).toBe('operacion');
     expect(vista.atencion).toEqual({ tipo: 'calmo' });
-    expect(vista.saludo).toMatch(/Felipe$/);
+    expect(vista.saludo).toBe(`${saludoPorHora(horaEnZona(ctx.ahora))}, Felipe`);
+    expect(vista.saludo).not.toContain('Transportes');
     expect(vista.accesos.map((acceso) => acceso.label).join(' ')).not.toMatch(/por cobrar/i);
     expect(vista.accesos.some((acceso) => acceso.label === 'Cobra hoy')).toBe(true);
     expect(vista.accesos.some((acceso) => acceso.id === 'dispositivos')).toBe(false);
@@ -325,7 +327,8 @@ describe('buildInicioVista', () => {
     if (vista.atencion.tipo !== 'filas') {
       throw new Error('se esperaban filas');
     }
-    expect(vista.atencion.pendientes).toBe(3 + 2 + 4 + 2);
+    expect(vista.atencion.filas).toHaveLength(4);
+    expect(vista.atencion.pendientes).toBe(4);
     expect(
       vista.atencion.filas.map((fila) => (fila.kind === 'dato' ? fila.titulo : fila.kind)),
     ).toEqual([
@@ -358,6 +361,61 @@ describe('buildInicioVista', () => {
     expect(vista.accesos.find((acceso) => acceso.id === 'flota')?.testId).toBe(
       'dashboard-link-flota',
     );
+  });
+
+  it('el saludo usa el primer nombre y no la empresa', () => {
+    const vista = buildInicioVista(datosVacios(), {
+      ...ctx,
+      nombreCompleto: 'María José Pérez',
+      legalName: 'Transportes Van Oosterwyk',
+    });
+    expect(vista.saludo).toBe(`${saludoPorHora(horaEnZona(ctx.ahora))}, María`);
+    expect(vista.empresa).toBe('Transportes Van Oosterwyk');
+  });
+
+  it('sin nombre deja el saludo de la hora, sin la empresa', () => {
+    const hora = saludoPorHora(horaEnZona(ctx.ahora));
+    for (const nombreCompleto of ['', '   ']) {
+      const vista = buildInicioVista(datosVacios(), { ...ctx, nombreCompleto });
+      expect(vista.saludo).toBe(hora);
+      expect(vista.saludo).not.toContain('Transportes');
+    }
+  });
+
+  it('dos vehículos sin señal son una fila y un pendiente', () => {
+    const ahora = ctx.ahora.getTime();
+    const vista = buildInicioVista(
+      datosVacios({
+        flota: {
+          estado: 'listo',
+          valor: [
+            {
+              plate: 'HFTD17',
+              teltonikaImei: 'a',
+              timestampDevice: new Date(ahora - 40 * 60_000).toISOString(),
+              latitude: -33,
+              longitude: -70,
+            },
+            {
+              plate: 'LBPW88',
+              teltonikaImei: 'b',
+              timestampDevice: new Date(ahora - 50 * 60_000).toISOString(),
+              latitude: -33,
+              longitude: -70,
+            },
+          ],
+        },
+      }),
+      ctx,
+    );
+    if (vista.atencion.tipo !== 'filas') {
+      throw new Error('se esperaba una fila');
+    }
+    expect(vista.atencion.filas).toHaveLength(1);
+    expect(vista.atencion.filas[0]?.kind === 'dato' && vista.atencion.filas[0].titulo).toBe(
+      '2 vehículos sin señal',
+    );
+    expect(vista.atencion.pendientes).toBe(1);
   });
 
   it('mientras faltan vehículos no declara empresa nueva', () => {

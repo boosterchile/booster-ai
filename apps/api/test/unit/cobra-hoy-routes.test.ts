@@ -12,7 +12,7 @@ import type { UserContext } from '../../src/services/user-context.js';
  * cubierta por `cobra-hoy.test.ts` (15 tests del service). Acá validamos
  * solamente:
  *
- *   - Flag-gating (503 cuando FACTORING_V1_ACTIVATED=false).
+ *   - Flag apagado: GET 200 `{enabled:false, items:[]}`, POST 403.
  *   - userContext faltante (400 no_active_empresa).
  *   - Mapping correcto de service result → status HTTP + body.
  *   - Parsing de query params (plazo_dias).
@@ -38,7 +38,7 @@ vi.mock('../../src/services/cobra-hoy.js', () => ({
   cobraHoy: (...args: unknown[]) => cobraHoySpy(...args),
 }));
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
 const USER_CTX: UserContext = {
   user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
   activeMembership: {
@@ -60,11 +60,19 @@ const USER_CTX: UserContext = {
   memberships: [],
 } as unknown as UserContext;
 
-function makeAssignmentsApp(opts: { withContext: boolean; db?: unknown }) {
+function ctxConRol(role: string): UserContext {
+  const am = USER_CTX.activeMembership as NonNullable<UserContext['activeMembership']>;
+  return {
+    ...USER_CTX,
+    activeMembership: { ...am, membership: { ...am.membership, role } },
+  } as UserContext;
+}
+
+function makeAssignmentsApp(opts: { withContext: boolean; db?: unknown; role?: string }) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     if (opts.withContext) {
-      c.set('userContext', USER_CTX);
+      c.set('userContext', opts.role ? ctxConRol(opts.role) : USER_CTX);
     }
     await next();
   });
@@ -78,11 +86,11 @@ function makeAssignmentsApp(opts: { withContext: boolean; db?: unknown }) {
   return app;
 }
 
-function makeMeApp(opts: { withContext: boolean; db: unknown }) {
+function makeMeApp(opts: { withContext: boolean; db: unknown; role?: string }) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     if (opts.withContext) {
-      c.set('userContext', USER_CTX);
+      c.set('userContext', opts.role ? ctxConRol(opts.role) : USER_CTX);
     }
     await next();
   });
@@ -105,12 +113,13 @@ afterEach(() => {
 });
 
 describe('GET /assignments/:id/cobra-hoy/cotizacion — flag + ctx', () => {
-  it('flag off → 503 feature_disabled', async () => {
+  it('flag off → 200 enabled:false items:[]', async () => {
     appConfig.FACTORING_V1_ACTIVATED = false;
     const app = makeAssignmentsApp({ withContext: true });
     const res = await app.request('/assignments/asg-1/cobra-hoy/cotizacion');
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: 'feature_disabled' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false, items: [] });
+    expect(cotizarSpy).not.toHaveBeenCalled();
   });
 
   it('sin userContext → 400 no_active_empresa', async () => {
@@ -184,11 +193,21 @@ describe('GET /assignments/:id/cobra-hoy/cotizacion — service mapping', () => 
 });
 
 describe('POST /assignments/:id/cobra-hoy — service mapping completo', () => {
-  it('flag off → 503', async () => {
+  it('flag off → 403 feature_disabled', async () => {
     appConfig.FACTORING_V1_ACTIVATED = false;
     const app = makeAssignmentsApp({ withContext: true });
     const res = await app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'feature_disabled' });
+    expect(cobraHoySpy).not.toHaveBeenCalled();
+  });
+
+  it('skipped_flag_disabled del service → 403', async () => {
+    cobraHoySpy.mockResolvedValue({ status: 'skipped_flag_disabled' });
+    const app = makeAssignmentsApp({ withContext: true });
+    const res = await app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'feature_disabled' });
   });
 
   it('assignment_not_delivered → 409', async () => {
@@ -274,11 +293,14 @@ describe('GET /me/cobra-hoy/historial', () => {
     return { select: vi.fn(() => chain) };
   }
 
-  it('flag off → 503', async () => {
+  it('flag off → 200 enabled:false items:[] sin tocar la base', async () => {
     appConfig.FACTORING_V1_ACTIVATED = false;
-    const app = makeMeApp({ withContext: true, db: makeDbWithAdelantos([]) });
+    const db = makeDbWithAdelantos([]);
+    const app = makeMeApp({ withContext: true, db });
     const res = await app.request('/me/cobra-hoy/historial');
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false, items: [] });
+    expect(db.select).not.toHaveBeenCalled();
   });
 
   it('sin userContext → 400', async () => {
@@ -385,6 +407,55 @@ describe('GET /me/cobra-hoy/historial', () => {
   });
 });
 
+describe('permisos por rol en cobra hoy', () => {
+  const dbVacia = () => {
+    const chain: Record<string, unknown> = {
+      from: vi.fn(() => chain),
+      where: vi.fn(() => chain),
+      orderBy: vi.fn(() => chain),
+      limit: vi.fn(async () => []),
+    };
+    return { select: vi.fn(() => chain) };
+  };
+
+  it.each(['visualizador', 'conductor', 'despachador'])(
+    '%s → 403 capability_denied en las 3 rutas',
+    async (role) => {
+      const asg = makeAssignmentsApp({ withContext: true, role });
+      const cot = await asg.request('/assignments/asg-1/cobra-hoy/cotizacion');
+      const sol = await asg.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+      const hist = await makeMeApp({ withContext: true, db: dbVacia(), role }).request(
+        '/me/cobra-hoy/historial',
+      );
+      for (const res of [cot, sol, hist]) {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toEqual({
+          error: 'forbidden',
+          code: 'capability_denied',
+          capability: 'puedeVerFinanzas',
+        });
+      }
+      expect(cotizarSpy).not.toHaveBeenCalled();
+      expect(cobraHoySpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['dueno', 'admin'])('%s → puede cotizar, solicitar y ver historial', async (role) => {
+    cotizarSpy.mockResolvedValue({ status: 'assignment_not_found' });
+    cobraHoySpy.mockResolvedValue({ status: 'ya_solicitado', adelantoId: 'adel-1' });
+    const asg = makeAssignmentsApp({ withContext: true, role });
+    expect((await asg.request('/assignments/asg-1/cobra-hoy/cotizacion')).status).toBe(404);
+    expect((await asg.request('/assignments/asg-1/cobra-hoy', { method: 'POST' })).status).toBe(
+      200,
+    );
+    const hist = await makeMeApp({ withContext: true, db: dbVacia(), role }).request(
+      '/me/cobra-hoy/historial',
+    );
+    expect(hist.status).toBe(200);
+    expect(cobraHoySpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('buildNotaVisible (helper puro)', () => {
   it('estado solicitado → null aunque tenga notas', async () => {
     const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
@@ -446,5 +517,52 @@ describe('buildNotaVisible (helper puro)', () => {
   it('línea con tag pero sin contenido → null', async () => {
     const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
     expect(buildNotaVisible('rechazado', null, '[2026-05-01T09:00:00.000Z admin@x]')).toBeNull();
+  });
+});
+
+describe('POST /assignments/:id/cobra-hoy — solicitud rechazada', () => {
+  function post(withContext = true) {
+    const app = makeAssignmentsApp({ withContext });
+    return app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+  }
+
+  it('sin userContext → 400 no_active_empresa, no llama al service', async () => {
+    const res = await post(false);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'no_active_empresa' });
+    expect(cobraHoySpy).not.toHaveBeenCalled();
+  });
+
+  it('userContext sin membresía activa → 400 no_active_empresa', async () => {
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      c.set('userContext', { ...USER_CTX, activeMembership: null });
+      await next();
+    });
+    app.route(
+      '/assignments',
+      createCobraHoyAssignmentsRoutes({ db: {} as never, logger: noopLogger }),
+    );
+    const res = await app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+    expect(res.status).toBe(400);
+  });
+
+  it.each([
+    ['skipped_flag_disabled', 403, 'feature_disabled'],
+    ['assignment_not_found', 404, 'assignment_not_found'],
+    ['no_liquidacion', 409, 'no_liquidacion'],
+    ['forbidden_owner_mismatch', 403, 'forbidden_owner_mismatch'],
+  ])('%s → %i %s', async (status, http, error) => {
+    cobraHoySpy.mockResolvedValue({ status });
+    const res = await post();
+    expect(res.status).toBe(http);
+    expect(((await res.json()) as { error: string }).error).toBe(error);
+  });
+});
+
+describe('buildNotaVisible — notas solo con espacios', () => {
+  it('mora con notas en blanco → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('mora', null, '  \n \n')).toBeNull();
   });
 });

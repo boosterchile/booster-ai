@@ -14,7 +14,7 @@ const noopLogger = {
 
 const VALID_MSG: RecordMessage = {
   imei: '356307042441013',
-  vehicleId: '11111111-2222-3333-4444-555555555555',
+  vehicleId: '11111111-2222-4333-8444-555555555555',
   record: {
     timestampMs: '1700000000000',
     priority: 1,
@@ -102,7 +102,7 @@ describe('persistRecord', () => {
   });
 
   it('vehicleId null + IMEI registrado → resuelve y persiste (caso sms-fallback)', async () => {
-    const resolvedId = '99999999-8888-7777-6666-555555555555';
+    const resolvedId = '99999999-8888-4777-8666-555555555555';
     const db = makeDb([
       { rows: [{ id: resolvedId }] }, // SELECT vehiculos por IMEI: match
       { rows: [{ id: 'punto-uuid-9' }] }, // INSERT returning

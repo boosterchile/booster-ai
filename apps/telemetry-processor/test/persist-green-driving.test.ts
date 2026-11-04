@@ -27,7 +27,7 @@ function makeDb(returns: Array<{ rows: unknown[] }>): DbStub {
 
 const VALID_MSG_BASE: RecordMessage = {
   imei: '356307042441013',
-  vehicleId: '11111111-2222-3333-4444-555555555555',
+  vehicleId: '11111111-2222-4333-8444-555555555555',
   record: {
     timestampMs: '1700000000000',
     priority: 1,

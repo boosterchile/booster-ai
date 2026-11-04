@@ -22,15 +22,15 @@ const noopLogger = {
   child: () => noopLogger,
 } as never;
 
-const EMPRESA_CARRIER_ID = '11111111-1111-1111-1111-111111111111';
+const EMPRESA_CARRIER_ID = '11111111-1111-4111-8111-111111111111';
 
-function makeCarrierCtx(): UserContext {
+function makeCarrierCtx(role = 'dueno'): UserContext {
   return {
     user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
     activeMembership: {
       membership: {
         id: 'm1',
-        role: 'dueno',
+        role,
         status: 'activa',
         puedeAceptarOfertas: false,
       },
@@ -68,11 +68,16 @@ function makeDb(rows: Array<Record<string, unknown>>) {
   };
 }
 
-function buildApp(opts: { withContext: boolean; isCarrier?: boolean; db?: unknown }) {
+function buildApp(opts: {
+  withContext: boolean;
+  isCarrier?: boolean;
+  db?: unknown;
+  role?: string;
+}) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     if (opts.withContext) {
-      c.set('userContext', opts.isCarrier === false ? makeShipperCtx() : makeCarrierCtx());
+      c.set('userContext', opts.isCarrier === false ? makeShipperCtx() : makeCarrierCtx(opts.role));
     }
     await next();
   });
@@ -90,6 +95,30 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe('GET /me/liquidaciones — permisos por rol', () => {
+  it.each(['visualizador', 'conductor', 'despachador'])(
+    '%s → 403 capability_denied',
+    async (role) => {
+      const db = makeDb([]);
+      const res = await buildApp({ withContext: true, db, role }).request('/me/liquidaciones');
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: 'forbidden',
+        code: 'capability_denied',
+        capability: 'puedeVerFinanzas',
+      });
+      expect(db.select).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['dueno', 'admin'])('%s → 200', async (role) => {
+    const res = await buildApp({ withContext: true, db: makeDb([]), role }).request(
+      '/me/liquidaciones',
+    );
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('GET /me/liquidaciones — gating', () => {

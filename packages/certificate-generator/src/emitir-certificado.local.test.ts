@@ -2,13 +2,16 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import forge from 'node-forge';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { obtenerPublicKeyLocal } from './backend-local.js';
 import { type ParametrosEmisionCertificado, emitirCertificado } from './emitir-certificado.js';
 import type { SidecarFirma } from './tipos.js';
 
 // Emisión COMPLETA sin mocks sobre el backend local (key `local:` + bucket
 // `file:`): es el camino que recorre el E2E del conductor (T10-02).
+// Genera un PDF real con Inter embebida: bajo coverage en CI tarda >5 s (HC-004).
+vi.setConfig({ testTimeout: 30_000 });
+
 describe('emitirCertificado con backend local (sin KMS ni GCS)', () => {
   // RSA 4096: generar el par tarda varios segundos en un runner cargado
   // (7,6 s observado en CI); se paga una vez por archivo, fuera del timeout

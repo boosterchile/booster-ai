@@ -23,15 +23,22 @@ describe('Factores de emisión Chile 2024', () => {
     }
   });
 
-  it('diésel B5 tiene factor WTW ~3.25 kgCO2e/L (GLEC v3.0 + IPCC AR6)', () => {
+  it('diésel: GLEC v2.0 (2019) Tabla 32 EU → TTW 2,67 · WTT 0,57 · WTW 3,24 kg CO2e/L (HC-003)', () => {
     const f = obtenerFactorEmision('diesel');
     expect(f.unidad).toBe('L');
-    // TTW: 2.68 (CO2 puro) + 0.02 (CH4+N2O × GWP-100 AR6) = 2.70
-    expect(f.ttwKgco2e).toBeCloseTo(2.7, 2);
-    // WTT: 0.55 alineado GLEC EU diesel (Climatiq) y Chile B5
-    expect(f.wttKgco2e).toBeCloseTo(0.55, 2);
-    // WTW total = 3.25 (vs 3.24 que reporta Climatiq para EU GLEC v2.0)
-    expect(factorWtw('diesel')).toBeCloseTo(3.25, 2);
+    expect(f.ttwKgco2e).toBe(2.67);
+    expect(f.wttKgco2e).toBe(0.57);
+    expect(factorWtw('diesel')).toBeCloseTo(3.24, 10);
+    expect(f.fuente).toBe(
+      'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87',
+    );
+  });
+
+  it('híbrido diésel = 0,7 × diésel en TTW y WTT, y cita la misma tabla (HC-003)', () => {
+    const h = obtenerFactorEmision('hibrido_diesel');
+    expect(h.ttwKgco2e).toBeCloseTo(0.7 * 2.67, 10);
+    expect(h.wttKgco2e).toBeCloseTo(0.7 * 0.57, 10);
+    expect(h.fuente).toContain('Tabla 32');
   });
 
   it('gasolina tiene factor WTW ~2.76 kgCO2e/L', () => {
@@ -61,6 +68,6 @@ describe('Factores de emisión Chile 2024', () => {
     const f = obtenerFactorEmision('diesel');
     f.ttwKgco2e = 999;
     const f2 = obtenerFactorEmision('diesel');
-    expect(f2.ttwKgco2e).toBeCloseTo(2.7, 2);
+    expect(f2.ttwKgco2e).toBe(2.67);
   });
 });

@@ -3,12 +3,12 @@ import type { Logger } from '@booster-ai/logger';
 import { transportDocumentManualEntryInputSchema } from '@booster-ai/shared-schemas';
 import { PubSub } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
 import { assignments, transportDocuments, trips } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularRetentionUntil } from '../services/calcular-retention-until.js';
 
@@ -38,7 +38,7 @@ import { calcularRetentionUntil } from '../services/calcular-retention-until.js'
 
 const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
 type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
-const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 const SIGNED_URL_TTL_SECONDS = 300; // 5 min
 
 /**

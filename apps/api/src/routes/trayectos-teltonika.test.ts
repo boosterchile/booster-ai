@@ -156,6 +156,7 @@ describe('GET /trayectos-teltonika', () => {
         litros_iniciales: number;
         litros_finales: number;
         km_por_litro: number;
+        litros_por_100_km: number;
         posible_robo_combustible: boolean;
         inicio: string;
         fin: string;
@@ -185,6 +186,7 @@ describe('GET /trayectos-teltonika', () => {
     });
     expect(body.trayectos[0]?.distancia_km).toBeGreaterThan(0);
     expect(body.trayectos[0]?.km_por_litro).toBeGreaterThan(0);
+    expect(body.trayectos[0]?.litros_por_100_km).toBeGreaterThan(0);
     expect(Date.parse(body.trayectos[0]?.fin ?? '')).toBeGreaterThan(
       Date.parse(body.trayectos[0]?.inicio ?? ''),
     );
