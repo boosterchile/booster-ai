@@ -50,7 +50,13 @@ describe('useCotizacionCobraHoy', () => {
   });
 
   it('habilitada, pide la cotización de la asignación', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue({ monto_neto_clp: 100_000 });
+    const get = vi.spyOn(api, 'get').mockResolvedValue({
+      monto_neto_clp: 100_000,
+      plazo_dias_shipper: 30,
+      tarifa_pct: 1.5,
+      tarifa_clp: 1_500,
+      monto_adelantado_clp: 98_500,
+    });
     const { Wrapper } = makeWrapper();
     const { result } = renderHook(() => useCotizacionCobraHoy('asg-1', { enabled: true }), {
       wrapper: Wrapper,
