@@ -152,7 +152,7 @@ describe('firebase auth middleware', () => {
 // query (?ticket=), NO con el Firebase ID token (que se filtraba a Cloud
 // Trace/Logging). El fallback `?auth=<token>` quedó ELIMINADO.
 describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => {
-  const ASSIGNMENT = 'a1111111-2222-3333-4444-555555555555';
+  const ASSIGNMENT = 'a1111111-2222-4333-8444-555555555555';
   const STREAM_PATH = `/assignments/${ASSIGNMENT}/messages/stream`;
 
   async function buildStreamApp(opts: {

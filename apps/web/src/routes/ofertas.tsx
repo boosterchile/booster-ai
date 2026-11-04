@@ -6,6 +6,7 @@ import { OfferCard } from '../components/offers/OfferCard.js';
 import { VoiceAcceptOfferControl } from '../components/offers/VoiceAcceptOfferControl.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useOffersMine } from '../hooks/use-offers.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -32,6 +33,9 @@ export function OfertasRoute() {
 function OfertasPage({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
   const isCarrier = activeEmpresa?.is_transportista ?? false;
+  // CHEQUEOS_REEMPLAZADOS ofertas-voz: antes role === dueno && tiene_ficha_conductor.
+  const flags = flagsDe(me);
+  const veTarjetaVoz = flags.aceptarPorVoz;
 
   const offersQuery = useOffersMine({ enabled: isCarrier });
 
@@ -102,19 +106,18 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
 
       {isCarrier && offersQuery.data && offersQuery.data.offers.length > 0 && (
         <div className="mt-6 space-y-4">
-          {/* Phase 4 PR-K7 — control de aceptación por voz. Solo se
-                  renderiza cuando hay EXACTAMENTE 1 oferta pendiente —
-                  para >1 sería ambiguo qué oferta el comando "aceptar"
-                  refiere. Doble confirmación protege contra falsos
-                  positivos (aceptar oferta es contrato). */}
-          {offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
+          {/* Voz solo con rol dueno y ficha propia en conductores, y
+                  con exactamente 1 oferta pendiente (con más, «aceptar»
+                  sería ambiguo). Los botones Aceptar/Rechazar no usan
+                  este gate. */}
+          {veTarjetaVoz && offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
             <VoiceAcceptOfferControl
               offerId={offersQuery.data.offers[0].id}
               trackingCode={offersQuery.data.offers[0].trip_request.tracking_code}
             />
           )}
           {offersQuery.data.offers.map((o) => (
-            <OfferCard key={o.id} offer={o} />
+            <OfferCard key={o.id} offer={o} puedeDecidir={flags.aceptarOferta} />
           ))}
         </div>
       )}

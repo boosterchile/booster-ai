@@ -6,6 +6,9 @@ import { ApiError, api } from '../../lib/api-client.js';
 import type {
   RecognitionState,
   RecognizedCommand,
+  SpeechRecognitionErrorEventLike,
+  SpeechRecognitionEventLike,
+  SpeechRecognitionLike,
   VoiceCommandController,
 } from '../../services/voice-commands.js';
 import { IncidentReportCard } from './IncidentReportCard.js';
@@ -194,6 +197,60 @@ describe('IncidentReportCard', () => {
     await waitFor(() =>
       expect(screen.getByTestId('incident-error')).toHaveTextContent(/no se encontró el viaje/i),
     );
+  });
+
+  it('SpeechRecognition: "marcar incidente" abre el panel en el mismo reconocedor', () => {
+    const instances: MockSpeech[] = [];
+
+    class MockSpeech implements SpeechRecognitionLike {
+      lang = '';
+      interimResults = false;
+      continuous = false;
+      maxAlternatives = 1;
+      onresult: ((event: SpeechRecognitionEventLike) => void) | null = null;
+      onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null = null;
+      onstart: (() => void) | null = null;
+      onend: (() => void) | null = null;
+      onnomatch: (() => void) | null = null;
+      abort = vi.fn();
+      stop = vi.fn();
+      start = vi.fn(() => {
+        this.onstart?.();
+      });
+
+      constructor() {
+        instances.push(this);
+      }
+    }
+
+    Object.assign(window, { webkitSpeechRecognition: MockSpeech });
+    try {
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <IncidentReportCard assignmentId="a-test" />
+        </Wrapper>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Activar comando por voz' }));
+      const escuchando = instances[0];
+      expect(escuchando?.abort).not.toHaveBeenCalled();
+      act(() => {
+        escuchando?.onresult?.({
+          resultIndex: 0,
+          results: {
+            length: 1,
+            0: {
+              isFinal: true,
+              length: 1,
+              0: { transcript: 'marcar incidente', confidence: 1 },
+            },
+          },
+        });
+      });
+      expect(screen.getByText(/qué tipo de incidente/i)).toBeInTheDocument();
+    } finally {
+      Object.assign(window, { webkitSpeechRecognition: undefined });
+    }
   });
 
   it('error de red (no ApiError) → mensaje "sin conexión"', async () => {

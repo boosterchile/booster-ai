@@ -52,8 +52,8 @@ function buildSpyLogger() {
   };
 }
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
-const VEHICLE_ID = '22222222-2222-2222-2222-222222222222';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
+const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
 
 function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -150,7 +150,7 @@ async function buildApp(
       memberships: [],
       activeMembership: {
         membership: { id: 'm-1', role },
-        empresa: { id: EMPRESA_ID, legal_name: 'Test SA' },
+        empresa: { id: EMPRESA_ID, legal_name: 'Test SA', isTransportista: true },
       },
     });
     await next();
@@ -882,7 +882,7 @@ describe('vehiculos routes', () => {
     });
 
     it('mergea último punto por vehículo con su position', async () => {
-      const otherVehicleId = '33333333-3333-3333-3333-333333333333';
+      const otherVehicleId = '33333333-3333-4333-8333-333333333333';
       const stub = makeFlotaStub({
         vehicleRows: [
           {
@@ -931,7 +931,7 @@ describe('vehiculos routes', () => {
       expect(withoutPos?.position).toBeNull();
     });
 
-    it('conductor (rol read) puede ver la flota', async () => {
+    it('conductor empleado no ve la flota', async () => {
       const stub = makeFlotaStub({
         vehicleRows: [
           {
@@ -947,6 +947,8 @@ describe('vehiculos routes', () => {
       const app = await buildApp(stub.db, { role: 'conductor' });
       const res = await app.request('/vehiculos/flota');
       expect(res.status).toBe(200);
+      const body = (await res.json()) as { fleet: unknown[] };
+      expect(body.fleet).toEqual([]);
     });
   });
 

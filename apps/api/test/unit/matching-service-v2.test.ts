@@ -122,7 +122,7 @@ function makeDb(queues: DbQueues = {}) {
   };
 }
 
-const TRIP_ID = '11111111-1111-1111-1111-111111111111';
+const TRIP_ID = '11111111-1111-4111-8111-111111111111';
 const TRIP_BASE = {
   id: TRIP_ID,
   status: 'esperando_match',

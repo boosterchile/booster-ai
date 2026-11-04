@@ -105,6 +105,7 @@ interface UserContextOpts {
   userId?: string;
   empresaId?: string;
   isGeneradorCarga?: boolean;
+  isTransportista?: boolean;
   empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
 }
@@ -113,16 +114,17 @@ function buildUserContext(opts: UserContextOpts = {}): {
   user: Pick<UserRow, 'id'>;
   memberships: Array<{
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'isTransportista' | 'status'>;
   }>;
   activeMembership: {
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'isTransportista' | 'status'>;
   } | null;
 } {
   const empresa = {
     id: opts.empresaId ?? 'emp-1',
     isGeneradorCarga: opts.isGeneradorCarga ?? true,
+    isTransportista: opts.isTransportista ?? false,
     status: opts.empresaStatus ?? 'activa',
   };
   const membership = { role: 'dueno' as const };
@@ -137,6 +139,7 @@ async function buildAppWith(opts: {
   db: Db;
   userContext: ReturnType<typeof buildUserContext> | null;
   routesProjectId?: string;
+  fetchImpl?: typeof fetch;
 }) {
   const { createTripRequestsV2Routes } = await import('../../src/routes/trip-requests-v2.js');
   const app = new Hono();
@@ -152,6 +155,7 @@ async function buildAppWith(opts: {
       db: opts.db,
       logger: noopLogger,
       ...(opts.routesProjectId ? { routesProjectId: opts.routesProjectId } : {}),
+      ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
     }),
   );
   return app;
@@ -249,6 +253,24 @@ describe('POST /trip-requests-v2', () => {
       });
     }
 
+    it('rechaza una comuna que no pertenece a la región', async () => {
+      const body = makeValidBody();
+      const res = await postBody({
+        ...body,
+        origin: { ...body.origin, comuna_code: '08101' },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza un punto fuera de Chile', async () => {
+      const body = makeValidBody();
+      const res = await postBody({
+        ...body,
+        destination: { ...body.destination, latitude: 40.42, longitude: -3.7 },
+      });
+      expect(res.status).toBe(400);
+    });
+
     it('rechaza dirección de origen con menos de 5 caracteres', async () => {
       const body = makeValidBody();
       body.origin.address_raw = 'abc'; // 3 caracteres
@@ -301,6 +323,50 @@ describe('POST /trip-requests-v2', () => {
       const res = await postBody(body);
       expect(res.status).toBe(400);
     });
+  });
+
+  it('empresa con ambos roles publica la carga con su generador_carga_empresa_id', async () => {
+    const matching = await import('../../src/services/matching.js');
+    vi.mocked(matching.runMatching).mockResolvedValueOnce({
+      tripId: 'trip-dual',
+      candidatesEvaluated: 0,
+      offersCreated: 0,
+      offers: [],
+    });
+    const inserted: Record<string, unknown>[] = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((vals: Record<string, unknown>) => {
+          inserted.push(vals);
+          return {
+            returning: vi.fn(async () => [
+              {
+                id: 'trip-dual',
+                trackingCode: 'BOO-DUAL1',
+                generadorCargaEmpresaId: 'emp-dual',
+                cargoType: 'carga_seca',
+                originRegionCode: 'XIII',
+              },
+            ]),
+          };
+        }),
+      })),
+    } as unknown as Db;
+    const app = await buildAppWith({
+      db,
+      userContext: buildUserContext({
+        empresaId: 'emp-dual',
+        isGeneradorCarga: true,
+        isTransportista: true,
+      }),
+    });
+    const res = await app.request('/trip-requests-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(validBody),
+    });
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ generadorCargaEmpresaId: 'emp-dual' });
   });
 
   it('happy path: crea trip, dispara matching, devuelve 201', async () => {
@@ -394,6 +460,59 @@ describe('POST /trip-requests-v2', () => {
       expect(geo.geocodificarOrigen).not.toHaveBeenCalled();
     });
 
+    it('con lat/lng del cliente persiste el punto y no pisa el origen con Routes API', async () => {
+      const geo = await import('../../src/services/geocodificar-origen.js');
+      const inserted = { id: 'trip-pin', trackingCode: 'BOO-PIN123' };
+      const values = vi.fn(() => ({
+        returning: vi.fn(async () => [inserted]),
+      }));
+      const db = {
+        insert: vi.fn(() => ({ values })),
+      } as unknown as Db;
+      const matching = await import('../../src/services/matching.js');
+      vi.mocked(matching.runMatching).mockResolvedValueOnce({
+        tripId: 'trip-pin',
+        candidatesEvaluated: 0,
+        offersCreated: 0,
+        offers: [],
+      });
+      const app = await buildAppWith({
+        db,
+        userContext: buildUserContext(),
+        routesProjectId: 'booster-ai-494222',
+      });
+      const body = makeValidBody();
+      body.origin = {
+        ...body.origin,
+        comuna_code: '13101',
+        latitude: -33.4391,
+        longitude: -70.6488,
+      };
+      body.destination = {
+        ...body.destination,
+        comuna_code: '08101',
+        latitude: -36.827,
+        longitude: -73.0503,
+      };
+      const res = await app.request('/trip-requests-v2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(201);
+      expect(geo.geocodificarOrigen).not.toHaveBeenCalled();
+      expect(values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originComunaCode: '13101',
+          originLatitude: '-33.4391000',
+          originLongitude: '-70.6488000',
+          destinationComunaCode: '08101',
+          destinationLatitude: '-36.8270000',
+          destinationLongitude: '-73.0503000',
+        }),
+      );
+    });
+
     it('si la geocodificación revienta inesperadamente, el viaje se crea igual (201) — nunca bloquea', async () => {
       const geo = await import('../../src/services/geocodificar-origen.js');
       vi.mocked(geo.geocodificarOrigen).mockRejectedValueOnce(new Error('kaboom'));
@@ -404,6 +523,63 @@ describe('POST /trip-requests-v2', () => {
       const body = (await res.json()) as { trip_request: { id: string } };
       expect(body.trip_request.id).toBe('trip-geo');
     });
+  });
+
+  it('POST /resolver-enlace sigue el link corto y devuelve lat/lng', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://www.google.com/maps/@-33.45,-70.66,15z' },
+        }),
+    );
+    const app = await buildAppWith({
+      db: makeStubDb({}),
+      userContext: buildUserContext(),
+      fetchImpl,
+    });
+    const res = await app.request('/trip-requests-v2/resolver-enlace', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texto: 'https://maps.app.goo.gl/cFmSSGQDfS2tzWex7' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ latitude: -33.45, longitude: -70.66 });
+  });
+
+  it('POST /resolver-enlace sin punto responde 422 y no es un proxy', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://evil.example/x' },
+        }),
+    );
+    const app = await buildAppWith({
+      db: makeStubDb({}),
+      userContext: buildUserContext(),
+      fetchImpl,
+    });
+    const res = await app.request('/trip-requests-v2/resolver-enlace', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texto: 'https://maps.app.goo.gl/abc' }),
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'enlace_sin_punto', motivo: 'host_no_permitido' });
+  });
+
+  it('POST /resolver-enlace rechaza un texto de más de 500 caracteres', async () => {
+    const app = await buildAppWith({
+      db: makeStubDb({}),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/resolver-enlace', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texto: `https://maps.app.goo.gl/${'a'.repeat(480)}` }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it('matching sin candidatos: 201 con status=expirado y matching offers vacío', async () => {

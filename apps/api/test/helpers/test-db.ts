@@ -1,6 +1,7 @@
 import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from '../../src/db/schema.js';
+import { assertTestDbUrl } from './test-db-guard.js';
 
 export type TestDb = NodePgDatabase<typeof schema>;
 
@@ -12,8 +13,8 @@ export interface TestDbHandle {
 
 /**
  * Crea un pool de Postgres dedicado a integration tests apuntando a
- * `TEST_DATABASE_URL` del environment. Rechaza si la URL parece apuntar
- * a producción o staging — el script T0 estableció que el reset incluye
+ * `TEST_DATABASE_URL` del environment. Rechaza lo que no sea una BD local de
+ * test (`assertTestDbUrl`, el mismo guard de globalSetup) — el script T0 estableció que el reset incluye
  * `DROP SCHEMA public CASCADE` + `DROP SCHEMA drizzle CASCADE`, una operación
  * irreversible si se ejecuta contra una BD real.
  *
@@ -24,14 +25,10 @@ export function createTestDb(): TestDbHandle {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) {
     throw new Error(
-      'TEST_DATABASE_URL no está definido. Exporta una conexión a Postgres local antes de correr tests integration. Ver apps/api/test/integration/README.md (T5b).',
+      'TEST_DATABASE_URL no está definido. Exporta una conexión a Postgres local antes de correr tests integration. En local: `pnpm --filter @booster-ai/api test:integration:local`.',
     );
   }
-  if (/prod|staging/i.test(url)) {
-    throw new Error(
-      `TEST_DATABASE_URL parece apuntar a una BD compartida (prod/staging). Aborto. URL: ${url.replace(/:[^:@]*@/, ':***@')}`,
-    );
-  }
+  assertTestDbUrl(url);
 
   const pool = new pg.Pool({
     connectionString: url,

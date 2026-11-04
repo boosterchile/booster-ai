@@ -47,7 +47,7 @@ const API_AUDIENCE = ['https://api.boosterchile.com'];
 const VALID_EVENT = {
   eventType: 'crash' as const,
   imei: '123456789012345',
-  vehicleId: '00000000-0000-0000-0000-000000000001',
+  vehicleId: '00000000-0000-4000-8000-000000000001',
   occurredAt: '2026-06-15T10:00:00Z',
 };
 
@@ -354,5 +354,88 @@ describe('POST /internal/safety-events', () => {
 
       expect(res.status).toBe(500);
     });
+  });
+});
+
+describe('POST /internal/safety-events — contrato del 400 (TRK-003)', () => {
+  it('envelope Pub/Sub sin message → 400 con details', async () => {
+    const app = makeApp({ oauthClient: makeOAuthClient({ email: CALLER_SA }) });
+    const res = await makeRequest({
+      app,
+      authorization: 'Bearer valid-token',
+      body: { subscription: 'some-sub' },
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": [
+            {
+              "code": "invalid_type",
+              "expected": "object",
+              "message": "Invalid input: expected object, received undefined",
+              "path": [
+                "message",
+              ],
+            },
+          ],
+          "error": "Invalid Pub/Sub envelope",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('SafetyEvent inválido → 400 con details', async () => {
+    const app = makeApp({ oauthClient: makeOAuthClient({ email: CALLER_SA }) });
+    const res = await makeRequest({
+      app,
+      authorization: 'Bearer valid-token',
+      body: makeEnvelopeBody({ eventType: 'crash', imei: 'NOT-A-VALID-IMEI' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "details": [
+            {
+              "code": "invalid_format",
+              "format": "regex",
+              "message": "IMEI debe ser 14-16 dígitos",
+              "origin": "string",
+              "path": [
+                "imei",
+              ],
+            },
+            {
+              "code": "invalid_type",
+              "expected": "string",
+              "message": "Completa este campo",
+              "path": [
+                "occurredAt",
+              ],
+            },
+          ],
+          "error": "Invalid SafetyEvent",
+        },
+        "status": 400,
+      }
+    `);
+  });
+});
+
+describe('POST /internal/safety-events — input hostil → 400, nunca 500 (TRK-006)', () => {
+  it.each([
+    ['imei con toString', { imei: { toString: 1 } }],
+    ['occurredAt array', { occurredAt: ['2026-11-02T00:00:00Z'] }],
+    ['eventType objeto', { eventType: { valueOf: 1 } }],
+    ['rawValue string enorme', { rawValue: 'x'.repeat(10_000) }],
+  ])('%s', async (_c, evento) => {
+    const app = makeApp({ oauthClient: makeOAuthClient({ email: CALLER_SA }) });
+    const res = await makeRequest({
+      app,
+      authorization: 'Bearer valid-token',
+      body: makeEnvelopeBody({ eventType: 'crash', ...evento } as never),
+    });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).not.toContain('pattern');
   });
 });

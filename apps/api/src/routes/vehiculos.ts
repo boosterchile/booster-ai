@@ -19,24 +19,27 @@ import {
   unitTypeSchema,
   validarCoherenciaUnidadVehiculo,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { ctxDeUserContext, puedeGestionarFlota, veSoloSuViaje } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { pgErrorCode } from '../db/pg-error.js';
 import {
+  assignments,
   pendingDevices,
   posicionesMovilConductor,
   telemetryPoints,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
+import { queryUltimaPosicionGpsValida } from '../services/ultima-posicion-gps.js';
 import { obtenerClimaActual } from '../services/weather-api.js';
 
 /**
@@ -425,8 +428,9 @@ export function createVehiculosRoutes(opts: {
     if (!auth.ok) {
       return auth;
     }
-    const role = auth.activeMembership.membership.role;
-    if (role !== 'dueno' && role !== 'admin' && role !== 'despachador') {
+    // CHEQUEOS_REEMPLAZADOS vehiculos-ui: antes role !== dueno|admin|despachador.
+    const ctx = ctxDeUserContext(auth.userContext);
+    if (!ctx || !puedeGestionarFlota(ctx)) {
       return {
         ok: false as const,
         response: c.json({ error: 'forbidden', code: 'write_role_required' }, 403),
@@ -541,7 +545,15 @@ export function createVehiculosRoutes(opts: {
     }
     const empresaId = auth.activeMembership.empresa.id;
 
-    const vehicleRows = await opts.db
+    // CHEQUEOS_REEMPLAZADOS flota: el conductor empleado no ve la flota.
+    // Sin contexto se niega antes de leer vehículos. La asignación vigente
+    // es asignado o recogido; entregado y cancelado no abren el vehículo.
+    const ctxFlota = ctxDeUserContext(auth.userContext);
+    if (!ctxFlota) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
+
+    let vehicleRows = await opts.db
       .select({
         id: vehicles.id,
         plate: vehicles.plate,
@@ -553,6 +565,25 @@ export function createVehiculosRoutes(opts: {
       .from(vehicles)
       .where(eq(vehicles.empresaId, empresaId))
       .orderBy(asc(vehicles.plate));
+
+    if (veSoloSuViaje(ctxFlota)) {
+      const asignados = await opts.db
+        .select({ vehicleId: assignments.vehicleId })
+        .from(assignments)
+        .where(
+          and(
+            eq(assignments.empresaId, empresaId),
+            eq(assignments.driverUserId, auth.userContext.user.id),
+            inArray(assignments.status, ['asignado', 'recogido']),
+          ),
+        );
+      const propios = new Set(
+        (Array.isArray(asignados) ? asignados : [])
+          .map((row) => row.vehicleId)
+          .filter((id): id is string => typeof id === 'string'),
+      );
+      vehicleRows = vehicleRows.filter((row) => propios.has(row.id));
+    }
 
     // D1/D2 — Particionamos los vehículos en tres grupos:
     //   - withOwnDevice: tienen teltonika_imei propio → lookup por
@@ -1455,6 +1486,14 @@ export function createVehiculosRoutes(opts: {
     const id = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
+    // CHEQUEOS_REEMPLAZADOS flota: la ubicación de un vehículo ajeno no se entrega.
+    // Misma regla que la flota: sin contexto se niega, y solo cuenta la
+    // asignación vigente (asignado o recogido).
+    const ctxUbicacion = ctxDeUserContext(auth.userContext);
+    if (!ctxUbicacion) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
+
     const [vehicle] = await opts.db
       .select({
         id: vehicles.id,
@@ -1468,6 +1507,24 @@ export function createVehiculosRoutes(opts: {
       .limit(1);
     if (!vehicle) {
       return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    if (veSoloSuViaje(ctxUbicacion)) {
+      const asignados = await opts.db
+        .select({ vehicleId: assignments.vehicleId })
+        .from(assignments)
+        .where(
+          and(
+            eq(assignments.empresaId, empresaId),
+            eq(assignments.driverUserId, auth.userContext.user.id),
+            eq(assignments.vehicleId, id),
+            inArray(assignments.status, ['asignado', 'recogido']),
+          ),
+        );
+      const filas = Array.isArray(asignados) ? asignados : [];
+      if (!filas.some((row) => row.vehicleId === id)) {
+        return c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403);
+      }
     }
 
     // D1/D2 — Determinar fuente de datos en orden de prioridad:
@@ -1536,34 +1593,14 @@ export function createVehiculosRoutes(opts: {
       });
     }
 
-    const baseSelect = opts.db
-      .select({
-        timestamp_device: telemetryPoints.timestampDevice,
-        timestamp_received_at: telemetryPoints.timestampReceivedAt,
-        longitude: telemetryPoints.longitude,
-        latitude: telemetryPoints.latitude,
-        altitude_m: telemetryPoints.altitudeM,
-        angle_deg: telemetryPoints.angleDeg,
-        satellites: telemetryPoints.satellites,
-        speed_kmh: telemetryPoints.speedKmh,
-        priority: telemetryPoints.priority,
-        io_data: telemetryPoints.ioData,
-      })
-      .from(telemetryPoints);
-
     // Última posición VÁLIDA: descarta null + "null island" (0,0, GPS sin fix)
-    // para no devolver el marcador en el Golfo de Guinea. La temperatura (IO 72)
-    // se resuelve aparte, sin este filtro (es independiente del fix GPS).
-    const coordValida = coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude);
-    const [last] = vehicle.teltonikaImei
-      ? await baseSelect
-          .where(and(eq(telemetryPoints.vehicleId, id), coordValida))
-          .orderBy(desc(telemetryPoints.timestampDevice))
-          .limit(1)
-      : await baseSelect
-          .where(and(eq(telemetryPoints.imei, effectiveImei), coordValida))
-          .orderBy(desc(telemetryPoints.timestampDevice))
-          .limit(1);
+    // para no devolver el marcador en el Golfo de Guinea. Índice parcial
+    // 0070: no camina los pings sin fix. La temperatura (IO 72) se resuelve
+    // aparte, sin este filtro (es independiente del fix GPS).
+    const [last] = await queryUltimaPosicionGpsValida(
+      opts.db,
+      vehicle.teltonikaImei ? { vehiculoId: id } : { imei: effectiveImei },
+    );
 
     if (!last) {
       return c.json(

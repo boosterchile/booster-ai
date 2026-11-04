@@ -1,6 +1,7 @@
 import type { ConfiguracionComercial, SiteConfig } from '@booster-ai/shared-schemas';
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
@@ -568,6 +569,16 @@ export const empresas = pgTable(
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
     /**
+     * Historia 0 — quién y cuándo prendió `es_generador_carga` sobre un
+     * transportista que ya existía. NULL si el flag vino del alta o si
+     * todavía no es generador. Una segunda activación no reescribe estos
+     * campos.
+     */
+    generadorCargaActivadoEn: timestamp('generador_carga_activado_en', {
+      withTimezone: true,
+    }),
+    generadorCargaActivadoPor: text('generador_carga_activado_por'),
+    /**
      * ADR-079 §2 — contrato programado habilitado por el platform-admin (con
      * quién y cuándo). Solo estos generadores pueden publicar
      * `modalidad_carga = 'programada'` (tasa menor). NULL = no habilitado.
@@ -851,6 +862,12 @@ export const memberships = pgTable(
       { onDelete: 'restrict' },
     ),
     role: membershipRoleEnum('rol').notNull(),
+    /**
+     * El despachador puede aceptar o rechazar ofertas solo con este flag.
+     * Dueño y admin no lo consultan: aceptan por rol. Default false para
+     * no abrir el contrato a membresías que ya existían (migración 0071).
+     */
+    puedeAceptarOfertas: boolean('puede_aceptar_ofertas').notNull().default(false),
     status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),
     invitedByUserId: uuid('invitado_por_id').references(() => users.id),
     invitedAt: timestamp('invitado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1349,6 +1366,13 @@ export const trips = pgTable(
     destinationAddressRaw: text('destino_direccion_raw').notNull(),
     destinationRegionCode: varchar('destino_codigo_region', { length: 4 }),
     destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),
+    /**
+     * Lat/lng del destino marcado por el generador (sugerencia, pin o link).
+     * NULL = sin punto (viaje previo a 0064, o solo texto). Misma precisión
+     * y el mismo naming inglés que origin_latitude / origin_longitude.
+     */
+    destinationLatitude: numeric('destination_latitude', { precision: 10, scale: 7 }),
+    destinationLongitude: numeric('destination_longitude', { precision: 10, scale: 7 }),
     cargoType: cargoTypeEnum('tipo_carga').notNull(),
     cargoWeightKg: integer('carga_peso_kg'),
     cargoVolumeM3: integer('carga_volumen_m3'),
@@ -1599,6 +1623,15 @@ export const tripMetrics = pgTable(
       scale: 3,
     }),
     carbonEmissionsKgco2eActual: numeric('emisiones_kgco2e_reales', { precision: 10, scale: 3 }),
+    // HC-003 T1 (0068) — desglose del cálculo vigente (real si existe, si no estimado).
+    emisionesKgco2eTtw: numeric('emisiones_kgco2e_ttw', { precision: 10, scale: 3 }),
+    emisionesKgco2eWtt: numeric('emisiones_kgco2e_wtt', { precision: 10, scale: 3 }),
+    intensidadGco2ePorTkm: numeric('intensidad_gco2e_por_tkm', { precision: 12, scale: 3 }),
+    factoresFuente: text('factores_fuente'),
+    // Referencia HuellaChile 2025 (por litro de diésel), solo para mostrar.
+    ttwRef: numeric('ttw_ref', { precision: 6, scale: 3 }),
+    wttRef: numeric('wtt_ref', { precision: 6, scale: 3 }),
+    fuenteRef: text('fuente_ref'),
     fuelConsumedLEstimated: numeric('combustible_consumido_l_estimado', {
       precision: 10,
       scale: 2,
@@ -1641,6 +1674,11 @@ export const tripMetrics = pgTable(
     certificateSha256: char('certificado_sha256', { length: 64 }),
     certificateKmsKeyVersion: varchar('certificado_kms_version', { length: 50 }),
     certificateIssuedAt: timestamp('certificado_emitido_en', { withTimezone: true }),
+    /** HC-001 p3a: versión vigente en certificados_viaje; las 4 columnas de arriba la espejan. */
+    certificadoVigenteId: uuid('certificado_vigente_id').references(
+      (): AnyPgColumn => certificadosViaje.id,
+      { onDelete: 'restrict' },
+    ),
     // Empty backhaul allocation (GLEC v3.0 §6.4) — alimentado por
     // calcularEmptyBackhaul() del package @booster-ai/carbon-calculator.
     // Nullable: pre-existing rows + viajes sin matching de retorno.
@@ -1693,6 +1731,16 @@ export const tripMetrics = pgTable(
     coachingModelo: varchar('coaching_modelo', { length: 50 }),
     /** Timestamp de generación. Para SLO + cache invalidation. */
     coachingGeneradoEn: timestamp('coaching_generado_en', { withTimezone: true }),
+    /** HC-001: decisión de fuente (`decidirFuenteHuella`); NULL = no registrada. */
+    fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
+    fuenteEnergia: varchar('fuente_energia', { length: 20 }),
+    motivoFallback: varchar('motivo_fallback', { length: 40 }),
+    decisionVersion: smallint('decision_version'),
+    decididoEn: timestamp('decidido_en', { withTimezone: true }),
+    /** HC-001 N2: peso declarado al decidir (peso_ausente puede quedar tapado en motivo_fallback). */
+    pesoDeclarado: boolean('peso_declarado'),
+    /** HC-001 parte 2: ALERTAS_DECISION (p. ej. discrepancia_can); '{}' = sin alertas. */
+    alertasDecision: varchar('alertas_decision', { length: 40 }).array(),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1926,7 +1974,20 @@ export const telemetryPoints = pgTable(
     vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
     // idx_telemetria_imei_ts e idx_telemetria_vehiculo_recibido dropeados
     // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
-    // proyecciones). telemetria_puntos paga 3 estructuras por INSERT, no 5.
+    // proyecciones).
+    // 0070: solo filas con fix. La última posición no camina los 0,0.
+    // Un insert sin fix no agrega hoja en estos dos. DESC igual que el SQL:
+    // el LIMIT 1 lee la hoja más nueva.
+    gpsValidoVehiculoIdx: index('idx_telemetria_vehiculo_gps_valido')
+      .on(table.vehicleId, table.timestampDevice.desc())
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
+    gpsValidoImeiIdx: index('idx_telemetria_imei_gps_valido')
+      .on(table.imei, table.timestampDevice.desc())
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
   }),
 );
@@ -2869,6 +2930,45 @@ export const eventosImpersonacion = pgTable(
 // TYPE EXPORTS
 // =============================================================================
 
+/**
+ * Cambio del email de contacto de un conductor. Append-only: quién, de qué
+ * correo a cuál, si se reenvió la invitación y qué se hizo con Firebase.
+ * No guarda el PIN.
+ */
+export const auditoriaEmailConductor = pgTable(
+  'auditoria_email_conductor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conductorId: uuid('conductor_id')
+      .notNull()
+      .references(() => conductores.id, { onDelete: 'restrict' }),
+    usuarioId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    actorUsuarioId: uuid('actor_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    emailAnterior: varchar('email_anterior', { length: 255 }).notNull(),
+    emailNuevo: varchar('email_nuevo', { length: 255 }).notNull(),
+    invitacionReenviada: boolean('invitacion_reenviada').notNull(),
+    accionFirebase: varchar('accion_firebase', { length: 64 }).notNull(),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    conductorIdx: index('idx_auditoria_email_conductor_conductor').on(
+      table.conductorId,
+      table.createdAt,
+    ),
+    empresaIdx: index('idx_auditoria_email_conductor_empresa').on(table.empresaId, table.createdAt),
+  }),
+);
+
+export type AuditoriaEmailConductorRow = typeof auditoriaEmailConductor.$inferSelect;
+export type NewAuditoriaEmailConductorRow = typeof auditoriaEmailConductor.$inferInsert;
+
 export type EventoImpersonacionRow = typeof eventosImpersonacion.$inferSelect;
 export type NewEventoImpersonacionRow = typeof eventosImpersonacion.$inferInsert;
 export type PlanRow = typeof plans.$inferSelect;
@@ -2984,3 +3084,44 @@ export const bitacoraBackfillDistancia = pgTable(
 );
 export type BitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferSelect;
 export type NewBitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferInsert;
+
+/**
+ * HC-001 p3a (decision.md 14:10): historial de versiones del certificado de un
+ * viaje. La vigente es la única con estado 'vigente' (índice parcial). Una
+ * reemisión marca la anterior 'reemplazado' y la reversa marca 'revertido'.
+ */
+export const certificadosViaje = pgTable(
+  'certificados_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    version: integer('version').notNull(),
+    estado: varchar('estado', { length: 20 }).notNull().default('vigente'),
+    sha256: char('sha256', { length: 64 }).notNull(),
+    pdfUrl: text('pdf_url'),
+    kmsVersion: varchar('kms_version', { length: 50 }),
+    emitidoEn: timestamp('emitido_en', { withTimezone: true }).notNull(),
+    reemplazadoEn: timestamp('reemplazado_en', { withTimezone: true }),
+    reemplazadoPor: uuid('reemplazado_por').references((): AnyPgColumn => certificadosViaje.id, {
+      onDelete: 'restrict',
+    }),
+    fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
+    motivoFallback: varchar('motivo_fallback', { length: 40 }),
+    decisionVersion: smallint('decision_version'),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    versionUnica: unique('uq_certificados_viaje_version').on(table.tripId, table.version),
+    vigenteUnica: uniqueIndex('uq_certificados_viaje_vigente')
+      .on(table.tripId)
+      .where(sql`estado = 'vigente'`),
+    porSha: index('idx_certificados_viaje_sha256').on(table.sha256),
+    versionPositiva: check('chk_certificados_viaje_version', sql`version >= 1`),
+    estadoValido: check(
+      'chk_certificados_viaje_estado',
+      sql`estado IN ('vigente', 'reemplazado', 'revertido')`,
+    ),
+  }),
+);

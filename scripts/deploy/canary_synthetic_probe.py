@@ -36,6 +36,10 @@ RUTAS_SEGURAS = ('/health', '/health/signup-flow')
 USER_AGENT = 'booster-canary-probe'
 RUTA_RESULTADO = '/workspace/canary-probe.json'
 EXTRA_SONDA = 5
+# Mismo piso que _CANARY_MIN_REQUESTS. Unos 200 sueltos, por debajo, no
+# cuentan como llegada: el gate los vería como muestra corta y revertiría
+# el tag. Un 5xx se reporta igual aunque sean pocos.
+PISO_RESPUESTAS_EN_LOG = 30
 # private.googleapis.com (199.36.153.8/30). La subnet booster-ai-private tiene
 # Private Google Access: estos VIP no salen por Cloud NAT. El DNS público
 # de *.run.app sí.
@@ -268,7 +272,16 @@ def manifiesto_job(
             'ttlSecondsAfterFinished': TTL_JOB_SEGUNDOS,
             'activeDeadlineSeconds': 1800,
             'template': {
-                'metadata': {'labels': {'app': 'canary-probe'}},
+                'metadata': {
+                    'labels': {'app': 'canary-probe'},
+                    # GKE Autopilot (build 20739610): el autoscaler mató el pod
+                    # con ScaleDown después de 34/34 HTTP 200 y antes del
+                    # resumen. backoffLimit 0 no reintenta. Sin esta anotación
+                    # el Job queda Failed y el gate no promueve.
+                    'annotations': {
+                        'cluster-autoscaler.kubernetes.io/safe-to-evict': 'false',
+                    },
+                },
                 'spec': {
                     'restartPolicy': 'Never',
                     'automountServiceAccountToken': False,
@@ -413,23 +426,113 @@ def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[
     return resultado
 
 
-def _extraer_resumen(log: str) -> dict[str, Any] | None:
-    for linea in reversed(log.splitlines()):
-        linea = linea.strip()
-        if not linea.startswith('{'):
-            continue
-        try:
-            payload = json.loads(linea)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict) and isinstance(payload.get('resumen'), dict):
-            return payload['resumen']
+def _json_de_linea(linea: str) -> dict[str, Any] | None:
+    """Objeto JSON de la línea, aunque kubectl le haya puesto un prefijo."""
+    texto = linea.strip()
+    inicio = texto.find('{')
+    if inicio < 0:
+        return None
+    try:
+        payload, _fin = json.JSONDecoder().raw_decode(texto[inicio:])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict):
+        return payload
     return None
 
 
-def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
-    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló."""
+def _extraer_resumen(log: str) -> dict[str, Any] | None:
+    for linea in reversed(log.splitlines()):
+        payload = _json_de_linea(linea)
+        if payload is None:
+            continue
+        resumen = payload.get('resumen')
+        if isinstance(resumen, dict):
+            return resumen
+    return None
+
+
+def _ms(valor: object) -> float | None:
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        return None
+    return float(valor)
+
+
+def _resumen_desde_eventos(log: str) -> dict[str, Any] | None:
+    """Si el objeto resumen no está, las líneas status=200/4xx/5xx deciden.
+
+    Solo se llama con el Job Complete. Un 404 cuenta en contra: mezclado
+    con 200 no es llegada. Un 5xx se reporta para que el gate falle.
+    """
+    respuestas = 0
+    cinco = 0
+    cuatro = 0
+    transporte = 0
+    latencias: list[float] = []
+    vio = False
+    for linea in log.splitlines():
+        payload = _json_de_linea(linea)
+        if payload is None or isinstance(payload.get('resumen'), dict):
+            continue
+        status = payload.get('status')
+        if isinstance(status, bool) or not isinstance(status, int):
+            if 'error' in payload:
+                transporte += 1
+                vio = True
+            continue
+        vio = True
+        demora = _ms(payload.get('ms'))
+        if status >= 500:
+            cinco += 1
+            respuestas += 1
+            if demora is not None:
+                latencias.append(demora)
+        elif 200 <= status < 300:
+            respuestas += 1
+            if demora is not None:
+                latencias.append(demora)
+        elif 400 <= status < 500:
+            cuatro += 1
+    if not vio:
+        return None
+    # En el respaldo los 404 cuentan en contra: sin el objeto resumen, 30
+    # respuestas 200 mezcladas con 404 no son llegada. El 5xx se entrega
+    # siempre. Por debajo del piso tampoco: el gate revertiría el tag.
+    if cinco == 0 and (cuatro > 0 or respuestas < PISO_RESPUESTAS_EN_LOG):
+        return {
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': cuatro,
+            'errores_transporte': transporte,
+            'respuestas_app': 0,
+            'latencias_ms': [],
+            'p95_ms': None,
+        }
+    return {
+        'llego_a_la_app': respuestas > 0,
+        'cinco_xx': cinco,
+        'cuatro_xx': cuatro,
+        'errores_transporte': transporte,
+        'respuestas_app': respuestas,
+        'latencias_ms': latencias,
+        'p95_ms': percentil_95(latencias),
+    }
+
+
+def aplicar_log_job(
+    resultado: dict[str, Any],
+    log: str,
+    estado_terminal: str = '',
+) -> dict[str, Any]:
+    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló.
+
+    El conteo por línea (sin objeto resumen) solo vale con el Job Complete.
+    Failed, pendiente o un log cortado no promueven: el pod desalojado con
+    backoffLimit 0 queda Failed y ese caso lo cubre safe-to-evict.
+    """
     resumen = _extraer_resumen(log)
+    if resumen is None and estado_terminal == 'completo':
+        resumen = _resumen_desde_eventos(log)
     if resumen is None:
         resultado['job'] = 'fallo'
         return resultado
@@ -555,7 +658,10 @@ def main(argv: list[str] | None = None) -> int:
         resultado = _leer_resultado(args.aplicar_log_job)
         with open(args.log_file, encoding='utf-8') as fh:
             log = fh.read()
-        _escribir(args.aplicar_log_job, aplicar_log_job(resultado, log))
+        _escribir(
+            args.aplicar_log_job,
+            aplicar_log_job(resultado, log, args.job_estado),
+        )
         return 0
 
     if args.marcar_job:

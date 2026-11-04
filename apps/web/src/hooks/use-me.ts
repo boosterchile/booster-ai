@@ -28,6 +28,8 @@ export interface MembershipPayload {
     | 'stakeholder_sostenibilidad';
   status: 'pendiente_invitacion' | 'activa' | 'suspendida' | 'removida';
   joined_at: string | null;
+  /** Lo edita el dueño o el admin. Solo cambia algo en un despachador. */
+  puede_aceptar_ofertas?: boolean;
   /**
    * Empresa de la membership. NULL cuando la membership es a una
    * organización stakeholder (XOR — ADR-034).
@@ -82,6 +84,16 @@ export interface MeRegistered {
   user: MeUser;
   memberships: MembershipPayload[];
   active_membership: MembershipPayload | null;
+  /**
+   * Ficha viva en `conductores` de la empresa activa, con el mismo RUT
+   * que la sesión. Opcional: un `/me` cacheado sin el campo se trata como false.
+   */
+  ficha_conductor_mismo_rut?: boolean;
+  /**
+   * Alias de `ficha_conductor_mismo_rut` para clientes que todavía leen
+   * el nombre de #814. No autoriza aceptar ofertas.
+   */
+  tiene_ficha_conductor?: boolean;
 }
 
 export type MeResponse = MeNeedsOnboarding | MeRegistered;
