@@ -155,21 +155,33 @@ resource "google_project_service" "apis" {
 }
 
 # ---------------------------------------------------------------------------
-# Budget alerts — DESACOPLADO de Terraform (runbook POST-APPLY)
+# Budget alerts — DESACOPLADO de Terraform (se gestiona con gcloud o consola)
 # ---------------------------------------------------------------------------
 # El API `billingbudgets.googleapis.com` devolvió 400 "Request contains an
-# invalid argument" de forma opaca al crear el budget via Terraform, incluso
-# con la configuración mínima válida según la doc del provider. El budget
-# no es crítico para el funcionamiento del stack (los alerts de monitoring
-# sí están en Terraform), por lo que se crea manualmente una sola vez:
+# invalid argument" al crear el budget via Terraform. Causa probable, no
+# verificada: la cuenta de facturación factura en CLP, el monto de un budget
+# tiene que ir en la moneda de la cuenta (`gcloud billing budgets create
+# --help`) y el budget se pedía en USD. Los alerts de monitoring sí están en
+# Terraform.
 #
-#   Console GCP → Billing → Budgets & alerts → CREATE BUDGET
-#     - Name: "Booster AI — prod"
-#     - Scope: Project booster-ai-494222
-#     - Amount: 500 USD (valor de var.monthly_budget_usd)
-#     - Thresholds: 50%, 90%, 100%
-#     - Notifications: email a dev@boosterchile.com
+# Budget vigente (actualizado por el PO el 2026-10-23):
+#   - billingAccounts/019461-C73CDE-DCE377/budgets/d3604cde-159e-439c-895f-fe16a7c5b4cd
+#   - Nombre: "Booster GCP mensual (CLP 450.000)"
+#   - Alcance: toda la cuenta de facturación, mes calendario
+#   - Monto: CLP 450.000
+#   - Umbrales: 50 %, 90 % y 100 % del gasto real
 #
-# Si el API deja de rechazar en el futuro, codificar el budget aquí de nuevo
-# y remover este bloque. Tracking: Booster AI backlog #BUDGET-001.
+# Para cambiarlo:
+#   gcloud billing budgets update \
+#     billingAccounts/019461-C73CDE-DCE377/budgets/d3604cde-159e-439c-895f-fe16a7c5b4cd \
+#     --billing-project=booster-ai-494222 --budget-amount=450000CLP \
+#     --clear-threshold-rules --add-threshold-rule=percent=0.5 \
+#     --add-threshold-rule=percent=0.9 --add-threshold-rule=percent=1.0
+# `percent` va como fracción (1.0 = 100 %) aunque la ayuda de `update` diga
+# entero de 0 a 100: gcloud lo pasa tal cual a `thresholdPercent`.
+#
+# var.monthly_budget_usd no crea ni cambia este budget: solo alimenta la
+# pestaña Forecast del dashboard (MONTHLY_BUDGET_USD × dólar del día). Si
+# cambia el monto de arriba, actualizar también su equivalente en USD.
+# Tracking: Booster AI backlog #BUDGET-001.
 # ---------------------------------------------------------------------------

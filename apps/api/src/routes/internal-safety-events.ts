@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { issuesPublicos } from '../lib/validation.js';
 import type { DispatchOutcome } from '../services/dispatch-safety-notification.js';
 import { dispatchSafetyNotification } from '../services/dispatch-safety-notification.js';
 import type { SafetyRouting } from '../services/route-safety-recipients.js';
@@ -37,7 +38,7 @@ import { sendPushToUser } from '../services/web-push.js';
 const pubsubPushEnvelopeSchema = z.object({
   message: z.object({
     data: z.string(),
-    attributes: z.record(z.string()).optional(),
+    attributes: z.record(z.string(), z.string()).optional(),
     messageId: z.string(),
   }),
   subscription: z.string(),
@@ -174,7 +175,7 @@ export function createInternalSafetyEventsRoutes(opts: {
         'internal-safety-events: envelope Pub/Sub inválido',
       );
       return c.json(
-        { error: 'Invalid Pub/Sub envelope', details: envelopeResult.error.issues },
+        { error: 'Invalid Pub/Sub envelope', details: issuesPublicos(envelopeResult.error.issues) },
         400,
       );
     }
@@ -199,7 +200,10 @@ export function createInternalSafetyEventsRoutes(opts: {
         { issues: eventResult.error.issues, messageId: envelope.message.messageId },
         'internal-safety-events: SafetyEvent inválido',
       );
-      return c.json({ error: 'Invalid SafetyEvent', details: eventResult.error.issues }, 400);
+      return c.json(
+        { error: 'Invalid SafetyEvent', details: issuesPublicos(eventResult.error.issues) },
+        400,
+      );
     }
 
     const event = eventResult.data;

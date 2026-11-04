@@ -6,6 +6,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { InicioTransportista } from '../components/inicio-transportista/inicio-transportista.js';
 import { InicioGenerador } from '../components/inicio/inicio-generador.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -144,6 +145,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
           legalName={activeEmpresa.legal_name}
           esAdmin={isAdmin}
           soloLectura={soloLectura}
+          veFinanzas={flagsDe(me).verFinanzas}
         />
       ) : null}
 
@@ -154,7 +156,9 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
       {activeEmpresa?.is_generador_carga && esTransportista && (
         <section className="mt-10">
           <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
-          {GENERADOR_CARDS.map((c) => (
+          {GENERADOR_CARDS.filter(
+            (c) => c.to !== '/app/cargas/nueva' || flagsDe(me).publicarCarga,
+          ).map((c) => (
             <DashboardCard key={c.to} {...c} />
           ))}
         </section>

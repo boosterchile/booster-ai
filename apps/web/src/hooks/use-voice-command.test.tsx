@@ -174,6 +174,22 @@ describe('useVoiceCommand', () => {
     expect(onCommand1).toHaveBeenCalledTimes(1); // sin doble call
   });
 
+  it('un Set nuevo en cada render no aborta el micrófono', () => {
+    const r = makeRecognizer('idle');
+    const { rerender } = renderHook(
+      ({ tick }: { tick: number }) =>
+        useVoiceCommand({
+          recognizer: r.ctrl,
+          acceptedIntents: new Set(tick < 0 ? [] : ['confirmar_entrega']),
+          onCommand: () => undefined,
+        }),
+      { initialProps: { tick: 1 } },
+    );
+    r.spies.abort.mockClear();
+    rerender({ tick: 2 });
+    expect(r.spies.abort).not.toHaveBeenCalled();
+  });
+
   it('unmount aborta el recognizer (libera mic)', () => {
     const r = makeRecognizer('idle');
     const { unmount } = renderHook(() => useVoiceCommand({ recognizer: r.ctrl }));

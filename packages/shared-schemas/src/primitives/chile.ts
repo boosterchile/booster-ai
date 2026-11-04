@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MENSAJES } from './mensajes.js';
 
 /**
  * Validación RUT chileno. Acepta input con o sin puntos
@@ -10,9 +11,9 @@ import { z } from 'zod';
  * el usuario tipeó la entrada.
  */
 export const rutSchema = z
-  .string()
-  .regex(/^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$/, 'RUT con formato inválido (ej: 12345678-5)')
-  .refine(validateRutCheckDigit, 'Dígito verificador de RUT inválido')
+  .string({ error: MENSAJES.requerido })
+  .regex(/^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$/, 'Ingresa un RUT válido, como 12.345.678-5')
+  .refine(validateRutCheckDigit, 'El RUT no es válido. Revisa el dígito después del guion')
   .transform(normalizeRut);
 
 /**
@@ -96,9 +97,12 @@ function validateRutCheckDigit(rut: string): boolean {
 /**
  * Número de teléfono Chile: +569XXXXXXXX (celular) o +56XXXXXXXXX (fijo).
  */
+/** Un solo texto para todo teléfono; el ejemplo pasa la regex (sin espacios). */
+export const MENSAJE_TELEFONO = 'Ingresa un teléfono válido, como +56912345678';
+
 export const chileanPhoneSchema = z
-  .string()
-  .regex(/^\+56[2-9]\d{8}$/, 'Número de teléfono Chile inválido');
+  .string({ error: MENSAJES.requerido })
+  .regex(/^\+56[2-9]\d{8}$/, MENSAJE_TELEFONO);
 
 const CHILE_MOVIL_RE = /^\+56[2-9]\d{8}$/;
 const CHILE_FIJO_RE = /^\+56[2-9]\d{7}$/;
@@ -152,6 +156,8 @@ export const regionCodeSchema = z.enum([
   'XV',
   'XVI',
 ]);
+
+export type RegionCode = z.infer<typeof regionCodeSchema>;
 
 // ----------------------------------------------------------------------------
 // Patente vehicular chilena

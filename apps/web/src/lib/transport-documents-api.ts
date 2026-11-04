@@ -11,9 +11,11 @@ import {
   type DocumentSource,
   type ExtractionStatus,
   type TransportDocumentManualEntryInput,
+  capacidadCtxSchema,
   docTypeSchema,
   documentSourceSchema,
   extractionStatusSchema,
+  puedeGestionarDocumentosTransporte,
   transportDocumentManualEntryInputSchema,
 } from '@booster-ai/shared-schemas';
 import { z } from 'zod';
@@ -29,8 +31,16 @@ export type TransportDocumentMime = (typeof TRANSPORT_DOCUMENT_MIME_TYPES)[numbe
 
 export const WRITE_TRANSPORT_DOCUMENT_ROLES = ['dueno', 'admin', 'despachador'] as const;
 
+/** CHEQUEOS_REEMPLAZADOS documentos: antes un allowlist de roles. */
 export function canWriteTransportDocuments(role: string | null | undefined): boolean {
-  return role != null && (WRITE_TRANSPORT_DOCUMENT_ROLES as readonly string[]).includes(role);
+  const parsed = capacidadCtxSchema.safeParse({
+    role,
+    isTransportista: true,
+    isGeneradorCarga: false,
+    fichaConductorMismoRut: false,
+    puedeAceptarOfertas: false,
+  });
+  return parsed.success && puedeGestionarDocumentosTransporte(parsed.data);
 }
 
 /** ISO datetime o date string que llega por JSON (nunca `Date` en fetch). */
@@ -138,7 +148,7 @@ function parseOrThrow<T>(schema: z.ZodType<T>, payload: unknown, label: string):
     throw new ApiError(
       500,
       'invalid_response',
-      parsed.error.flatten(),
+      z.flattenError(parsed.error),
       `Respuesta inválida (${label})`,
     );
   }

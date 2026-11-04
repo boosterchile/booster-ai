@@ -289,8 +289,22 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         coveragePct: schema.tripMetrics.coveragePct,
         certificationLevel: schema.tripMetrics.certificationLevel,
         carbonEmissionsKgco2eActual: schema.tripMetrics.carbonEmissionsKgco2eActual,
+        emisionesKgco2eTtw: schema.tripMetrics.emisionesKgco2eTtw,
+        emisionesKgco2eWtt: schema.tripMetrics.emisionesKgco2eWtt,
+        intensidadGco2ePorTkm: schema.tripMetrics.intensidadGco2ePorTkm,
+        factoresFuente: schema.tripMetrics.factoresFuente,
+        ttwRef: schema.tripMetrics.ttwRef,
+        wttRef: schema.tripMetrics.wttRef,
+        fuenteRef: schema.tripMetrics.fuenteRef,
         fuelConsumedLActual: schema.tripMetrics.fuelConsumedLActual,
         precisionMethod: schema.tripMetrics.precisionMethod,
+        fuenteDistancia: schema.tripMetrics.fuenteDistancia,
+        fuenteEnergia: schema.tripMetrics.fuenteEnergia,
+        motivoFallback: schema.tripMetrics.motivoFallback,
+        decisionVersion: schema.tripMetrics.decisionVersion,
+        decididoEn: schema.tripMetrics.decididoEn,
+        pesoDeclarado: schema.tripMetrics.pesoDeclarado,
+        alertasDecision: schema.tripMetrics.alertasDecision,
       })
       .from(schema.tripMetrics)
       .where(eq(schema.tripMetrics.tripId, tripId));
@@ -322,6 +336,14 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
     expect(Number(m?.coveragePct)).toBe(100);
     expect(m?.certificationLevel).toBe('secundario_modeled');
+    // HC-001: decisión registrada (sin Teltonika → móvil con motivo).
+    expect(m).toMatchObject({
+      fuenteDistancia: 'movil_gps',
+      motivoFallback: 'sin_dispositivo',
+      decisionVersion: 2,
+      pesoDeclarado: true,
+    });
+    expect(m?.decididoEn).not.toBeNull();
   });
 
   test('vehículo CON Teltonika: mide sobre telemetria_puntos en la misma ventana y persiste teltonika_gps', async () => {
@@ -339,6 +361,13 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     const m = await metricas(tripId);
     expect(m?.routeDataSource).toBe('teltonika_gps');
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
+    // HC-001: sin resumidor del 83 todavía → energía modelada con motivo CAN.
+    expect(m).toMatchObject({
+      fuenteDistancia: 'teltonika_gps',
+      motivoFallback: 'can_sin_lecturas',
+      decisionVersion: 2,
+    });
+    expect(m?.fuenteEnergia).not.toBe('can_83');
   });
 
   test('anclaje: posiciones solo ANTES de recogido_en no cuentan → sin_observacion (no se inventa distancia)', async () => {
@@ -357,6 +386,14 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     const m = await metricas(tripId);
     expect(m?.distanceKmActual).toBeNull();
     expect(m?.routeDataSource).toBe('maps_directions');
+    // HC-001 parte 2: también sin opt-in la decisión queda registrada (R1, AC1-2).
+    expect(m).toMatchObject({
+      fuenteDistancia: 'routes_estimada',
+      motivoFallback: 'sin_dispositivo',
+      decisionVersion: 2,
+      alertasDecision: [],
+    });
+    expect(m?.decididoEn).not.toBeNull();
   });
 
   test('T12 — huella activa (opt-in del transportista): emisiones_kgco2e_reales > 0 desde la distancia real del segmento, movil_gps + secundario_modeled', async () => {
@@ -376,6 +413,19 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(Number(m?.carbonEmissionsKgco2eActual)).toBeCloseTo(r.emisionesKgco2eReales ?? -1, 3);
     expect(Number(m?.fuelConsumedLActual)).toBeGreaterThan(0);
     expect(m?.precisionMethod).toBe('modelado');
+    // HC-003 T1 (0068): el desglose real queda en la fila y suma el WTW (±redondeo numeric(10,3)).
+    expect(Number(m?.emisionesKgco2eTtw)).toBeGreaterThan(Number(m?.emisionesKgco2eWtt));
+    expect(Number(m?.emisionesKgco2eTtw) + Number(m?.emisionesKgco2eWtt)).toBeCloseTo(
+      Number(m?.carbonEmissionsKgco2eActual),
+      2,
+    );
+    expect(Number(m?.intensidadGco2ePorTkm)).toBeGreaterThan(0);
+    expect(m?.factoresFuente).toMatch(/GLEC/);
+    expect([m?.ttwRef, m?.wttRef, m?.fuenteRef]).toEqual([
+      '2.740',
+      '0.624',
+      'HuellaChile 2025, MMA',
+    ]);
     expect(m?.routeDataSource).toBe('movil_gps');
     expect(m?.certificationLevel).toBe('secundario_modeled');
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
@@ -393,6 +443,8 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(r.huella).toBe('peso_ausente');
     const m = await metricas(tripId);
     expect(m?.carbonEmissionsKgco2eActual).toBeNull();
+    // HC-001 N2: el peso ausente queda aparte aunque motivo_fallback diga otra cosa.
+    expect(m).toMatchObject({ pesoDeclarado: false, motivoFallback: 'sin_dispositivo' });
     expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
     expect(m?.routeDataSource).toBe('movil_gps');
   });

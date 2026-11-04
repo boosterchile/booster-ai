@@ -1,13 +1,13 @@
 import type { Logger } from '@booster-ai/logger';
-import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   assignments,
   carrierMemberships,
+  conductores,
   empresas,
   memberships,
   organizacionesStakeholder,
@@ -15,6 +15,7 @@ import {
   users,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { extractClientIp } from '../middleware/client-ip.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 
@@ -165,6 +166,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     type MembershipPayload = {
       id: string;
       role: (typeof memberships.role.enumValues)[number];
+      puede_aceptar_ofertas: boolean;
       status: (typeof memberships.status.enumValues)[number];
       joined_at: Date | null;
       empresa: {
@@ -187,6 +189,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const empresaMemberships: MembershipPayload[] = empresaRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
+      puede_aceptar_ofertas: r.membership.puedeAceptarOfertas === true,
       status: r.membership.status,
       joined_at: r.membership.joinedAt,
       empresa: {
@@ -203,6 +206,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const stakeholderMemberships: MembershipPayload[] = stakeholderOrgRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
+      puede_aceptar_ofertas: r.membership.puedeAceptarOfertas === true,
       status: r.membership.status,
       joined_at: r.membership.joinedAt,
       empresa: null,
@@ -244,6 +248,27 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       active = activeMembershipsList[0] ?? null;
     }
 
+    // La ficha es la del propio usuario (como #814: usuario_id + LIMIT 1),
+    // viva y de la empresa activa. El RUT se compara recién sobre esa fila,
+    // no contra las demás fichas de la empresa.
+    let fichaConductorMismoRut = false;
+    if (active?.empresa) {
+      const fichaRows = await opts.db
+        .select({ rut: users.rut })
+        .from(conductores)
+        .innerJoin(users, eq(conductores.userId, users.id))
+        .where(
+          and(
+            eq(conductores.userId, user.id),
+            eq(conductores.empresaId, active.empresa.id),
+            isNull(conductores.deletedAt),
+          ),
+        )
+        .limit(1);
+      const ficha = fichaRows[0];
+      fichaConductorMismoRut = ficha != null && mismoRut(ficha.rut, user.rut);
+    }
+
     // La allowlist env-var es la fuente de autoridad para platform admin
     // (mismo patrón que requirePlatformAdmin). Si el email está en la
     // allowlist, lo devolvemos true aunque el column en BD sea stale.
@@ -270,6 +295,10 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       },
       memberships: membershipsPayload,
       active_membership: active,
+      ficha_conductor_mismo_rut: fichaConductorMismoRut,
+      // Mismo booleano, con el nombre de #814, para clientes que todavía
+      // leen ese campo. La tarjeta de voz usa `esOwnerOperator`.
+      tiene_ficha_conductor: fichaConductorMismoRut,
     });
   });
 

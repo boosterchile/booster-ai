@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { chileanPhoneSchema, rutSchema } from '../primitives/chile.js';
 import { addressSchema } from '../primitives/geo.js';
 import { empresaIdSchema, planIdSchema } from '../primitives/ids.js';
+import { correoEs, errorOpcion, textoEs } from '../primitives/mensajes.js';
 import { membershipRoleSchema } from './membership.js';
 import { planSlugSchema } from './plan.js';
 import { reportingStandardSchema } from './stakeholder.js';
@@ -95,14 +96,14 @@ export type EmpresaCreate = z.infer<typeof empresaCreateSchema>;
  */
 export const crearEmpresaAdminSchema = z
   .object({
-    legal_name: z.string().min(1).max(200),
+    legal_name: textoEs(1, 200),
     rut: rutSchema,
-    contact_email: z.string().email().max(255),
+    contact_email: correoEs(255),
     contact_phone: chileanPhoneSchema,
-    address_street: z.string().min(1).max(200),
-    address_city: z.string().min(1).max(100),
-    address_region: z.string().min(1).max(4),
-    address_postal_code: z.string().min(1).max(20).optional(),
+    address_street: textoEs(1, 200),
+    address_city: textoEs(1, 100),
+    address_region: textoEs(1, 4),
+    address_postal_code: textoEs(1, 20).optional(),
     is_generador_carga: z.boolean(),
     is_transportista: z.boolean(),
     plan_slug: planSlugSchema.default('gratis'),
@@ -122,7 +123,12 @@ export type CrearEmpresaAdmin = z.infer<typeof crearEmpresaAdminSchema>;
  *   - `stakeholder_sostenibilidad` — pertenece a organizaciones stakeholder
  *     (ADR-034), no a empresas; el CHECK XOR de la BD lo impide.
  */
-export const rolInvitacionEmpresaSchema = z.enum(['dueno', 'admin', 'despachador', 'visualizador']);
+export const rolInvitacionEmpresaSchema = z.enum(
+  ['dueno', 'admin', 'despachador', 'visualizador'],
+  {
+    error: errorOpcion,
+  },
+);
 export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
 
 /**
@@ -136,8 +142,8 @@ export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
  * `/activar` para elegir su propia clave. El código no es la contraseña.
  */
 export const invitarMiembroEmpresaSchema = z.object({
-  email: z.string().email().max(320),
-  full_name: z.string().min(2).max(200),
+  email: correoEs(320),
+  full_name: textoEs(2, 200),
   rut: rutSchema,
   rol: rolInvitacionEmpresaSchema,
 });

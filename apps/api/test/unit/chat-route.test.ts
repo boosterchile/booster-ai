@@ -106,8 +106,8 @@ function collectSqlParams(node: unknown, out: unknown[] = []): unknown[] {
   return out;
 }
 
-const ASSIGN_ID = 'aaaaaaaa-1111-2222-3333-444444444444';
-const OTHER_CURSOR = 'bbbbbbbb-5555-6666-7777-888888888888';
+const ASSIGN_ID = 'aaaaaaaa-1111-4222-8333-444444444444';
+const OTHER_CURSOR = 'bbbbbbbb-5555-4666-8777-888888888888';
 const SHIPPER_EMP = 'shipper-emp';
 const CARRIER_EMP = 'carrier-emp';
 const USER_ID = 'user-uuid';
@@ -121,15 +121,24 @@ const ACCESS_ROW_SHIPPER = {
 
 const SHIPPER_CTX = JSON.stringify({
   user: { id: USER_ID },
-  activeMembership: { empresa: { id: SHIPPER_EMP } },
+  activeMembership: {
+    empresa: { id: SHIPPER_EMP, isGeneradorCarga: true, isTransportista: false },
+    membership: { role: 'dueno' },
+  },
 });
 const CARRIER_CTX = JSON.stringify({
   user: { id: USER_ID },
-  activeMembership: { empresa: { id: CARRIER_EMP } },
+  activeMembership: {
+    empresa: { id: CARRIER_EMP, isTransportista: true, isGeneradorCarga: false },
+    membership: { role: 'dueno' },
+  },
 });
 const STRANGER_CTX = JSON.stringify({
   user: { id: USER_ID },
-  activeMembership: { empresa: { id: 'OTRA-empresa' } },
+  activeMembership: {
+    empresa: { id: 'OTRA-empresa', isTransportista: true },
+    membership: { role: 'dueno' },
+  },
 });
 
 async function buildApp(opts: {
@@ -290,7 +299,7 @@ describe('POST /chat/:id/messages', () => {
       headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
       body: JSON.stringify({
         type: 'foto',
-        photo_gcs_uri: `gs://my-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jpg`,
+        photo_gcs_uri: `gs://my-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jpg`,
       }),
     });
     expect(res.status).toBe(503);
@@ -304,7 +313,7 @@ describe('POST /chat/:id/messages', () => {
       headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
       body: JSON.stringify({
         type: 'foto',
-        photo_gcs_uri: `gs://otra-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jpg`,
+        photo_gcs_uri: `gs://otra-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jpg`,
       }),
     });
     expect(res.status).toBe(400);
@@ -395,7 +404,10 @@ describe('POST /chat/:id/messages/stream-ticket', () => {
       headers: {
         'x-test-userctx': JSON.stringify({
           user: { id: USER_ID, firebaseUid: 'fb-uid' },
-          activeMembership: { empresa: { id: SHIPPER_EMP } },
+          activeMembership: {
+            empresa: { id: SHIPPER_EMP, isGeneradorCarga: true },
+            membership: { role: 'dueno' },
+          },
         }),
         'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { rol: 'dueno' } }),
       },
@@ -596,7 +608,7 @@ describe('POST /chat/:id/messages/photo-upload-url', () => {
 });
 
 describe('POST /chat/:id/messages/:msgId/photo-url', () => {
-  const MSG_ID = 'bbbbbbbb-1111-2222-3333-444444444444';
+  const MSG_ID = 'bbbbbbbb-1111-4222-8333-444444444444';
 
   it('sin auth → 401', async () => {
     const app = await buildApp({ db: makeDb() });

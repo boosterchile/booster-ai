@@ -1,12 +1,17 @@
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import {
+  MENSAJES,
+  abrirDisputaSchema,
+  errorOpcion,
+  tripRequestCreateInputSchema,
+} from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
@@ -20,6 +25,8 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
+import { issuesPublicos, zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
@@ -47,6 +54,7 @@ import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
+import { resolverEnlaceMapa } from '../services/resolver-enlace-mapa.js';
 
 /**
  * Endpoint canónico para que un generador de carga autenticado:
@@ -62,6 +70,17 @@ import type { LivePositionSource } from '../services/posicion-en-vivo.js';
  * `activeMembership.empresa.id` contra `generadorCargaEmpresaId`. Un shipper
  * jamás ve cargas de otra empresa.
  */
+/** numeric(10,7) como string, el modo en que Drizzle persiste el tipo. */
+function puntoNumerico(
+  latitude: number | undefined,
+  longitude: number | undefined,
+): { latitude: string; longitude: string } | null {
+  if (latitude === undefined || longitude === undefined) {
+    return null;
+  }
+  return { latitude: latitude.toFixed(7), longitude: longitude.toFixed(7) };
+}
+
 function generateTrackingCode(): string {
   const alphabet = 'ABCDEFGHIJKLMNPQRSTUVWXYZ23456789';
   let suffix = '';
@@ -77,8 +96,11 @@ function generateTrackingCode(): string {
 
 /** ADR-079 §1 — cotización previa a publicar (query string). */
 const cotizacionQuerySchema = z.object({
-  precio_transportista_clp: z.coerce.number().int().nonnegative(),
-  modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+  precio_transportista_clp: z.coerce
+    .number({ error: MENSAJES.numero })
+    .int(MENSAJES.numero)
+    .nonnegative(MENSAJES.numero),
+  modalidad_carga: z.enum(['spot', 'programada'], { error: errorOpcion }).default('spot'),
 });
 
 const cancelBodySchema = z.object({
@@ -163,6 +185,8 @@ export function createTripRequestsV2Routes(opts: {
    * (dev sin GCP) → no se intenta; el viaje se crea igual con lat/lng NULL.
    */
   routesProjectId?: string | undefined;
+  /** Inyectable en tests. En runtime es el fetch global. */
+  fetchImpl?: typeof fetch;
 }) {
   const app = new Hono();
 
@@ -213,7 +237,7 @@ export function createTripRequestsV2Routes(opts: {
     }
     const query = cotizacionQuerySchema.safeParse(c.req.query());
     if (!query.success) {
-      return c.json({ error: 'invalid_query', issues: query.error.issues }, 400);
+      return c.json({ error: 'invalid_query', issues: issuesPublicos(query.error.issues) }, 400);
     }
     const contratoEn = auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null;
     if (!modalidadPermitida(query.data.modalidad_carga, contratoEn)) {
@@ -234,6 +258,39 @@ export function createTripRequestsV2Routes(opts: {
     });
   });
 
+  const resolverEnlaceBodySchema = z.object({
+    texto: z.string().trim().min(1).max(500),
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /resolver-enlace — lat/lng de un link de Google Maps o coordenadas.
+  // El browser no puede seguir maps.app.goo.gl (CORS). Solo hosts de Maps.
+  // ---------------------------------------------------------------------
+  app.post('/resolver-enlace', zValidator('json', resolverEnlaceBodySchema), async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
+    const { texto } = c.req.valid('json');
+    const resultado = await resolverEnlaceMapa({
+      texto,
+      fetchImpl: opts.fetchImpl ?? fetch,
+      logger: opts.logger,
+    });
+    if (!resultado.ok) {
+      return c.json({ error: 'enlace_sin_punto', motivo: resultado.motivo }, 422);
+    }
+    return c.json({
+      latitude: resultado.punto.latitude,
+      longitude: resultado.punto.longitude,
+    });
+  });
+
   // ---------------------------------------------------------------------
   // POST / — crear viaje + dispatch matching.
   // ---------------------------------------------------------------------
@@ -241,6 +298,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
 
     const input = c.req.valid('json');
@@ -272,6 +334,9 @@ export function createTripRequestsV2Routes(opts: {
       };
     }
 
+    const origenPunto = puntoNumerico(input.origin.latitude, input.origin.longitude);
+    const destinoPunto = puntoNumerico(input.destination.latitude, input.destination.longitude);
+
     const [trip] = await opts.db
       .insert(trips)
       .values({
@@ -281,10 +346,19 @@ export function createTripRequestsV2Routes(opts: {
         originAddressRaw: input.origin.address_raw,
         originRegionCode: input.origin.region_code,
         ...(input.origin.comuna_code ? { originComunaCode: input.origin.comuna_code } : {}),
+        ...(origenPunto
+          ? { originLatitude: origenPunto.latitude, originLongitude: origenPunto.longitude }
+          : {}),
         destinationAddressRaw: input.destination.address_raw,
         destinationRegionCode: input.destination.region_code,
         ...(input.destination.comuna_code
           ? { destinationComunaCode: input.destination.comuna_code }
+          : {}),
+        ...(destinoPunto
+          ? {
+              destinationLatitude: destinoPunto.latitude,
+              destinationLongitude: destinoPunto.longitude,
+            }
           : {}),
         cargoType: input.cargo.cargo_type,
         cargoWeightKg: input.cargo.weight_kg,
@@ -333,7 +407,8 @@ export function createTripRequestsV2Routes(opts: {
     // geofence exista antes de que salgan las ofertas. El service degrada a
     // null y NUNCA lanza; el try/catch es defensa en profundidad — nada de lo
     // que pase acá puede convertir un viaje ya insertado en un 500.
-    if (opts.routesProjectId) {
+    // El pin o la sugerencia ya traen el punto: no lo pisamos con Routes API.
+    if (opts.routesProjectId && !origenPunto) {
       try {
         const origen = await geocodificarOrigen({
           db: opts.db,
@@ -711,6 +786,12 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: confirmar recepción es escritura.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
+    const rolRecepcion = auth.activeMembership.membership.role;
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
@@ -774,7 +855,11 @@ export function createTripRequestsV2Routes(opts: {
           },
         );
         if (recepcion.ok) {
-          mandato = { pago: pagoParaGenerador(recepcion.pago) };
+          // El despachador confirma la recepción, pero el pago solo lo ven
+          // dueño y admin (igual que GET /:id/pago).
+          mandato = (ROLES_COMERCIALES as readonly string[]).includes(rolRecepcion)
+            ? { pago: pagoParaGenerador(recepcion.pago) }
+            : {};
         } else if (recepcion.code !== 'no_es_mandato') {
           opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
           mandato = { recepcion_conforme_pendiente: recepcion.code };
@@ -810,6 +895,10 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    const sinRol = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
+    }
     const pago = await leerPagoDelGenerador(
       opts.db,
       c.req.param('id'),
@@ -828,6 +917,10 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    const sinRolDisputa = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRolDisputa) {
+      return sinRolDisputa;
     }
     const r = await abrirDisputa(
       { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },
@@ -855,6 +948,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
     const id = c.req.param('id');
     const body = c.req.valid('json');

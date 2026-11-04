@@ -1,11 +1,14 @@
 /**
  * Cobro mensual de suscripciones en UF (ADR-079 §4). Función PURA.
  *
- * - Generador: `generadorUfEmpresaMes` por empresa.
+ * - Generador puro: `generadorUfEmpresaMes` por empresa.
  * - Transportista: por camión activo sobre `camionesSinCobro` (el umbral es
  *   la cantidad de camiones que no se cobran; con ese número o menos, no
  *   paga). Con gestión de flota se usa la tarifa `transportistaGestionFlota…`.
- * - Una empresa con ambos roles recibe una sola factura con las dos líneas.
+ * - Transportista que también es generador: la línea de generador no se
+ *   suma. Generar carga queda dentro de la suscripción del transportista
+ *   (ADR-079 §4, decisión del PO del 2026-10-19). Un generador puro sigue
+ *   pagando su UF.
  *
  * Los precios en UF son netos: `subtotal = round(montoUf × ufValorClp)`,
  * `iva = round(subtotal × ivaRate)`, `total = subtotal + iva`, HALF_UP a CLP
@@ -103,7 +106,7 @@ export function calcularCobroSuscripcionUf(
   const { precios } = input;
   const lineas: LineaSuscripcion[] = [];
 
-  if (input.esGeneradorCarga && precios.generadorUfEmpresaMes > 0) {
+  if (input.esGeneradorCarga && !input.esTransportista && precios.generadorUfEmpresaMes > 0) {
     lineas.push({
       concepto: 'suscripcion_generador',
       cantidad: 1,

@@ -11,11 +11,13 @@ export function InicioTransportista({
   nombreCompleto,
   legalName,
   esAdmin,
+  veFinanzas,
   soloLectura = false,
 }: {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
+  veFinanzas: boolean;
   soloLectura?: boolean;
 }) {
   const { datos, reintentar } = useDatosInicio();
@@ -24,6 +26,7 @@ export function InicioTransportista({
     nombreCompleto,
     legalName,
     esAdmin,
+    veFinanzas,
     ahora,
   });
   const negocio = buildNegocioHoy(datos, ahora);
