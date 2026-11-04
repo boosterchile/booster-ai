@@ -272,7 +272,7 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me };
     render(<ConductorDashboardRoute />);
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
-    expect(screen.queryByText('Tu próximo servicio')).toBeNull();
+    expect(screen.queryByText('Tu próximo viaje')).toBeNull();
   });
 
   it('header muestra full_name del usuario y link a configuración', async () => {
@@ -314,11 +314,32 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    expect(await screen.findByText('Tu próximo servicio')).toBeInTheDocument();
+    expect(await screen.findByText('Tu próximo viaje')).toBeInTheDocument();
     expect(screen.getByText('BOO-ABC123')).toBeInTheDocument();
     expect(screen.getByText(/Av\. Pajaritos 1234, Maipú/)).toBeInTheDocument();
     expect(screen.getByText(/Av\. Brasil 2345, Valparaíso/)).toBeInTheDocument();
     expect(screen.getByText('DEMO01')).toBeInTheDocument();
+  });
+
+  it('sin ventana no inventa hora', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            pickup_window_start: null,
+            pickup_window_end: null,
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText('Tu próximo viaje')).toBeInTheDocument();
+    expect(screen.getByText('Maipú → Valparaíso')).toBeInTheDocument();
+    expect(screen.queryByText(/Ventana/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d{1,2}:\d{2}/)).not.toBeInTheDocument();
   });
 
   it('múltiples servicios → muestra "Tus servicios asignados" (plural)', async () => {
@@ -334,7 +355,7 @@ describe('ConductorDashboardRoute', () => {
       ],
     });
     render(<ConductorDashboardRoute />);
-    expect(await screen.findByText('Tus servicios asignados')).toBeInTheDocument();
+    expect(await screen.findByText('Después')).toBeInTheDocument();
     expect(screen.getByText('BOO-ABC123')).toBeInTheDocument();
     expect(screen.getByText('BOO-XYZ789')).toBeInTheDocument();
   });
@@ -603,7 +624,7 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    await screen.findByText('Tu próximo servicio');
+    await screen.findByText('Tu próximo viaje');
     // El driver no negocia ofertas — la palabra "oferta" no debería aparecer en su superficie.
     expect(screen.queryByText(/\boferta(s)?\b/i)).not.toBeInTheDocument();
   });
@@ -894,7 +915,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     const alerta = await screen.findByRole('alert');
     expect(alerta.textContent ?? '').toMatch(/solo el conductor asignado puede confirmar/i);
     expect(screen.queryByTestId('entrega-sin-recogida')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Confirmar recogida/i })).toBeInTheDocument();
+    expect(screen.getByTestId('confirmar-recogida')).toBeInTheDocument();
   });
 
   it('ya entregada (409 invalid_status) no queda como error del conductor', async () => {
@@ -922,7 +943,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
 
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
@@ -936,7 +957,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i })); // sin confirmar
+    fireEvent.click(await screen.findByRole('button', { name: /Iniciar viaje/i })); // sin confirmar
     const franja = await screen.findByTestId('confirmacion-inline');
     expect(franja).toHaveTextContent(/¿Confirmas que ya cargaste esta carga en el camión\?/);
     expect(apiPatchSpy).not.toHaveBeenCalled();
@@ -953,7 +974,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     render(<ConductorDashboardRoute />);
     await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
 
-    expect(screen.queryByRole('button', { name: /Confirmar recogida/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Iniciar viaje/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Confirmar entrega/i })).toBeInTheDocument();
   });
 
@@ -998,7 +1019,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
 
     const sugerencia = await screen.findByTestId('sugerencia-recogida');
     expect(sugerencia.textContent ?? '').toMatch(/punto de recogida/i);
-    fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
@@ -1023,7 +1044,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
 
     expect(screen.queryByTestId('sugerencia-recogida')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
@@ -1038,7 +1059,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     apiPatchSpy.mockRejectedValue(new ApiError(409, 'invalid_status', {}));
 
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
