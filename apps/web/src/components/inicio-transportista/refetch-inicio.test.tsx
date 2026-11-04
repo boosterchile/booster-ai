@@ -171,6 +171,7 @@ describe('Inicio transportista — refetch al montar', () => {
 
     expect(heading.textContent).toMatch(/^(Buenos días|Buenas tardes|Buenas noches), María$/);
     expect(heading.textContent).not.toContain('Transportes');
+    expect(screen.getByText('Sin ofertas nuevas')).toBeInTheDocument();
     expect(screen.getByTestId('inicio-cobra-hoy')).toHaveTextContent(
       'Cobra hoy todavía no está disponible',
     );
@@ -216,6 +217,22 @@ describe('Inicio transportista — refetch al montar', () => {
     ]) {
       expect(conteo(path), path).toBeLessThanOrEqual(MAX_POR_ENDPOINT);
     }
+  });
+
+  it('un bloque caído no esconde el saludo ni el resto, y no hay montos', async () => {
+    apiGetSpy.mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/flota') {
+        throw new ApiError(500, undefined, null, 'boom');
+      }
+      return respuesta(path);
+    });
+    renderShell();
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('María');
+    expect(await screen.findByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(await screen.findByText('No cargó Flota')).toBeInTheDocument();
+    expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-plata')).not.toBeInTheDocument();
+    expect(conteo('/assignments')).toBeGreaterThan(0);
   });
 
   it('503 y 200 {enabled:false} dejan el Inicio en pie con un estado local', async () => {
