@@ -39,24 +39,34 @@ pnpm typecheck             # tsc --noEmit en todos los packages
 pnpm test                  # vitest run
 pnpm test:e2e              # playwright test
 pnpm build                 # build de producción
-pnpm ci                    # lint + typecheck + test + build (what CI does)
+pnpm run ci                # lint + typecheck + test + build (`pnpm ci` a secas falla en pnpm 10)
 ```
 
 ## Convenciones de commit
 
-Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `revert`. Commitlint lo aplica pre-commit.
+Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `style`, `test`, `refactor`, `perf`, `build`, `ci`, `revert`, `security`. Commitlint lo aplica en el hook `commit-msg`.
 
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
 - El repo no usa `agent-rigor` ni `booster-skills`, y no activa plugins ni hooks de Claude Code (ADR-078).
-- El agente no mergea a `main`. La protección de la rama son los checks (ADR-076). El gate humano queda en el deploy a producción.
-- Antes de introducir una dependencia nueva: crear ADR.
+- El agente mergea a `main` (squash) con todos los checks obligatorios en verde y sin `--admin`; los PRs que además necesitan el visto del PO están listados en [`CLAUDE.md`](./CLAUDE.md). La protección de la rama son los checks (ADR-076). El gate humano queda en el deploy a producción.
+- Dependencia que cambia el stack: ADR nuevo. Librería menor ya alineada al stack: decide el agente ([`CLAUDE.md`](./CLAUDE.md), frontera de decisiones).
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
 
 ## Archivos protegidos
 
 No modificar sin permiso explícito: `CLAUDE.md`, `docs/adr/*.md` (inmutables; se supersedan con nuevo ADR), `.github/workflows/*` en quality gates, y en `infrastructure/` cualquier `.tf` que declare IAM, Billing, service accounts, KMS o reglas de firewall — la regla se aplica por tipo de recurso, no por nombre de archivo.
+
+## Cursor Cloud specific instructions
+
+El entorno de Cloud Agent ya trae Node.js 24.21.0 (`/usr/local/lib/nodejs/bin`, por delante de `/exec-daemon/node`), pnpm 10.34.4, Postgres 16, Redis 7 y Java 21. No existe `docker-compose.dev.yml` en el repo: no hace falta Docker para el loop local.
+
+- `start` levanta Postgres, Redis, el Auth emulator (`127.0.0.1:9099`), el API (`:8080`) y la PWA (`:5173`). No hay systemd: `policy-rc.d` bloquea `service`.
+- El API no carga dotenv. Las variables locales están en `~/.booster-local.env` y se exportan desde `~/.bashrc`. `OBSERVABILITY_DASHBOARD_ACTIVATED=false` evita exigir `BILLING_EXPORT_TABLE`. Con `FIREBASE_AUTH_EMULATOR_HOST` no hace falta un service account de GCP.
+- La PWA lee `apps/web/.env` (gitignored). El arranque lo crea desde `.env.example` y activa `VITE_USE_AUTH_EMULATOR=true`.
+- Comprobar el flujo: `GET /health`, `GET /ready` y `POST /api/v1/signup-request` (`email`, `nombreCompleto`). En la UI, `http://127.0.0.1:5173/solicitar-acceso` persiste en `solicitudes_registro`.
+- Logs: `/tmp/booster-api.log`, `/tmp/booster-web.log`, `/tmp/auth-emulator.log`.
 
 ## Contacto
 

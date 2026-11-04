@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
-import { ApiError, api } from '../lib/api-client.js';
+import { api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -95,12 +95,13 @@ describe('CobraHoyHistorialRoute — estados de datos', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
   });
 
-  it('feature disabled (503) → banner explicativo', async () => {
-    vi.spyOn(api, 'get').mockRejectedValue(new ApiError(503, 'feature_disabled', null));
+  it('flag apagado → aviso y no el empty state de solicitudes', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ enabled: false, items: [] });
     renderRoute();
     expect(
       await screen.findByText(/La opción de pronto pago todavía no está activa/i),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/Aún no tienes solicitudes de pronto pago/i)).not.toBeInTheDocument();
   });
 
   it('historial vacío → EmptyState', async () => {

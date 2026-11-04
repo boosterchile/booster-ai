@@ -66,8 +66,8 @@ function makeDb(opts: DbQueues = {}) {
   };
 }
 
-const ASG_ID = '11111111-1111-1111-1111-111111111111';
-const EMPRESA_ID = '22222222-2222-2222-2222-222222222222';
+const ASG_ID = '11111111-1111-4111-8111-111111111111';
+const EMPRESA_ID = '22222222-2222-4222-8222-222222222222';
 
 const ASG_DELIVERED = {
   id: ASG_ID,
@@ -346,7 +346,7 @@ describe('liquidarTrip — idempotencia', () => {
 });
 
 describe('liquidarTrip — v3 (ADR-079 §6)', () => {
-  const CONFIG_ID = '33333333-3333-3333-3333-333333333333';
+  const CONFIG_ID = '33333333-3333-4333-8333-333333333333';
   const VIAJE_V3 = {
     comisionPctAplicada: '20.00',
     configuracionComercialId: CONFIG_ID,

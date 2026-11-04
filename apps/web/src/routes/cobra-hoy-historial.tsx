@@ -4,7 +4,11 @@ import type { ReactNode } from 'react';
 import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
-import { type AdelantoHistorial, useHistorialCobraHoy } from '../hooks/use-cobra-hoy.js';
+import {
+  type AdelantoHistorial,
+  esCobraHoyApagado,
+  useHistorialCobraHoy,
+} from '../hooks/use-cobra-hoy.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError } from '../lib/api-client.js';
 
@@ -15,8 +19,8 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * por el transportista (Booster Cobra Hoy, ADR-029 v1 / ADR-032).
  *
  * Origen: GET /me/cobra-hoy/historial (filtra por activeMembership.empresa).
- * Si el flag está off (503) muestra un banner explicativo. Si la empresa
- * no es transportista, mensaje claro de "sin permisos".
+ * Si el flag está apagado (`enabled: false`) muestra un aviso. Si la
+ * empresa no es transportista, mensaje claro de "sin permisos".
  */
 export function CobraHoyHistorialRoute() {
   return (
@@ -38,7 +42,10 @@ export function CobraHoyHistorialRoute() {
 function HistorialPage({ me }: { me: MeOnboarded }) {
   const histQ = useHistorialCobraHoy({ enabled: true });
 
-  const featureDisabled = histQ.error instanceof ApiError && histQ.error.status === 503;
+  const featureDisabled =
+    esCobraHoyApagado(histQ.data) ||
+    (histQ.error instanceof ApiError && histQ.error.status === 503);
+  const adelantos = histQ.data && 'adelantos' in histQ.data ? histQ.data.adelantos : null;
 
   return (
     <Layout me={me} title="Cobra hoy">
@@ -84,7 +91,7 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
         </p>
       )}
 
-      {!featureDisabled && histQ.data && histQ.data.adelantos.length === 0 && (
+      {!featureDisabled && adelantos && adelantos.length === 0 && (
         <div className="mt-8">
           <EmptyState
             icon={<Clock3 className="h-10 w-10" aria-hidden />}
@@ -99,15 +106,12 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
         </div>
       )}
 
-      {!featureDisabled && histQ.data && histQ.data.adelantos.length > 0 && (
+      {!featureDisabled && adelantos && adelantos.length > 0 && (
         <>
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <SummaryCard title="Solicitudes" value={histQ.data.adelantos.length.toString()} />
-            <SummaryCard
-              title="Total adelantado"
-              value={fmt(sumAdelantado(histQ.data.adelantos))}
-            />
-            <SummaryCard title="Total tarifa" value={fmt(sumTarifa(histQ.data.adelantos))} />
+            <SummaryCard title="Solicitudes" value={adelantos.length.toString()} />
+            <SummaryCard title="Total adelantado" value={fmt(sumAdelantado(adelantos))} />
+            <SummaryCard title="Total tarifa" value={fmt(sumTarifa(adelantos))} />
           </div>
 
           <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
@@ -123,7 +127,7 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 bg-white">
-                {histQ.data.adelantos.flatMap((a) => [
+                {adelantos.flatMap((a) => [
                   <tr key={a.id} className="hover:bg-neutral-50">
                     <Td className="text-neutral-600 text-xs">{formatDate(a.creado_en)}</Td>
                     <Td>

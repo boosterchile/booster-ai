@@ -19,7 +19,6 @@ import {
   unitTypeSchema,
   validarCoherenciaUnidadVehiculo,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -32,11 +31,13 @@ import {
   telemetryPoints,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
+import { queryUltimaPosicionGpsValida } from '../services/ultima-posicion-gps.js';
 import { obtenerClimaActual } from '../services/weather-api.js';
 
 /**
@@ -1536,34 +1537,14 @@ export function createVehiculosRoutes(opts: {
       });
     }
 
-    const baseSelect = opts.db
-      .select({
-        timestamp_device: telemetryPoints.timestampDevice,
-        timestamp_received_at: telemetryPoints.timestampReceivedAt,
-        longitude: telemetryPoints.longitude,
-        latitude: telemetryPoints.latitude,
-        altitude_m: telemetryPoints.altitudeM,
-        angle_deg: telemetryPoints.angleDeg,
-        satellites: telemetryPoints.satellites,
-        speed_kmh: telemetryPoints.speedKmh,
-        priority: telemetryPoints.priority,
-        io_data: telemetryPoints.ioData,
-      })
-      .from(telemetryPoints);
-
     // Última posición VÁLIDA: descarta null + "null island" (0,0, GPS sin fix)
-    // para no devolver el marcador en el Golfo de Guinea. La temperatura (IO 72)
-    // se resuelve aparte, sin este filtro (es independiente del fix GPS).
-    const coordValida = coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude);
-    const [last] = vehicle.teltonikaImei
-      ? await baseSelect
-          .where(and(eq(telemetryPoints.vehicleId, id), coordValida))
-          .orderBy(desc(telemetryPoints.timestampDevice))
-          .limit(1)
-      : await baseSelect
-          .where(and(eq(telemetryPoints.imei, effectiveImei), coordValida))
-          .orderBy(desc(telemetryPoints.timestampDevice))
-          .limit(1);
+    // para no devolver el marcador en el Golfo de Guinea. Índice parcial
+    // 0070: no camina los pings sin fix. La temperatura (IO 72) se resuelve
+    // aparte, sin este filtro (es independiente del fix GPS).
+    const [last] = await queryUltimaPosicionGpsValida(
+      opts.db,
+      vehicle.teltonikaImei ? { vehiculoId: id } : { imei: effectiveImei },
+    );
 
     if (!last) {
       return c.json(

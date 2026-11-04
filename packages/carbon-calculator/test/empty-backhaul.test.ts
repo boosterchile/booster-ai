@@ -14,10 +14,10 @@ describe('calcularEmptyBackhaul — GLEC v3.0 §6.4', () => {
     const r = calcularEmptyBackhaul({ ...params, factorMatching: 0 });
     // Consumo vacío: 28 × 0.95 (MDV α=0.10, ratio=0) = 26.6 L/100km
     // Total: 26.6 × 5 = 133 L
-    // Emisiones: 133 × 3.25 = 432.25 kg CO2e (al shipment)
+    // Emisiones: 133 × 3.24 = 430.92 kg CO2e (al shipment; GLEC v2.0 T32)
     expect(r.distanciaVaciaKm).toBeCloseTo(500, 1);
     expect(r.combustibleConsumido).toBeCloseTo(133, 0);
-    expect(r.emisionesKgco2eWtw).toBeCloseTo(432.25, 0);
+    expect(r.emisionesKgco2eWtw).toBeCloseTo(430.92, 1);
     // El ahorro vs "sin matching" es 0 porque ya estamos en sin matching.
     expect(r.ahorroVsSinMatchingKgco2e).toBeCloseTo(0, 1);
   });

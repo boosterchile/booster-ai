@@ -33,13 +33,13 @@ const noopLogger = {
   child: () => noopLogger,
 } as unknown as Parameters<typeof asignarConductorAAssignment>[0]['logger'];
 
-const ASSIGNMENT_ID = '00000000-0000-0000-0000-000000000a01';
-const TRIP_ID = '00000000-0000-0000-0000-000000000a02';
-const EMPRESA_ID = '00000000-0000-0000-0000-000000000a03';
-const ACTING_USER_ID = '00000000-0000-0000-0000-000000000a04';
-const DRIVER_USER_ID = '00000000-0000-0000-0000-000000000a05';
-const VEHICLE_ID = '00000000-0000-0000-0000-000000000a07';
-const OTHER_VEHICLE_ID = '00000000-0000-0000-0000-000000000a08';
+const ASSIGNMENT_ID = '00000000-0000-4000-8000-000000000a01';
+const TRIP_ID = '00000000-0000-4000-8000-000000000a02';
+const EMPRESA_ID = '00000000-0000-4000-8000-000000000a03';
+const ACTING_USER_ID = '00000000-0000-4000-8000-000000000a04';
+const DRIVER_USER_ID = '00000000-0000-4000-8000-000000000a05';
+const VEHICLE_ID = '00000000-0000-4000-8000-000000000a07';
+const OTHER_VEHICLE_ID = '00000000-0000-4000-8000-000000000a08';
 
 interface AssignmentRow {
   id: string;
@@ -136,7 +136,7 @@ const baseAssignment = (overrides: Partial<AssignmentRow> = {}): AssignmentRow =
 const baseDriver = (overrides: Partial<DriverRow> = {}): DriverRow => ({
   userId: DRIVER_USER_ID,
   userFullName: 'Pedro González (Demo)',
-  conductorId: '00000000-0000-0000-0000-000000000a06',
+  conductorId: '00000000-0000-4000-8000-000000000a06',
   firebaseUid: 'firebase-real',
   email: 'conductor@example.com',
   ...overrides,
@@ -177,7 +177,7 @@ describe('asignarConductorAAssignment', () => {
   });
 
   it('reasignación: permite cambiar el conductor si el assignment está en estado asignado', async () => {
-    const previousDriverId = '00000000-0000-0000-0000-0000000000ff';
+    const previousDriverId = '00000000-0000-4000-8000-0000000000ff';
     const stub = makeDbStub({
       assignmentRow: baseAssignment({ driverUserId: previousDriverId }),
       driverRow: baseDriver(),

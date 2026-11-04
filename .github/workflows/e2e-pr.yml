@@ -67,7 +67,7 @@ jobs:
     name: E2E local (Chromium) — /apariencia
     needs: e2e-paths
     if: needs.e2e-paths.outputs.local == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -109,7 +109,7 @@ jobs:
     name: E2E conductor Playwright
     needs: e2e-paths
     if: needs.e2e-paths.outputs.conductor == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:

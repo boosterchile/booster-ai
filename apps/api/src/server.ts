@@ -11,6 +11,11 @@ import type pg from 'pg';
 import { config } from './config.js';
 import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
+import {
+  DEFAULT_MAX_BODY_BYTES,
+  MULTIPART_ENVELOPE_BYTES,
+  createBodyLimitMiddleware,
+} from './middleware/body-limit.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { createImpersonationWriteGuardMiddleware } from './middleware/impersonation-write-guard.js';
 import { createRateLimitImpersonateMiddleware } from './middleware/rate-limit-impersonate.js';
@@ -63,12 +68,16 @@ import { createPublicPreciosRoutes } from './routes/public-precios.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
 import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
+  MAX_ASSET_BYTES,
   createPublicSiteSettingsRoutes,
   createSiteSettingsRoutes,
 } from './routes/site-settings.js';
 import { createStakeholderZonasRoutes } from './routes/stakeholder-zonas.js';
 import { createSucursalesRoutes } from './routes/sucursales.js';
-import { createTransportDocumentsRoutes } from './routes/transport-documents.js';
+import {
+  MAX_DOCUMENT_BYTES,
+  createTransportDocumentsRoutes,
+} from './routes/transport-documents.js';
 import { createTrayectosTeltonikaRoutes } from './routes/trayectos-teltonika.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
@@ -200,6 +209,30 @@ export function createServer(opts: CreateServerOptions): Hono {
   );
 
   app.use('*', secureHeaders());
+
+  // Límite del cuerpo de toda request, antes de que lo lea cualquier rate
+  // limit, auth o handler (.specs/limites-entrada-api). Las únicas rutas con
+  // más margen son las dos subidas multipart, con el tope de su archivo más el
+  // sobre; su 413 `file_too_large` propio no cambia.
+  app.use(
+    '*',
+    createBodyLimitMiddleware({
+      logger,
+      defaultMaxBytes: DEFAULT_MAX_BODY_BYTES,
+      exceptions: [
+        {
+          method: 'POST',
+          path: /^\/transport-orders\/[^/]+\/documents$/,
+          maxBytes: MAX_DOCUMENT_BYTES + MULTIPART_ENVELOPE_BYTES,
+        },
+        {
+          method: 'POST',
+          path: /^\/admin\/site-settings\/assets$/,
+          maxBytes: MAX_ASSET_BYTES + MULTIPART_ENVELOPE_BYTES,
+        },
+      ],
+    }),
+  );
 
   // T9 SEC-001 — cliente Redis dedicado al rate-limit-pin middleware.
   // Conexión propia (no comparte pool con ObservabilityCache) para

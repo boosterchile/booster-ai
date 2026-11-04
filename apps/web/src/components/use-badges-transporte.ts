@@ -11,6 +11,18 @@ export interface BadgeNav {
   tono: 'warning' | 'danger';
 }
 
+function contarOfertas(data: { offers: readonly unknown[] }): number {
+  return data.offers.length;
+}
+
+function contarSinConductor(filas: readonly { driver: unknown }[]): number {
+  return filas.filter((fila) => fila.driver == null).length;
+}
+
+function contarVencidos(data: { resumen: { vencidos: number } }): number {
+  return data.resumen.vencidos;
+}
+
 function badge(n: number | undefined, tono: BadgeNav['tono']): BadgeNav | null {
   if (n == null || n <= 0) {
     return null;
@@ -32,26 +44,24 @@ export function useBadgesTransporte(enabled: boolean): {
   const ofertasQ = useQuery({
     queryKey: scope.key('offers', 'mine', 'pendiente'),
     queryFn: () => fetchOfertasPendientes(scope.init),
-    select: (data) => data.offers.length,
+    select: contarOfertas,
     enabled,
     retry: false,
     staleTime: 15_000,
-    refetchInterval: enabled ? 30_000 : false,
   });
 
   const serviciosQ = useQuery({
     queryKey: scope.key('assignments', 'empresa'),
     queryFn: () => fetchAsignaciones(scope.init),
-    select: (filas) => filas.filter((fila) => fila.driver == null).length,
+    select: contarSinConductor,
     enabled,
     retry: false,
-    refetchInterval: enabled ? 30_000 : false,
   });
 
   const cumplimientoQ = useQuery({
     queryKey: scope.key('cumplimiento'),
     queryFn: () => fetchCumplimiento(scope.init),
-    select: (data) => data.resumen.vencidos,
+    select: contarVencidos,
     enabled,
     retry: false,
   });

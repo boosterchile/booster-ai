@@ -14,9 +14,9 @@ import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 // `@booster-ai/config` — antes había una copia local byte-idéntica acá.
 
 export const apiEnvSchema = commonEnvSchema
-  .merge(databaseEnvSchema)
-  .merge(redisEnvSchema)
-  .merge(gcpEnvSchema)
+  .extend(databaseEnvSchema.shape)
+  .extend(redisEnvSchema.shape)
+  .extend(gcpEnvSchema.shape)
   .extend({
     SERVICE_NAME: z.literal('booster-ai-api'),
     CORS_ALLOWED_ORIGINS: z.string().transform((s) => s.split(',').filter(Boolean)),
@@ -456,8 +456,9 @@ export const apiEnvSchema = commonEnvSchema
      *
      * Cuando es `false`:
      *   - `cobraHoy()` retorna `skipped_flag_disabled`.
-     *   - Endpoints devuelven 503 con `feature_disabled`.
-     *   - UI no muestra botón "Cobra hoy".
+     *   - Los GET de cobra-hoy responden 200 `{enabled:false, items:[]}`.
+     *   - El POST responde 403 `{error:'feature_disabled'}`.
+     *   - La UI avisa que el pronto pago todavía no está activo.
      *
      * Cuando es `true`:
      *   - Endpoints operan pero requieren que el shipper tenga
