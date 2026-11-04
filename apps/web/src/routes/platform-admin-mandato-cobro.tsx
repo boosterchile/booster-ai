@@ -46,8 +46,8 @@ const resumenSchema = z.object({
   float_clp: z.number(),
   tope_float_clp: z.number(),
   conteos: z.object({
-    cobro: z.record(z.number()),
-    liberacion: z.record(z.number()),
+    cobro: z.record(z.string(), z.number()),
+    liberacion: z.record(z.string(), z.number()),
   }),
   viajes: z.array(viajeSchema),
 });

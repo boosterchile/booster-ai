@@ -1,4 +1,6 @@
 import {
+  COMBUSTIBLES_REFERENCIA_HUELLACHILE,
+  REFERENCIA_HUELLACHILE_2025,
   type ResultadoEmisiones,
   type ResultadoEmptyBackhaul,
   type RouteDataSource,
@@ -13,7 +15,16 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
-import { consumoCanSegmento } from '../domain/consumo-can-segmento.js';
+import {
+  type DecisionFuente,
+  type Reconstruccion,
+  decidirFuenteHuella,
+} from '../domain/decidir-fuente-huella.js';
+import {
+  type LecturaSegmentoCan,
+  type ResumenCan,
+  resumirCanSegmento,
+} from '../domain/resumen-can-segmento.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
@@ -46,16 +57,15 @@ export const EVENTO_CIERRE_HUELLA = 'huella.segmento.cierre';
 const huellaCoberturaDegradadaCounter = getBusinessCounter('huella_cobertura_degradada_total');
 const huellaPesoAusenteCounter = getBusinessCounter('huella_peso_ausente_total');
 /**
- * T10-05: vehículo provisionado con el contador CAN (AVL 83) cuya medición no
- * se pudo usar en el cierre (`motivo` = `MotivoConsumoCanNoUsado`). La huella
- * cae a `modelado`; esto lo hace contable.
+ * Cierre Teltonika cuya decisión no eligió el 83 (`motivo` = `motivo_fallback`
+ * de la decisión). La huella cae a `modelado`; esto lo hace contable.
  */
 const huellaCanbusNoUsadoCounter = getBusinessCounter('huella_canbus_no_usado_total');
 
-/** Combustibles que el contador 83 mide en litros. */
-const COMBUSTIBLES_CONTADOR_LITROS = new Set(['diesel', 'gasolina']);
-
 /** Perfil energético del vehículo que decide el modo del cálculo (ADR-017/021). */
+/** Tope de la ventana que lee el resumidor CAN (nit QA #868): un viaje de semanas no lee todo. */
+export const VENTANA_MAX_RESUMEN_CAN_MS = 7 * 24 * 60 * 60 * 1000;
+
 type PerfilEnergeticoVehiculo = Pick<
   typeof vehicles.$inferSelect,
   'fuelType' | 'consumptionLPer100kmBaseline' | 'curbWeightKg' | 'capacityKg' | 'vehicleType'
@@ -68,55 +78,36 @@ type PerfilEnergeticoVehiculo = Pick<
  * Misma regla en la estimación (al asignar) y en la huella real (al cerrar):
  * el método no cambia por el momento del cálculo, solo la distancia.
  */
+/** Tope bajo numeric(12,3) de `intensidad_gco2e_por_tkm`. */
+const INTENSIDAD_MAX = 1e9;
+
 /**
- * Litros del contador CAN (AVL 83) en el segmento, o `null` si el vehículo no
- * lo tiene provisionado o la medición no sirve (T10-05). Solo un Teltonika con
- * `fuente_combustible_can = '83'` y combustible medido en litros entra; el
- * motivo de un descarte queda en un `warn` y en `huella_canbus_no_usado_total`.
+ * HC-003 T1 — TTW, WTT e intensidad del MISMO cálculo que respalda el WTW
+ * persistido. Sin carga o sin distancia el calculador devuelve intensidad 0,
+ * que no es una intensidad real: se persiste null.
  */
-async function medirLitrosCan(opts: {
-  db: Db;
-  logger: Logger;
-  tripId: string;
-  vehiculo: VehiculoFuentePosicion & {
-    fuelType: string | null;
-    fuenteCombustibleCan: string | null;
+export function desgloseEmisiones(
+  e: ResultadoEmisiones,
+  cargaKg: number | null,
+  combustible: string | null,
+) {
+  const i = e.intensidadGco2ePorTonKm;
+  const intensidadValida =
+    (cargaKg ?? 0) > 0 && e.distanciaKm > 0 && Number.isFinite(i) && i > 0 && i < INTENSIDAD_MAX;
+  return {
+    emisionesKgco2eTtw: e.emisionesKgco2eTtw.toString(),
+    emisionesKgco2eWtt: e.emisionesKgco2eWtt.toString(),
+    intensidadGco2ePorTkm: intensidadValida ? i.toString() : null,
+    factoresFuente: e.fuenteFactores,
+    // Referencia HuellaChile 2025: solo si los litros son diésel (ux.md §14).
+    ...(COMBUSTIBLES_REFERENCIA_HUELLACHILE.has(combustible ?? '')
+      ? {
+          ttwRef: REFERENCIA_HUELLACHILE_2025.ttwKgco2ePorL.toString(),
+          wttRef: REFERENCIA_HUELLACHILE_2025.wttKgco2ePorL.toString(),
+          fuenteRef: REFERENCIA_HUELLACHILE_2025.fuente,
+        }
+      : { ttwRef: null, wttRef: null, fuenteRef: null }),
   };
-  fuente: RouteDataSource;
-  desde: Date;
-  hasta: Date;
-  distanciaKm: number;
-}): Promise<number | null> {
-  const { vehiculo } = opts;
-  if (
-    vehiculo.fuenteCombustibleCan !== '83' ||
-    opts.fuente !== 'teltonika_gps' ||
-    !vehiculo.fuelType ||
-    !COMBUSTIBLES_CONTADOR_LITROS.has(vehiculo.fuelType)
-  ) {
-    return null;
-  }
-  const lecturas = await cargarLecturasConsumoCan({
-    db: opts.db,
-    vehicle: vehiculo,
-    desde: opts.desde,
-    hasta: opts.hasta,
-  });
-  const resultado = consumoCanSegmento({ lecturas, distanciaSegmentoKm: opts.distanciaKm });
-  if (resultado.litros === null) {
-    huellaCanbusNoUsadoCounter.add(1, { motivo: resultado.motivo });
-    opts.logger.warn(
-      {
-        tripId: opts.tripId,
-        vehicleId: vehiculo.id,
-        motivo: resultado.motivo,
-        lecturas: lecturas.length,
-      },
-      'consumo CAN (AVL 83) no usable en el segmento: huella modelada',
-    );
-    return null;
-  }
-  return resultado.litros;
 }
 
 function emisionesSegunPerfil(opts: {
@@ -432,6 +423,7 @@ async function calcularMetricasEstimadasInner(
     const valuesToWrite = {
       distanceKmEstimated: emisiones.distanciaKm.toString(),
       carbonEmissionsKgco2eEstimated: emisiones.emisionesKgco2eWtw.toString(),
+      ...desgloseEmisiones(emisiones, cargaKg, veh?.fuelType ?? null),
       fuelConsumedLEstimated:
         emisiones.unidadCombustible === 'L' ? emisiones.combustibleConsumido.toString() : null,
       precisionMethod: emisiones.metodoPrecision,
@@ -647,13 +639,18 @@ async function recalcularNivelPostEntregaInner(opts: {
       curbWeightKg: vehicles.curbWeightKg,
       capacityKg: vehicles.capacityKg,
       vehicleType: vehicles.vehicleType,
+      capacidadEstanqueL: vehicles.capacidadEstanqueL,
       fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
     })
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
     .limit(1);
   const vehiculo:
-    | (VehiculoFuentePosicion & PerfilEnergeticoVehiculo & { fuenteCombustibleCan: string | null })
+    | (VehiculoFuentePosicion &
+        PerfilEnergeticoVehiculo & {
+          capacidadEstanqueL: number | null;
+          fuenteCombustibleCan: string | null;
+        })
     | undefined = vehRows[0];
   if (!vehiculo) {
     logger.warn(
@@ -768,6 +765,75 @@ async function recalcularNivelPostEntregaInner(opts: {
     abortReason = 'sin_observacion';
   }
 
+  // HC-001: la decisión de fuente se REGISTRA en columnas propias para TODO
+  // viaje entregado (historia.md R1, AC1-2), también en el early return sin
+  // opt-in. HC-005: con huella activa es además el ÚNICO camino a exacto_canbus.
+  const rec: Reconstruccion =
+    abortReason === null && escritura !== null && escritura.distanciaKmReal !== null
+      ? {
+          estado: 'ok',
+          coberturaPct: escritura.coveragePct,
+          distanciaKm: escritura.distanciaKmReal,
+        }
+      : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
+  // HC-005 fix0: la config es SOLO el interruptor de lectura. Sin '83' no hay resumen CAN y
+  // la decisión cae en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
+  const lee83 = vehiculo.fuenteCombustibleCan === '83';
+  let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
+  const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
+  const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
+  // Sobre el tope no se lee el 83: la decisión queda en ventana_excede_tope y la emisión, modelada.
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83 && ventanaExcede) {
+    logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
+  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83) {
+    try {
+      const lecturasCan: LecturaSegmentoCan[] = await cargarLecturasConsumoCan({
+        db,
+        vehicle: vehiculo,
+        desde: pickupAt,
+        hasta: assignment.deliveredAt,
+      });
+      resumenCan = resumirCanSegmento(lecturasCan, rec.distanciaKm, vehiculo.capacidadEstanqueL);
+    } catch (err) {
+      logger.warn({ err, tripId }, 'HC-001: no se pudo resumir el CAN; decisión sin 83');
+    }
+  }
+  const consumoBase = vehiculo.consumptionLPer100kmBaseline
+    ? Number(vehiculo.consumptionLPer100kmBaseline)
+    : null;
+  // Un bug de la regla no puede tumbar el upgrade de nivel (nit 1 QA #865).
+  let decision: DecisionFuente | null = null;
+  try {
+    decision = decidirFuenteHuella({
+      gpsTeltonika: fuente === 'teltonika_gps' ? rec : null,
+      gpsMovil: fuente === 'movil_gps' ? rec : null,
+      pingsEnVentana: pings.length,
+      combustible: vehiculo.fuelType,
+      ...resumenCan,
+      can83Omitido: lee83 && ventanaExcede ? 'ventana_excede_tope' : null,
+      consumoBasePor100km: consumoBase,
+      // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
+      perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
+      pesoDeclarado: trip.cargoWeightKg !== null,
+    });
+  } catch (err) {
+    logger.error({ err, tripId }, 'HC-001: decidirFuenteHuella lanzó; decisión no registrada');
+  }
+  const columnasDecision =
+    decision === null
+      ? {}
+      : {
+          fuenteDistancia: decision.fuenteDistancia,
+          fuenteEnergia: decision.fuenteEnergia,
+          motivoFallback: decision.motivoFallback,
+          alertasDecision: decision.alertas,
+          decisionVersion: decision.decisionVersion,
+          // Se reescribe en cada recálculo: es la fecha de la ÚLTIMA decisión,
+          // no la primera (nit 3 QA #865). La auditoría histórica va en la reemisión versionada.
+          decididoEn: sql`now()`,
+          pesoDeclarado: trip.cargoWeightKg !== null,
+        };
+
   if (abortReason !== null && !huellaActiva) {
     huellaSegmentoCounter.add(1, { resultado: 'opt_in_inactivo', fuente });
     logger.info(
@@ -781,6 +847,9 @@ async function recalcularNivelPostEntregaInner(opts: {
       },
       'huella del segmento no medida (opt-in inactivo) y sin distancia real',
     );
+    if (decision !== null) {
+      await db.update(tripMetrics).set(columnasDecision).where(eq(tripMetrics.tripId, tripId));
+    }
     return {
       recomputed: false,
       abortReason,
@@ -828,19 +897,20 @@ async function recalcularNivelPostEntregaInner(opts: {
       // real (híbrida con cobertura declarada): el cert muestra X km y las
       // emisiones se calcularon sobre esos X km.
       //
-      // T10-05 (ADR-077 §2): con el contador CAN (AVL 83) provisionado en un
-      // Teltonika, el combustible quemado se MIDE y el modo es `exacto_canbus`.
-      // Si la medición no sirve, se registra el motivo y se modela como antes.
-      const litrosCan = await medirLitrosCan({
-        db,
-        logger,
-        tripId,
-        vehiculo,
-        fuente,
-        desde: pickupAt,
-        hasta: assignment.deliveredAt,
-        distanciaKm: distanciaKmReal,
-      });
+      // HC-005: `exacto_canbus` solo si la decisión eligió can_83 (guardrail83,
+      // por datos y no por config), con los MISMOS litros que validó (×0,1 L).
+      // Cualquier otro motivo (tope, no monótono, banda…) → modelado.
+      const litrosCan =
+        decision?.fuenteEnergia === 'can_83' && decision.litrosCan !== null
+          ? Math.round(decision.litrosCan * 10) / 10
+          : null;
+      // Solo vehículos que leen el 83 (config '83'): el contador mide descartes, no ausencias
+      // (runbook incidentes-glec.md §4, QA #871 v1).
+      if (litrosCan === null && fuente === 'teltonika_gps' && lee83) {
+        huellaCanbusNoUsadoCounter.add(1, {
+          motivo: decision?.motivoFallback ?? 'decision_no_registrada',
+        });
+      }
       emisionesReales =
         litrosCan !== null && vehiculo.fuelType
           ? calcularEmisionesViaje({
@@ -894,6 +964,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       coveragePct: coveragePct.toString(),
       certificationLevel,
       uncertaintyFactor: uncertaintyFactor.toString(),
+      ...columnasDecision,
       ...(huellaActiva
         ? {
             carbonEmissionsKgco2eActual:
@@ -902,9 +973,18 @@ async function recalcularNivelPostEntregaInner(opts: {
               emisionesReales !== null && emisionesReales.unidadCombustible === 'L'
                 ? emisionesReales.combustibleConsumido.toString()
                 : null,
+            // Sin huella real el desglose queda en null: TTW+WTT no debe venir de un
+            // cálculo real anterior que ya no respalda el WTW del certificado.
             ...(emisionesReales !== null
-              ? { precisionMethod: emisionesReales.metodoPrecision }
-              : {}),
+              ? {
+                  precisionMethod: emisionesReales.metodoPrecision,
+                  ...desgloseEmisiones(emisionesReales, trip.cargoWeightKg, vehiculo.fuelType),
+                }
+              : {
+                  emisionesKgco2eTtw: null,
+                  emisionesKgco2eWtt: null,
+                  intensidadGco2ePorTkm: null,
+                }),
           }
         : {}),
       updatedAt: sql`now()`,

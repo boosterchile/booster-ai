@@ -29,9 +29,9 @@ const noopLogger = {
   typeof import('../../src/routes/conductores.js').createConductoresRoutes
 >[0]['logger'];
 
-const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
-const CONDUCTOR_ID = '22222222-2222-2222-2222-222222222222';
-const USER_ID = '33333333-3333-3333-3333-333333333333';
+const EMPRESA_ID = '11111111-1111-4111-8111-111111111111';
+const CONDUCTOR_ID = '22222222-2222-4222-8222-222222222222';
+const USER_ID = '33333333-3333-4333-8333-333333333333';
 
 const VALID_RUT = '11.111.111-1';
 
@@ -320,7 +320,7 @@ describe('conductores routes', () => {
       expect(res.status).toBe(400);
       const body = (await res.json()) as { error: string; message: string };
       expect(body.error).toBe('telefono_invalido');
-      expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+      expect(body.message).toBe('Ingresa un teléfono válido, como +56912345678');
       expect(stub.spies.insert).not.toHaveBeenCalled();
       expect(stub.spies.update).not.toHaveBeenCalled();
     });
@@ -399,7 +399,7 @@ describe('conductores routes', () => {
       expect(body.activation_pin).toBeUndefined();
     });
 
-    it('D10 — user con firebase_uid placeholder → SÍ devuelve PIN', async () => {
+    it('alta de RUT registrado pendiente: respuesta uniforme', async () => {
       const stub = makeDbStub({
         selectQueueRows: [
           [
@@ -446,7 +446,7 @@ describe('conductores routes', () => {
       });
       expect(res.status).toBe(201);
       const body = (await res.json()) as { activation_pin: string };
-      expect(body.activation_pin).toMatch(/^\d{6}$/);
+      expect(body.activation_pin).toBeUndefined();
     });
 
     it('placeholder que ya tiene código no recibe otro PIN', async () => {
@@ -824,6 +824,8 @@ describe('POST /conductores — fecha de licencia no rompe la respuesta', () => 
 });
 
 const EMAIL_REAL = 'usuario@example.com';
+/** Persona y conductor creados en la misma alta. */
+const CREADO_EN = new Date('2026-05-01T00:00:00Z');
 
 function filaConductor(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -836,6 +838,8 @@ function filaConductor(overrides: Record<string, unknown> = {}): Record<string, 
     phone: '+56912345678',
     firebaseUid: 'pending-rut:11.111.111-1',
     claveNumericaHash: null,
+    personaCreadaEn: CREADO_EN,
+    conductorCreadoEn: CREADO_EN,
     ...overrides,
   };
 }
@@ -966,7 +970,7 @@ describe('POST /conductores — email real y único', () => {
     expect(((await res.json()) as { code: string }).code).toBe('duplicate');
   });
 
-  it('reemplazar el relleno de alguien vinculado a otra empresa → 409 sin escribir ni Firebase', async () => {
+  it('alta de RUT existente no cambia los datos de la persona', async () => {
     const stub = makeDbStub({
       selectQueueRows: [
         [
@@ -983,13 +987,14 @@ describe('POST /conductores — email real y único', () => {
         [],
         [
           {
-            empresaId: '99999999-9999-9999-9999-999999999999',
+            empresaId: '99999999-9999-4999-9999-999999999999',
             role: 'dueno',
             organizacionId: null,
             status: 'activa',
           },
         ],
       ],
+      insertReturning: [[conductorInsertado()]],
     });
     const firebase = firebaseSinCuentas();
     const app = await buildApp(stub.db, { firebaseAuth: firebase });
@@ -1006,10 +1011,12 @@ describe('POST /conductores — email real y único', () => {
         license_expiry: '2028-06-28',
       }),
     });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
-    expect(stub.spies.update).not.toHaveBeenCalled();
-    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { activation_pin?: string }).activation_pin).toBeUndefined();
+    const cambios = payloadsDeUpdate(stub.spies.update);
+    expect(cambios.some((u) => 'email' in u || 'phone' in u || 'activationPinHash' in u)).toBe(
+      false,
+    );
     expect(firebase.getUserByEmail).not.toHaveBeenCalled();
   });
 });
@@ -1039,6 +1046,31 @@ describe('POST /conductores/:id/email', () => {
     expect(res.status).toBe(403);
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
+
+  it.each(['email', 'telefono'] as const)(
+    'ficha de una persona registrada antes: %s sin cambios',
+    async (campo) => {
+      const stub = makeDbStub({
+        selectQueueRows: [
+          [filaConductor({ personaCreadaEn: new Date('2026-04-01T00:00:00Z') })],
+          [],
+        ],
+        updateReturning: [[{ id: USER_ID }]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const firebase = firebaseSinCuentas();
+      const app = await buildApp(stub.db, { firebaseAuth: firebase });
+      const res = await app.request(`/conductores/${CONDUCTOR_ID}/${campo}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(campo === 'email' ? { email: EMAIL_REAL } : { phone: '+56957790378' }),
+      });
+      expect(res.status).toBe(409);
+      expect(JSON.stringify(await res.json())).not.toContain('activation_pin');
+      expect(stub.spies.update).not.toHaveBeenCalled();
+      expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['dueno', 'admin', 'despachador'] as const)(
     '%s reemplaza el relleno, reenvía el PIN y audita',
@@ -1234,7 +1266,7 @@ describe('POST /conductores/:id/email', () => {
     {
       caso: 'membresía en otra empresa',
       vinculo: {
-        empresaId: '99999999-9999-9999-9999-999999999999',
+        empresaId: '99999999-9999-4999-9999-999999999999',
         role: 'conductor',
         organizacionId: null,
         status: 'activa',
@@ -1329,7 +1361,7 @@ const ALTA_BODY = {
 };
 
 describe('POST /conductores — RUT existente guarda phone si estaba vacío', () => {
-  it('provisoria sin código y phone null persiste el teléfono del alta', async () => {
+  it('alta de RUT existente sin teléfono no le asigna uno', async () => {
     const stub = makeDbStub({
       selectQueueRows: [
         [
@@ -1355,12 +1387,10 @@ describe('POST /conductores — RUT existente guarda phone si estaba vacío', ()
       body: JSON.stringify(ALTA_BODY),
     });
     expect(res.status).toBe(201);
-    expect(
-      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === '+56957790379'),
-    ).toBe(true);
+    expect(payloadsDeUpdate(stub.spies.update).some((payload) => 'phone' in payload)).toBe(false);
   });
 
-  it('reemplazo de email de relleno con phone vacío también lo guarda', async () => {
+  it('alta de RUT existente con correo provisorio no lo reemplaza', async () => {
     const stub = makeDbStub({
       selectQueueRows: [
         [
@@ -1388,8 +1418,10 @@ describe('POST /conductores — RUT existente guarda phone si estaba vacío', ()
     });
     expect(res.status).toBe(201);
     expect(
-      payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === '+56957790379'),
-    ).toBe(true);
+      payloadsDeUpdate(stub.spies.update).some(
+        (payload) => 'phone' in payload || 'email' in payload,
+      ),
+    ).toBe(false);
   });
 
   it('no pisa un teléfono que el usuario ya tenía', async () => {
@@ -1470,7 +1502,7 @@ describe('POST /conductores/:id/telefono', () => {
         [filaConductor({ phone: '+56911111111' })],
         [
           {
-            empresaId: '99999999-9999-9999-9999-999999999999',
+            empresaId: '99999999-9999-4999-9999-999999999999',
             role: 'conductor',
             organizacionId: null,
             status: 'activa',
@@ -1507,7 +1539,7 @@ describe('POST /conductores/:id/telefono', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; message: string };
     expect(body.error).toBe('telefono_invalido');
-    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(body.message).toBe('Ingresa un teléfono válido, como +56912345678');
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
 
@@ -1522,7 +1554,7 @@ describe('POST /conductores/:id/telefono', () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; message: string };
     expect(body.error).toBe('telefono_invalido');
-    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(body.message).toBe('Ingresa un teléfono válido, como +56912345678');
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
 
@@ -1590,7 +1622,7 @@ describe('POST /conductores/:id/telefono', () => {
   });
 });
 
-const OTRA_EMPRESA_ID = '99999999-9999-9999-9999-999999999999';
+const OTRA_EMPRESA_ID = '99999999-9999-4999-9999-999999999999';
 
 function usuarioPendienteConPin(overrides: Record<string, unknown> = {}) {
   return {
@@ -1601,6 +1633,7 @@ function usuarioPendienteConPin(overrides: Record<string, unknown> = {}) {
     activationPinHash: 'hash-previo',
     email: EMAIL_REAL,
     phone: '+56911111111',
+    createdAt: CREADO_EN,
     ...overrides,
   };
 }
@@ -1610,6 +1643,7 @@ function conductorRetirado(empresaId: string) {
     id: CONDUCTOR_ID,
     deletedAt: new Date('2026-05-01T00:00:00Z'),
     empresaId,
+    createdAt: CREADO_EN,
   };
 }
 
@@ -1834,5 +1868,105 @@ describe('POST /conductores — reactivación de un conductor retirado', () => {
     expect(((await res.json()) as { code: string }).code).toBe('user_already_driver');
     expect(stub.spies.update).not.toHaveBeenCalled();
     expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /conductores — contrato del 400 de validarAltaConductor (TRK-003)', () => {
+  it('sin license_class → 400 con el error de zod completo', async () => {
+    const { license_class: _omitida, ...sinLicencia } = ALTA_BODY;
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sinLicencia),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_value",
+                "message": "Completa este campo",
+                "path": [
+                  "license_class",
+                ],
+                "values": [
+                  "A1",
+                  "A2",
+                  "A3",
+                  "A4",
+                  "A5",
+                  "B",
+                  "C",
+                  "D",
+                  "E",
+                  "F",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+  });
+});
+
+describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
+  it('POST /conductores solo con phone inválido → 400 telefono_invalido (hook L371)', async () => {
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...ALTA_BODY, phone: '+56221234567' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "telefono_invalido",
+          "message": "Ingresa un teléfono válido, como +56912345678",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('POST /conductores/:id/telefono con phone inválido → 400 telefono_invalido', async () => {
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: '912345678' }),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "telefono_invalido",
+          "message": "Ingresa un teléfono válido, como +56912345678",
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('POST /conductores/:id/telefono sin phone → 400 telefono_invalido', async () => {
+    const app = await buildApp(makeDbStub({}).db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "telefono_invalido",
+          "message": "Ingresa un teléfono válido, como +56912345678",
+        },
+        "status": 400,
+      }
+    `);
   });
 });

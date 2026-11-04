@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { chileanPhoneSchema } from '../primitives/chile.js';
+import { MENSAJE_TELEFONO, chileanPhoneSchema } from '../primitives/chile.js';
 import { driverIdSchema, transportistaIdSchema, userIdSchema } from '../primitives/ids.js';
+import { MENSAJES, errorOpcion, textoEs } from '../primitives/mensajes.js';
 
 /**
  * Clases de licencia chilena (DS Nº 170 Ley Tránsito).
@@ -13,7 +14,9 @@ import { driverIdSchema, transportistaIdSchema, userIdSchema } from '../primitiv
  * - E: tracción animal (rural histórico).
  * - F: vehículos institucionales (carabineros, FFAA).
  */
-export const licenseClassSchema = z.enum(['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E', 'F']);
+export const licenseClassSchema = z.enum(['A1', 'A2', 'A3', 'A4', 'A5', 'B', 'C', 'D', 'E', 'F'], {
+  error: errorOpcion,
+});
 export type LicenseClass = z.infer<typeof licenseClassSchema>;
 
 export const driverStatusSchema = z.enum(['activo', 'suspendido', 'en_viaje', 'fuera_servicio']);
@@ -69,7 +72,7 @@ export function esEmailDeRelleno(email: string): boolean {
 }
 
 /** Mensaje único del formato, en la ficha y en el alta. */
-export const MENSAJE_EMAIL_CONDUCTOR = 'Escribe un email válido, como nombre@dominio.cl';
+export const MENSAJE_EMAIL_CONDUCTOR = 'Ingresa un correo válido, como nombre@dominio.cl';
 
 /**
  * El dominio tiene que incluir un punto y un TLD de al menos dos letras.
@@ -96,10 +99,10 @@ function dominioConTld(email: string): boolean {
  * nunca el de relleno. El máximo coincide con `usuarios.email` (varchar 255).
  */
 export const conductorContactEmailSchema = z
-  .string()
+  .string({ error: MENSAJE_EMAIL_CONDUCTOR })
   .trim()
   .min(3, MENSAJE_EMAIL_CONDUCTOR)
-  .max(255, MENSAJE_EMAIL_CONDUCTOR)
+  .max(255, MENSAJES.max(255))
   .email(MENSAJE_EMAIL_CONDUCTOR)
   .refine(dominioConTld, { message: MENSAJE_EMAIL_CONDUCTOR })
   .transform((value) => value.toLowerCase())
@@ -110,7 +113,7 @@ export const conductorContactEmailSchema = z
 export type ConductorContactEmail = z.infer<typeof conductorContactEmailSchema>;
 
 /** Mismo texto en el alta y en la ficha. */
-export const MENSAJE_TELEFONO_CONDUCTOR = 'Ingresa un teléfono válido (+569...)';
+export const MENSAJE_TELEFONO_CONDUCTOR = MENSAJE_TELEFONO;
 
 /**
  * WhatsApp del conductor: solo móvil +569. Un fijo (+562…) pasa
@@ -127,8 +130,8 @@ export const telefonoMovilConductorSchema = chileanPhoneSchema.refine(
  * `lookup` y si el user existe, lo enlaza; si no, crea user + envía invite.
  */
 export const createDriverBodySchema = z.object({
-  rut: z.string().min(1),
-  full_name: z.string().min(1).max(200),
+  rut: textoEs(1),
+  full_name: textoEs(1, 200),
   /**
    * Email real del conductor. **Obligatorio** desde `equipo-de-la-empresa`
    * Fase B: es el canal de comunicación de la plataforma con esa persona.
@@ -153,8 +156,10 @@ export const createDriverBodySchema = z.object({
    */
   phone: telefonoMovilConductorSchema,
   license_class: licenseClassSchema,
-  license_number: z.string().min(1).max(50),
-  license_expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  license_number: textoEs(1, 50),
+  license_expiry: z
+    .string({ error: MENSAJES.requerido })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, MENSAJES.fecha),
   is_extranjero: z.boolean().default(false),
 });
 
@@ -162,10 +167,10 @@ export type CreateDriverBody = z.infer<typeof createDriverBodySchema>;
 
 export const updateDriverBodySchema = z.object({
   license_class: licenseClassSchema.optional(),
-  license_number: z.string().min(1).max(50).optional(),
+  license_number: textoEs(1, 50).optional(),
   license_expiry: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .regex(/^\d{4}-\d{2}-\d{2}$/, MENSAJES.fecha)
     .optional(),
   is_extranjero: z.boolean().optional(),
   status: driverStatusSchema.optional(),

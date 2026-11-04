@@ -92,7 +92,7 @@ function makeDbStub(initial: DbQueues = {}) {
 const FB_UID = 'fb-uid-grantor';
 const USER_ID = 'user-uuid-grantor';
 // UUID válido para los tests de revoke (el handler valida que :id sea UUID).
-const VALID_CONSENT_ID = '99999999-9999-9999-9999-999999999999';
+const VALID_CONSENT_ID = '99999999-9999-4999-9999-999999999999';
 
 const validClaimsHeader = JSON.stringify({ uid: FB_UID, email: 'a@b.c' });
 
@@ -119,9 +119,9 @@ async function buildApp(db: unknown) {
 }
 
 const validBody = {
-  stakeholder_id: '11111111-1111-1111-1111-111111111111',
+  stakeholder_id: '11111111-1111-4111-8111-111111111111',
   scope_type: 'organizacion',
-  scope_id: '22222222-2222-2222-2222-222222222222',
+  scope_id: '22222222-2222-4222-8222-222222222222',
   data_categories: ['emisiones_carbono', 'certificados'],
   consent_document_url: 'https://docs.boosterchile.com/c/abc.pdf',
 };
@@ -172,7 +172,7 @@ describe('POST /me/consents', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
       // scope_id apunta a empresa B (ajena al user)
-      body: JSON.stringify({ ...validBody, scope_id: '33333333-3333-3333-3333-333333333333' }),
+      body: JSON.stringify({ ...validBody, scope_id: '33333333-3333-4333-8333-333333333333' }),
     });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { code: string };
@@ -253,7 +253,7 @@ describe('POST /me/consents', () => {
         body: JSON.stringify({
           ...validBody,
           scope_type: scopeType,
-          scope_id: '33333333-3333-3333-3333-333333333333',
+          scope_id: '33333333-3333-4333-8333-333333333333',
         }),
       });
       expect(res.status, `scope_type=${scopeType}`).toBe(403);

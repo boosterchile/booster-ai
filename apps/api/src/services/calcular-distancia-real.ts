@@ -84,10 +84,10 @@ export async function calcularDistanciaHibrida(
       continue;
     }
 
-    // Hueco con el vehículo detenido (extremos idénticos): 0 km, sin Routes.
-    // Decisión del PO 2026-09-22 (#708, spec §6): Routes responde 200 sin
-    // `distanceMeters` para origen == destino y el resolver lo trataba como
-    // «sin ruta» → abortaba el viaje entero por una parada.
+    // Hueco con el vehículo detenido (extremos a ≤ 25 m): 0 km, sin Routes.
+    // Para una parada Routes responde 200 sin `distanceMeters` y el resolver lo
+    // trata como «sin ruta» → abortaba el viaje entero (#708; deriva del GPS en
+    // BOO-HC7DJX, enmienda 2026-10-29).
     if (esHuecoDetenido(desde, hasta)) {
       segmentos.push({ tipo: 'estimado', desde, hasta, km: 0 });
       continue;
@@ -159,13 +159,23 @@ export function resolverEscrituraDistanciaReal(
 }
 
 /**
- * Hueco con el vehículo detenido: los dos pings reportan exactamente la misma
- * coordenada (Teltonika repite el fix con el camión parado; el móvil entrega el
- * fix en caché). La distancia recorrida es 0 km por definición, sin umbral ni
- * llamada a Routes (enmienda 2026-09-22 a `.specs/distancia-real-hibrida/`).
+ * Deriva máxima del GPS, en metros, entre los dos extremos de un hueco para
+ * tratarlo como vehículo detenido. Con el camión quieto el fix se mueve unos
+ * metros (BOO-HC7DJX: 6,94 m en 183 s); en 14 días de Teltonika el 99,5 % de los
+ * huecos ≥ 60 s quedan dentro de este umbral. Decisión del PO 2026-10-29
+ * (`.specs/hueco-detenido-deriva/`). El odómetro se descartó como señal: hay
+ * equipos con el IO 16 congelado o con valores basura.
+ */
+export const DERIVA_MAX_HUECO_DETENIDO_M = 25;
+
+/**
+ * Hueco con el vehículo detenido: los dos pings que lo bordean están a
+ * `DERIVA_MAX_HUECO_DETENIDO_M` o menos en línea recta (incluye el fix repetido,
+ * 0 m). La distancia recorrida es 0 km, sin llamada a Routes.
  */
 function esHuecoDetenido(desde: PingGps, hasta: PingGps): boolean {
-  return desde.lat === hasta.lat && desde.lng === hasta.lng;
+  const derivaM = haversineKm(desde.lat, desde.lng, hasta.lat, hasta.lng) * 1000;
+  return derivaM <= DERIVA_MAX_HUECO_DETENIDO_M;
 }
 
 /**

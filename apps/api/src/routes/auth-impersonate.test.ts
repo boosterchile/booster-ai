@@ -31,7 +31,7 @@ const noopLogger = {
 } as unknown as Logger;
 
 const ADMIN_EMAIL = 'dev@boosterchile.com';
-const ADMIN_ID = '99999999-9999-9999-9999-999999999999';
+const ADMIN_ID = '99999999-9999-4999-9999-999999999999';
 
 let featureActivated = true;
 vi.mock('../config.js', () => ({
@@ -118,7 +118,7 @@ function post(app: Hono, body: unknown) {
   });
 }
 
-const VALID_TARGET = '11111111-1111-1111-1111-111111111111';
+const VALID_TARGET = '11111111-1111-4111-8111-111111111111';
 
 beforeEach(() => {
   featureActivated = true;

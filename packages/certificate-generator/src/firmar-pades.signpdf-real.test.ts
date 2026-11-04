@@ -67,6 +67,9 @@ async function pdfConPlaceholder(): Promise<Uint8Array> {
   });
 }
 
+// Genera un PDF real con Inter embebida: bajo coverage en CI tarda >5 s (HC-004).
+vi.setConfig({ testTimeout: 30_000 });
+
 describe('firmarPades con @signpdf/signpdf REAL', () => {
   beforeEach(() => {
     firmarConKmsMock.mockReset();

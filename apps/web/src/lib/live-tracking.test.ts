@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   etaLine,
   formatEta,
+  isLiveTrackingStatus,
   positionSourceLabel,
   publicTrackingShareUrl,
 } from './live-tracking.js';
@@ -26,6 +27,20 @@ describe('formatEta', () => {
   it('nunca «en 0 min»: piso de 1, igual que el API', () => {
     expect(formatEta(0)).toBe('en 1 min');
     expect(formatEta(0.4)).toBe('en 1 min');
+  });
+});
+
+describe('isLiveTrackingStatus', () => {
+  it('asignado y en_proceso están en seguimiento vivo', () => {
+    expect(isLiveTrackingStatus('asignado')).toBe(true);
+    expect(isLiveTrackingStatus('en_proceso')).toBe(true);
+  });
+
+  it('cerrado o sin estado no está en seguimiento vivo', () => {
+    expect(isLiveTrackingStatus('entregado')).toBe(false);
+    expect(isLiveTrackingStatus('cancelado')).toBe(false);
+    expect(isLiveTrackingStatus(null)).toBe(false);
+    expect(isLiveTrackingStatus(undefined)).toBe(false);
   });
 });
 
