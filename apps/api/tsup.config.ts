@@ -58,6 +58,8 @@ export default defineConfig({
     '@signpdf/utils',
     'node-forge',
     'pdf-lib',
+    // HC-004 — fuentes Inter embebidas con fontkit (CJS); external igual que pdf-lib.
+    '@pdf-lib/fontkit',
     // F4 — @booster-ai/transport-documents (bundleado vía noExternal) importa
     // estas deps nativas/wasm: sharp (libvips native), @hyzyla/pdfium y
     // zxing-wasm (WASM), fast-xml-parser. Bundlearlas rompe (native bindings /

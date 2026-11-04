@@ -116,3 +116,55 @@ describe('matching-engine app', () => {
     expect(log.warn).toHaveBeenCalled();
   });
 });
+
+describe('POST /ranking — contrato del 400 (TRK-003)', () => {
+  it('algoritmo desconocido → 400 invalid_request', async () => {
+    const res = await setup().post({ ...v1, algoritmo: 'v9' });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "invalid_request",
+          "issues": [
+            {
+              "code": "invalid_union",
+              "discriminator": "algoritmo",
+              "errors": [],
+              "message": "Invalid discriminator value. Expected 'v1' | 'v2'",
+              "note": "No matching discriminator",
+              "options": [
+                "v1",
+                "v2",
+              ],
+              "path": [
+                "algoritmo",
+              ],
+            },
+          ],
+        },
+        "status": 400,
+      }
+    `);
+  });
+
+  it('cargoWeightKg no numérico → 400 invalid_request', async () => {
+    const res = await setup().post({ ...v1, cargoWeightKg: 'mucho' });
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": "invalid_request",
+          "issues": [
+            {
+              "code": "invalid_type",
+              "expected": "number",
+              "message": "Invalid input: expected number, received string",
+              "path": [
+                "cargoWeightKg",
+              ],
+            },
+          ],
+        },
+        "status": 400,
+      }
+    `);
+  });
+});

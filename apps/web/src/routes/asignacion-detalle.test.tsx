@@ -54,20 +54,28 @@ vi.mock('../components/transport-documents/TransportDocumentsPanel.js', () => ({
 
 const { AsignacionDetalleRoute } = await import('./asignacion-detalle.js');
 
-function makeMe(isTransportista: boolean): MeOnboarded {
+function makeMe(
+  isTransportista: boolean,
+  opts?: { userId?: string; role?: 'dueno' | 'admin' | 'despachador' | 'conductor' },
+): MeOnboarded {
   return {
     needs_onboarding: false,
-    user: { id: 'u', full_name: 'F' } as MeOnboarded['user'],
+    user: {
+      id: opts?.userId ?? 'u',
+      full_name: 'Conductor Ejemplo',
+      email: 'conductor@example.com',
+      rut: '11.111.111-1',
+    } as MeOnboarded['user'],
     memberships: [],
     active_membership: {
       id: 'm',
-      role: 'dueno',
+      role: opts?.role ?? 'dueno',
       status: 'activa',
       joined_at: null,
       empresa: {
         id: 'e',
-        legal_name: 'E',
-        rut: '76',
+        legal_name: 'Transportes Ejemplo',
+        rut: '11.111.111-1',
         is_generador_carga: false,
         is_transportista: isTransportista,
         status: 'activa',
@@ -113,32 +121,64 @@ describe('AsignacionDetalleRoute', () => {
     expect(screen.getByText('Sin permisos')).toBeInTheDocument();
   });
 
-  it('transportista + status asignado → muestra DeliveryConfirmCard', async () => {
-    vi.spyOn(api, 'get').mockResolvedValueOnce({
+  function assignmentActivo(driverUserId: string) {
+    return {
       trip_request: {
         id: 't1',
-        tracking_code: 'BST-001',
+        tracking_code: 'BOO-TEST01',
         status: 'asignado',
-        origin: { address_raw: 'A', region_code: 'XIII' },
-        destination: { address_raw: 'B', region_code: 'V' },
+        origin: { address_raw: 'Origen ejemplo 100', region_code: 'XIII' },
+        destination: { address_raw: 'Destino ejemplo 200', region_code: 'V' },
         cargo_type: 'carga_seca',
         cargo_weight_kg: 5000,
-        shipper_legal_name: 'ACME',
+        shipper_legal_name: 'Generador Ejemplo',
       },
       assignment: {
         id: 'a1',
         status: 'asignado',
-        driver_user_id: 'u-driver',
+        driver_user_id: driverUserId,
+        driver_name: 'Conductor Ejemplo',
         vehicle_id: 'v-1',
-      } as never,
-    });
-    providedContext = { kind: 'onboarded', me: makeMe(true) };
+        vehicle_plate: 'TEST01',
+      },
+    };
+  }
+
+  it('el administrador que no conduce el viaje no ve entrega ni incidente', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce(assignmentActivo('user-conductor'));
+    providedContext = { kind: 'onboarded', me: makeMe(true, { userId: 'user-admin' }) };
     renderRoute();
-    await waitFor(() => expect(screen.getByTestId('delivery-confirm')).toBeInTheDocument());
-    expect(screen.getByTestId('asignacion-ejecucion')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('asignacion-ejecucion')).toBeInTheDocument());
+    expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /reportar incidente/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId('behavior-score')).not.toBeInTheDocument();
     expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-trip-id', 't1');
     expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-can-write', 'true');
+  });
+
+  it('el conductor asignado ve entrega e incidente aunque su rol sea dueño', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce(assignmentActivo('user-conductor'));
+    providedContext = {
+      kind: 'onboarded',
+      me: makeMe(true, { userId: 'user-conductor', role: 'dueno' }),
+    };
+    renderRoute();
+    await waitFor(() => expect(screen.getByTestId('delivery-confirm')).toBeInTheDocument());
+    expect(screen.getByRole('region', { name: /reportar incidente/i })).toBeInTheDocument();
+    expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-can-write', 'true');
+  });
+
+  it('rol conductor que no es el asignado tampoco ve las acciones del viaje', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce(assignmentActivo('user-conductor'));
+    providedContext = {
+      kind: 'onboarded',
+      me: makeMe(true, { userId: 'user-otro', role: 'conductor' }),
+    };
+    renderRoute();
+    await waitFor(() => expect(screen.getByTestId('asignacion-ejecucion')).toBeInTheDocument());
+    expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /reportar incidente/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-can-write', 'false');
   });
 
   it('transportista + status entregado → BehaviorScoreCard + chat readOnly', async () => {

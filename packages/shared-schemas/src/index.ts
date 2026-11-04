@@ -13,6 +13,8 @@ export * from './primitives/dates.js';
 export * from './primitives/comunas-chile.js';
 export * from './primitives/punto-mapa.js';
 export * from './primitives/interpretar-lugar.js';
+export * from './primitives/bounded-array.js';
+export * from './primitives/mensajes.js';
 
 // Dominio — multi-tenant + ops (slice B pre-launch)
 export * from './domain/stakeholder.js';

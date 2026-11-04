@@ -31,7 +31,7 @@ const noopLogger = {
 >[0]['logger'];
 
 const VALID_RUT = '11.111.111-1';
-const USER_ID = '11111111-2222-3333-4444-555555555555';
+const USER_ID = '11111111-2222-4333-8444-555555555555';
 const CORRECT_CLAVE = '123456';
 const WRONG_CLAVE = '654321';
 

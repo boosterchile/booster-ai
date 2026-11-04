@@ -25,8 +25,11 @@ import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { tripMetrics, trips } from '../db/schema.js';
+import { certificadosViaje, tripMetrics, trips } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
+import { obtenerVigente } from '../services/certificados-versionados.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 
@@ -168,8 +171,18 @@ export function createCertificatesRoutes(opts: {
   // legítimo (auditores ESG, reguladores, clientes finales).
   //
   // 404 si el tracking_code no existe o el cert todavía no fue emitido.
+  //
+  // HC-001 p3a, `?sha256=` (hex de 64 en minúscula; si no, 400): vigente o
+  // sin parámetro, igual; reemplazada/revertida: `valid: false`,
+  // `firma_autentica: true` y la vigente; otro: `sha256_no_corresponde`.
   // ---------------------------------------------------------------------
-  app.get('/:tracking_code/verify', async (c) => {
+  const verifyQuery = z.object({
+    sha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'Debe ser un sha256 hexadecimal de 64 caracteres en minúscula.')
+      .optional(),
+  });
+  app.get('/:tracking_code/verify', zValidator('query', verifyQuery), async (c) => {
     const trackingCode = c.req.param('tracking_code');
 
     if (!opts.certConfig?.certificatesBucket) {
@@ -180,8 +193,10 @@ export function createCertificatesRoutes(opts: {
     // de GCS que está bajo certificates/{empresa_id}/{tracking}.pdf.sig).
     const tripRows = await opts.db
       .select({
+        tripId: trips.id,
         empresaId: trips.generadorCargaEmpresaId,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
+        certificateSha256: tripMetrics.certificateSha256,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
@@ -199,6 +214,41 @@ export function createCertificatesRoutes(opts: {
         },
         404,
       );
+    }
+    const { sha256 } = c.req.valid('query');
+    if (sha256 && sha256 !== trip.certificateSha256) {
+      const [version] = await opts.db
+        .select()
+        .from(certificadosViaje)
+        .where(and(eq(certificadosViaje.tripId, trip.tripId), eq(certificadosViaje.sha256, sha256)))
+        .limit(1);
+      if (!version || version.estado === 'vigente') {
+        return c.json({
+          valid: false,
+          tracking_code: trackingCode,
+          motivo: 'sha256_no_corresponde',
+        });
+      }
+      const vigente = await obtenerVigente(opts.db, trip.tripId);
+      return c.json({
+        valid: false,
+        firma_autentica: true,
+        vigente: false,
+        tracking_code: trackingCode,
+        estado: version.estado,
+        version: version.version,
+        pdf_sha256: version.sha256,
+        emitido_en: version.emitidoEn.toISOString(),
+        reemplazado_en: version.reemplazadoEn?.toISOString() ?? null,
+        mensaje: vigente
+          ? `${version.estado === 'reemplazado' ? 'reemplazado por' : 'revertido; vigente'} v${vigente.version}`
+          : version.estado,
+        version_vigente: vigente && {
+          version: vigente.version,
+          pdf_sha256: vigente.sha256,
+          emitido_en: vigente.emitidoEn.toISOString(),
+        },
+      });
     }
     if (!trip.empresaId) {
       // Edge: trip sin shipper (anonymous WhatsApp). No debería tener

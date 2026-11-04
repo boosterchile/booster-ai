@@ -61,7 +61,7 @@ describe('integration: índice de matching v2 de asignaciones (migración 0042)'
         `EXPLAIN (FORMAT JSON)
          SELECT empresa_id, count(*)
          FROM asignaciones
-         WHERE empresa_id IN ('00000000-0000-0000-0000-000000000001'::uuid)
+         WHERE empresa_id IN ('00000000-0000-4000-8000-000000000001'::uuid)
            AND entregado_en >= now() - interval '7 days'
          GROUP BY empresa_id`,
       );
@@ -82,7 +82,7 @@ describe('integration: índice de matching v2 de asignaciones (migración 0042)'
       const explain = await client.query<{ 'QUERY PLAN': unknown }>(
         `EXPLAIN (FORMAT JSON)
          SELECT * FROM asignaciones
-         WHERE empresa_id = '00000000-0000-0000-0000-000000000001'::uuid`,
+         WHERE empresa_id = '00000000-0000-4000-8000-000000000001'::uuid`,
       );
       const plan = JSON.stringify(explain.rows[0]['QUERY PLAN']);
       expect(plan).toContain('idx_asignaciones_empresa_entregado');

@@ -37,7 +37,7 @@ export const MENSAJE_FUENTE_COMBUSTIBLE_CAN =
   'La fuente CAN tiene que ser 84, 83, 89 o sin_sensor.';
 
 export const fuenteCombustibleCanSchema = z.enum(FUENTES_COMBUSTIBLE_CAN, {
-  errorMap: () => ({ message: MENSAJE_FUENTE_COMBUSTIBLE_CAN }),
+  message: MENSAJE_FUENTE_COMBUSTIBLE_CAN,
 });
 
 /**
@@ -45,10 +45,7 @@ export const fuenteCombustibleCanSchema = z.enum(FUENTES_COMBUSTIBLE_CAN, {
  * No numérico, cero o negativo caen en el mismo mensaje.
  */
 export const capacidadEstanqueLSchema = z
-  .number({
-    invalid_type_error: MENSAJE_CAPACIDAD_ESTANQUE,
-    required_error: MENSAJE_CAPACIDAD_ESTANQUE,
-  })
+  .number({ message: MENSAJE_CAPACIDAD_ESTANQUE })
   .finite({ message: MENSAJE_CAPACIDAD_ESTANQUE })
   .gt(0, { message: MENSAJE_CAPACIDAD_ESTANQUE })
   .lte(2000, { message: MENSAJE_CAPACIDAD_ESTANQUE });

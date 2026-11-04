@@ -8,6 +8,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Building2, Loader2, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
+import { NombreMiembro } from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -310,7 +311,7 @@ interface StakeholderOrgMember {
   user_id: string;
   rut: string | null;
   email: string;
-  full_name: string;
+  full_name: string | null;
   status: 'pendiente_invitacion' | 'activa' | 'suspendida' | 'removida';
   is_pending: boolean;
   invitado_en: string;
@@ -486,11 +487,17 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
               className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-2 py-1.5 text-xs"
             >
               <div className="min-w-0">
-                <div className="truncate font-medium text-neutral-900">{m.full_name}</div>
-                <div className="text-neutral-500">
-                  {m.rut && <span className="font-mono">{m.rut}</span>}
-                  {m.email && <span className="ml-2">{m.email}</span>}
-                </div>
+                {m.status === 'activa' ? (
+                  <>
+                    <NombreMiembro nombre={m.full_name} pendiente={false} />
+                    <div className="text-neutral-500">
+                      {m.rut && <span className="font-mono">{m.rut}</span>}
+                      {m.email && <span className="ml-2">{m.email}</span>}
+                    </div>
+                  </>
+                ) : (
+                  <NombreMiembro nombre={m.full_name} pendiente rut={m.rut} />
+                )}
               </div>
               <span
                 className={`shrink-0 rounded px-1.5 py-0.5 font-medium text-[10px] uppercase tracking-wide ${
@@ -550,17 +557,11 @@ function InviteStakeholderMemberForm({
       setForm({ rut: '', email: '', full_name: '' });
       if (res.codigo_activacion) {
         onInvited({ tipo: 'codigo', codigo: res.codigo_activacion });
-      } else if (res.vinculo === 'cuenta_activa' || res.status === 'activa') {
-        onInvited({
-          tipo: 'vinculo',
-          aviso:
-            'Esta persona ya tiene cuenta. Quedó en la organización y entra con su RUT y su clave. Su clave no cambia.',
-        });
       } else {
         onInvited({
           tipo: 'vinculo',
           aviso:
-            'Esta persona ya tiene un código vigente. No se reemplazó. Cuando lo use, también quedará en la organización.',
+            'Solicitud registrada. Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora, avísale tú.',
         });
       }
     } catch (err) {
@@ -590,7 +591,7 @@ function InviteStakeholderMemberForm({
           value={form.rut}
           onChange={(e) => setForm({ ...form, rut: e.target.value })}
           className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-          placeholder="12.345.678-9"
+          placeholder="12.345.678-5"
           data-testid={`stakeholder-org-invite-rut-${orgId}`}
         />
       </label>

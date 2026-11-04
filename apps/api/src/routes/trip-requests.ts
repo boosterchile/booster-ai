@@ -4,11 +4,11 @@ import {
   trackingCodeSchema,
   whatsAppIntakeCreateInputSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { whatsAppIntakeDrafts } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 
 /**
  * Endpoints de trip requests legacy — consumidos SOLO por

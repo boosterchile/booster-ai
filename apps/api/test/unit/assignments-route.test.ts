@@ -603,7 +603,7 @@ describe('entrega e incidente: solo el conductor asignado', () => {
 });
 
 describe('POST /assignments/:id/asignar-conductor', () => {
-  const VALID_BODY = { driver_user_id: '00000000-0000-0000-0000-000000000a05' };
+  const VALID_BODY = { driver_user_id: '00000000-0000-4000-8000-000000000a05' };
 
   // El test header VALID_CTX no incluía 'membership' (subobjeto), pero
   // el endpoint nuevo lee `auth.activeMembership.membership.role`. Para
@@ -719,14 +719,14 @@ describe('POST /assignments/:id/asignar-conductor', () => {
   });
 
   it('body con vehiculo_id uuid lo reenvía al servicio', async () => {
-    const vehiculoId = '00000000-0000-0000-0000-000000000a07';
+    const vehiculoId = '00000000-0000-4000-8000-000000000a07';
     (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       assignmentId: ASSIGNMENT_ID,
       previousDriverUserId: null,
       newDriverUserId: VALID_BODY.driver_user_id,
       driverName: 'Conductor pendiente',
       driverPending: true,
-      previousVehicleId: '00000000-0000-0000-0000-000000000a08',
+      previousVehicleId: '00000000-0000-4000-8000-000000000a08',
       newVehicleId: vehiculoId,
     });
     const app = await buildApp({ db: makeDb() });
@@ -772,7 +772,7 @@ describe('POST /assignments/:id/asignar-conductor', () => {
   });
 
   it('service VehicleNotAssignableError → 400 vehicle_not_assignable', async () => {
-    const vehiculoId = '00000000-0000-0000-0000-000000000a07';
+    const vehiculoId = '00000000-0000-4000-8000-000000000a07';
     (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new VehicleNotAssignableError(vehiculoId, 'not_motriz'),
     );
