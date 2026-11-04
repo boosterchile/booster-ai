@@ -101,9 +101,6 @@ export function LoginRoute() {
     return <Navigate to={postLoginTarget} href={postLoginTarget} />;
   }
 
-  // Ruteo especial de demo.boosterchile.com → /demo RETIRADO
-  // (chore/retiro-subsistema-demo): el host demo cae al flujo de login normal.
-
   // Esperar a que los feature flags resuelvan antes de elegir el flujo. Sin
   // esto, el form legacy (email/password) parpadea ~2s antes de que llegue
   // `auth_universal_v1_activated` y conmute al flujo universal (RUT + clave

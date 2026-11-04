@@ -79,7 +79,7 @@ async function buildApp(opts: {
   return app;
 }
 
-const VALID_UUID = '11111111-1111-1111-1111-111111111111';
+const VALID_UUID = '11111111-1111-4111-8111-111111111111';
 
 describe('admin-matching-backtest routes', () => {
   describe('POST /admin/matching/backtest', () => {
@@ -125,7 +125,25 @@ describe('admin-matching-backtest routes', () => {
         body: JSON.stringify({ tripsLimit: 99999 }),
         headers: { 'content-type': 'application/json' },
       });
-      expect(res.status).toBe(400);
+      // Contrato TRK-003: `detail` es error.format() de zod 3.
+      expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+        {
+          "body": {
+            "detail": {
+              "errors": [],
+              "properties": {
+                "tripsLimit": {
+                  "errors": [
+                    "Too big: expected number to be <=5000",
+                  ],
+                },
+              },
+            },
+            "error": "validation",
+          },
+          "status": 400,
+        }
+      `);
     });
 
     it('admin con pesos custom inválidos (suma > 1) NO se valida en schema, pero validateWeights del service rechaza', async () => {

@@ -81,7 +81,33 @@ function makeDb(queues: DbQueues = {}) {
   };
 }
 
-const ASSIGN_ID = 'aaaaaaaa-1111-2222-3333-444444444444';
+/**
+ * Recoge los valores bindeados (`Param`) de un árbol SQL de Drizzle sin
+ * ejecutar nada. Sirve para afirmar qué filtra un WHERE con la BD stubbeada.
+ */
+function collectSqlParams(node: unknown, out: unknown[] = []): unknown[] {
+  if (!node || typeof node !== 'object') {
+    return out;
+  }
+  if (Array.isArray(node)) {
+    for (const n of node) {
+      collectSqlParams(n, out);
+    }
+    return out;
+  }
+  const rec = node as Record<string, unknown>;
+  if ('encoder' in rec && 'value' in rec) {
+    out.push(rec.value);
+    return out;
+  }
+  if (Array.isArray(rec.queryChunks)) {
+    collectSqlParams(rec.queryChunks, out);
+  }
+  return out;
+}
+
+const ASSIGN_ID = 'aaaaaaaa-1111-4222-8333-444444444444';
+const OTHER_CURSOR = 'bbbbbbbb-5555-4666-8777-888888888888';
 const SHIPPER_EMP = 'shipper-emp';
 const CARRIER_EMP = 'carrier-emp';
 const USER_ID = 'user-uuid';
@@ -264,7 +290,7 @@ describe('POST /chat/:id/messages', () => {
       headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
       body: JSON.stringify({
         type: 'foto',
-        photo_gcs_uri: `gs://my-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jpg`,
+        photo_gcs_uri: `gs://my-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jpg`,
       }),
     });
     expect(res.status).toBe(503);
@@ -278,7 +304,7 @@ describe('POST /chat/:id/messages', () => {
       headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
       body: JSON.stringify({
         type: 'foto',
-        photo_gcs_uri: `gs://otra-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jpg`,
+        photo_gcs_uri: `gs://otra-bucket/chat/${ASSIGN_ID}/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jpg`,
       }),
     });
     expect(res.status).toBe(400);
@@ -355,7 +381,7 @@ describe('POST /chat/:id/messages', () => {
 });
 
 describe('POST /chat/:id/messages/stream-ticket', () => {
-  it('sesión con claim is_demo residual → el ticket guardado NO lleva isDemo', async () => {
+  it('el ticket guardado lleva solo uid y assignmentId, sin claims de la sesión', async () => {
     const stored: string[] = [];
     const redis = {
       async set(_key: string, value: string) {
@@ -371,7 +397,7 @@ describe('POST /chat/:id/messages/stream-ticket', () => {
           user: { id: USER_ID, firebaseUid: 'fb-uid' },
           activeMembership: { empresa: { id: SHIPPER_EMP } },
         }),
-        'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { is_demo: true } }),
+        'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { rol: 'dueno' } }),
       },
     });
     expect(res.status).toBe(200);
@@ -431,6 +457,36 @@ describe('GET /chat/:id/messages', () => {
       },
     );
     expect(res.status).toBe(400);
+  });
+
+  it('cursor de otra asignación → 400 invalid_cursor, igual que uno inexistente', async () => {
+    // El lookup del cursor filtra por la asignación de la ruta: la BD no
+    // devuelve la fila ajena. La respuesta no distingue «no existe» de «es de
+    // otro chat», no filtra su created_at y no llega a consultar la página.
+    const db = makeDb({ selects: [[ACCESS_ROW_SHIPPER], []] });
+    const app = await buildApp({ db });
+    const res = await app.request(`/chat/${ASSIGN_ID}/messages?cursor=${OTHER_CURSOR}`, {
+      headers: { 'x-test-userctx': SHIPPER_CTX },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ error: 'invalid_cursor', code: 'invalid_cursor' });
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('el lookup del cursor exige id Y assignment_id de la ruta', async () => {
+    const db = makeDb({ selects: [[ACCESS_ROW_SHIPPER], []] });
+    const app = await buildApp({ db });
+    await app.request(`/chat/${ASSIGN_ID}/messages?cursor=${OTHER_CURSOR}`, {
+      headers: { 'x-test-userctx': SHIPPER_CTX },
+    });
+    const cursorChain = db.select.mock.results[1]?.value as {
+      where: ReturnType<typeof vi.fn>;
+    };
+    const whereArg = cursorChain.where.mock.calls[0]?.[0];
+    const params = collectSqlParams(whereArg);
+    expect(params).toContain(OTHER_CURSOR);
+    expect(params).toContain(ASSIGN_ID);
   });
 
   it('limit fuera de rango (>100) → 400 zod', async () => {
@@ -540,7 +596,7 @@ describe('POST /chat/:id/messages/photo-upload-url', () => {
 });
 
 describe('POST /chat/:id/messages/:msgId/photo-url', () => {
-  const MSG_ID = 'bbbbbbbb-1111-2222-3333-444444444444';
+  const MSG_ID = 'bbbbbbbb-1111-4222-8333-444444444444';
 
   it('sin auth → 401', async () => {
     const app = await buildApp({ db: makeDb() });

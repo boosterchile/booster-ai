@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 /**
  * Tipos espejados del shape que devuelve el api en GET /offers/mine.
@@ -67,9 +68,10 @@ export function useOffersMine(
   } = {},
 ) {
   const status = opts.status ?? 'pendiente';
+  const scope = useEmpresaScope();
   return useQuery<OffersListResponse>({
-    queryKey: ['offers', 'mine', status],
-    queryFn: () => api.get<OffersListResponse>(`/offers/mine?status=${status}`),
+    queryKey: scope.key('offers', 'mine', status),
+    queryFn: () => api.get<OffersListResponse>(`/offers/mine?status=${status}`, scope.init),
     enabled: opts.enabled ?? true,
     staleTime: 15_000,
     refetchInterval: 30_000,

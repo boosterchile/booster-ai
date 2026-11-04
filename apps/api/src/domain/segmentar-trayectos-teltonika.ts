@@ -1,3 +1,4 @@
+import { THRESHOLD_SECUNDARIO_MODELED_PCT } from '@booster-ai/carbon-calculator';
 import {
   AVL_ID_CAN,
   type AvlIdCan,
@@ -12,8 +13,18 @@ import {
   UMBRAL_ROBO_HORMIGA_MIN_L,
   interpretCanLvcan,
 } from '@booster-ai/shared-schemas';
-import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
+import {
+  type PingPoint,
+  calcularCoberturaPura,
+  haversineKm,
+} from '../services/calcular-cobertura-telemetria.js';
 import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
+import {
+  KM_MINIMOS_KM_POR_LITRO,
+  LITROS_MINIMOS_KM_POR_LITRO,
+  rendimiento,
+  superaTopeConfiable,
+} from './combustible/rendimiento.js';
 
 /**
  * Segmenta trayectos de flota a partir de pings Teltonika ya leídos.
@@ -26,12 +37,24 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * (`fuenteCombustibleCan` undefined): nivel en litros (84, ×0.1); si no hay,
  * litros consumidos por el Δ del contador 83 (×0.1); si no, nivel en % (89).
  * Con provisioning, solo entra el IO configurado. `sin_sensor` o null no
- * inventan litros. El 84 provisionado se lee como porcentaje (JLKT54:
- * raw = 20 × %) y los litros son porcentaje/100 × capacidad. Sin capacidad
- * no hay litros. El 89 no se convierte a litros y el 83 no es un nivel.
+ * inventan litros. El 84 y el 89 provisionados se leen como porcentaje y
+ * los litros son porcentaje/100 × `capacidad_estanque_l`. Esa capacidad
+ * declarada es la fuente de verdad: si se declara 200, son 200 L. Sin
+ * capacidad no hay litros. El 83 no es un nivel.
  * Los litros y el km/L
  * se calculan sobre el tramo entre la primera y la última lectura, solo si
  * ese tramo cubre ≥ 90 % de la distancia del trayecto y suma ≥ 5 L y ≥ 10 km.
+ * Si el km/L redondeado supera 2 × (100 / 32) = 6,25, no se muestra: la nota
+ * es «dato no confiable» y los litros sí. Ese trayecto no entra al Σkm/ΣL
+ * (`sobre_tope`). El Σ usa `kmCubiertos` (la distancia del tramo leído), no
+ * `distanciaKm`. Ese tope, igual que la exclusión por cobertura o por
+ * `sin_sensor`, protege la calidad del dato. No corrige la escala ni
+ * reescribe porcentaje × capacidad.
+ * La cobertura de telemetría es la de `metricas_viaje.cobertura_pct`
+ * (`calcularCoberturaPura`, umbral 80 % de ADR-028). Bajo ese umbral el km/L
+ * no se muestra: la nota es «dato no confiable · cobertura baja» y los litros
+ * medidos sí. Ese segmento no entra al Σkm/ΣL. `sin_sensor` no inventa litros
+ * y la nota es «dato no confiable · sin sensor de combustible»; tampoco entra.
  * El aviso de robo solo existe con el 84: un robo no pasa por el contador 83.
  * Golpe único: puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
  * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
@@ -65,15 +88,70 @@ export const VELOCIDAD_ROBO_MAX_KMH = 5;
 export const UMBRAL_MOVIMIENTO_KMH = 5;
 export const GAP_CORTE_MS = 15 * 60 * 1000;
 export const VENTANA_IO250_MS = 2 * 60 * 1000;
-export const EPSILON_L = 1e-6;
 /** Fracción mínima de la distancia del trayecto que tiene que cubrir la lectura. */
 export const COBERTURA_MINIMA = 0.9;
+export const NOTA_KM_POR_LITRO_NO_CONFIABLE = 'dato no confiable';
+
+/** Misma barra que `THRESHOLD_SECUNDARIO_MODELED_PCT` (ADR-028). 80 entra; 79 no. */
+export const COBERTURA_TELEMETRIA_MINIMA_PCT = THRESHOLD_SECUNDARIO_MODELED_PCT;
+export const RAZON_COBERTURA_BAJA = 'cobertura baja';
+export const RAZON_SIN_SENSOR_COMBUSTIBLE = 'sin sensor de combustible';
+/** Trayecto cuyo km/L redondeado supera 6,25. No entra al Σ. La nota visible no lleva este código. */
+export const RAZON_SOBRE_TOPE = 'sobre_tope';
+
+const ORDEN_RAZONES_KM_POR_LITRO = [
+  RAZON_COBERTURA_BAJA,
+  RAZON_SIN_SENSOR_COMBUSTIBLE,
+  RAZON_SOBRE_TOPE,
+] as const;
+export type RazonKmPorLitroNoConfiable = (typeof ORDEN_RAZONES_KM_POR_LITRO)[number];
+
+/** Razones que se leen en la nota. `sobre_tope` solo saca el trayecto del Σ. */
+const RAZONES_VISIBLES_KM_POR_LITRO = [RAZON_COBERTURA_BAJA, RAZON_SIN_SENSOR_COMBUSTIBLE] as const;
+
+/** «dato no confiable», y la razón si la hay. El orden de las razones es fijo. */
+export function notaKmPorLitroNoConfiable(
+  razones: readonly RazonKmPorLitroNoConfiable[] = [],
+): string {
+  const presentes = RAZONES_VISIBLES_KM_POR_LITRO.filter((razon) => razones.includes(razon));
+  if (presentes.length === 0) {
+    return NOTA_KM_POR_LITRO_NO_CONFIABLE;
+  }
+  return `${NOTA_KM_POR_LITRO_NO_CONFIABLE} · ${presentes.join(' · ')}`;
+}
+
+export function coberturaTelemetriaBaja(coberturaPct: number | null): boolean {
+  return coberturaPct != null && coberturaPct < COBERTURA_TELEMETRIA_MINIMA_PCT;
+}
+
 /**
- * Muestra mínima para un km/L: el 83 viene en pasos de 0,5 L y el 84 oscila
- * con el oleaje. Con menos litros o menos km el número no es confiable.
+ * Por qué un segmento no entra al Σkm/ΣL. `sin_sensor` manda. La cobertura
+ * baja solo excluye si hay litros medidos: sin litros no había km/L que ocultar.
+ * `sobre_tope` usa el mismo `rendimiento` que la fila, sobre los valores publicados.
  */
-export const LITROS_MINIMOS_KM_POR_LITRO = 5;
-export const KM_MINIMOS_KM_POR_LITRO = 10;
+export function razonExclusionKmPorLitro(trayecto: {
+  coberturaPct: number | null;
+  fuenteCombustibleCan: FuenteCombustibleCan | null;
+  litrosConsumidos: number | null;
+  kmCubiertos: number | null;
+}): RazonKmPorLitroNoConfiable | null {
+  if (trayecto.fuenteCombustibleCan === 'sin_sensor') {
+    return RAZON_SIN_SENSOR_COMBUSTIBLE;
+  }
+  if (
+    trayecto.litrosConsumidos != null &&
+    trayecto.litrosConsumidos > 0 &&
+    coberturaTelemetriaBaja(trayecto.coberturaPct)
+  ) {
+    return RAZON_COBERTURA_BAJA;
+  }
+  const r = rendimiento(trayecto.kmCubiertos, trayecto.litrosConsumidos);
+  if (r && superaTopeConfiable(r.kmPorLitro)) {
+    return RAZON_SOBRE_TOPE;
+  }
+  return null;
+}
+
 /**
  * Por debajo de esto el trayecto es una maniobra o una cola. No se emite
  * el aviso de golpe ni el de hormiga, ni el pin.
@@ -136,6 +214,11 @@ export interface PuntoSegmentacion {
    * callers que todavía no leen la columna. `null` equivale a `sin_sensor`.
    */
   fuenteCombustibleCan?: FuenteCombustibleCan | null | undefined;
+  /**
+   * Cobertura ya calculada (0–100), la de `metricas_viaje.cobertura_pct`.
+   * Si algún punto la trae, manda sobre el cálculo de los pings del segmento.
+   */
+  coberturaPct?: number | null | undefined;
   tMs: number;
   lat: number | null;
   lng: number | null;
@@ -153,9 +236,17 @@ export interface TrayectoTeltonika {
   inicio: string;
   fin: string;
   distanciaKm: number;
+  /**
+   * Km del tramo entre la primera y la última lectura de combustible.
+   * Es el numerador del km/L del trayecto. Null si ese tramo no se usó.
+   * El KPI del hub suma este valor, no `distanciaKm`.
+   */
+  kmCubiertos: number | null;
   litrosIniciales: number | null;
   litrosFinales: number | null;
   kmPorLitro: number | null;
+  /** L/100 km del mismo tramo que `kmPorLitro`. Null cuando `kmPorLitro` es null. */
+  litrosPor100Km: number | null;
   /** `null` = el trayecto no trae ninguna lectura de combustible usable. */
   fuenteCombustible: FuenteCombustible | null;
   /** ΔL del 84 o Δ del contador 83 en el tramo leído. Null sin baja, sin cobertura o bajo 5 L / 10 km. */
@@ -164,6 +255,16 @@ export interface TrayectoTeltonika {
   nivelPctInicial: number | null;
   nivelPctFinal: number | null;
   notaCombustible: string | null;
+  /**
+   * Cobertura de telemetría del segmento, 0–100. Null si no se pudo medir.
+   * Es el mismo cálculo que persiste `metricas_viaje.cobertura_pct`.
+   */
+  coberturaPct: number | null;
+  /**
+   * IO CAN provisionado. `sin_sensor` no entra al Σkm/ΣL.
+   * Null = camino legado (84 > 83 > 89), sin columna.
+   */
+  fuenteCombustibleCan: FuenteCombustibleCan | null;
   posibleRoboCombustible: boolean;
   /** Varias caídas chicas en el mismo trayecto. Distinto del golpe único. */
   posibleRoboHormiga: boolean;
@@ -451,6 +552,8 @@ function segmentarVehiculo(
         inicio: new Date(primero.tMs).toISOString(),
         fin: new Date(ultimo.tMs).toISOString(),
         ...combustibleDelTrayecto(sensor, slice, ctx),
+        coberturaPct: coberturaTelemetriaPct(slice, distanciaDe(slice)),
+        fuenteCombustibleCan: fuenteEnTrayecto(ctx),
         sensorCombustible: sensor,
         ctaSensor: sensor === 'ausente',
       },
@@ -728,11 +831,12 @@ function litrosDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_L).fuelLevelL ?? null;
 }
 
-function consumoAcumuladoDe(io: Record<string, number>): number | null {
+/** AVL 83 validado por el catálogo, en litros acumulados. Lo reusa el cierre (T10-05). */
+export function consumoAcumuladoDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_CONSUMED_L).fuelConsumedL ?? null;
 }
 
-function nivelPctDe(io: Record<string, number>): number | null {
+export function nivelPctDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_PCT).fuelLevelPct ?? null;
 }
 
@@ -777,6 +881,41 @@ function lecturasDe(
   return lecturas;
 }
 
+function fuenteEnTrayecto(ctx: ContextoCombustible): FuenteCombustibleCan | null {
+  if (ctx.fuente === 'auto') {
+    return null;
+  }
+  return ctx.fuente;
+}
+
+/**
+ * Cobertura de telemetría del segmento. Si los puntos traen la de trip_metrics,
+ * se usa esa (la menor). Si no, `calcularCoberturaPura` contra la distancia del
+ * segmento: los huecos de 60 s no cuentan como cubiertos.
+ */
+function coberturaTelemetriaPct(
+  puntos: readonly PuntoResuelto[],
+  distanciaKm: number,
+): number | null {
+  const explicitas = puntos
+    .map((punto) => punto.coberturaPct)
+    .filter((valor): valor is number => valor != null && Number.isFinite(valor));
+  if (explicitas.length > 0) {
+    return Math.min(...explicitas);
+  }
+  const pings: PingPoint[] = [];
+  for (const punto of puntos) {
+    if (punto.lat == null || punto.lng == null || !esCoordenadaGpsValida(punto.lat, punto.lng)) {
+      continue;
+    }
+    pings.push({ tMs: punto.tMs, lat: punto.lat, lng: punto.lng });
+  }
+  if (pings.length < 2 || !(distanciaKm > 0)) {
+    return null;
+  }
+  return calcularCoberturaPura(pings, distanciaKm).coveragePct;
+}
+
 function distanciaDe(puntos: readonly PuntoResuelto[]): number {
   let km = 0;
   let previo: { lat: number; lng: number } | null = null;
@@ -795,9 +934,11 @@ function distanciaDe(puntos: readonly PuntoResuelto[]): number {
 type CombustibleTrayecto = Pick<
   TrayectoTeltonika,
   | 'distanciaKm'
+  | 'kmCubiertos'
   | 'litrosIniciales'
   | 'litrosFinales'
   | 'kmPorLitro'
+  | 'litrosPor100Km'
   | 'fuenteCombustible'
   | 'litrosConsumidos'
   | 'nivelPctInicial'
@@ -813,9 +954,11 @@ function baseCombustible(
 ): CombustibleTrayecto {
   return {
     distanciaKm: redondear(distanciaKm, 3),
+    kmCubiertos: null,
     litrosIniciales: null,
     litrosFinales: null,
     kmPorLitro: null,
+    litrosPor100Km: null,
     fuenteCombustible: null,
     litrosConsumidos: null,
     nivelPctInicial,
@@ -874,8 +1017,7 @@ function combustibleSegunFuente(
 
 /**
  * Porcentaje de estanque × capacidad. Sin N no hay litros.
- * El km/L sale del consumo cubierto que ya existe; el guardrail de economía
- * no se duplica acá.
+ * El km/L sale de `consumoCubierto`, que aplica el guardrail de economía.
  */
 function combustibleDesdeNivelPct(
   puntos: PuntoResuelto[],
@@ -930,7 +1072,10 @@ function combustibleDelTrayecto(
   ctx: ContextoCombustible,
 ): CombustibleTrayecto {
   if (ctx.fuente === 'sin_sensor') {
-    return baseCombustible(distanciaDe(puntos), null, null);
+    return {
+      ...baseCombustible(distanciaDe(puntos), null, null),
+      notaCombustible: notaKmPorLitroNoConfiable([RAZON_SIN_SENSOR_COMBUSTIBLE]),
+    };
   }
   if (ctx.fuente === '84' || ctx.fuente === '83' || ctx.fuente === '89') {
     return combustibleSegunFuente(ctx.fuente, puntos, ctx.capacidadEstanqueL);
@@ -992,7 +1137,9 @@ function combustibleDelTrayecto(
  * Litros y km/L sobre el tramo leído, con la distancia de ese mismo tramo.
  * Si cubre menos del 90 % del trayecto, el CAN se cortó en el camino: no se
  * calcula, para no inflar el km/L con kilómetros sin litros. Bajo 5 L o 10 km
- * tampoco, y sin nota por fila: la UI lo explica una vez.
+ * tampoco, y sin nota por fila: la UI lo explica una vez. Por encima de
+ * 6,25 km/L el número no se publica y la fila dice que el dato no es confiable.
+ * Con cobertura de telemetría bajo 80 % pasa lo mismo, y la nota dice por qué.
  */
 function consumoCubierto(
   puntos: PuntoResuelto[],
@@ -1000,17 +1147,49 @@ function consumoCubierto(
   hastaIdx: number,
   litros: number,
   distanciaTotalKm: number,
-): Pick<TrayectoTeltonika, 'litrosConsumidos' | 'kmPorLitro' | 'notaCombustible'> {
+): Pick<
+  TrayectoTeltonika,
+  'litrosConsumidos' | 'kmCubiertos' | 'kmPorLitro' | 'litrosPor100Km' | 'notaCombustible'
+> {
+  const sinRendimiento = { kmPorLitro: null, litrosPor100Km: null };
   const cubiertaKm = distanciaDe(puntos.slice(desdeIdx, hastaIdx + 1));
   if (cubiertaKm + 1e-9 < COBERTURA_MINIMA * distanciaTotalKm) {
-    return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: NOTA_COBERTURA_PARCIAL };
+    return {
+      litrosConsumidos: null,
+      kmCubiertos: null,
+      ...sinRendimiento,
+      notaCombustible: NOTA_COBERTURA_PARCIAL,
+    };
   }
   if (litros + 1e-9 < LITROS_MINIMOS_KM_POR_LITRO || cubiertaKm + 1e-9 < KM_MINIMOS_KM_POR_LITRO) {
-    return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: null };
+    return { litrosConsumidos: null, kmCubiertos: null, ...sinRendimiento, notaCombustible: null };
+  }
+  const kmCubiertos = redondear(cubiertaKm, 3);
+  const litrosConsumidos = redondear(litros, 1);
+  // Misma cuenta que `razonExclusionKmPorLitro` y el hub: sobre los valores publicados.
+  const r = rendimiento(kmCubiertos, litrosConsumidos);
+  const cobertura = coberturaTelemetriaPct(puntos, distanciaTotalKm);
+  if (coberturaTelemetriaBaja(cobertura)) {
+    return {
+      litrosConsumidos,
+      kmCubiertos,
+      ...sinRendimiento,
+      notaCombustible: notaKmPorLitroNoConfiable([RAZON_COBERTURA_BAJA]),
+    };
+  }
+  if (!r || superaTopeConfiable(r.kmPorLitro)) {
+    return {
+      litrosConsumidos,
+      kmCubiertos,
+      ...sinRendimiento,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    };
   }
   return {
-    litrosConsumidos: redondear(litros, 1),
-    kmPorLitro: redondear(cubiertaKm / Math.max(litros, EPSILON_L), 2),
+    litrosConsumidos,
+    kmCubiertos,
+    kmPorLitro: r.kmPorLitro,
+    litrosPor100Km: r.litrosPor100Km,
     notaCombustible: null,
   };
 }
@@ -1029,6 +1208,7 @@ function detectarRobos(
   leerLitros: (io: Record<string, number>) => number | null,
 ): VentanaRobo[] {
   const umbral = umbralRoboLitros(capacidadEstanqueL, uEmpresaL);
+  const noDetenido = prefijoNoDetenido(puntos);
   const muestras: Array<{ tMs: number; litros: number }> = [];
   for (const punto of puntos) {
     const litros = leerLitros(punto.io);
@@ -1054,7 +1234,7 @@ function detectarRobos(
       if (caida + 1e-9 < umbral) {
         continue;
       }
-      if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
+      if (!ventanaDetenida(puntos, noDetenido, inicio.tMs, fin.tMs)) {
         continue;
       }
       if (!nivelCreibleParaAviso(puntos, inicio.tMs, fin.tMs, inicio.litros, capacidadEstanqueL)) {
@@ -1093,6 +1273,7 @@ function detectarEpisodiosHormiga(
       muestras.push({ tMs: punto.tMs, litros });
     }
   }
+  const noDetenido = prefijoNoDetenido(puntos);
   const candidatos: Episodio[] = [];
   for (let j = 1; j < muestras.length; j++) {
     const fin = muestras[j];
@@ -1112,7 +1293,7 @@ function detectarEpisodiosHormiga(
       if (caida + 1e-9 < UMBRAL_EPISODIO_HORMIGA_L) {
         continue;
       }
-      if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
+      if (!ventanaDetenida(puntos, noDetenido, inicio.tMs, fin.tMs)) {
         continue;
       }
       if (!nivelCreibleParaAviso(puntos, inicio.tMs, fin.tMs, inicio.litros, capacidadEstanqueL)) {
@@ -1235,12 +1416,11 @@ function pctEnVentana(
   desdeMs: number,
   hastaMs: number,
 ): number | null {
-  for (const punto of puntos) {
-    if (punto.tMs < desdeMs) {
+  const hasta = indiceHastaExclusivo(puntos, hastaMs);
+  for (let i = indiceDesdeMs(puntos, desdeMs); i < hasta; i++) {
+    const punto = puntos[i];
+    if (!punto) {
       continue;
-    }
-    if (punto.tMs > hastaMs) {
-      break;
     }
     const pct = nivelPctDe(punto.io);
     if (pct != null) {
@@ -1254,19 +1434,69 @@ function trayectoCreibleParaAviso(distanciaKm: number): boolean {
   return distanciaKm + 1e-9 >= DISTANCIA_MINIMA_AVISO_ROBO_KM;
 }
 
-/** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */
-function ventanaDetenida(puntos: PuntoResuelto[], desdeMs: number, hastaMs: number): boolean {
-  let vistos = 0;
-  for (const punto of puntos) {
-    if (punto.tMs < desdeMs || punto.tMs > hastaMs) {
-      continue;
-    }
-    vistos += 1;
-    if (punto.velocidad == null || punto.velocidad > VELOCIDAD_ROBO_MAX_KMH) {
-      return false;
+/**
+ * Los puntos de un vehículo llegan ordenados por `tMs`. Golpe y hormiga
+ * evalúan cada par de lecturas dentro de 5 min. Recorrer los 20 000 pings
+ * del tope en cada par es cuadrático: el hub y `/trayectos` piden 30 días,
+ * el tope se llena y la detección se iba a decenas de segundos en el hilo
+ * de la API (también dejaba esperando a `GET /vehiculos/:id/ubicacion`).
+ * El prefijo responde «¿todo el tramo va a ≤ 5 km/h?» en O(1) tras ubicar
+ * los bordes.
+ */
+function indiceDesdeMs(puntos: readonly { tMs: number }[], desdeMs: number): number {
+  let lo = 0;
+  let hi = puntos.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const tMs = puntos[mid]?.tMs;
+    if (tMs != null && tMs < desdeMs) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
     }
   }
-  return vistos > 0;
+  return lo;
+}
+
+function indiceHastaExclusivo(puntos: readonly { tMs: number }[], hastaMs: number): number {
+  let lo = 0;
+  let hi = puntos.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const tMs = puntos[mid]?.tMs;
+    if (tMs != null && tMs <= hastaMs) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+function prefijoNoDetenido(puntos: readonly PuntoResuelto[]): Uint32Array {
+  const pref = new Uint32Array(puntos.length + 1);
+  for (let i = 0; i < puntos.length; i++) {
+    const punto = puntos[i];
+    const noDetenido =
+      punto == null || punto.velocidad == null || punto.velocidad > VELOCIDAD_ROBO_MAX_KMH;
+    pref[i + 1] = (pref[i] ?? 0) + (noDetenido ? 1 : 0);
+  }
+  return pref;
+}
+
+/** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */
+function ventanaDetenida(
+  puntos: readonly PuntoResuelto[],
+  noDetenido: Uint32Array,
+  desdeMs: number,
+  hastaMs: number,
+): boolean {
+  const desde = indiceDesdeMs(puntos, desdeMs);
+  const hasta = indiceHastaExclusivo(puntos, hastaMs);
+  if (desde >= hasta) {
+    return false;
+  }
+  return (noDetenido[hasta] ?? 0) - (noDetenido[desde] ?? 0) === 0;
 }
 
 /**
@@ -1280,12 +1510,11 @@ function geoAlInicioDeVentana(
   desdeMs: number,
   hastaMs: number,
 ): { lat: number; lon: number } | null {
-  for (const punto of puntos) {
-    if (punto.tMs < desdeMs) {
+  const hasta = indiceHastaExclusivo(puntos, hastaMs);
+  for (let i = indiceDesdeMs(puntos, desdeMs); i < hasta; i++) {
+    const punto = puntos[i];
+    if (!punto) {
       continue;
-    }
-    if (punto.tMs > hastaMs) {
-      break;
     }
     if (punto.lat != null && punto.lng != null && esCoordenadaGpsValida(punto.lat, punto.lng)) {
       return { lat: punto.lat, lon: punto.lng };

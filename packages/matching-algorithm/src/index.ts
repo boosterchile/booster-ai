@@ -133,3 +133,15 @@ export type {
   TripScoringContextV2,
   WeightsV2,
 } from './v2/index.js';
+
+/**
+ * Ranking de candidatos (scoring + top-N) v1/v2 en una sola función, y su
+ * hash para la sombra api ↔ matching-engine (T10-21).
+ */
+export {
+  type CandidatoRankeado,
+  type ResultadoRanking,
+  type SolicitudRanking,
+  hashRanking,
+  rankearCandidatos,
+} from './ranking.js';

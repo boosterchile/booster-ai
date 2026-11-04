@@ -31,13 +31,15 @@ describe('useOffersMine', () => {
     const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({ offers: [] });
     const { result } = renderHook(() => useOffersMine(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(spy).toHaveBeenCalledWith('/offers/mine?status=pendiente');
+    expect(spy).toHaveBeenCalledWith('/offers/mine?status=pendiente', expect.anything());
   });
 
   it('status custom', async () => {
     const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({ offers: [] });
     renderHook(() => useOffersMine({ status: 'aceptada' }), { wrapper: makeWrapper() });
-    await waitFor(() => expect(spy).toHaveBeenCalledWith('/offers/mine?status=aceptada'));
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/offers/mine?status=aceptada', expect.anything()),
+    );
   });
 
   it('enabled=false → no fetch', () => {

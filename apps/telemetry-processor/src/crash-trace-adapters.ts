@@ -40,17 +40,15 @@ export function createBigQueryCrashTraceIndexer(bigquery: BigQuery): CrashTraceI
   return {
     async insertRow({ datasetId, tableId, row }) {
       const table = bigquery.dataset(datasetId).table(tableId);
-      await table.insert([row], {
-        // Failure de un row hace tirar todo el batch (un row por call,
-        // así que es 1:1 con la operación lógica).
+      // Modo raw: cada fila lleva su `insertId` y BigQuery descarta el
+      // duplicado si el processor reintenta (ventana de dedup ~1 min). El
+      // crash_id es un UUID v4 estable por evento. Sin `raw`, el SDK genera
+      // un insertId aleatorio y un reintento duplicaba la fila.
+      await table.insert([{ insertId: row.crash_id, json: row }], {
+        raw: true,
+        // Un row por call: si falla, falla la operación lógica completa.
         ignoreUnknownValues: false,
         skipInvalidRows: false,
-        // Idempotency: BigQuery dedup por insertId en ventana ~1 min.
-        // El crash_id es UUID v4 estable por evento — perfect insertId.
-        // Cast porque el tipo de @google-cloud/bigquery espera arrays
-        // específicos.
-        // biome-ignore lint/suspicious/noExplicitAny: SDK overload
-        ...({ insertIds: [row.crash_id] } as any),
       });
     },
   };

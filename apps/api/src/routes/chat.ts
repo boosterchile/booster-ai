@@ -29,7 +29,6 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { Storage } from '@google-cloud/storage';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, isNull, lt, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -38,6 +37,7 @@ import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { assignments, chatMessages, trips, users as usersTable } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { createEphemeralChatSubscription, publishChatMessage } from '../services/chat-pubsub.js';
 import { mintStreamTicket } from '../services/sse-ticket.js';
 import { notifyChatMessageViaPush } from '../services/web-push.js';
@@ -137,8 +137,7 @@ export function createChatRoutes(opts: {
   // y devuelve su rol (shipper/carrier) + empresa para usar al insertar.
   // -------------------------------------------------------------------------
   async function resolveChatAccess(
-    // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-    c: Context<any, any, any>,
+    c: Context,
     assignmentId: string,
   ): Promise<
     | {
@@ -327,13 +326,16 @@ export function createChatRoutes(opts: {
 
     // Cursor pagination: si hay cursor, traer mensajes con created_at <
     // cursor.created_at. Para hacerlo, primero resolvemos el cursor →
-    // created_at del mensaje cursor.
+    // created_at del mensaje cursor. El cursor tiene que pertenecer a ESTA
+    // asignación: un id de otro chat responde igual que uno inexistente
+    // (400 invalid_cursor), para no revelar que existe ni usar su created_at
+    // como corte de la página propia (aislamiento multi-tenant, plan §2.B).
     let cursorCreatedAt: Date | null = null;
     if (cursor) {
       const [cursorRow] = await opts.db
         .select({ createdAt: chatMessages.createdAt })
         .from(chatMessages)
-        .where(eq(chatMessages.id, cursor))
+        .where(and(eq(chatMessages.id, cursor), eq(chatMessages.assignmentId, assignmentId)))
         .limit(1);
       if (!cursorRow) {
         return c.json({ error: 'invalid_cursor', code: 'invalid_cursor' }, 400);

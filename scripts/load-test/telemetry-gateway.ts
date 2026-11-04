@@ -20,6 +20,11 @@
  *   - target:   10 devices, 30s rate, 3600s duration. CPU < 30%, RAM < 200MB.
  *   - stress:   100 devices, 30s rate, 1800s duration. Verificar que NO cae.
  *   - crash-burst: 5 devices simulando Crash Trace simultáneo (75 KB).
+ *   - t10:      1000 devices, 30s rate, 1800s duration, rampa de 120s.
+ *               Criterio T10-19 (ADR-082): 1000 conexiones TCP concurrentes
+ *               sin caídas sostenidas. Falla si el pico de conexiones
+ *               simultáneas no llega a 1000 o si más del 1% de los devices
+ *               pierde la conexión antes de terminar.
  *
  * El script imprime stats agregados al final + JSON con percentiles a
  * stdout (parseable por scripts de CI).
@@ -42,7 +47,9 @@ interface CliArgs {
   devices: number;
   rateSec: number;
   durationSec: number;
-  scenario: 'baseline' | 'target' | 'stress' | 'crash-burst' | 'custom';
+  scenario: 'baseline' | 'target' | 'stress' | 'crash-burst' | 't10' | 'custom';
+  /** Segundos para abrir todas las conexiones de forma pareja (0 = jitter de hasta 1s por device). */
+  rampSec: number;
 }
 
 function parseArgs(): CliArgs {
@@ -60,6 +67,7 @@ function parseArgs(): CliArgs {
     target: { devices: 10, rateSec: 30, durationSec: 3600 },
     stress: { devices: 100, rateSec: 30, durationSec: 1800 },
     'crash-burst': { devices: 5, rateSec: 5, durationSec: 60 },
+    t10: { devices: 1000, rateSec: 30, durationSec: 1800, rampSec: 120 },
   };
   const preset = presets[scenario] ?? {};
   return {
@@ -69,6 +77,7 @@ function parseArgs(): CliArgs {
     rateSec: Number.parseInt(args['rate-sec'] ?? String(preset.rateSec ?? 60), 10),
     durationSec: Number.parseInt(args['duration-sec'] ?? String(preset.durationSec ?? 60), 10),
     scenario,
+    rampSec: Number.parseInt(args['ramp-sec'] ?? String(preset.rampSec ?? 0), 10),
   };
 }
 
@@ -219,7 +228,14 @@ interface DeviceStats {
   ackReceived: number;
   errors: number;
   latenciesMs: number[];
+  /** Completó el handshake TCP. */
+  conecto: boolean;
+  /** Perdió la conexión (cierre del server o error) antes de terminar su duración. */
+  caida: boolean;
 }
+
+/** Conexiones TCP abiertas en este momento y su máximo (criterio T10-19). */
+const conexiones = { abiertas: 0, pico: 0 };
 
 async function runDevice(opts: {
   host: string;
@@ -236,72 +252,108 @@ async function runDevice(opts: {
     ackReceived: 0,
     errors: 0,
     latenciesMs: [],
+    conecto: false,
+    caida: false,
   };
 
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port }, async () => {
-      // 1. IMEI handshake.
-      socket.write(buildImeiHandshake(imei));
-
-      // 2. Esperar ack (1 byte: 0x01 = OK).
-      const ack = await new Promise<Buffer>((res) => socket.once('data', (d: Buffer) => res(d)));
-      if (ack[0] !== 0x01) {
-        stats.errors += 1;
-        socket.destroy();
+    let terminando = false;
+    let resuelto = false;
+    const terminar = (): void => {
+      if (!resuelto) {
+        resuelto = true;
         resolve(stats);
-        return;
       }
+    };
 
-      // 3. Loop de AVL packets durante durationSec.
-      const start = Date.now();
-      while (Date.now() - start < durationSec * 1000) {
-        const isCrash = scenario === 'crash-burst' && stats.packetsSent === 0;
-        const packet = buildAvlPacket({
-          timestampMs: BigInt(Date.now()),
-          isCrashEvent: isCrash,
-          // 5 KB padding para simular Crash Trace pesado.
-          paddingBytes: isCrash ? 5 * 1024 : 0,
-        });
+    /** Próxima respuesta del server; rechaza si la conexión se cae antes. */
+    const siguienteDato = (): Promise<Buffer> =>
+      new Promise<Buffer>((res, rej) => {
+        const limpiar = (): void => {
+          socket.off('data', onData);
+          socket.off('error', onErr);
+          socket.off('close', onClose);
+        };
+        const onData = (d: Buffer): void => {
+          limpiar();
+          res(d);
+        };
+        const onErr = (e: Error): void => {
+          limpiar();
+          rej(e);
+        };
+        const onClose = (): void => {
+          limpiar();
+          rej(new Error('conexión cerrada por el server'));
+        };
+        socket.once('data', onData);
+        socket.once('error', onErr);
+        socket.once('close', onClose);
+      });
 
-        const sentAt = Date.now();
-        socket.write(packet);
-        stats.packetsSent += 1;
+    const socket = net.createConnection({ host, port }, async () => {
+      stats.conecto = true;
+      conexiones.abiertas += 1;
+      conexiones.pico = Math.max(conexiones.pico, conexiones.abiertas);
+      try {
+        // 1. IMEI handshake; el server responde 1 byte: 0x01 = OK.
+        socket.write(buildImeiHandshake(imei));
+        const ack = await siguienteDato();
+        if (ack[0] !== 0x01) {
+          stats.errors += 1;
+          terminando = true;
+          socket.destroy();
+          terminar();
+          return;
+        }
 
-        // Esperar ack del server (4 BE: record count).
-        try {
-          const serverAck = await new Promise<Buffer>((res, rej) => {
-            const onData = (d: Buffer) => {
-              socket.off('error', onErr);
-              res(d);
-            };
-            const onErr = (e: Error) => {
-              socket.off('data', onData);
-              rej(e);
-            };
-            socket.once('data', onData);
-            socket.once('error', onErr);
+        // 2. Loop de AVL packets durante durationSec.
+        const start = Date.now();
+        while (Date.now() - start < durationSec * 1000) {
+          const isCrash = scenario === 'crash-burst' && stats.packetsSent === 0;
+          const packet = buildAvlPacket({
+            timestampMs: BigInt(Date.now()),
+            isCrashEvent: isCrash,
+            // 5 KB padding para simular Crash Trace pesado.
+            paddingBytes: isCrash ? 5 * 1024 : 0,
           });
+
+          const sentAt = Date.now();
+          socket.write(packet);
+          stats.packetsSent += 1;
+
+          // Ack del server: 4 bytes BE con el record count.
+          const serverAck = await siguienteDato();
           if (serverAck.length === 4 && serverAck.readUInt32BE(0) >= 1) {
             stats.ackReceived += 1;
             stats.latenciesMs.push(Date.now() - sentAt);
           } else {
             stats.errors += 1;
           }
-        } catch {
-          stats.errors += 1;
-          break;
+
+          await sleep(rateSec * 1000);
         }
-
-        await sleep(rateSec * 1000);
+        terminando = true;
+        socket.end();
+      } catch {
+        // La conexión se cayó a mitad de la corrida: lo registra el handler de close.
+        stats.errors += 1;
       }
-
-      socket.end();
-      resolve(stats);
     });
 
     socket.on('error', () => {
-      stats.errors += 1;
-      resolve(stats);
+      if (!terminando) {
+        stats.caida = true;
+      }
+    });
+    socket.on('close', () => {
+      if (stats.conecto) {
+        conexiones.abiertas -= 1;
+      }
+      if (!terminando) {
+        stats.caida = true;
+      }
+      terminar();
     });
   });
 }
@@ -323,6 +375,8 @@ function reportAggregate(stats: readonly DeviceStats[], args: CliArgs): void {
   const totalAcks = stats.reduce((s, d) => s + d.ackReceived, 0);
   const totalErrors = stats.reduce((s, d) => s + d.errors, 0);
   const allLatencies = stats.flatMap((d) => d.latenciesMs).sort((a, b) => a - b);
+  const devicesConectados = stats.filter((d) => d.conecto).length;
+  const devicesCaidos = stats.filter((d) => d.caida).length;
 
   const summary = {
     scenario: args.scenario,
@@ -338,6 +392,9 @@ function reportAggregate(stats: readonly DeviceStats[], args: CliArgs): void {
       totalAcks,
       totalErrors,
       ackRatePct: totalPackets > 0 ? (totalAcks / totalPackets) * 100 : 0,
+      devicesConectados,
+      devicesCaidos,
+      picoConexionesSimultaneas: conexiones.pico,
       latencyMs: {
         p50: percentile(allLatencies, 0.5),
         p95: percentile(allLatencies, 0.95),
@@ -357,6 +414,23 @@ function reportAggregate(stats: readonly DeviceStats[], args: CliArgs): void {
     console.error(`FAIL: error rate ${(errorRate * 100).toFixed(2)}% > 1%`);
     process.exit(1);
   }
+  if (args.scenario === 't10') {
+    // T10-19: 1000 conexiones concurrentes sin caídas sostenidas.
+    if (conexiones.pico < args.devices) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `FAIL: pico de conexiones simultáneas ${conexiones.pico} < ${args.devices} devices`,
+      );
+      process.exit(1);
+    }
+    if (devicesCaidos / args.devices > 0.01) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `FAIL: ${devicesCaidos} de ${args.devices} devices perdieron la conexión (> 1%)`,
+      );
+      process.exit(1);
+    }
+  }
   if (args.scenario === 'stress' && summary.results.latencyMs.p95 > 1000) {
     // eslint-disable-next-line no-console
     console.error(`FAIL: stress p95 latency ${summary.results.latencyMs.p95}ms > 1000ms`);
@@ -375,13 +449,15 @@ async function main(): Promise<void> {
     `[load-test] scenario=${args.scenario} devices=${args.devices} rateSec=${args.rateSec} durationSec=${args.durationSec} → ${args.host}:${args.port}`,
   );
 
-  // Lanzar todos los devices en paralelo, con jitter para evitar
-  // thundering herd en el handshake inicial.
+  // Lanzar todos los devices en paralelo. Con --ramp-sec se reparten parejo en
+  // esa ventana; si no, jitter de hasta 1s por device para evitar thundering
+  // herd en el handshake inicial.
   const promises: Array<Promise<DeviceStats>> = [];
+  const pasoRampaMs = args.rampSec > 0 ? (args.rampSec * 1000) / args.devices : 0;
   for (let i = 0; i < args.devices; i++) {
-    const imei = `35630704244${String(1000 + i).padStart(4, '0')}`;
-    const jitterMs = Math.floor(Math.random() * 1000);
-    await sleep(jitterMs);
+    // 15 dígitos: prefijo de 9 + índice de 6 (soporta hasta 999 999 devices).
+    const imei = `356307042${String(i).padStart(6, '0')}`;
+    await sleep(pasoRampaMs > 0 ? pasoRampaMs : Math.floor(Math.random() * 1000));
     promises.push(
       runDevice({
         host: args.host,

@@ -115,7 +115,7 @@ describe('translateLoginAuthError — fallback null for unmapped codes', () => {
 describe('translateProviderAuthError — dominio provider-linking', () => {
   it('auth/credential-already-in-use → copy de linking', () => {
     expect(translateProviderAuthError('auth/credential-already-in-use')).toBe(
-      'Esa cuenta ya pertenece a otro usuario de Booster. Cerrá sesión y entrá con esa cuenta directamente.',
+      'Esa cuenta ya pertenece a otro usuario de Booster. Cierra sesión y entra con esa cuenta directamente.',
     );
   });
 
@@ -144,18 +144,18 @@ describe('translateProviderAuthError — dominio provider-linking', () => {
 
 describe('copy DIVERGE por dominio en códigos solapados (invariante de unify)', () => {
   // El mismo código produce copy distinto por dominio — es intencional (UX).
-  it('auth/email-already-in-use: login dice "Inicia sesión", linking dice "Cerrá sesión"', () => {
+  it('auth/email-already-in-use: login dice "Inicia sesión", linking dice "Cierra sesión"', () => {
     const login = translateLoginAuthError('auth/email-already-in-use');
     const provider = translateProviderAuthError('auth/email-already-in-use');
     expect(login).toBe('Ya existe una cuenta con ese email. Inicia sesión.');
     expect(provider).toBe(
-      'Esa cuenta ya pertenece a otro usuario de Booster. Cerrá sesión y entrá con esa cuenta directamente.',
+      'Esa cuenta ya pertenece a otro usuario de Booster. Cierra sesión y entra con esa cuenta directamente.',
     );
     expect(login).not.toBe(provider);
   });
 
-  it('auth/weak-password: login "Usa", linking "Usá" (voseo)', () => {
+  it('auth/weak-password: login y linking dicen "Usa" (tuteo)', () => {
     expect(translateLoginAuthError('auth/weak-password')).toContain('Usa al menos');
-    expect(translateProviderAuthError('auth/weak-password')).toContain('Usá al menos');
+    expect(translateProviderAuthError('auth/weak-password')).toContain('Usa al menos');
   });
 });

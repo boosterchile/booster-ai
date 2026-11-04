@@ -1,7 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * E2E del flujo conductor (Slot 3 paso 6) contra API local + Auth emulator.
+ * E2E de los flujos críticos (T10-10) contra API local + Auth emulator:
+ * conductor (Slot 3 paso 6), marketplace (publicar → aceptar → tracking
+ * público), stakeholder (alta por el admin → activación → zonas) y login con
+ * RUT y clave. Cada pantalla pasa axe WCAG 2.1 AA (T10-11, `a11y.ts`).
  *
  * Distinto de `playwright.local.config.ts` (apariencia, sin backend) y de
  * `playwright.config.ts` (nightly vs prod). Este levanta el preview de

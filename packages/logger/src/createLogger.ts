@@ -1,5 +1,6 @@
 import { trace } from '@opentelemetry/api';
 import { type Logger as PinoLogger, type LoggerOptions as PinoOptions, pino } from 'pino';
+import { camposErrorReporting } from './error-reporting.js';
 import { redactObjectValues, redactValue, redactionPaths } from './redaction.js';
 
 export type Logger = PinoLogger;
@@ -66,8 +67,17 @@ export function createLogger(options: LoggerOptions): Logger {
     // serialize de Pino para aplicar value-based regex redaction. Complementa
     // formatters.log que cubre el object payload.
     hooks: {
-      logMethod(inputArgs, method) {
+      logMethod(inputArgs, method, level) {
         const out = inputArgs.map((a) => (typeof a === 'string' ? redactValue(a) : a));
+        // T10-16: error/fatal con un Error → campos de Error Reporting.
+        const campos = camposErrorReporting(level, out[0], { service, version });
+        if (campos) {
+          const primero = out[0];
+          out[0] =
+            primero instanceof Error
+              ? { err: primero, ...campos }
+              : { ...(primero as object), ...campos };
+        }
         return method.apply(this, out as Parameters<typeof method>);
       },
     },

@@ -23,7 +23,7 @@ function makeRedis() {
 }
 
 const UID = 'firebase-uid-123';
-const ASSIGNMENT = 'a1111111-2222-3333-4444-555555555555';
+const ASSIGNMENT = 'a1111111-2222-4333-8444-555555555555';
 
 describe('sse-ticket', () => {
   it('mint crea un ticket hex ≥128 bits y lo guarda con TTL', async () => {
@@ -71,19 +71,6 @@ describe('sse-ticket', () => {
     expect(
       await consumeStreamTicket({ redis, ticket, assignmentId: 'otro-assignment' }),
     ).toBeNull();
-  });
-
-  it('ticket de la revisión anterior (payload con isDemo) se consume y devuelve solo { uid }', async () => {
-    // Convivencia en el canary: una revisión vieja acuña con `isDemo`; la nueva
-    // lo ignora (sin lector desde #698, spec retiro-demo-codigo-muerto).
-    const redis = makeRedis();
-    (redis as unknown as { store: Map<string, string> }).store.set(
-      'sse-ticket:legacy',
-      JSON.stringify({ uid: UID, assignmentId: ASSIGNMENT, isDemo: true }),
-    );
-    expect(
-      await consumeStreamTicket({ redis, ticket: 'legacy', assignmentId: ASSIGNMENT }),
-    ).toEqual({ uid: UID });
   });
 
   it('Redis caído en consume → null (fail-closed, no throw)', async () => {

@@ -176,6 +176,7 @@ describe('VehiculosListRoute', () => {
     wrap(<VehiculosListRoute />);
     await waitFor(() => expect(screen.getByText(/Aún no tienes vehículos/)).toBeInTheDocument());
     expect(screen.getByText(/Cuando sumes el primero/)).toBeInTheDocument();
+    expect(screen.getByText(/Booster también puede cargar estos datos/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /ver mapa/i })).toHaveAttribute('to', '/app/flota');
     expect(screen.getAllByRole('link', { name: /nuevo vehículo/i }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('table')).toBeNull();
@@ -357,6 +358,7 @@ describe('VehiculosNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosNuevoRoute />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
+    expect(screen.getByText(/Booster también puede cargar el vehículo/)).toBeInTheDocument();
   });
 });
 
@@ -951,10 +953,7 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.queryByText('CHILE')).toBeNull();
     expect(screen.queryByRole('link', { name: /ver en vivo/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /^recorrido$/i })).toBeNull();
-    expect(screen.getByRole('link', { name: /^vehículos$/i })).toHaveAttribute(
-      'to',
-      '/app/vehiculos',
-    );
+    expect(screen.getByRole('link', { name: /^volver$/i })).toHaveAttribute('to', '/app/vehiculos');
     expect(screen.queryByRole('link', { name: /^flota$/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^retirar$/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /retirar/i })).toBeNull();
@@ -1127,13 +1126,104 @@ describe('VehiculoDetallePage — hub', () => {
     wrap(<VehiculosDetalleRoute />);
     expect((await screen.findAllByText('18,0 km')).length).toBeGreaterThan(0);
     expect(screen.getByText('—')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /conectá el sensor/i })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /conectá el sensor/i }));
+    expect(screen.queryByRole('link', { name: /conecta el sensor/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /conecta el sensor/i }));
     const config = screen.getByTestId('configuracion-vehiculo');
     expect(config).toHaveAttribute('open');
     expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
     expect(screen.queryByText(/km\/L/)).toBeNull();
     expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin señal/i);
+  });
+
+  it('con litros y sin km/L la tarjeta dice dato no confiable', async () => {
+    const trayecto = {
+      id: 't-3',
+      vehiculo_id: 'veh-1',
+      patente: 'JLKT54',
+      inicio: '2026-09-22T21:11:00.000Z',
+      fin: '2026-09-23T01:07:00.000Z',
+      distancia_km: 294.93,
+      litros_consumidos: 24,
+      km_por_litro: null,
+      posible_robo_combustible: false,
+      posible_robo_hormiga: false,
+      event_lat: null,
+      event_lon: null,
+    };
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: trayecto,
+            recientes: [trayecto],
+            km_recientes: 294.93,
+            litros_recientes: 24,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByText('dato no confiable')).toBeInTheDocument();
+    expect(screen.queryByText(/12,29 km\/L/)).toBeNull();
+    expect(screen.getAllByText(/24,0 L/).length).toBeGreaterThan(0);
+  });
+
+  it('cobertura baja y sin sensor muestran la razón y no el km/L', async () => {
+    const trayecto = {
+      id: 't-4',
+      vehiculo_id: 'veh-1',
+      patente: 'JLKT54',
+      inicio: '2026-09-22T21:11:00.000Z',
+      fin: '2026-09-23T01:07:00.000Z',
+      distancia_km: 40,
+      litros_consumidos: 12,
+      km_por_litro: null,
+      posible_robo_combustible: false,
+      posible_robo_hormiga: false,
+      event_lat: null,
+      event_lon: null,
+    };
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: trayecto,
+            recientes: [trayecto],
+            km_recientes: 40,
+            litros_recientes: 12,
+            km_por_litro: null,
+            motivo_km_por_litro: 'dato no confiable · cobertura baja',
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByText('dato no confiable · cobertura baja')).toBeInTheDocument();
+    expect(screen.getAllByText(/12,0 L/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\d+,\d+ km\/L/)).toBeNull();
   });
 
   it('el conductor no consulta trayectos y conserva ver en vivo', async () => {
@@ -1156,7 +1246,7 @@ describe('VehiculoDetallePage — hub', () => {
     };
     wrap(<VehiculosDetalleRoute />);
     expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
+    expect(screen.queryByText(/no tienes permiso/i)).toBeNull();
     expect(screen.queryByTestId('hub-resumen')).toBeNull();
     expect(screen.queryByRole('button', { name: /más acciones/i })).toBeNull();
     expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
@@ -1192,7 +1282,7 @@ describe('VehiculoDetallePage — hub', () => {
     };
     wrap(<VehiculosDetalleRoute />);
     expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
+    expect(screen.queryByText(/no tienes permiso/i)).toBeNull();
     expect(await screen.findByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
       'to',
       '/app/vehiculos/$id/historial',
@@ -1275,6 +1365,83 @@ describe('VehiculoDetallePage — hub', () => {
       },
     });
     await waitFor(() => expect(operacion).toHaveAttribute('aria-busy', 'false'));
+  });
+
+  it('mientras la ubicación está pendiente el mapa muestra carga y no «sin GPS»', async () => {
+    let resolver: (value: unknown) => void = () => undefined;
+    const pendiente = new Promise((resolve) => {
+      resolver = resolve;
+    });
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        return pendiente;
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+
+    expect(await screen.findByTestId('hub-mapa-cargando')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Cargando posición…');
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+
+    resolver({
+      ubicacion: {
+        timestamp_device: new Date().toISOString(),
+        latitude: -33.4,
+        longitude: -70.6,
+        speed_kmh: 0,
+      },
+    });
+    await waitFor(() => expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull());
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+  });
+
+  it('sin puntos GPS el mapa lo dice recién cuando la ubicación respondió', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByText('Sin posición GPS todavía')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull();
   });
 
   it('guardar capacidades deja el hub y confirma sin salir', async () => {

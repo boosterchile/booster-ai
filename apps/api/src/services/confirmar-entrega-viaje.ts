@@ -345,7 +345,7 @@ export async function confirmarEntregaViaje(opts: {
       );
     }
 
-    // Pricing v2 — liquidación post-entrega (ADR-031 §5). Fire-and-forget:
+    // Liquidación post-entrega (ADR-031 §5; v3 según ADR-079 §6). Fire-and-forget:
     // si falla, log error pero NO revierte el deliveredAt. El job futuro
     // de "reconciliar liquidaciones pendientes" puede tomar trips
     // entregados sin liquidación. Idempotente vía UNIQUE en asignacion_id.
@@ -362,6 +362,10 @@ export async function confirmarEntregaViaje(opts: {
         logger,
         assignmentId: assignmentIdForLiq,
         pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
+        // ADR-079 §6: viajes publicados con tasa congelada se liquidan v3.
+        pricingV3Activated: appConfig.PRICING_V3_ACTIVATED,
+        // ADR-080 §5: con el flag, la liquidación v3 queda en mandato de cobro.
+        mandatoCobroActivated: appConfig.MANDATO_COBRO_ACTIVATED,
       })
         .then((res) => {
           if (res.status === 'liquidacion_creada' || res.status === 'ya_liquidada') {

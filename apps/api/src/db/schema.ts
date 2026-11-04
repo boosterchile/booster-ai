@@ -1,6 +1,8 @@
-import type { SiteConfig } from '@booster-ai/shared-schemas';
+import type { ConfiguracionComercial, SiteConfig } from '@booster-ai/shared-schemas';
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
+  bigint,
   bigserial,
   boolean,
   char,
@@ -246,6 +248,27 @@ export const cargoTypeEnum = pgEnum('tipo_carga', [
   'agricola',
   'ganado',
   'otra',
+]);
+
+/**
+ * ADR-079 §2 — modalidad comercial de la carga: define la tasa de comisión
+ * (spot > programada). Es el campo que el ADR llama `tipo_carga`; ese nombre
+ * ya lo usa `cargoTypeEnum` (naturaleza de la carga). Migración 0059.
+ */
+export const modalidadCargaEnum = pgEnum('modalidad_carga', ['spot', 'programada']);
+
+/** ADR-080 §5 — régimen con que se pagó una liquidación. */
+export const modoFlujoEnum = pgEnum('modo_flujo', ['conector', 'mandato_cobro']);
+
+/** ADR-080 §2 — eventos append-only del pago de un viaje bajo mandato de cobro. */
+export const tipoEventoPagoEnum = pgEnum('tipo_evento_pago', [
+  'recepcion_conforme',
+  'cobro_registrado',
+  'mora_registrada',
+  'liberacion_booster',
+  'anticipo_operador',
+  'disputa_abierta',
+  'disputa_resuelta',
 ]);
 
 export const tripStatusEnum = pgEnum('estado_viaje', [
@@ -546,6 +569,21 @@ export const empresas = pgTable(
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
     /**
+     * ADR-079 §2 — contrato programado habilitado por el platform-admin (con
+     * quién y cuándo). Solo estos generadores pueden publicar
+     * `modalidad_carga = 'programada'` (tasa menor). NULL = no habilitado.
+     */
+    contratoProgramadoActivadoEn: timestamp('contrato_programado_activado_en', {
+      withTimezone: true,
+    }),
+    contratoProgramadoActivadoPor: text('contrato_programado_activado_por'),
+    /**
+     * ADR-079 §4 — plan de transportista con gestión de flota (tarifa por
+     * camión mayor). Lo activa el platform-admin; null = plan base.
+     */
+    gestionFlotaActivadaEn: timestamp('gestion_flota_activada_en', { withTimezone: true }),
+    gestionFlotaActivadaPor: text('gestion_flota_activada_por'),
+    /**
      * D1 — Marca para empresas creadas por el seed demo. Permite filtrar
      * de métricas/billing y limpiar con un solo DELETE cascada por FK.
      */
@@ -674,7 +712,11 @@ export const users = pgTable(
     firebaseUidIdx: index('idx_usuarios_firebase_uid').on(table.firebaseUid),
     emailIdx: index('idx_usuarios_email').on(table.email),
     statusIdx: index('idx_usuarios_estado').on(table.status),
-    rutIdx: index('idx_usuarios_rut').on(table.rut),
+    /**
+     * Un RUT, una persona. Varios NULL siguen permitidos (ADR-034: el
+     * stakeholder internacional puede no tener RUT). Migración 0058.
+     */
+    rutUnique: uniqueIndex('uq_usuarios_rut').on(table.rut),
   }),
 );
 
@@ -1130,6 +1172,67 @@ export const posicionesMovilConductor = pgTable(
 );
 
 /**
+ * Eco-routing en tiempo real (T10-23, ADR-012 Capa 1). Una fila por
+ * congestión detectada durante un viaje activo: si hubo alternativa material
+ * (`estado = sugerida`) lleva la ruta propuesta y la respuesta explícita del
+ * conductor; si no, queda como `congestion_sin_alternativa` (registro de la
+ * detección). Adopción = sugeridas con respuesta `aceptada` / sugeridas
+ * enviadas. Sin `empresa_id`: se accede siempre por asignación y conductor.
+ */
+export const estadoSugerenciaRutaEnum = pgEnum('estado_sugerencia_ruta', [
+  'congestion_sin_alternativa',
+  'sugerida',
+]);
+export const motivoSugerenciaRutaEnum = pgEnum('motivo_sugerencia_ruta', ['emisiones', 'tiempo']);
+export const respuestaSugerenciaRutaEnum = pgEnum('respuesta_sugerencia_ruta', [
+  'aceptada',
+  'rechazada',
+]);
+
+export const sugerenciasRuta = pgTable(
+  'sugerencias_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    assignmentId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id, { onDelete: 'cascade' }),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    estado: estadoSugerenciaRutaEnum('estado').notNull(),
+    /** Inicio de la racha lenta (< 10 km/h sostenido). */
+    congestionDesde: timestamp('congestion_desde', { withTimezone: true }).notNull(),
+    detectedAt: timestamp('detectada_en', { withTimezone: true }).notNull().defaultNow(),
+    latitude: numeric('posicion_lat', { precision: 10, scale: 7 }).notNull(),
+    longitude: numeric('posicion_lng', { precision: 10, scale: 7 }).notNull(),
+    averageSpeedKmh: numeric('velocidad_media_kmh', { precision: 6, scale: 2 }).notNull(),
+    motivo: motivoSugerenciaRutaEnum('motivo'),
+    alternativePolyline: text('polyline_alternativa'),
+    savingSeconds: integer('ahorro_segundos'),
+    savingKgco2e: numeric('ahorro_kgco2e', { precision: 10, scale: 3 }),
+    currentKgco2e: numeric('kgco2e_actual', { precision: 10, scale: 3 }),
+    /** Cuándo se despachó el Web Push (null si el conductor no tiene suscripción). */
+    sentAt: timestamp('enviada_en', { withTimezone: true }),
+    respuesta: respuestaSugerenciaRutaEnum('respuesta'),
+    respondedAt: timestamp('respondida_en', { withTimezone: true }),
+  },
+  (table) => ({
+    asignacionDetectadaIdx: index('idx_sugerencias_ruta_asignacion_detectada').on(
+      table.assignmentId,
+      table.detectedAt,
+    ),
+    sugeridaCompletaCheck: check(
+      'ck_sugerencias_ruta_sugerida_completa',
+      sql`${table.estado} <> 'sugerida' OR (${table.motivo} IS NOT NULL AND ${table.alternativePolyline} IS NOT NULL AND ${table.savingSeconds} IS NOT NULL)`,
+    ),
+    respuestaConFechaCheck: check(
+      'ck_sugerencias_ruta_respuesta_con_fecha',
+      sql`(${table.respuesta} IS NULL) = (${table.respondedAt} IS NULL)`,
+    ),
+  }),
+);
+
+/**
  * Conductores — perfil profesional separado de `users` (que es la identidad
  * Firebase / auth). Un user puede ser conductor en una sola empresa
  * transportista (UNIQUE user_id) — si cambia de carrier, se da de baja y se
@@ -1247,6 +1350,13 @@ export const trips = pgTable(
     destinationAddressRaw: text('destino_direccion_raw').notNull(),
     destinationRegionCode: varchar('destino_codigo_region', { length: 4 }),
     destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),
+    /**
+     * Lat/lng del destino marcado por el generador (sugerencia, pin o link).
+     * NULL = sin punto (viaje previo a 0064, o solo texto). Misma precisión
+     * y el mismo naming inglés que origin_latitude / origin_longitude.
+     */
+    destinationLatitude: numeric('destination_latitude', { precision: 10, scale: 7 }),
+    destinationLongitude: numeric('destination_longitude', { precision: 10, scale: 7 }),
     cargoType: cargoTypeEnum('tipo_carga').notNull(),
     cargoWeightKg: integer('carga_peso_kg'),
     cargoVolumeM3: integer('carga_volumen_m3'),
@@ -1272,6 +1382,17 @@ export const trips = pgTable(
      * medicion-huella-segmento). Naming inglés total (decisión PO).
      */
     carbonMeasurementOverride: boolean('carbon_measurement_override'),
+    /**
+     * ADR-079 §2 — modalidad fijada al publicar (default spot). `programada`
+     * solo para generadores con contrato programado habilitado.
+     */
+    modalidadCarga: modalidadCargaEnum('modalidad_carga').notNull().default('spot'),
+    /** ADR-079 §2 — tasa congelada al publicar; un cambio de config no la mueve. */
+    comisionPctAplicada: numeric('comision_pct_aplicada', { precision: 5, scale: 2 }),
+    /** ADR-079 §2 — versión de configuración comercial vigente al publicar. */
+    configuracionComercialId: uuid('configuracion_comercial_id').references(
+      () => configuracionComercial.id,
+    ),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1486,6 +1607,15 @@ export const tripMetrics = pgTable(
       scale: 3,
     }),
     carbonEmissionsKgco2eActual: numeric('emisiones_kgco2e_reales', { precision: 10, scale: 3 }),
+    // HC-003 T1 (0068) — desglose del cálculo vigente (real si existe, si no estimado).
+    emisionesKgco2eTtw: numeric('emisiones_kgco2e_ttw', { precision: 10, scale: 3 }),
+    emisionesKgco2eWtt: numeric('emisiones_kgco2e_wtt', { precision: 10, scale: 3 }),
+    intensidadGco2ePorTkm: numeric('intensidad_gco2e_por_tkm', { precision: 12, scale: 3 }),
+    factoresFuente: text('factores_fuente'),
+    // Referencia HuellaChile 2025 (por litro de diésel), solo para mostrar.
+    ttwRef: numeric('ttw_ref', { precision: 6, scale: 3 }),
+    wttRef: numeric('wtt_ref', { precision: 6, scale: 3 }),
+    fuenteRef: text('fuente_ref'),
     fuelConsumedLEstimated: numeric('combustible_consumido_l_estimado', {
       precision: 10,
       scale: 2,
@@ -1528,6 +1658,11 @@ export const tripMetrics = pgTable(
     certificateSha256: char('certificado_sha256', { length: 64 }),
     certificateKmsKeyVersion: varchar('certificado_kms_version', { length: 50 }),
     certificateIssuedAt: timestamp('certificado_emitido_en', { withTimezone: true }),
+    /** HC-001 p3a: versión vigente en certificados_viaje; las 4 columnas de arriba la espejan. */
+    certificadoVigenteId: uuid('certificado_vigente_id').references(
+      (): AnyPgColumn => certificadosViaje.id,
+      { onDelete: 'restrict' },
+    ),
     // Empty backhaul allocation (GLEC v3.0 §6.4) — alimentado por
     // calcularEmptyBackhaul() del package @booster-ai/carbon-calculator.
     // Nullable: pre-existing rows + viajes sin matching de retorno.
@@ -1580,6 +1715,16 @@ export const tripMetrics = pgTable(
     coachingModelo: varchar('coaching_modelo', { length: 50 }),
     /** Timestamp de generación. Para SLO + cache invalidation. */
     coachingGeneradoEn: timestamp('coaching_generado_en', { withTimezone: true }),
+    /** HC-001: decisión de fuente (`decidirFuenteHuella`); NULL = no registrada. */
+    fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
+    fuenteEnergia: varchar('fuente_energia', { length: 20 }),
+    motivoFallback: varchar('motivo_fallback', { length: 40 }),
+    decisionVersion: smallint('decision_version'),
+    decididoEn: timestamp('decidido_en', { withTimezone: true }),
+    /** HC-001 N2: peso declarado al decidir (peso_ausente puede quedar tapado en motivo_fallback). */
+    pesoDeclarado: boolean('peso_declarado'),
+    /** HC-001 parte 2: ALERTAS_DECISION (p. ej. discrepancia_can); '{}' = sin alertas. */
+    alertasDecision: varchar('alertas_decision', { length: 40 }).array(),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -2135,9 +2280,11 @@ export const liquidaciones = pgTable(
     empresaCarrierId: uuid('empresa_carrier_id')
       .notNull()
       .references(() => empresas.id),
-    tierSlugAplicado: text('tier_slug_aplicado')
-      .notNull()
-      .references(() => membershipTiers.slug),
+    /**
+     * Tier v2 aplicado. Nullable desde 0059: una liquidación v3 (ADR-079) no
+     * tiene tier. @deprecated para filas nuevas con PRICING_V3_ACTIVATED.
+     */
+    tierSlugAplicado: text('tier_slug_aplicado').references(() => membershipTiers.slug),
     montoBrutoClp: integer('monto_bruto_clp').notNull(),
     comisionPct: numeric('comision_pct', { precision: 4, scale: 2 }).notNull(),
     comisionClp: integer('comision_clp').notNull(),
@@ -2145,6 +2292,24 @@ export const liquidaciones = pgTable(
     ivaComisionClp: integer('iva_comision_clp').notNull(),
     totalFacturaBoosterClp: integer('total_factura_booster_clp').notNull(),
     pricingMethodologyVersion: text('pricing_methodology_version').notNull(),
+    /** ADR-079 §6 — v3: lo que recibe el transportista, íntegro. */
+    precioTransportistaClp: integer('precio_transportista_clp'),
+    /** ADR-079 §6 — v3: precio del transportista + comisión. */
+    precioGeneradorClp: integer('precio_generador_clp'),
+    /** ADR-079 §6 — v3: comisión + IVA facturados al generador. */
+    totalFacturaGeneradorClp: integer('total_factura_generador_clp'),
+    /** ADR-079 §6 — v3: modalidad de la carga liquidada. */
+    modalidadCarga: modalidadCargaEnum('modalidad_carga'),
+    /** ADR-079 §6 — v3: versión de configuración con que se liquidó. */
+    configuracionComercialId: uuid('configuracion_comercial_id').references(
+      () => configuracionComercial.id,
+    ),
+    /**
+     * ADR-080 §5 — `mandato_cobro` solo con MANDATO_COBRO_ACTIVATED y
+     * liquidación v3; en otro caso `conector` (default, también en filas
+     * previas a 0061).
+     */
+    modoFlujo: modoFlujoEnum('modo_flujo').notNull().default('conector'),
     status: text('status').notNull(),
     /**
      * @deprecated ADR-069 — Booster dejó de emitir DTE (remoción Sovos).
@@ -2207,6 +2372,10 @@ export const facturasBoosterClp = pgTable(
     subtotalClp: integer('subtotal_clp').notNull(),
     ivaClp: integer('iva_clp').notNull(),
     totalClp: integer('total_clp').notNull(),
+    /** ADR-079 §4 — suscripción declarada en UF (null en facturas CLP). */
+    montoUf: numeric('monto_uf', { precision: 12, scale: 4 }),
+    /** ADR-079 §4 — valor UF del día de emisión (fuente SII), capturado. */
+    ufValorClp: numeric('uf_valor_clp', { precision: 12, scale: 2 }),
     /**
      * @deprecated ADR-069 — columnas DTE legacy. Booster dejó de emitir
      * DTE (remoción Sovos): existían por la emisión vía proveedor SII, que
@@ -2272,6 +2441,24 @@ export const facturasBoosterClp = pgTable(
     cobroReintentoIdx: index('idx_facturas_cobro_reintento')
       .on(table.cobroProximoIntentoEn)
       .where(sql`${table.cobroEstado} IN ('pending_payment_provider', 'reintentando')`),
+  }),
+);
+
+/**
+ * ADR-079 §4 — valor de la UF por día (migración 0060). Fuente CMF con
+ * respaldo SII; la factura captura su propio `uf_valor_clp`.
+ */
+export const valoresUf = pgTable(
+  'valores_uf',
+  {
+    fecha: date('fecha').primaryKey(),
+    valorClp: numeric('valor_clp', { precision: 12, scale: 2 }).notNull(),
+    fuente: text('fuente').notNull(),
+    obtenidoEn: timestamp('obtenido_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    valorCheck: check('chk_valores_uf_valor', sql`${table.valorClp} > 0`),
+    fuenteCheck: check('chk_valores_uf_fuente', sql`${table.fuente} IN ('cmf', 'sii')`),
   }),
 );
 
@@ -2370,6 +2557,52 @@ export const adelantosCarrier = pgTable(
   }),
 );
 
+/**
+ * ADR-080 §2 — pago de un viaje bajo mandato de cobro. Append-only: un trigger
+ * (0061) rechaza UPDATE y DELETE; una corrección es un evento nuevo. El
+ * estado vigente lo reduce `reducirPagoViaje` (@booster-ai/factoring-engine)
+ * en orden de `secuencia`. Cada evento lleva evidencia obligatoria.
+ */
+export const eventosPagoViaje = pgTable(
+  'eventos_pago_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    secuencia: bigint('secuencia', { mode: 'number' }).generatedAlwaysAsIdentity().notNull(),
+    asignacionId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id, { onDelete: 'restrict' }),
+    tipo: tipoEventoPagoEnum('tipo').notNull(),
+    montoClp: integer('monto_clp'),
+    evidenciaTipo: text('evidencia_tipo').notNull(),
+    evidenciaRef: text('evidencia_ref').notNull(),
+    detalle: text('detalle'),
+    ocurridoEn: timestamp('ocurrido_en', { withTimezone: true }).notNull(),
+    registradoEn: timestamp('registrado_en', { withTimezone: true }).notNull().defaultNow(),
+    registradoPor: text('registrado_por').notNull(),
+  },
+  (table) => ({
+    asignacionIdx: index('idx_eventos_pago_viaje_asignacion').on(
+      table.asignacionId,
+      table.secuencia,
+    ),
+    recepcionUnica: uniqueIndex('uq_eventos_pago_viaje_recepcion')
+      .on(table.asignacionId)
+      .where(sql`${table.tipo} = 'recepcion_conforme'`),
+    evidenciaCheck: check(
+      'chk_eventos_pago_viaje_evidencia',
+      sql`length(trim(${table.evidenciaTipo})) > 0 AND length(trim(${table.evidenciaRef})) > 0`,
+    ),
+    montoCheck: check(
+      'chk_eventos_pago_viaje_monto',
+      sql`${table.montoClp} IS NULL OR ${table.montoClp} > 0`,
+    ),
+    registradoPorCheck: check(
+      'chk_eventos_pago_viaje_registrado_por',
+      sql`length(trim(${table.registradoPor})) > 0`,
+    ),
+  }),
+);
+
 // =============================================================================
 // MATCHING V2 — BACKTEST RUNS (ADR-033 §8)
 // =============================================================================
@@ -2437,6 +2670,24 @@ export const matchingBacktestRuns = pgTable(
 // sobre publicada=true (index unique parcial). Cualquiera puede leer la
 // versión publicada vía GET /public/site-settings (cache 5min); solo
 // platform-admin puede crear drafts y publicar.
+
+/**
+ * ADR-079 §3 — configuración comercial versionada (espejo de
+ * `configuracion_sitio`). Cada cambio es una fila nueva con nota y autor;
+ * nunca UPDATE de una publicada. Singleton sobre `publicada = true`
+ * (índice único parcial en 0059). `config` valida con
+ * `configuracionComercialSchema`. Global de plataforma: sin empresa_id.
+ */
+export const configuracionComercial = pgTable('configuracion_comercial', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  version: integer('version').notNull().unique(),
+  config: jsonb('config').notNull().$type<ConfiguracionComercial>(),
+  publicada: boolean('publicada').notNull().default(false),
+  vigenteDesde: timestamp('vigente_desde', { withTimezone: true }).notNull().defaultNow(),
+  notaCambio: text('nota_cambio').notNull(),
+  creadoPorEmail: text('creado_por_email').notNull(),
+  creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const configuracionSitio = pgTable('configuracion_sitio', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -2650,6 +2901,45 @@ export const eventosImpersonacion = pgTable(
 // TYPE EXPORTS
 // =============================================================================
 
+/**
+ * Cambio del email de contacto de un conductor. Append-only: quién, de qué
+ * correo a cuál, si se reenvió la invitación y qué se hizo con Firebase.
+ * No guarda el PIN.
+ */
+export const auditoriaEmailConductor = pgTable(
+  'auditoria_email_conductor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conductorId: uuid('conductor_id')
+      .notNull()
+      .references(() => conductores.id, { onDelete: 'restrict' }),
+    usuarioId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    actorUsuarioId: uuid('actor_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    emailAnterior: varchar('email_anterior', { length: 255 }).notNull(),
+    emailNuevo: varchar('email_nuevo', { length: 255 }).notNull(),
+    invitacionReenviada: boolean('invitacion_reenviada').notNull(),
+    accionFirebase: varchar('accion_firebase', { length: 64 }).notNull(),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    conductorIdx: index('idx_auditoria_email_conductor_conductor').on(
+      table.conductorId,
+      table.createdAt,
+    ),
+    empresaIdx: index('idx_auditoria_email_conductor_empresa').on(table.empresaId, table.createdAt),
+  }),
+);
+
+export type AuditoriaEmailConductorRow = typeof auditoriaEmailConductor.$inferSelect;
+export type NewAuditoriaEmailConductorRow = typeof auditoriaEmailConductor.$inferInsert;
+
 export type EventoImpersonacionRow = typeof eventosImpersonacion.$inferSelect;
 export type NewEventoImpersonacionRow = typeof eventosImpersonacion.$inferInsert;
 export type PlanRow = typeof plans.$inferSelect;
@@ -2765,3 +3055,44 @@ export const bitacoraBackfillDistancia = pgTable(
 );
 export type BitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferSelect;
 export type NewBitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferInsert;
+
+/**
+ * HC-001 p3a (decision.md 14:10): historial de versiones del certificado de un
+ * viaje. La vigente es la única con estado 'vigente' (índice parcial). Una
+ * reemisión marca la anterior 'reemplazado' y la reversa marca 'revertido'.
+ */
+export const certificadosViaje = pgTable(
+  'certificados_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    version: integer('version').notNull(),
+    estado: varchar('estado', { length: 20 }).notNull().default('vigente'),
+    sha256: char('sha256', { length: 64 }).notNull(),
+    pdfUrl: text('pdf_url'),
+    kmsVersion: varchar('kms_version', { length: 50 }),
+    emitidoEn: timestamp('emitido_en', { withTimezone: true }).notNull(),
+    reemplazadoEn: timestamp('reemplazado_en', { withTimezone: true }),
+    reemplazadoPor: uuid('reemplazado_por').references((): AnyPgColumn => certificadosViaje.id, {
+      onDelete: 'restrict',
+    }),
+    fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
+    motivoFallback: varchar('motivo_fallback', { length: 40 }),
+    decisionVersion: smallint('decision_version'),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    versionUnica: unique('uq_certificados_viaje_version').on(table.tripId, table.version),
+    vigenteUnica: uniqueIndex('uq_certificados_viaje_vigente')
+      .on(table.tripId)
+      .where(sql`estado = 'vigente'`),
+    porSha: index('idx_certificados_viaje_sha256').on(table.sha256),
+    versionPositiva: check('chk_certificados_viaje_version', sql`version >= 1`),
+    estadoValido: check(
+      'chk_certificados_viaje_estado',
+      sql`estado IN ('vigente', 'reemplazado', 'revertido')`,
+    ),
+  }),
+);

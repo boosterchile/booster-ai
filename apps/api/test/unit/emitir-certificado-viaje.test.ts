@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emitirCertificadoViaje } from '../../src/services/emitir-certificado-viaje.js';
 
 // Mock @booster-ai/certificate-generator (KMS+GCS+PDF) — el contrato es
 // emitirCertificado(opts) → { pdfGcsUri, sigGcsUri, pdfSha256, kmsKeyVersion, issuedAt, pdfBytes }
@@ -7,7 +6,17 @@ vi.mock('@booster-ai/certificate-generator', () => ({
   emitirCertificado: vi.fn(),
 }));
 
+const counterAdd = vi.fn();
+const counterNames: string[] = [];
+vi.mock('../../src/observability/business-metrics.js', () => ({
+  getBusinessCounter: (name: string) => {
+    counterNames.push(name);
+    return { add: counterAdd };
+  },
+}));
+
 const { emitirCertificado } = await import('@booster-ai/certificate-generator');
+const { emitirCertificadoViaje } = await import('../../src/services/emitir-certificado-viaje.js');
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -60,7 +69,7 @@ function makeDb(queues: DbQueues = {}) {
   };
 }
 
-const TRIP_ID = '11111111-1111-1111-1111-111111111111';
+const TRIP_ID = '11111111-1111-4111-8111-111111111111';
 const SHIPPER_EMP_ID = 'shipper-emp';
 const CARRIER_EMP_ID = 'carrier-emp';
 
@@ -251,6 +260,63 @@ describe('emitirCertificadoViaje', () => {
     expect(emitirCertificado).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [
+      'con desglose (0068)',
+      {
+        emisionesKgco2eTtw: '30.6',
+        emisionesKgco2eWtt: '6.6',
+        intensidadGco2ePorTkm: '64.4',
+        factoresFuente: 'GLEC v2.0 (2019), Tabla 32',
+      },
+      {
+        kgco2eTtw: 30.6,
+        kgco2eWtt: 6.6,
+        intensidadGco2ePorTonKm: 64.4,
+        fuenteFactores: 'GLEC v2.0 (2019), Tabla 32',
+      },
+    ],
+    [
+      'fila previa a 0068 (sin backfill)',
+      {
+        emisionesKgco2eTtw: null,
+        emisionesKgco2eWtt: null,
+        intensidadGco2ePorTkm: null,
+        factoresFuente: null,
+      },
+      {
+        kgco2eTtw: null,
+        kgco2eWtt: null,
+        intensidadGco2ePorTonKm: null,
+        fuenteFactores: 'SEC Chile 2024 + GLEC v3.0',
+      },
+    ],
+  ])('HC-003 T1: pasa TTW/WTT/intensidad al generador — %s', async (_, cols, esperado) => {
+    (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
+    const db = makeDb({
+      selects: [
+        [TRIP_DELIVERED],
+        [{ ...METRICS_BASE, ...cols }],
+        [SHIPPER_ROW],
+        [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [CARRIER_ROW],
+        [{ plate: 'AB-CD-12' }],
+      ],
+      updates: [[]],
+      inserts: [[]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    const arg = (emitirCertificado as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as {
+      metricas: Record<string, unknown>;
+    };
+    expect(arg.metricas).toMatchObject(esperado);
+  });
+
   it('happy path SIN assignment (cert solo con shipper)', async () => {
     (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
     const db = makeDb({
@@ -346,5 +412,42 @@ describe('emitirCertificadoViaje', () => {
       config: VALID_CONFIG,
     });
     expect(db.transaction).toHaveBeenCalled();
+  });
+
+  it('métrica certificados_emitidos_total: resultado=emitido en la emisión exitosa', async () => {
+    (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
+    const db = makeDb({
+      selects: [
+        [TRIP_DELIVERED],
+        [METRICS_BASE],
+        [SHIPPER_ROW],
+        [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [CARRIER_ROW],
+        [{ plate: 'AB-CD-12' }],
+      ],
+      updates: [[]],
+      inserts: [[]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(counterNames).toContain('certificados_emitidos_total');
+    expect(counterAdd).toHaveBeenCalledWith(1, { resultado: 'emitido' });
+  });
+
+  it('métrica certificados_emitidos_total: resultado=<reason> cuando se omite', async () => {
+    const db = makeDb({
+      selects: [[TRIP_DELIVERED], [{ ...METRICS_BASE, certificateIssuedAt: new Date() }]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(counterAdd).toHaveBeenCalledWith(1, { resultado: 'already_issued' });
   });
 });

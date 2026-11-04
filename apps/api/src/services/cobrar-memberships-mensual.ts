@@ -8,6 +8,7 @@ import {
 } from '@booster-ai/pricing-engine';
 import { and, eq, gt } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { pgErrorCode } from '../db/pg-error.js';
 import { carrierMemberships, facturasBoosterClp, membershipTiers } from '../db/schema.js';
 import type { MembershipPaymentGateway } from './membership-payment-gateway.js';
 
@@ -96,7 +97,7 @@ interface MembershipRow {
   tierSlug: string;
 }
 
-interface FacturaPeriodoRow {
+export interface FacturaPeriodoRow {
   id: string;
   totalClp: number;
   cobroEstado: string;
@@ -286,7 +287,11 @@ async function crearYcobrarFacturaNueva(args: CrearArgs): Promise<void> {
     }
     facturaId = id;
   } catch (err) {
-    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+    // Drizzle deja el error de pg en `cause`: el mensaje solo dice "Failed query".
+    if (
+      pgErrorCode(err) === '23505' ||
+      (err instanceof Error && /unique|duplicate/i.test(err.message))
+    ) {
       // Otro proceso/tick ya creó la factura de este ciclo. Idempotencia.
       counts.yaFacturadas += 1;
       logger.info(
@@ -315,7 +320,7 @@ async function crearYcobrarFacturaNueva(args: CrearArgs): Promise<void> {
   });
 }
 
-interface ReintentarArgs {
+export interface ReintentarArgs {
   db: Db;
   logger: Logger;
   gateway: MembershipPaymentGateway;
@@ -327,7 +332,7 @@ interface ReintentarArgs {
 }
 
 /** Reintenta el cobro de una factura existente si toca según el dunning. */
-async function reintentarFacturaExistente(args: ReintentarArgs): Promise<void> {
+export async function reintentarFacturaExistente(args: ReintentarArgs): Promise<void> {
   const { db, logger, gateway, empresaId, periodoMes, factura, hoyMs, counts } = args;
 
   const reintentable =
@@ -359,7 +364,7 @@ async function reintentarFacturaExistente(args: ReintentarArgs): Promise<void> {
   });
 }
 
-interface IntentoArgs {
+export interface IntentoArgs {
   db: Db;
   logger: Logger;
   gateway: MembershipPaymentGateway;
@@ -377,7 +382,7 @@ interface IntentoArgs {
  * persiste el resultado en la factura. Centraliza el UPDATE para que el 1er
  * intento y los reintentos compartan exactamente la misma transición.
  */
-async function ejecutarIntentoYActualizar(args: IntentoArgs): Promise<void> {
+export async function ejecutarIntentoYActualizar(args: IntentoArgs): Promise<void> {
   const {
     db,
     logger,

@@ -1,6 +1,6 @@
 # ADR 058 — Reclasificación a pre-comercial: habilitar right-sizing de disponibilidad (supersedes ADR-035 TRL 10)
 
-**Estado**: Aceptado
+**Estado**: Superado por ADR-082 en la clasificación del producto (pre-comercial → TRL 10). Las palancas de infraestructura y la condición de reversión siguen vigentes.
 **Fecha**: 2026-06-05
 **Autor**: Felipe Vicencio (PO) + Claude
 **Supersedes**: ADR-035 (`035-trl10-mantener-ha-recortar-ruido.md`)

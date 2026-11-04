@@ -278,7 +278,7 @@ export function OfferCard({ offer }: OfferCardProps) {
             type="button"
             onClick={handleAccept}
             disabled={busy}
-            className="flex items-center gap-1 rounded-md bg-primary-500 px-5 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-1 rounded-md bg-primary-600 px-5 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Check className="h-4 w-4" aria-hidden />
             {acceptMutation.isPending ? 'Aceptando…' : 'Aceptar oferta'}

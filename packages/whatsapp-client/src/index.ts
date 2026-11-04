@@ -27,4 +27,11 @@ export {
   type TwilioClientOptions,
   type SendTextParams as TwilioSendTextParams,
   type SendTextResponse as TwilioSendTextResponse,
+  type SendContentParams as TwilioSendContentParams,
+  type WhatsAppContentSender,
 } from './twilio-client.js';
+export {
+  hashTwilioContentForm,
+  twilioContentForm,
+  type TwilioContentFormParams,
+} from './twilio-content-form.js';

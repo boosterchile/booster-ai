@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, cloneElement, isValidElement, useId } from 'react';
 
 interface FormFieldProps {
   label: string;
@@ -6,12 +6,19 @@ interface FormFieldProps {
   error?: string | undefined;
   hint?: string | undefined;
   /**
-   * El render prop recibe `id` (para `<label htmlFor>` + el input)
-   * y `describedBy` (para `aria-describedby` del input — apunta al
-   * hint o al error según corresponda).
+   * El render prop recibe `id` (para `<label htmlFor>` + el input),
+   * `describedBy` (para `aria-describedby` del input — apunta al
+   * hint o al error según corresponda) e `invalid` (hay error).
+   *
+   * Si el render devuelve directamente un `input`, `select` o `textarea`,
+   * FormField le pone `aria-invalid` cuando hay error. Si el control va
+   * dentro de un contenedor, el caller usa `invalid` para marcarlo.
    */
-  render: (props: { id: string; describedBy: string | undefined }) => ReactNode;
+  render: (props: { id: string; describedBy: string | undefined; invalid: boolean }) => ReactNode;
 }
+
+/** Elementos que pueden llevar `aria-invalid` sin rol explícito. */
+const CONTROLES_NATIVOS = new Set(['input', 'select', 'textarea']);
 
 /**
  * Wrapper estandar para campos de formulario.
@@ -33,6 +40,17 @@ export function FormField({ label, required, error, hint, render }: FormFieldPro
   const errorId = error ? `${id}-error` : undefined;
   const hintId = hint && !error ? `${id}-hint` : undefined;
   const describedBy = errorId ?? hintId;
+  const invalid = Boolean(error);
+  const control = render({ id, describedBy, invalid });
+  // WCAG 3.3.1 (T10-11): el campo con error queda marcado para tecnologías
+  // de asistencia, además del texto asociado por aria-describedby.
+  const controlConEstado =
+    invalid &&
+    isValidElement<{ 'aria-invalid'?: boolean }>(control) &&
+    typeof control.type === 'string' &&
+    CONTROLES_NATIVOS.has(control.type)
+      ? cloneElement(control, { 'aria-invalid': true })
+      : control;
 
   return (
     <div>
@@ -44,7 +62,7 @@ export function FormField({ label, required, error, hint, render }: FormFieldPro
           </span>
         )}
       </label>
-      <div className="mt-1">{render({ id, describedBy })}</div>
+      <div className="mt-1">{controlConEstado}</div>
       {hintId && (
         <p id={hintId} className="mt-1 text-neutral-500 text-xs">
           {hint}

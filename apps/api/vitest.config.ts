@@ -34,11 +34,11 @@ export default defineConfig({
         'src/db/schema.ts', // definiciones declarativas de tablas Drizzle (no lógica testeable)
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
-      // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido en lines/functions/branches.
+      // 80 % en las cuatro métricas (T10-08, ADR-082).
       thresholds: {
         lines: 80,
-        functions: 75,
-        branches: 75,
+        functions: 80,
+        branches: 80,
         statements: 80,
       },
     },

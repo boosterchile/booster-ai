@@ -10,3 +10,10 @@
 
 export { createLogger, type Logger, type LoggerOptions } from './createLogger.js';
 export { redactionPaths, redactObjectValues, redactValue } from './redaction.js';
+export {
+  camposErrorReporting,
+  REPORTED_ERROR_EVENT_TYPE,
+  registrarErroresNoControlados,
+  type ProcesoNode,
+  type ServiceContext,
+} from './error-reporting.js';

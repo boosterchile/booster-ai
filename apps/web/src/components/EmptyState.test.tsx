@@ -14,13 +14,13 @@ describe('EmptyState', () => {
       <EmptyState
         icon={<svg data-testid="icon-mock" aria-label="placeholder icon" />}
         title="Aún no hay nada"
-        description="Cuando exista, lo verás acá."
+        description="Cuando exista, lo verás aquí."
         action={<a href="/x">Crear primero</a>}
       />,
     );
     expect(screen.getByTestId('icon-mock')).toBeInTheDocument();
     expect(screen.getByText('Aún no hay nada')).toBeInTheDocument();
-    expect(screen.getByText('Cuando exista, lo verás acá.')).toBeInTheDocument();
+    expect(screen.getByText('Cuando exista, lo verás aquí.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Crear primero/ })).toBeInTheDocument();
   });
 

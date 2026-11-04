@@ -145,7 +145,7 @@ describe('AuthProvidersSection — PasswordLinkForm', () => {
     useAuthMock.mockReturnValue({ user: makeUser() });
     getLinkedProvidersMock.mockReturnValue(['google.com']);
     render(<AuthProvidersSection />);
-    expect(screen.getByText(/Agregá una contraseña/)).toBeInTheDocument();
+    expect(screen.getByText(/Agrega una contraseña/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Agregar/ })).toBeInTheDocument();
   });
 

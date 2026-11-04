@@ -9,7 +9,7 @@
 # siguen siendo detectadas. Los secretos reales del backend viven en Secret
 # Manager, nunca en el repo.
 #
-# Claves web públicas allowlisteadas (ambas viajan en el bundle JS al cliente):
+# Claves web públicas allowlisteadas (las tres viajan en el bundle JS al cliente):
 #
 #   1. Firebase Web API key (AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk)
 #      — Pública por diseño: la autorización NO depende del secreto de la key,
@@ -21,6 +21,12 @@
 #      — Pública por diseño: restringida por HTTP referrer a
 #        https://app.boosterchile.com/* (VERIFICADO vía gcloud, ADR-014).
 #
+#   3. reCAPTCHA v3 site key de App Check (6Lc5BwotAAAAAM-FUGv52Fg9tSaJPaD_hLFpUsRw)
+#      — Pública por diseño: es la `site key`, no la `secret key`; se compila en
+#        el bundle web vía VITE_RECAPTCHA_SITE_KEY (cloudbuild.production.yaml).
+#        Entró en 9b4a44c (#401) y dejaba el gitleaks semanal en rojo desde
+#        2026-05 (`generic-api-key`). Allowlist por valor exacto (T10-07, ADR-082).
+#
 # Endurecimiento pendiente (consola GCP, no afecta este archivo): confirmar API
 # restrictions activas en ambas keys; si se usa Auth password, evaluar bajar la
 # cuota de identitytoolkit.
@@ -29,18 +35,23 @@
 useDefault = true
 
 [allowlist]
-description = "Claves web públicas por diseño (Firebase via App Check+Rules; Maps via referrer) acotadas por valor exacto + fixtures sintéticos de PII redaction"
+description = "Claves web públicas por diseño (Firebase via App Check+Rules; Maps via referrer; site key reCAPTCHA de App Check) acotadas por valor exacto + fixtures sintéticos de PII redaction"
 
 # Acotado al VALOR EXACTO de cada key pública (no al patrón AIza genérico).
 regexes = [
   '''AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk''',
   '''AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg''',
+  '''6Lc5BwotAAAAAM-FUGv52Fg9tSaJPaD_hLFpUsRw''',
   # Falso positivo recurrente de `generic-api-key`: el "secreto" detectado
   # es el nombre de la región GCP (alta entropía aparente, cero secreto;
   # gitleaks matchea las regexes contra el secret detectado). Mismo caso ya
   # allowlisteado por path para sprint-1-evidence; esto cubre runbooks que
   # documentan comandos gcloud con la región (ej. secret-init).
   '''^southamerica-west1$''',
+  # Fixture sintético de apps/api/test/unit/config-flags.test.ts: valor
+  # inventado de CMF_API_KEY para probar que config.ts acepta una key real
+  # (ADR-079, valor UF). No es una credencial. Acotado al valor exacto.
+  '''^a1b2c3d4e5f6$''',
 ]
 
 paths = [

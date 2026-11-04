@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import type { Auth } from 'firebase-admin/auth';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { emitirAltaExencion } from '../services/emitir-alta-exencion.js';
@@ -109,8 +109,7 @@ export function createAdminSignupRequestsRoutes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -126,8 +125,7 @@ export function createAdminSignupRequestsRoutes(opts: {
     return { ok: true as const, adminEmail: email };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireFlowActivated(c: Context<any, any, any>, correlationId: string) {
+  function requireFlowActivated(c: Context, correlationId: string) {
     if (!appConfig.SIGNUP_REQUEST_FLOW_ACTIVATED) {
       opts.logger.info(
         { correlationId, flag: 'SIGNUP_REQUEST_FLOW_ACTIVATED' },

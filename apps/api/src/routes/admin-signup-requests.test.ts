@@ -184,7 +184,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const d = makeDb({
       selectRows: [
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           email: 'nuevo@cliente.cl',
           nombreCompleto: 'Nuevo Cliente',
           estado: 'pendiente_aprobacion',
@@ -198,7 +198,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/11111111-1111-1111-1111-111111111111/approve', {
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({}),
@@ -224,7 +224,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const d = makeDb({
       selectRows: [
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           email: 'nuevo@cliente.cl',
           nombreCompleto: 'Nuevo Cliente',
           estado: 'pendiente_aprobacion',
@@ -238,7 +238,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/11111111-1111-1111-1111-111111111111/approve', {
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({ onboardingLinkBaseUrl: 'http://no-https.example.com/x' }),
@@ -252,7 +252,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/11111111-1111-1111-1111-111111111111/approve', {
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({}),
@@ -266,7 +266,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const d = makeDb({
       selectRows: [
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           email: 'ya@procesado.cl',
           nombreCompleto: 'X',
           estado: 'aprobado',
@@ -280,7 +280,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/11111111-1111-1111-1111-111111111111/approve', {
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({}),
@@ -294,7 +294,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const d = makeDb({
       selectRows: [
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           email: 'duplicado@cliente.cl',
           nombreCompleto: 'Dup',
           estado: 'pendiente_aprobacion',
@@ -311,7 +311,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/11111111-1111-1111-1111-111111111111/approve', {
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({}),
@@ -327,7 +327,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/22222222-2222-2222-2222-222222222222/reject', {
+    const res = await app.request('/22222222-2222-4222-8222-222222222222/reject', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({ reason: 'datos incompletos' }),
@@ -361,7 +361,7 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     const n = makeNotifierStub();
     const app = makeAppWithContext(d.db, a.auth, n);
 
-    const res = await app.request('/22222222-2222-2222-2222-222222222222/reject', {
+    const res = await app.request('/22222222-2222-4222-8222-222222222222/reject', {
       method: 'POST',
       headers: userContextHeader(),
       body: JSON.stringify({ reason: 'x'.repeat(501) }),
@@ -411,7 +411,7 @@ describe('admin-signup-requests con feature flag OFF', () => {
 });
 
 describe('POST /:id/approve con ADMIN_PROVISIONED_ONBOARDING_ENABLED=true (W1.4 onboarding_link)', () => {
-  const REQUEST_ID = '11111111-1111-1111-1111-111111111111';
+  const REQUEST_ID = '11111111-1111-4111-8111-111111111111';
   const SIGNING_SECRET = 'a'.repeat(32); // >=32 bytes — assertStrongSecret fail-closed.
   const TTL_HOURS = 6;
 

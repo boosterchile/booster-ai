@@ -49,6 +49,7 @@ const resumenSchema = z.object({
   km_recientes: z.number(),
   litros_recientes: z.number().nullable(),
   km_por_litro: z.number().nullable(),
+  motivo_km_por_litro: z.string().nullable().optional(),
   cta_sensor: z.boolean(),
   cta_capacidad_estanque: z.boolean().optional(),
   alertas_total: z.number().int(),
@@ -229,6 +230,7 @@ export function VehiculoHub({
           cargando={conImei && resumenQ.isLoading}
           error={conImei && resumenQ.isError}
           ubicacion={ubicacionQ.data ?? null}
+          ubicacionCargando={conImei && ubicacionQ.isLoading}
           ubicacionError={conImei && ubicacionQ.isError}
           alturaMapa={alturaMapa}
           onAbrirConfig={onAbrirConfig}
@@ -252,7 +254,7 @@ function HistorialLimitado({ conImei }: { conImei: boolean }) {
       </p>
       <p className="mt-1 text-neutral-600 text-sm">
         {conImei
-          ? 'El vivo y el recorrido siguen acá arriba.'
+          ? 'El vivo y el recorrido siguen aquí arriba.'
           : 'Cuando haya un dispositivo, vas a poder ver dónde está.'}
       </p>
     </div>
@@ -268,6 +270,7 @@ function Operacion({
   cargando,
   error,
   ubicacion,
+  ubicacionCargando,
   ubicacionError,
   alturaMapa,
   onAbrirConfig,
@@ -281,6 +284,7 @@ function Operacion({
   cargando: boolean;
   error: boolean;
   ubicacion: UbicacionHub | null;
+  ubicacionCargando: boolean;
   ubicacionError: boolean;
   alturaMapa: number;
   onAbrirConfig: () => void;
@@ -328,6 +332,7 @@ function Operacion({
           puedeConfigurar={puedeConfigurar}
           ultimo={resumen?.ultimo_trayecto ?? null}
           ubicacion={ubicacion}
+          ubicacionCargando={ubicacionCargando}
           ubicacionError={ubicacionError}
           altura={alturaMapa}
           onAbrirConfig={onAbrirConfig}
@@ -420,7 +425,7 @@ function TarjetaConsumo({
         puedeConfigurar,
         onAbrirConfig,
         onReintentar,
-        'Asociá un dispositivo para medir consumo.',
+        'Asocia un dispositivo para medir consumo.',
       )}
       {conImei && !cargando && !error && !hay ? (
         <div className="mt-2">
@@ -435,13 +440,18 @@ function TarjetaConsumo({
           <p className="font-semibold text-neutral-900">
             {resumen.km_por_litro != null ? `${fmtNum(resumen.km_por_litro, 2)} km/L` : '—'}
           </p>
+          {resumen.km_por_litro != null ? (
+            <p className="mt-1 text-neutral-600 text-xs">
+              Suma de los km y los litros de la ventana.
+            </p>
+          ) : null}
           <p className="mt-1 text-neutral-700 text-sm">
             {fmtKm(resumen.km_recientes)} en los últimos trayectos
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}
           </p>
           {resumen.cta_sensor ? (
             <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
-              Conectá el sensor
+              Conecta el sensor
             </button>
           ) : null}
           {resumen.cta_capacidad_estanque ? (
@@ -450,12 +460,17 @@ function TarjetaConsumo({
               onClick={onAbrirConfig}
               className="mt-2 block text-left text-primary-700 text-sm underline"
             >
-              Completá la capacidad del estanque
+              Completa la capacidad del estanque
             </button>
           ) : null}
-          {resumen.km_por_litro == null && !resumen.cta_sensor ? (
+          {resumen.km_por_litro == null && resumen.motivo_km_por_litro ? (
+            <p className="mt-2 text-neutral-600 text-xs">{resumen.motivo_km_por_litro}</p>
+          ) : null}
+          {resumen.km_por_litro == null && !resumen.motivo_km_por_litro && !resumen.cta_sensor ? (
             <p className="mt-2 text-neutral-600 text-xs">
-              Estos trayectos no traen un km/L confiable.
+              {resumen.litros_recientes != null
+                ? 'dato no confiable'
+                : 'Estos trayectos no traen un km/L confiable.'}
             </p>
           ) : null}
         </div>
@@ -579,6 +594,7 @@ function MapaPreview({
   puedeConfigurar,
   ultimo,
   ubicacion,
+  ubicacionCargando,
   ubicacionError,
   altura,
   onAbrirConfig,
@@ -590,6 +606,7 @@ function MapaPreview({
   puedeConfigurar: boolean;
   ultimo: TrayectoHub | null;
   ubicacion: UbicacionHub | null;
+  ubicacionCargando: boolean;
   ubicacionError: boolean;
   altura: number;
   onAbrirConfig: () => void;
@@ -632,7 +649,16 @@ function MapaPreview({
             height={altura}
           />
         ) : null}
-        {!hayTraza && !hayPunto ? (
+        {!hayTraza && !hayPunto && ubicacionCargando ? (
+          <output
+            className="block rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4 font-medium text-neutral-900 text-sm"
+            style={{ minHeight: altura }}
+            data-testid="hub-mapa-cargando"
+          >
+            Cargando posición…
+          </output>
+        ) : null}
+        {!hayTraza && !hayPunto && !ubicacionCargando ? (
           <div
             className="rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
             style={{ minHeight: altura }}
@@ -640,8 +666,8 @@ function MapaPreview({
             <p className="font-medium text-neutral-900 text-sm">Sin posición GPS todavía</p>
             <p className="mt-1 text-neutral-600 text-sm">
               {conImei
-                ? 'Cuando el dispositivo reporte una coordenada, la ves acá.'
-                : 'Asociá un dispositivo para ver la posición.'}
+                ? 'Cuando el dispositivo reporte una coordenada, la ves aquí.'
+                : 'Asocia un dispositivo para ver la posición.'}
             </p>
             {ubicacionError ? (
               <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
@@ -711,7 +737,7 @@ function ListaTrayectos({
       {conImei && !cargando && !error && recientes.length === 0 ? (
         <div className="mt-2">
           <p className="text-neutral-700 text-sm">
-            Cuando este dispositivo cierre un trayecto, aparece acá.
+            Cuando este dispositivo cierre un trayecto, aparece aquí.
           </p>
           <LinkEnVivo vehicleId={vehicleId} />
         </div>

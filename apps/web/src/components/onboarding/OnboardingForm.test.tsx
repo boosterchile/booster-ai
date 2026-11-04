@@ -42,7 +42,9 @@ async function fillStep1AndAdvance() {
   fireEvent.change(screen.getByLabelText(/Nombre completo/), {
     target: { value: 'Felipe Vicencio' },
   });
-  fireEvent.change(screen.getByLabelText(/Teléfono móvil/), { target: { value: '+56912345678' } });
+  fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
+    target: { value: '+56912345678' },
+  });
   fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
   // RUT y clave son obligatorios desde alta-cliente-autocontenida: juntos son
   // la credencial con la que la persona vuelve a entrar (ADR-035).
@@ -119,7 +121,7 @@ describe('OnboardingForm — navegación entre steps', () => {
   it('step 1 con teléfono inválido → no avanza, muestra error', async () => {
     renderForm();
     fireEvent.change(screen.getByLabelText(/Nombre completo/), { target: { value: 'Felipe' } });
-    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), { target: { value: 'no-tel' } });
+    fireEvent.change(screen.getByLabelText(/Teléfono celular/), { target: { value: 'no-tel' } });
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
     // Se quedan al menos 2 errores (teléfono y RUT vacío). Validamos por el rol y que no haya avanzado.
     const alerts = await screen.findAllByRole('alert');
@@ -367,7 +369,7 @@ describe('OnboardingForm — clave numérica propia', () => {
     fireEvent.change(screen.getByLabelText(/Nombre completo/), {
       target: { value: 'Felipe Vicencio' },
     });
-    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+    fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
       target: { value: '+56912345678' },
     });
     fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
@@ -386,7 +388,7 @@ describe('OnboardingForm — clave numérica propia', () => {
     fireEvent.change(screen.getByLabelText(/Nombre completo/), {
       target: { value: 'Felipe Vicencio' },
     });
-    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+    fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
       target: { value: '+56912345678' },
     });
     fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
@@ -409,7 +411,7 @@ describe('OnboardingForm — clave numérica propia', () => {
     fireEvent.change(screen.getByLabelText(/Nombre completo/), {
       target: { value: 'Felipe Vicencio' },
     });
-    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+    fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
       target: { value: '+56912345678' },
     });
     fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });

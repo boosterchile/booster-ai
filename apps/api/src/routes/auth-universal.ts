@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { loginRutSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { eq, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { verifyClaveNumerica } from '../services/clave-numerica.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
@@ -178,13 +178,13 @@ export function createAuthUniversalRoutes(opts: {
           firebaseUid = created.uid;
         }
 
-        // UPDATE usuarios con el firebase_uid real + sintético email
-        // (igual que driver-activate).
+        // El uid real queda en la fila. El email de contacto NO se pisa:
+        // `driver-activate` ya dejó de reemplazarlo por el sintético, y
+        // hacerlo acá borraba el correo real al primer login.
         await opts.db
           .update(users)
           .set({
             firebaseUid,
-            email: syntheticEmail,
             status: 'activo',
             lastLoginAt: sql`now()`,
             updatedAt: sql`now()`,

@@ -202,10 +202,14 @@ describe('DELETE /me/push-subscription', () => {
     expect(body.removed).toBe(1);
   });
 
-  it('endpoint pertenece a OTRO user → loggea warn + 200 removed', async () => {
-    const db = makeDb({
-      deletes: [[{ id: 'sub-id', userId: 'OTRO-user' }]],
-    });
+  it('endpoint de otro user no se borra: el WHERE exige el userId', async () => {
+    const where = vi.fn(() => ({
+      returning: vi.fn(async () => []),
+    }));
+    const db = {
+      insert: vi.fn(),
+      delete: vi.fn(() => ({ where })),
+    };
     const app = await buildPrivApp(db);
     const res = await app.request('/me/push-subscription', {
       method: 'DELETE',
@@ -213,7 +217,10 @@ describe('DELETE /me/push-subscription', () => {
       body: JSON.stringify({ endpoint: VALID_BODY.endpoint }),
     });
     expect(res.status).toBe(200);
-    expect(noopLogger.warn).toHaveBeenCalled();
+    const body = (await res.json()) as { removed: number };
+    expect(body.removed).toBe(0);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(noopLogger.warn).not.toHaveBeenCalled();
   });
 });
 
@@ -230,5 +237,62 @@ describe('GET /webpush/vapid-public-key (público)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { public_key: string };
     expect(body.public_key).toBe('BPubKeyXYZ');
+  });
+});
+
+describe('POST /me/push-subscription — contrato del 400 de zValidator (TRK-003)', () => {
+  async function postInvalido(body: unknown) {
+    const app = await buildPrivApp(makeDb());
+    const res = await app.request('/me/push-subscription', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-userctx': VALID_USER_CTX },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: await res.json() };
+  }
+
+  it('campo faltante (keys) y tipo incorrecto (endpoint)', async () => {
+    expect(await postInvalido({ endpoint: VALID_BODY.endpoint })).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_type",
+                "expected": "object",
+                "message": "Invalid input: expected object, received undefined",
+                "path": [
+                  "keys",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+    expect(await postInvalido({ ...VALID_BODY, endpoint: 123 })).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_type",
+                "expected": "string",
+                "message": "Invalid input: expected string, received number",
+                "path": [
+                  "endpoint",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
   });
 });

@@ -55,7 +55,7 @@ function logger(): Logger & { info: ReturnType<typeof vi.fn> } {
 }
 
 describe('cargarScorecardMedioPlazo', () => {
-  it('calcula teléfono, flota y dual desde las filas, y deja fuera demo y null island', async () => {
+  it('calcula teléfono, flota y dual desde las filas, y deja fuera prueba y null island', async () => {
     const log = logger();
     const cobertura: number[] = [];
     const { db, tablas } = colaDb([
@@ -65,7 +65,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-1',
           vehicleId: 'veh-1',
           teltonikaImei: '860111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: T0,
           entregadoEn: FIN,
@@ -76,8 +75,7 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-demo',
           vehicleId: 'veh-demo',
           teltonikaImei: '860222',
-          esDemo: true,
-          esUsuarioPrueba: false,
+          esUsuarioPrueba: true,
           recogidoEn: T0,
           entregadoEn: FIN,
           canceladoEn: null,
@@ -87,7 +85,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-roto',
           vehicleId: 'veh-1',
           teltonikaImei: '860111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: FIN,
           entregadoEn: T0,
@@ -130,8 +127,8 @@ describe('cargarScorecardMedioPlazo', () => {
         },
       ],
       [
-        { vehicleId: 'veh-1', teltonikaImei: '860111', esDemo: false, esUsuarioPrueba: false },
-        { vehicleId: 'veh-demo', teltonikaImei: '860222', esDemo: true, esUsuarioPrueba: false },
+        { vehicleId: 'veh-1', teltonikaImei: '860111', esUsuarioPrueba: false },
+        { vehicleId: 'veh-demo', teltonikaImei: '860222', esUsuarioPrueba: true },
       ],
       [{ vehicleId: 'veh-1', n: 3 }],
     ]);
@@ -214,7 +211,6 @@ describe('cargarScorecardMedioPlazo', () => {
         asignacionId: 'a',
         vehicleId: 'veh-a',
         teltonikaImei: '111',
-        esDemo: false,
         esUsuarioPrueba: false,
         recogidoEn: T0,
         entregadoEn: FIN,
@@ -225,7 +221,6 @@ describe('cargarScorecardMedioPlazo', () => {
         asignacionId: 'b',
         vehicleId: 'veh-b',
         teltonikaImei: null,
-        esDemo: false,
         esUsuarioPrueba: false,
         recogidoEn: T0,
         entregadoEn: FIN,
@@ -238,8 +233,8 @@ describe('cargarScorecardMedioPlazo', () => {
       [],
       [],
       [
-        { vehicleId: 'veh-a', teltonikaImei: '111', esDemo: false, esUsuarioPrueba: false },
-        { vehicleId: 'veh-b', teltonikaImei: null, esDemo: false, esUsuarioPrueba: false },
+        { vehicleId: 'veh-a', teltonikaImei: '111', esUsuarioPrueba: false },
+        { vehicleId: 'veh-b', teltonikaImei: null, esUsuarioPrueba: false },
       ],
       [{ vehicleId: 'veh-a', n: 1 }],
     ]);
@@ -264,7 +259,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-c',
           vehicleId: 'veh-1',
           teltonikaImei: '860111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: T0,
           entregadoEn: null,
@@ -275,7 +269,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-abierto',
           vehicleId: 'veh-1',
           teltonikaImei: '860111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: T0,
           entregadoEn: null,
@@ -286,7 +279,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-null',
           vehicleId: 'veh-1',
           teltonikaImei: '860111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: null,
           entregadoEn: FIN,
@@ -297,7 +289,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'asig-reloj',
           vehicleId: 'veh-1',
           teltonikaImei: '860111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: new Date(Number.NaN),
           entregadoEn: FIN,
@@ -363,10 +354,10 @@ describe('cargarScorecardMedioPlazo', () => {
         },
       ],
       [
-        { vehicleId: 'veh-1', teltonikaImei: '860111', esDemo: false, esUsuarioPrueba: false },
-        { vehicleId: 'veh-2', teltonikaImei: '860333', esDemo: false, esUsuarioPrueba: false },
-        { vehicleId: 'veh-blanco', teltonikaImei: '   ', esDemo: false, esUsuarioPrueba: false },
-        { vehicleId: 'veh-sin', teltonikaImei: null, esDemo: false, esUsuarioPrueba: false },
+        { vehicleId: 'veh-1', teltonikaImei: '860111', esUsuarioPrueba: false },
+        { vehicleId: 'veh-2', teltonikaImei: '860333', esUsuarioPrueba: false },
+        { vehicleId: 'veh-blanco', teltonikaImei: '   ', esUsuarioPrueba: false },
+        { vehicleId: 'veh-sin', teltonikaImei: null, esUsuarioPrueba: false },
       ],
       [{ vehicleId: 'veh-1', n: '2' }],
     ]);
@@ -392,7 +383,6 @@ describe('cargarScorecardMedioPlazo', () => {
           asignacionId: 'a',
           vehicleId: 'veh',
           teltonikaImei: '111',
-          esDemo: false,
           esUsuarioPrueba: false,
           recogidoEn: T0,
           entregadoEn: FIN,
@@ -401,7 +391,7 @@ describe('cargarScorecardMedioPlazo', () => {
       ],
       [],
       [],
-      [{ vehicleId: 'veh', teltonikaImei: '111', esDemo: false, esUsuarioPrueba: false }],
+      [{ vehicleId: 'veh', teltonikaImei: '111', esUsuarioPrueba: false }],
       [{ vehicleId: 'veh', n: 'no-es-numero' }],
     ]);
     await expect(cargarScorecardMedioPlazo({ db, logger: logger(), ahora: AHORA })).rejects.toThrow(

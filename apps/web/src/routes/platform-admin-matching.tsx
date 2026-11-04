@@ -475,7 +475,7 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
               coincidencia con el algoritmo actual
             </div>
             <div className="mt-1 text-neutral-700 text-xs">
-              Mirá el detalle abajo seleccionando la simulación en la lista.
+              Mira el detalle abajo seleccionando la simulación en la lista.
             </div>
           </div>
         )}

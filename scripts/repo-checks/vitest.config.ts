@@ -8,7 +8,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
-      include: ['check-adr-numbering.mjs', 'drift-inventory.mjs', 'spec-canonical-drift.mjs'],
+      include: [
+        'check-adr-numbering.mjs',
+        'drift-inventory.mjs',
+        'medir-ci-p95.mjs',
+        'spec-canonical-drift.mjs',
+      ],
       thresholds: {
         lines: 80,
         functions: 80,

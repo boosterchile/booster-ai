@@ -1,5 +1,4 @@
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -12,6 +11,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { calcularEstadoDocumento } from '../services/compliance-estado.js';
 
 /**
@@ -83,8 +83,7 @@ const updateDriverDocSchema = createDriverDocSchema.partial();
 export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireAuth(c: Context<any, any, any>) {
+  function requireAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -99,8 +98,7 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
     return { ok: true as const, userContext, activeMembership: active };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireWriteRole(c: Context<any, any, any>) {
+  function requireWriteRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -469,8 +467,7 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
 export function createCumplimientoRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics
-  function requireAuth(c: Context<any, any, any>) {
+  function requireAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };

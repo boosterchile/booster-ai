@@ -1,4 +1,10 @@
-import { type Attributes, type Counter, type Histogram, metrics } from '@opentelemetry/api';
+import {
+  type Attributes,
+  type Counter,
+  type Gauge,
+  type Histogram,
+  metrics,
+} from '@opentelemetry/api';
 
 /**
  * Helper para métricas de NEGOCIO (contadores), hermano de `business-span.ts`
@@ -19,6 +25,7 @@ const meter = metrics.getMeter(BUSINESS_METER_NAME);
 /** Cache de instrumentos por nombre — un instrumento se crea una sola vez por proceso, no por request. */
 const counterCache = new Map<string, Counter>();
 const histogramCache = new Map<string, Histogram>();
+const gaugeCache = new Map<string, Gauge>();
 
 export interface BusinessHistogramOptions {
   description?: string;
@@ -53,6 +60,23 @@ export function getBusinessHistogram(name: string, options?: BusinessHistogramOp
     histogramCache.set(name, histogram);
   }
   return histogram;
+}
+
+/**
+ * Obtiene (memoizado) un Gauge síncrono de negocio: el último valor
+ * registrado es el que se exporta (p. ej. `caja.float_terceros_clp`,
+ * ADR-080 §2). La primera llamada fija description/unit.
+ */
+export function getBusinessGauge(name: string, options?: BusinessHistogramOptions): Gauge {
+  let gauge = gaugeCache.get(name);
+  if (!gauge) {
+    gauge = meter.createGauge(name, {
+      ...(options?.description ? { description: options.description } : {}),
+      ...(options?.unit ? { unit: options.unit } : {}),
+    });
+    gaugeCache.set(name, gauge);
+  }
+  return gauge;
 }
 
 export type BusinessCounterAttributes = Attributes;

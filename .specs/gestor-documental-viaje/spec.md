@@ -23,8 +23,8 @@ Authz: generador dueño del viaje **o** transportista con assignment vigente (`a
 
 - Oficina transportista y generador de carga ven **la misma superficie** (un componente reutilizado) sobre el **viaje** (`tripId`), no sobre el assignment id.
 - Subida multipart al endpoint existente. MIME allowlist: `application/pdf`, `image/jpeg`, `image/png`.
-- Status de extracción en español humano, **vos** rioplatense (Empezá / Subí / Guardá). Zero «tú».
-- Si `TRANSPORT_DOCUMENTS_BUCKET` ausente, API 503 `storage_unavailable` → mensaje honesto, no crash: *«El archivo no se pudo guardar (storage). Reintentá más tarde.»*
+- Status de extracción en español humano, **tuteo** chileno (Empieza / Sube / Guarda). Zero voseo.
+- Si `TRANSPORT_DOCUMENTS_BUCKET` ausente, API 503 `storage_unavailable` → mensaje honesto, no crash: *«El archivo no se pudo guardar (storage). Inténtalo más tarde.»*
 - Ingreso manual cuando el status es `fallido`, o `pendiente`/`procesando` (pendiente eterno: el worker TED es F4-4b, fuera de alcance; en local/prod sin 4b el doc queda `pendiente`).
 - Lectura abierta a cualquier rol del tenant autorizado; escritura solo `dueno|admin|despachador` (el API ya lo exige).
 
@@ -44,13 +44,13 @@ Authz: generador dueño del viaje **o** transportista con assignment vigente (`a
 - `/app/asignaciones/$id` (`asignacion-detalle`): panel «Documentos de transporte». El `tripId` sale de `GET /assignments/:id` → `trip_request.id` (el param de ruta es assignment id).
 - `/app/cargas/$id/track` (`carga-track`): mismo componente. El param de ruta **es** el trip id; se monta aunque todavía no haya assignment (el generador dueño está autorizado).
 
-**Copy (vos):**
+**Copy (tuteo):**
 
 - Título: Documentos de transporte
-- CTA subida: Subí un PDF o una foto
-- Vacío: Todavía no hay documentos. Empezá subiendo la guía o la factura.
-- Descargar: Descargá
-- Manual: Completar a mano → Guardá
+- CTA subida: Sube un PDF o una foto
+- Vacío: Todavía no hay documentos. Empieza subiendo la guía o la factura.
+- Descargar: Descarga
+- Manual: Completar a mano → Guarda
 - Status: Pendiente / Procesando / Decodificado / Ingreso manual / Falló la lectura
 
 ## 4. Criterios de salida

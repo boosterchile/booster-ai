@@ -1,8 +1,15 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { NombreMiembro } from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
 import { ApiError, api } from '../lib/api-client.js';
+import {
+  MENSAJE_ERROR_GENERICO,
+  erroresPorCampo,
+  hayIssuesSinCampo,
+} from '../lib/form-validation.js';
 
 /**
  * `/app/equipo` — la empresa gestiona su propia gente
@@ -21,12 +28,13 @@ import { ApiError, api } from '../lib/api-client.js';
 interface Miembro {
   membership_id: string;
   user_id: string;
-  full_name: string;
+  full_name: string | null;
   email: string;
   rut: string | null;
   rol: string;
   estado: string;
   invitado_en: string;
+  pendiente_aceptar?: boolean;
 }
 
 interface AltaResponse {
@@ -35,8 +43,9 @@ interface AltaResponse {
   membership_id: string;
   rol: string;
   estado: string;
-  codigo_activacion: string;
-  expira_en: string;
+  codigo_activacion: string | null;
+  expira_en: string | null;
+  vinculo?: 'nueva' | 'cuenta_activa' | 'codigo_vigente' | 'provisoria_sin_codigo';
 }
 
 const ROLES = [
@@ -96,7 +105,7 @@ function EquipoPage() {
           <div>
             <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">Equipo</h1>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Las personas de tu empresa que usan Booster. Al agregar a alguien recibís un código
+              Las personas de tu empresa que usan Booster. Al agregar a alguien recibes un código
               para entregarle; con ese código crea su propia clave de acceso.
             </p>
           </div>
@@ -134,7 +143,7 @@ function EquipoPage() {
         )}
         {!cargando && !errorLista && miembros.length === 0 && (
           <p className="p-5 text-neutral-500 text-sm">
-            Todavía no agregaste a nadie. Usá “Agregar persona” para sumar a alguien de tu equipo.
+            Todavía no agregaste a nadie. Usa “Agregar persona” para sumar a alguien de tu equipo.
           </p>
         )}
         {!cargando && !errorLista && miembros.length > 0 && (
@@ -142,17 +151,23 @@ function EquipoPage() {
             {miembros.map((m) => (
               <li key={m.membership_id} className="flex items-center justify-between gap-4 p-4">
                 <div className="min-w-0">
-                  <div className="font-medium text-neutral-900">{m.full_name}</div>
-                  <div className="text-neutral-500 text-sm">
-                    {m.email}
-                    {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}
-                  </div>
+                  {m.estado === 'activa' ? (
+                    <>
+                      <NombreMiembro nombre={m.full_name} pendiente={false} />
+                      <div className="text-neutral-500 text-sm">
+                        {m.email}
+                        {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <NombreMiembro nombre={m.full_name} pendiente rut={m.rut} />
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="text-neutral-600 text-sm">{ROL_LABEL[m.rol] ?? m.rol}</span>
                   {m.estado === 'pendiente_invitacion' ? (
                     <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700 text-xs">
-                      Pendiente de activar
+                      {m.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente de activar'}
                     </span>
                   ) : (
                     <span className="rounded bg-success-50 px-2 py-0.5 font-medium text-success-700 text-xs">
@@ -169,7 +184,7 @@ function EquipoPage() {
   );
 }
 
-/** Panel con el código recién emitido. Se muestra una vez, como el de onboarding. */
+/** Panel con el resultado del alta. El código solo aparece si se emitió uno. */
 function CodigoEntregable({
   alta,
   onCerrar,
@@ -178,15 +193,23 @@ function CodigoEntregable({
   onCerrar: () => void;
 }) {
   const [copiado, setCopiado] = useState(false);
+  const codigo = alta.codigo_activacion;
 
   async function copiar() {
+    if (!codigo) {
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(alta.codigo_activacion);
+      await navigator.clipboard.writeText(codigo);
       setCopiado(true);
       window.setTimeout(() => setCopiado(false), 2500);
     } catch {
       setCopiado(false);
     }
+  }
+
+  if (!codigo) {
+    return <SolicitudRegistrada volverLabel="Volver a Equipo" onVolver={onCerrar} />;
   }
 
   return (
@@ -199,11 +222,11 @@ function CodigoEntregable({
           {/* Que quien lo entrega entienda qué es: un código de un solo uso, no
               una clave. La clave la elige la persona y nadie más la conoce. */}
           <p className="mt-1 text-amber-800 text-sm">
-            Entregáselo por tu canal habitual. Le sirve una sola vez para activar su cuenta: al
+            Entrégaselo por tu canal habitual. Le sirve una sola vez para activar su cuenta: al
             usarlo, elegirá su propia clave de 6 dígitos, que solo conocerá ella.
           </p>
           <p className="mt-1 text-amber-700 text-xs">
-            Vence el {new Date(alta.expira_en).toLocaleDateString('es-CL')}.
+            Vence el {alta.expira_en ? new Date(alta.expira_en).toLocaleDateString('es-CL') : '—'}.
           </p>
         </div>
         <button
@@ -216,7 +239,7 @@ function CodigoEntregable({
       </div>
       <div className="mt-3 flex items-center gap-2">
         <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
-          {alta.codigo_activacion}
+          {codigo}
         </div>
         <button
           type="button"
@@ -231,6 +254,23 @@ function CodigoEntregable({
   );
 }
 
+const CAMPOS_ALTA = ['full_name', 'rut', 'email', 'rol'] as const;
+type CampoAlta = (typeof CAMPOS_ALTA)[number];
+
+/** Error bajo su campo (ux.md TRK-005): un mensaje, sin prefijos. */
+function ErrorCampo({ campo, mensaje }: { campo: CampoAlta; mensaje: string | undefined }) {
+  return mensaje ? (
+    <span id={`alta-err-${campo}`} role="alert" className="text-danger-700 text-xs">
+      {mensaje}
+    </span>
+  ) : null;
+}
+
+const aria = (err: Partial<Record<CampoAlta, string>>, campo: CampoAlta) => ({
+  'aria-invalid': err[campo] ? true : undefined,
+  'aria-describedby': err[campo] ? `alta-err-${campo}` : undefined,
+});
+
 function FormAlta({
   onCreado,
   onCancelar,
@@ -244,20 +284,23 @@ function FormAlta({
   const [rol, setRol] = useState<string>('admin');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errCampo, setErrCampo] = useState<Partial<Record<CampoAlta, string>>>({});
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setErrCampo({});
 
     // Validar el RUT acá y no dejar que rebote como "400: API error 400": quien
     // está cargando a su equipo necesita saber QUÉ está mal, no un número.
     const rutNormalizado = ensureRutHasDash(rut);
     const rutParsed = rutSchema.safeParse(rutNormalizado);
     if (!rutParsed.success) {
-      setError(
-        rutParsed.error.issues[0]?.message ??
-          'El RUT no es válido. Revisá los dígitos y el verificador.',
-      );
+      setErrCampo({
+        rut:
+          rutParsed.error.issues[0]?.message ??
+          'El RUT no es válido. Revisa los dígitos y el verificador.',
+      });
       return;
     }
 
@@ -277,12 +320,23 @@ function FormAlta({
       const code = (err as { code?: string } | null)?.code;
       if (code === 'already_member') {
         setError('Esa persona ya forma parte de tu equipo.');
+      } else if (code === 'rut_already_registered') {
+        setError(
+          'Ese RUT ya está registrado en Booster con otro correo. Revisa el RUT o escribe a soporte.',
+        );
       } else if (code === 'rol_sin_permiso') {
         setError(
           'No tienes permiso para gestionar el equipo. Pídeselo al dueño o a un administrador.',
         );
       } else {
-        setError(err instanceof ApiError ? `${err.status}: ${err.message}` : String(err));
+        const campos = err instanceof ApiError ? erroresPorCampo(err.details, CAMPOS_ALTA) : null;
+        if (campos) {
+          setErrCampo(campos);
+        }
+        // Issues sin campo visible no se pierden: genérico arriba.
+        if (!campos || (err instanceof ApiError && hayIssuesSinCampo(err.details, CAMPOS_ALTA))) {
+          setError(MENSAJE_ERROR_GENERICO);
+        }
       }
     } finally {
       setEnviando(false);
@@ -303,9 +357,11 @@ function FormAlta({
           type="text"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
+          {...aria(errCampo, 'full_name')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           placeholder="Ej: Gabriel Barros"
         />
+        <ErrorCampo campo="full_name" mensaje={errCampo.full_name} />
       </label>
 
       <label className="flex flex-col gap-1">
@@ -314,9 +370,11 @@ function FormAlta({
           type="text"
           value={rut}
           onChange={(e) => setRut(e.target.value)}
+          {...aria(errCampo, 'rut')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           placeholder="12.345.678-5"
         />
+        <ErrorCampo campo="rut" mensaje={errCampo.rut} />
       </label>
 
       <label className="flex flex-col gap-1">
@@ -325,9 +383,11 @@ function FormAlta({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          {...aria(errCampo, 'email')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           placeholder="persona@empresa.cl"
         />
+        <ErrorCampo campo="email" mensaje={errCampo.email} />
         <span className="text-neutral-500 text-xs">
           Es el correo con el que Booster se comunica con esa persona.
         </span>
@@ -338,6 +398,7 @@ function FormAlta({
         <select
           value={rol}
           onChange={(e) => setRol(e.target.value)}
+          {...aria(errCampo, 'rol')}
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
         >
           {ROLES.map((r) => (
@@ -346,6 +407,7 @@ function FormAlta({
             </option>
           ))}
         </select>
+        <ErrorCampo campo="rol" mensaje={errCampo.rol} />
         <span className="text-neutral-500 text-xs">
           Los conductores se agregan desde la sección Conductores, con su licencia.
         </span>

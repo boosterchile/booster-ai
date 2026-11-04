@@ -43,7 +43,7 @@ const { persistEcoRoutePolyline } = await import(
   '../../src/services/persist-eco-route-polyline.js'
 );
 
-const ASSIGNMENT_ID = '00000000-0000-0000-0000-000000000a01';
+const ASSIGNMENT_ID = '00000000-0000-4000-8000-000000000a01';
 
 interface JoinRow {
   assignmentId: string;

@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { twilioContentForm } from './twilio-content-form.js';
 
 /**
  * Cliente HTTP mínimo para Twilio Programmable Messaging API — WhatsApp.
@@ -69,6 +70,15 @@ export interface SendContentParams {
 export interface SendContentResponse extends SendTextResponse {
   // Twilio retorna la misma shape que sendText cuando se usa Content API.
   // El campo `body` viene resuelto con las variables ya sustituidas.
+}
+
+/**
+ * Lo único que los emisores de templates necesitan del cliente. Permite
+ * enrutar el envío (directo, sombra o vía notification-service, T10-21)
+ * sin que los callers sepan cuál.
+ */
+export interface WhatsAppContentSender {
+  sendContent(params: SendContentParams): Promise<{ sid: string }>;
 }
 
 export class TwilioApiError extends Error {
@@ -151,17 +161,7 @@ export class TwilioWhatsAppClient {
 
     const url = `${TWILIO_API_BASE}/Accounts/${accountSid}/Messages.json`;
 
-    const from = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
-    const to = params.to.startsWith('whatsapp:') ? params.to : `whatsapp:${params.to}`;
-
-    const formBody = new URLSearchParams({
-      From: from,
-      To: to,
-      ContentSid: params.contentSid,
-    });
-    if (params.contentVariables && Object.keys(params.contentVariables).length > 0) {
-      formBody.set('ContentVariables', JSON.stringify(params.contentVariables));
-    }
+    const formBody = new URLSearchParams(twilioContentForm({ fromNumber, ...params }));
 
     const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 

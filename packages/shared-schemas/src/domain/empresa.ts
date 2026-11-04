@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { chileanPhoneSchema, rutSchema } from '../primitives/chile.js';
 import { addressSchema } from '../primitives/geo.js';
 import { empresaIdSchema, planIdSchema } from '../primitives/ids.js';
+import { correoEs, errorOpcion, textoEs } from '../primitives/mensajes.js';
+import { membershipRoleSchema } from './membership.js';
 import { planSlugSchema } from './plan.js';
 import { reportingStandardSchema } from './stakeholder.js';
 
@@ -94,14 +96,14 @@ export type EmpresaCreate = z.infer<typeof empresaCreateSchema>;
  */
 export const crearEmpresaAdminSchema = z
   .object({
-    legal_name: z.string().min(1).max(200),
+    legal_name: textoEs(1, 200),
     rut: rutSchema,
-    contact_email: z.string().email().max(255),
+    contact_email: correoEs(255),
     contact_phone: chileanPhoneSchema,
-    address_street: z.string().min(1).max(200),
-    address_city: z.string().min(1).max(100),
-    address_region: z.string().min(1).max(4),
-    address_postal_code: z.string().min(1).max(20).optional(),
+    address_street: textoEs(1, 200),
+    address_city: textoEs(1, 100),
+    address_region: textoEs(1, 4),
+    address_postal_code: textoEs(1, 20).optional(),
     is_generador_carga: z.boolean(),
     is_transportista: z.boolean(),
     plan_slug: planSlugSchema.default('gratis'),
@@ -121,7 +123,12 @@ export type CrearEmpresaAdmin = z.infer<typeof crearEmpresaAdminSchema>;
  *   - `stakeholder_sostenibilidad` — pertenece a organizaciones stakeholder
  *     (ADR-034), no a empresas; el CHECK XOR de la BD lo impide.
  */
-export const rolInvitacionEmpresaSchema = z.enum(['dueno', 'admin', 'despachador', 'visualizador']);
+export const rolInvitacionEmpresaSchema = z.enum(
+  ['dueno', 'admin', 'despachador', 'visualizador'],
+  {
+    error: errorOpcion,
+  },
+);
 export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
 
 /**
@@ -135,12 +142,65 @@ export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
  * `/activar` para elegir su propia clave. El código no es la contraseña.
  */
 export const invitarMiembroEmpresaSchema = z.object({
-  email: z.string().email().max(320),
-  full_name: z.string().min(2).max(200),
+  email: correoEs(320),
+  full_name: textoEs(2, 200),
   rut: rutSchema,
   rol: rolInvitacionEmpresaSchema,
 });
 export type InvitarMiembroEmpresaInput = z.infer<typeof invitarMiembroEmpresaSchema>;
+
+/**
+ * Persona invitada que todavía no activó, tal como la ve el platform-admin.
+ * No trae el código: ese solo sale en la respuesta de emisión o reemisión.
+ */
+export const miembroPendienteAdminSchema = z.object({
+  user_id: z.string().uuid(),
+  membership_id: z.string().uuid(),
+  nombre: z.string(),
+  rut: z.string(),
+  email: z.string().email(),
+  rol: membershipRoleSchema,
+  invitado_en: z.string().datetime(),
+  expira_en: z.string().datetime(),
+});
+export type MiembroPendienteAdmin = z.infer<typeof miembroPendienteAdminSchema>;
+
+/** Dueño pendiente más antiguo, o null si esa empresa no tiene uno. */
+export const duenoPendienteAdminSchema = miembroPendienteAdminSchema.nullable();
+export type DuenoPendienteAdmin = z.infer<typeof duenoPendienteAdminSchema>;
+
+/**
+ * Ítem de `GET /admin/empresas`. Conserva la ficha y suma las invitaciones
+ * que siguen pendientes. `dueno_pendiente` es el mismo objeto del dueño
+ * dentro de `miembros_pendientes`, o null.
+ */
+export const empresaAdminListItemSchema = z.object({
+  id: z.string().uuid(),
+  razon_social: z.string(),
+  rut: z.string(),
+  estado: empresaStatusSchema,
+  es_transportista: z.boolean(),
+  es_generador_carga: z.boolean(),
+  miembros_pendientes: z.array(miembroPendienteAdminSchema),
+  dueno_pendiente: duenoPendienteAdminSchema,
+});
+export type EmpresaAdminListItem = z.infer<typeof empresaAdminListItemSchema>;
+
+/**
+ * `POST /admin/empresas/:id/miembros/:membershipId/codigo` no tiene body.
+ * El PIN en claro vive solo en esta respuesta.
+ */
+export const reemitirCodigoActivacionResponseSchema = z.object({
+  codigo_activacion: z.string().regex(/^\d{6}$/),
+  expira_en: z.string().datetime(),
+  membership_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  rol: membershipRoleSchema,
+  estado: z.literal('pendiente_invitacion'),
+});
+export type ReemitirCodigoActivacionResponse = z.infer<
+  typeof reemitirCodigoActivacionResponseSchema
+>;
 
 /**
  * PATCH de `empresas.estado` (platform-admin). Los tres valores del enum
@@ -207,7 +267,7 @@ export const empresaUmbralesRoboCombustiblePatchSchema = z
   })
   .refine(
     (valor) => valor.umbral_robo_golpe_l !== undefined || valor.umbral_robo_hormiga_l !== undefined,
-    { message: 'indicá al menos un umbral' },
+    { message: 'indica al menos un umbral' },
   );
 export type EmpresaUmbralesRoboCombustiblePatch = z.infer<
   typeof empresaUmbralesRoboCombustiblePatchSchema

@@ -1,7 +1,23 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
+
+const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => respuestaNav(path)));
+
+function respuestaNav(path: string): unknown {
+  if (path.startsWith('/offers/mine')) {
+    return { offers: [] };
+  }
+  if (path === '/assignments') {
+    return { assignments: [] };
+  }
+  if (path === '/cumplimiento') {
+    return { resumen: { vencidos: 0, por_vencer_30d: 0 }, vehiculos: [], conductores: [] };
+  }
+  return {};
+}
 
 // El Sidebar usa <Link> + useRouterState de @tanstack/react-router; traer el
 // RouterProvider real es overkill. Link → <a>, useRouterState → pathname fijo.
@@ -24,6 +40,15 @@ vi.mock('../hooks/use-auth.js', () => ({
   signOutUser: vi.fn(async () => undefined),
 }));
 
+vi.mock('../lib/api-client.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('../lib/api-client.js')>('../lib/api-client.js');
+  return {
+    ...actual,
+    api: { ...actual.api, get: (path: string) => apiGetMock(path) },
+  };
+});
+
 vi.mock('./ConsentTermsBanner.js', () => ({
   ConsentTermsBanner: () => null,
 }));
@@ -32,6 +57,11 @@ import { signOutUser } from '../hooks/use-auth.js';
 import { Layout } from './Layout.js';
 
 const signOutUserMock = vi.mocked(signOutUser);
+
+function renderLayout(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -77,7 +107,7 @@ function buildMe(memberships: MeOnboarded['memberships']): MeOnboarded {
 
 describe('Layout — shell con sidebar', () => {
   it('el CompanySwitcher sigue accesible (nombre de la empresa activa)', () => {
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>contenido</div>
       </Layout>,
@@ -86,7 +116,7 @@ describe('Layout — shell con sidebar', () => {
   });
 
   it('renderiza children dentro del main y el title en la topbar', () => {
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Contexto de prueba">
         <div>contenido del main</div>
       </Layout>,
@@ -96,7 +126,7 @@ describe('Layout — shell con sidebar', () => {
   });
 
   it('sidebar role-aware: generador ve "Mis cargas", NO "Ofertas"', () => {
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Gen', { generador: true })])} title="Inicio">
         <div>x</div>
       </Layout>,
@@ -106,7 +136,7 @@ describe('Layout — shell con sidebar', () => {
   });
 
   it('sidebar role-aware: transportista ve "Ofertas", NO "Mis cargas"', () => {
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Trans', { transportista: true })])} title="Inicio">
         <div>x</div>
       </Layout>,
@@ -116,7 +146,7 @@ describe('Layout — shell con sidebar', () => {
   });
 
   it('hamburguesa abre el drawer (aria-expanded false → true)', () => {
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>x</div>
       </Layout>,
@@ -133,7 +163,7 @@ describe('Layout — shell con sidebar', () => {
   });
 
   it('iOS PWA: el header y el drawer reservan el inset superior (pt-safe)', () => {
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>x</div>
       </Layout>,
@@ -147,7 +177,7 @@ describe('Layout — shell con sidebar', () => {
 
   it('click "Salir" llama signOutUser', () => {
     signOutUserMock.mockClear();
-    render(
+    renderLayout(
       <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>x</div>
       </Layout>,
@@ -158,5 +188,36 @@ describe('Layout — shell con sidebar', () => {
     }
     fireEvent.click(salir);
     expect(signOutUserMock).toHaveBeenCalled();
+  });
+
+  it('transportista muestra badges de ofertas, servicios y cumplimiento', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/offers/mine')) {
+        return { offers: [{ expires_at: '2026-10-19T18:00:00.000Z' }, { expires_at: 'x' }] };
+      }
+      if (path === '/assignments') {
+        return {
+          assignments: [
+            {
+              status: 'asignado',
+              driver: null,
+              trip: { pickup_window_start: null, origin: { address_raw: 'Origen' } },
+            },
+          ],
+        };
+      }
+      if (path === '/cumplimiento') {
+        return { resumen: { vencidos: 4, por_vencer_30d: 0 }, vehiculos: [], conductores: [] };
+      }
+      return respuestaNav(path);
+    });
+    renderLayout(
+      <Layout me={buildMe([membership('e-1', 'Trans', { transportista: true })])} title="Inicio">
+        <div>x</div>
+      </Layout>,
+    );
+    expect(await screen.findByTestId('nav-badge-ofertas')).toHaveTextContent('2');
+    expect(screen.getByTestId('nav-badge-servicios')).toHaveTextContent('1');
+    expect(screen.getByTestId('nav-badge-cumplimiento')).toHaveTextContent('4');
   });
 });

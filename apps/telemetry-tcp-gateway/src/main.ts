@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import tls from 'node:tls';
-import { createLogger } from '@booster-ai/logger';
+import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
 import { PubSub } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
@@ -40,6 +40,8 @@ async function main(): Promise<void> {
     level: config.LOG_LEVEL,
     pretty: config.NODE_ENV === 'development',
   });
+  // T10-16: fallas no controladas → fatal con stack → Error Reporting.
+  registrarErroresNoControlados(logger);
 
   const tlsEnabled = Boolean(config.TLS_CERT_PATH && config.TLS_KEY_PATH);
 

@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../lib/api-client.js';
+import { esperarPendientesLimpios } from '../components/NombreMiembro.test-helper.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 /**
  * equipo-de-la-empresa Fase A — sección Equipo en la app del CLIENTE.
@@ -48,9 +49,9 @@ const MIEMBROS = [
   {
     membership_id: 'm2',
     user_id: 'u2',
-    full_name: 'Marta Rojas',
-    email: 'pendiente@empresa.cl',
-    rut: '17111222-3',
+    full_name: null,
+    email: 'p***@empresa.cl',
+    rut: '*****222-3',
     rol: 'despachador',
     estado: 'pendiente_invitacion',
     invitado_en: '2026-07-30T10:00:00Z',
@@ -81,6 +82,18 @@ describe('Equipo — listado', () => {
     // quién le falta entregar (o reenviar) el código.
     expect(screen.getByText('Pendiente de activar')).toBeInTheDocument();
     expect(screen.getByText('Activa')).toBeInTheDocument();
+  });
+
+  it('un miembro pendiente se muestra sin nombre y con su estado', async () => {
+    const pendiente = { ...MIEMBROS[1], pendiente_aceptar: true };
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: [pendiente] });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByText('Pendiente de aceptar')).toBeInTheDocument();
+    await esperarPendientesLimpios();
+    expect(screen.getByText('*****222-3')).toBeInTheDocument();
+    expect(screen.queryByText('Marta Rojas')).toBeNull();
   });
 
   it('con equipo vacío explica qué hacer', async () => {
@@ -157,6 +170,34 @@ describe('Equipo — alta', () => {
     ).toBeInTheDocument();
   });
 
+  it('alta de RUT existente muestra la solicitud registrada, sin código ni textos anteriores', async () => {
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: 'u9',
+      membership_id: 'm9',
+      rol: 'admin',
+      estado: 'pendiente_invitacion',
+      codigo_activacion: null,
+      expira_en: null,
+      vinculo: 'codigo_vigente',
+    } as never);
+
+    await abrirFormYCompletar();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
+
+    expect(await screen.findByText('Solicitud registrada')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora, avísale tú.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Volver a Equipo' })).toBeInTheDocument();
+    for (const viejo of [/ya tiene cuenta/i, /ya tiene un código/i, /quedará en/i]) {
+      expect(screen.queryByText(viejo)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: /Copiar código/i })).not.toBeInTheDocument();
+  });
+
   it('avisa si esa persona ya es miembro', async () => {
     vi.spyOn(api, 'post').mockRejectedValue(
       Object.assign(new Error('conflict'), { code: 'already_member', status: 409 }),
@@ -176,9 +217,7 @@ describe('Equipo — alta', () => {
     await abrirFormYCompletar();
     fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(/no tenés permiso|no tienes permiso/i),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/no tienes permiso/i));
   });
 });
 
@@ -202,5 +241,69 @@ describe('Equipo — validación del RUT antes de enviar', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/RUT/i));
     expect(screen.getByRole('alert').textContent ?? '').not.toMatch(/API error/i);
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe('Equipo — 400 del servidor bajo cada campo (TRK-005)', () => {
+  const rechazo400 = (issues: { path: string[]; message: string }[]) =>
+    vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(400, 'validation_error', {
+        success: false,
+        error: { issues, name: 'ZodError' },
+      }),
+    );
+  async function enviar() {
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: [] });
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+    await screen.findByText(/todavía no|aún no/i);
+    fireEvent.click(screen.getByRole('button', { name: /Agregar persona/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre completo/i), { target: { value: 'Ana Pérez' } });
+    fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '8.601.693-1' } });
+    fireEvent.change(screen.getByLabelText(/Email/i), { target: { value: 'ana@empresa.cl' } });
+    fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
+    return (await screen.findAllByRole('alert'))[0] as HTMLElement;
+  }
+
+  it('muestra el mensaje del campo, sin "400:" ni "email:", uno por campo', async () => {
+    rechazo400([
+      { path: ['email'], message: 'Ingresa un correo válido' },
+      { path: ['email'], message: 'Usa como máximo 255 caracteres' },
+    ]);
+    const alerta = await enviar();
+    expect(alerta).toHaveTextContent(/^Ingresa un correo válido$/);
+    expect(screen.getByLabelText(/Email/i).closest('label')).toContainElement(alerta);
+    expect(screen.queryByText(/Usa como máximo/)).not.toBeInTheDocument();
+  });
+
+  it('un issue sin texto en español muestra el genérico', async () => {
+    rechazo400([{ path: ['rol'], message: 'Invalid option: expected one of "admin"' }]);
+    expect(await enviar()).toHaveTextContent('Algo salió mal. Intenta de nuevo');
+  });
+
+  const rechazo = (status: number, code: string, details: unknown = {}) =>
+    vi.spyOn(api, 'post').mockRejectedValue(new ApiError(status, code, details));
+
+  it('409 rut_already_registered → texto propio, no el genérico', async () => {
+    rechazo(409, 'rut_already_registered');
+    expect(await enviar()).toHaveTextContent(
+      'Ese RUT ya está registrado en Booster con otro correo. Revisa el RUT o escribe a soporte.',
+    );
+  });
+
+  it('403 no_es_empresa → genérico', async () => {
+    rechazo(403, 'no_es_empresa');
+    expect(await enviar()).toHaveTextContent('Algo salió mal. Intenta de nuevo');
+  });
+
+  it('path anidado va a su campo raíz y un issue sin campo suma el genérico arriba', async () => {
+    rechazo400([
+      { path: ['email', 'dominio'], message: 'Ingresa un correo válido' },
+      { path: [], message: 'Revisa los datos' },
+    ]);
+    await enviar();
+    const textos = (await screen.findAllByRole('alert')).map((a) => a.textContent);
+    expect(textos).toEqual(['Ingresa un correo válido', 'Algo salió mal. Intenta de nuevo']);
+    expect(screen.getByLabelText(/Email/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/Email/i)).toHaveAttribute('aria-describedby', 'alta-err-email');
   });
 });

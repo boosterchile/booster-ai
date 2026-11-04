@@ -19,7 +19,7 @@ test.describe('FIX-009: validación de perfil @bug', () => {
 
   test('input de teléfono tiene type="tel"', async ({ authenticatedPage: page }) => {
     await page.goto('/app/perfil');
-    const phone = page.getByLabel(/Teléfono móvil/i);
+    const phone = page.getByLabel(/Teléfono celular/i);
     await expect(phone).toHaveAttribute('type', 'tel');
     await expect(phone).toHaveAttribute('inputmode', 'tel');
   });
@@ -35,10 +35,10 @@ test.describe('FIX-009: validación de perfil @bug', () => {
     authenticatedPage: page,
   }) => {
     await page.goto('/app/perfil');
-    const phone = page.getByLabel(/Teléfono móvil/i);
+    const phone = page.getByLabel(/Teléfono celular/i);
     await phone.fill('123');
     await page.getByRole('button', { name: /Guardar cambios/i }).click();
-    await expect(page.getByText(/Número de teléfono Chile inválido/i)).toBeVisible();
+    await expect(page.getByText('Ingresa un teléfono válido, como +56912345678')).toBeVisible();
   });
 
   test('RUT readonly se muestra con puntos cuando ya está declarado', async ({

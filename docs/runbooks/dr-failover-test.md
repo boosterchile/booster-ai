@@ -1,22 +1,13 @@
 # Runbook — DR failover test (Wave 3 D4)
 
-> ## ⛔ NO EJECUTAR — OBSOLETO POST-ADR-058 (2026-06-05)
+> ## ⛔ NO EJECUTAR — EL CLÚSTER DR YA NO EXISTE (ADR-081, 2026-09-28)
 >
-> Este runbook fue escrito para DR **caliente** (réplicas activas en
-> us-central1). Desde ADR-058 el DR es **cold**: el deployment DR está en
-> `replicas: 0` (`infrastructure/k8s/telemetry-tcp-gateway-dr.yaml:45`) y
-> el primary corre con `replicas: 1` (no 2, como asume el paso de
-> restauración).
+> ADR-058 lo había dejado en frío (`replicas: 0`). ADR-081 saca el clúster,
+> el NAT, la IP y el DNS `telemetry-dr`. No hay backup que tome el tráfico.
+> Escalar el primario a 0 corta el 100 % de la ingesta.
 >
-> **Ejecutar el Test 1 hoy (scale primary a 0) corta el 100% de la
-> ingesta de telemetría: no hay backup que tome el tráfico.**
->
-> Fuente vigente de reactivación DR: `infrastructure/dr-region.tf:20-25`
-> (procedimiento manual, RTO 15–40 min: terraform apply + scale-up del
-> deployment DR + redireccionar devices a telemetry-dr.boosterchile.com
-> vía SMS-MT) y ADR-058. El runbook nuevo de failover cold se escribirá
-> con el rehearsal DR que agende el PO (condición de reapertura,
-> `.specs/docs-runbooks-staleness/spec.md §8.B`).
+> Reactivar DR es un ADR nuevo, no este runbook. El apply del retiro está
+> en `.specs/recorte-piso-gcp/ship.md`.
 
 
 Procedimiento para validar el failover del telemetry-tcp-gateway

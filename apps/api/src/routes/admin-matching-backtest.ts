@@ -59,8 +59,7 @@ const runRequestSchema = z.object({
 export function createAdminMatchingBacktestRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -86,7 +85,7 @@ export function createAdminMatchingBacktestRoutes(opts: { db: Db; logger: Logger
     const bodyRaw = await c.req.json().catch(() => ({}));
     const parsed = runRequestSchema.safeParse(bodyRaw);
     if (!parsed.success) {
-      return c.json({ error: 'validation', detail: parsed.error.format() }, 400);
+      return c.json({ error: 'validation', detail: z.treeifyError(parsed.error) }, 400);
     }
 
     opts.logger.info(

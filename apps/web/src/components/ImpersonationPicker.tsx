@@ -6,7 +6,7 @@ import { ApiError, api } from '../lib/api-client.js';
 
 /**
  * Picker de impersonación auditada (platform-admin, backend #584). Lista los
- * usuarios de empresas de PRUEBA (`es_demo`) — decisión sellada del PO: no es
+ * usuarios de empresas de PRUEBA (`es_usuario_prueba`) — decisión sellada del PO: no es
  * un buscador de todos los usuarios — y permite "Ver como" cada uno: llama
  * `POST /auth/impersonate` y hace `signInUniversalWithCustomToken`. Tras eso el
  * `onAuthStateChanged` de Firebase re-renderiza la app como el target y el
@@ -61,7 +61,7 @@ export function ImpersonationPickerView({
         ) : null}
         {state === 'disabled' ? (
           <p className="text-neutral-600 text-sm">
-            La impersonación está <span className="font-medium">desactivada</span>. Activá el flag{' '}
+            La impersonación está <span className="font-medium">desactivada</span>. Activa el flag{' '}
             <code>IMPERSONATION_V1_ACTIVATED</code> para usarla.
           </p>
         ) : state === 'loading' ? (
@@ -70,7 +70,7 @@ export function ImpersonationPickerView({
           <p className="text-danger-700 text-sm">No pudimos cargar los usuarios de prueba.</p>
         ) : targets.length === 0 ? (
           <p className="text-neutral-500 text-sm">
-            No hay usuarios de empresas de prueba. Sembrá el demo primero.
+            No hay usuarios de empresas de prueba. Siembra el demo primero.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

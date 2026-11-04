@@ -1,6 +1,7 @@
 # Auditoría cross-proyectos GCP — boosterchile.com (organización 435506363892)
 
 **Fecha**: 2026-05-13
+**Nota 2026-09-28**: inventario histórico. El estado vigente de Booster 2.0 está en [`docs/audits/booster-2-0-2026-09-28.md`](../audits/booster-2-0-2026-09-28.md). Las 259.184 requests de mayo no describen el uso actual: el dominio público ya sirve Booster AI.
 **Sesión**: Claude Opus 4.7
 **Trigger**: Felipe pidió "revisar otros proyectos en GCP en el dominio boosterchile.com que estén generando costos"
 **Billing account**: `019461-C73CDE-DCE377` (CLP)

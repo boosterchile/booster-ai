@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
 import { siteConfigSchema } from '@booster-ai/shared-schemas';
 import { Storage } from '@google-cloud/storage';
-import { zValidator } from '@hono/zod-validator';
 import { desc, eq, max } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
@@ -10,6 +9,7 @@ import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { configuracionSitio } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -38,7 +38,7 @@ function getStorage(): Storage {
 }
 
 const ALLOWED_MIME_TYPES = ['image/svg+xml', 'image/png', 'image/jpeg'] as const;
-const MAX_ASSET_BYTES = 500 * 1024; // 500 KB
+export const MAX_ASSET_BYTES = 500 * 1024; // 500 KB
 
 const publishBodySchema = z.object({
   id: z.string().uuid(),
@@ -82,8 +82,7 @@ export function createSiteSettingsRoutes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };

@@ -33,7 +33,8 @@ export interface LineaMetodoInput {
 export function lineaMetodoCertificacion(input: LineaMetodoInput): string {
   // Valida coveragePct (lanza fuera de [0, 100]) y decide el nivel.
   const nivel = derivarNivelCertificacion(input);
-  const cobertura = `cobertura ${Math.floor(input.coveragePct)} %`;
+  // Mismo formato que el badge del certificado («60%», ux.md §Badge).
+  const cobertura = `cobertura ${Math.floor(input.coveragePct)}%`;
 
   if (nivel === 'primario_verificable') {
     return `Combustible medido por CAN bus del vehículo · Ruta GPS del vehículo (${cobertura})`;
@@ -49,7 +50,7 @@ function describirDistancia(fuente: RouteDataSource, cobertura: string): string 
     case 'teltonika_gps':
       return `Distancia medida por GPS del vehículo (${cobertura})`;
     case 'movil_gps':
-      return `Distancia medida por GPS del móvil del conductor (${cobertura})`;
+      return `Distancia medida por GPS del celular del conductor (${cobertura})`;
     case 'maps_directions':
       return 'Distancia estimada por ruta (Google Routes)';
     case 'manual_declared':

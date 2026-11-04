@@ -76,19 +76,19 @@ afterEach(() => {
 });
 
 describe('TransportDocumentsPanel', () => {
-  it('vacío + CTA vos de subida', async () => {
+  it('vacío + CTA tuteo de subida', async () => {
     renderPanel();
     expect(await screen.findByText(/Todavía no hay documentos/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Subí un PDF o una foto/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sube un PDF o una foto/ })).toBeInTheDocument();
     expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-trip-id', TRIP_ID);
   });
 
-  it('lista un doc pendiente con status humano y Descargá', async () => {
+  it('lista un doc pendiente con status humano y Descarga', async () => {
     listMock.mockResolvedValue([makeDoc({ folio: '100', docType: '52' })]);
     renderPanel();
     expect(await screen.findByText(/Guía de despacho 52/)).toBeInTheDocument();
     expect(screen.getByText('Pendiente')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Descargá' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Descarga' })).toBeInTheDocument();
   });
 
   it('subí un PDF → llama upload con tripId y muestra pendiente tras refetch', async () => {
@@ -109,24 +109,24 @@ describe('TransportDocumentsPanel', () => {
     uploadMock.mockRejectedValue(new ApiError(503, 'storage_unavailable', null));
     const user = userEvent.setup();
     renderPanel();
-    await screen.findByRole('button', { name: /Subí/ });
+    await screen.findByRole('button', { name: /Sube/ });
     const input = screen.getByTestId('transport-doc-file') as HTMLInputElement;
     await user.upload(input, new File(['%PDF'], 'guia.pdf', { type: 'application/pdf' }));
     expect(
-      await screen.findByText('El archivo no se pudo guardar (storage). Reintentá más tarde.'),
+      await screen.findByText('El archivo no se pudo guardar (storage). Inténtalo más tarde.'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('transport-docs-panel')).toBeInTheDocument();
   });
 
-  it('sin canWrite no muestra Subí ni Completar a mano', async () => {
+  it('sin canWrite no muestra Sube ni Completar a mano', async () => {
     listMock.mockResolvedValue([makeDoc({ extractionStatus: 'fallido' })]);
     renderPanel({ canWrite: false });
     expect(await screen.findByText('Falló la lectura')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Subí/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Sube/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Completar a mano/ })).toBeNull();
   });
 
-  it('fallido → Completar a mano → Guardá llama manual-entry', async () => {
+  it('fallido → Completar a mano → Guarda llama manual-entry', async () => {
     listMock.mockResolvedValue([makeDoc({ extractionStatus: 'fallido' })]);
     manualMock.mockResolvedValue({
       documentId: DOC_ID,
@@ -137,7 +137,7 @@ describe('TransportDocumentsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Completar a mano' }));
     expect(screen.getByTestId('manual-entry-form')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Folio'), { target: { value: '555' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardá' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guarda' }));
     await waitFor(() =>
       expect(manualMock).toHaveBeenCalledWith(
         DOC_ID,
@@ -146,27 +146,27 @@ describe('TransportDocumentsPanel', () => {
     );
   });
 
-  it('Descargá abre el helper de signed URL', async () => {
+  it('Descarga abre el helper de signed URL', async () => {
     listMock.mockResolvedValue([makeDoc()]);
     downloadMock.mockResolvedValue(undefined);
     renderPanel();
-    fireEvent.click(await screen.findByRole('button', { name: 'Descargá' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Descarga' }));
     await waitFor(() => expect(downloadMock).toHaveBeenCalledWith(DOC_ID));
   });
 
-  it('error de lista → mensaje vos, no crash', async () => {
+  it('error de lista → mensaje tuteo, no crash', async () => {
     listMock.mockRejectedValue(new ApiError(403, 'forbidden', null));
     renderPanel();
-    expect(await screen.findByText(/No tenés permiso para este viaje/)).toBeInTheDocument();
+    expect(await screen.findByText(/No tienes permiso para este viaje/)).toBeInTheDocument();
   });
 
-  it('Descargá con storage null → banner de error', async () => {
+  it('Descarga con storage null → banner de error', async () => {
     listMock.mockResolvedValue([makeDoc()]);
     downloadMock.mockRejectedValue(new ApiError(503, 'storage_unavailable', null));
     renderPanel();
-    fireEvent.click(await screen.findByRole('button', { name: 'Descargá' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Descarga' }));
     expect(
-      await screen.findByText('El archivo no se pudo guardar (storage). Reintentá más tarde.'),
+      await screen.findByText('El archivo no se pudo guardar (storage). Inténtalo más tarde.'),
     ).toBeInTheDocument();
   });
 
@@ -183,7 +183,7 @@ describe('TransportDocumentsPanel', () => {
       target: { value: '2026-09-01' },
     });
     fireEvent.change(screen.getByLabelText('Monto'), { target: { value: '1500.50' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardá' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guarda' }));
     await waitFor(() =>
       expect(manualMock).toHaveBeenCalledWith(
         DOC_ID,

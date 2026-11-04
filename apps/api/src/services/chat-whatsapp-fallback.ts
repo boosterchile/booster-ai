@@ -41,7 +41,7 @@ import {
   type NotifyOfferResult,
   buildOfferTemplateVariables,
 } from '@booster-ai/notification-fan-out';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, chatMessages, memberships, trips, users } from '../db/schema.js';
@@ -63,7 +63,7 @@ const UNREAD_THRESHOLD_MINUTES = 5;
 export async function procesarMensajesNoLeidos(opts: {
   db: Db;
   logger: Logger;
-  twilioClient: TwilioWhatsAppClient | null;
+  twilioClient: WhatsAppContentSender | null;
   contentSid: string | null;
   webAppUrl: string;
 }): Promise<FallbackResult> {

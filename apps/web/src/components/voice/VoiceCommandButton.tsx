@@ -1,10 +1,12 @@
 import { Mic, MicOff, Square } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useVoiceCommand } from '../../hooks/use-voice-command.js';
 import type {
   CommandIntent,
   RecognizedCommand,
   VoiceCommandController,
 } from '../../services/voice-commands.js';
+import { escucharWakeWord } from '../../services/wake-word-bus.js';
 
 /**
  * Botón push-to-talk grande para el conductor (Phase 4 PR-K3).
@@ -66,6 +68,15 @@ export function VoiceCommandButton({
     ...(onUnknown ? { onUnknown } : {}),
     ...(recognizer ? { recognizer } : {}),
   });
+
+  // ADR-036: "Oye Booster" equivale a tocar el botón, si está en reposo.
+  const alWakeWord = useRef<() => void>(() => undefined);
+  alWakeWord.current = () => {
+    if (state === 'idle' || state === 'error') {
+      start();
+    }
+  };
+  useEffect(() => escucharWakeWord(() => alWakeWord.current()), []);
 
   if (state === 'unsupported') {
     return null;

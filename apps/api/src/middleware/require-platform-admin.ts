@@ -52,8 +52,7 @@ export interface RequirePlatformAdminOpts {
 }
 
 export function requirePlatformAdmin(
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  c: Context<any, any, any>,
+  c: Context,
   opts: RequirePlatformAdminOpts = {},
 ): RequirePlatformAdminResult {
   if (opts.featureFlag === false) {

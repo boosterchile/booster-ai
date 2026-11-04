@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { KeyManagementServiceClient } from '@google-cloud/kms';
+import { esKeyLocal, firmarConKeyLocal, obtenerPublicKeyLocal } from './backend-local.js';
 import { crc32c } from './crc32c.js';
 
 let cachedClient: KeyManagementServiceClient | null = null;
@@ -53,6 +54,9 @@ export async function firmarConKms(
   kmsKeyId: string,
   data: Buffer | Uint8Array,
 ): Promise<ResultadoFirmaKms> {
+  if (esKeyLocal(kmsKeyId)) {
+    return firmarConKeyLocal(kmsKeyId, data);
+  }
   const client = getClient();
 
   // KMS no aplica el hash internamente para asymmetric_sign; debemos
@@ -128,6 +132,9 @@ export async function obtenerPublicKeyPem(kmsKeyId: string): Promise<{
   keyVersion: string;
   keyVersionName: string;
 }> {
+  if (esKeyLocal(kmsKeyId)) {
+    return obtenerPublicKeyLocal(kmsKeyId);
+  }
   const client = getClient();
   const versionName = await resolverVersionPrimaria(client, kmsKeyId);
 

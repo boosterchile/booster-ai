@@ -16,7 +16,6 @@
 
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
@@ -33,6 +32,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import {
@@ -40,6 +40,7 @@ import {
   AssignmentNotMutableError,
   AssignmentNotOwnedError,
   DriverNotInCarrierError,
+  VehicleNotAssignableError,
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
 import { explicarCoberturaCero } from '../services/clasificar-cobertura-cero.js';
@@ -49,6 +50,12 @@ import {
 } from '../services/confirmar-entrega-viaje.js';
 import { confirmarRecogidaViaje } from '../services/confirmar-recogida-viaje.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
+import {
+  type EcoRoutingDeps,
+  evaluarEcoRoutingAsignacion,
+  obtenerSugerenciaRutaActiva,
+  registrarRespuestaSugerenciaRuta,
+} from '../services/eco-routing-tiempo-real.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
@@ -104,11 +111,16 @@ export function createAssignmentsRoutes(opts: {
    * PWA sugiera la recogida.
    */
   geofenceRadiusM: number;
+  /**
+   * Eco-routing en tiempo real (T10-23). Presente solo con el flag
+   * `ECO_ROUTING_REALTIME_ACTIVATED`: cada posición del viaje recogido dispara
+   * una evaluación best-effort. Ausente → `driver-position` no evalúa.
+   */
+  ecoRouting?: EcoRoutingDeps | undefined;
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireCarrierAuth(c: Context<any, any, any>) {
+  function requireCarrierAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       opts.logger.error({ path: c.req.path }, '/assignments without userContext');
@@ -284,6 +296,7 @@ export function createAssignmentsRoutes(opts: {
         empresaLegalName: empresasTable.legalName,
         vehicleId: assignments.vehicleId,
         vehiclePlate: vehicles.plate,
+        vehicleStatus: vehicles.vehicleStatus,
         vehicleType: vehicles.vehicleType,
         driverUserId: assignments.driverUserId,
         driverName: usersTable.fullName,
@@ -387,9 +400,13 @@ export function createAssignmentsRoutes(opts: {
         picked_up_at: row.pickedUpAt?.toISOString() ?? null,
         delivered_at: row.deliveredAt?.toISOString() ?? null,
         cancelled_at: row.cancelledAt?.toISOString() ?? null,
+        empresa_id: row.empresaIdAssign,
         empresa_legal_name: row.empresaLegalName,
+        vehicle_id: row.vehicleId,
         vehicle_plate: row.vehiclePlate,
+        vehicle_status: row.vehicleId ? (row.vehicleStatus ?? null) : null,
         vehicle_type: row.vehicleType,
+        driver_user_id: row.driverUserId,
         driver_name: row.driverName,
         ubicacion_actual: ubicacionActual,
       },
@@ -922,6 +939,20 @@ export function createAssignmentsRoutes(opts: {
       radioM: opts.geofenceRadiusM,
     });
 
+    // T10-23: evaluación de congestión fire-and-forget. Nunca bloquea ni hace
+    // fallar el reporte de posición; un error queda logueado, no tragado.
+    if (opts.ecoRouting && assignment.status === 'recogido') {
+      evaluarEcoRoutingAsignacion({
+        db: opts.db,
+        logger: opts.logger,
+        assignmentId,
+        routesProjectId: opts.routesProjectId,
+        deps: opts.ecoRouting,
+      }).catch((err: unknown) => {
+        opts.logger.error({ err, assignmentId }, 'eco-routing: la evaluación falló');
+      });
+    }
+
     return c.json({
       ok: true,
       geofence: {
@@ -930,6 +961,72 @@ export function createAssignmentsRoutes(opts: {
       },
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // T10-23 — sugerencias de eco-routing del conductor asignado.
+  // ---------------------------------------------------------------------------
+  const sugerenciaParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
+  const respuestaSugerenciaBodySchema = z.object({ respuesta: z.enum(['aceptada', 'rechazada']) });
+
+  app.get('/:id/sugerencias-ruta/activa', async (c) => {
+    const userContext = c.get('userContext');
+    if (!userContext) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    const sugerencia = await obtenerSugerenciaRutaActiva({
+      db: opts.db,
+      assignmentId: c.req.param('id'),
+      userId: userContext.user.id,
+      nowMs: Date.now(),
+    });
+    return c.json({
+      sugerencia: sugerencia
+        ? {
+            id: sugerencia.id,
+            motivo: sugerencia.motivo,
+            polyline_alternativa: sugerencia.polylineAlternativa,
+            ahorro_segundos: sugerencia.ahorroSegundos,
+            ahorro_kgco2e: sugerencia.ahorroKgco2e,
+            detectada_en: sugerencia.detectadaEn.toISOString(),
+            texto: sugerencia.texto,
+          }
+        : null,
+    });
+  });
+
+  app.post(
+    '/:id/sugerencias-ruta/:sid/respuesta',
+    zValidator('param', sugerenciaParamsSchema),
+    zValidator('json', respuestaSugerenciaBodySchema),
+    async (c) => {
+      const userContext = c.get('userContext');
+      if (!userContext) {
+        return c.json({ error: 'unauthorized' }, 401);
+      }
+      const { id, sid } = c.req.valid('param');
+      const resultado = await registrarRespuestaSugerenciaRuta({
+        db: opts.db,
+        assignmentId: id,
+        sugerenciaId: sid,
+        userId: userContext.user.id,
+        respuesta: c.req.valid('json').respuesta,
+        nowMs: Date.now(),
+      });
+      switch (resultado) {
+        case 'ok':
+          return c.json({ ok: true });
+        case 'not_found':
+          return c.json({ error: 'sugerencia_not_found', code: 'sugerencia_not_found' }, 404);
+        case 'forbidden':
+          return c.json({ error: 'not_assigned_driver', code: 'not_assigned_driver' }, 403);
+        case 'ya_respondida':
+          return c.json(
+            { error: 'sugerencia_ya_respondida', code: 'sugerencia_ya_respondida' },
+            409,
+          );
+      }
+    },
+  );
 
   app.post('/:id/incidents', zValidator('json', incidentBodySchema), async (c) => {
     const auth = requireCarrierAuth(c);
@@ -1106,10 +1203,12 @@ export function createAssignmentsRoutes(opts: {
   // Auth: carrier owner del assignment. Rol requerido: dueno, admin,
   // despachador (no operador genérico — esto es decisión de operación).
   //
-  // Body: { driver_user_id: UUID }
+  // Body: { driver_user_id: UUID, vehiculo_id?: UUID }
+  // `vehiculo_id` es el camión de la flota. Ausente → se conserva el de la oferta.
   // ---------------------------------------------------------------------
   const asignarConductorBodySchema = z.object({
     driver_user_id: z.string().uuid(),
+    vehiculo_id: z.string().uuid().optional(),
   });
 
   app.post('/:id/asignar-conductor', zValidator('json', asignarConductorBodySchema), async (c) => {
@@ -1126,7 +1225,7 @@ export function createAssignmentsRoutes(opts: {
     }
 
     const assignmentId = c.req.param('id');
-    const { driver_user_id } = c.req.valid('json');
+    const { driver_user_id, vehiculo_id } = c.req.valid('json');
 
     try {
       const result = await asignarConductorAAssignment({
@@ -1134,6 +1233,7 @@ export function createAssignmentsRoutes(opts: {
         logger: opts.logger,
         assignmentId,
         driverUserId: driver_user_id,
+        ...(vehiculo_id ? { vehiculoId: vehiculo_id } : {}),
         empresaId: auth.activeMembership.empresa.id,
         actingUserId: auth.userContext.user.id,
       });
@@ -1143,6 +1243,9 @@ export function createAssignmentsRoutes(opts: {
         previous_driver_user_id: result.previousDriverUserId,
         new_driver_user_id: result.newDriverUserId,
         driver_name: result.driverName,
+        driver_pending: result.driverPending,
+        previous_vehicle_id: result.previousVehicleId,
+        new_vehicle_id: result.newVehicleId,
       });
     } catch (err) {
       if (err instanceof AssignmentNotFoundError) {
@@ -1163,6 +1266,16 @@ export function createAssignmentsRoutes(opts: {
       }
       if (err instanceof DriverNotInCarrierError) {
         return c.json({ error: 'driver_not_in_carrier', code: 'driver_not_in_carrier' }, 400);
+      }
+      if (err instanceof VehicleNotAssignableError) {
+        return c.json(
+          {
+            error: 'vehicle_not_assignable',
+            code: 'vehicle_not_assignable',
+            reason: err.reason,
+          },
+          400,
+        );
       }
       opts.logger.error({ err, assignmentId }, 'asignar-conductor failed');
       return c.json({ error: 'internal_server_error' }, 500);

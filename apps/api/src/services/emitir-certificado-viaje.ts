@@ -31,7 +31,15 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+
+/**
+ * Métrica de negocio T10-15 (ADR-082): certificados por resultado.
+ * `resultado` = 'emitido' o el `reason` del skip (cardinalidad acotada al
+ * enum de EmitirResult).
+ */
+const certificadosEmitidosCounter = getBusinessCounter('certificados_emitidos_total');
 
 export interface EmitirCertificadoConfig {
   /** Resource ID de la KMS key (sin :versions). */
@@ -84,6 +92,9 @@ export async function emitirCertificadoViaje(
     },
     async (span) => {
       const result = await emitirCertificadoViajeInner(opts);
+      certificadosEmitidosCounter.add(1, {
+        resultado: result.skipped ? result.reason : 'emitido',
+      });
       setResultAttributes(span, {
         'booster.certificate.skipped': result.skipped,
         'booster.certificate.reason': result.skipped ? result.reason : undefined,
@@ -237,22 +248,20 @@ async function emitirCertificadoViajeInner(
       distanciaKmActual: numOrNull(metrics.distanceKmActual),
       kgco2eWtwEstimated: numOrNull(metrics.carbonEmissionsKgco2eEstimated),
       kgco2eWtwActual: numOrNull(metrics.carbonEmissionsKgco2eActual),
-      // TTW/WTT no están en el schema actual (el calculator los devuelve
-      // pero no se persistieron por separado). Para v1 dejamos null —
-      // el PDF muestra solo WTW. Próxima migración: agregar columns
-      // emisiones_kgco2e_ttw + _wtt.
-      kgco2eTtw: null,
-      kgco2eWtt: null,
+      // HC-003 T1 (0068). NULL en filas previas a la migración (sin backfill).
+      kgco2eTtw: numOrNull(metrics.emisionesKgco2eTtw),
+      kgco2eWtt: numOrNull(metrics.emisionesKgco2eWtt),
       combustibleConsumido:
         numOrNull(metrics.fuelConsumedLActual) ?? numOrNull(metrics.fuelConsumedLEstimated),
       combustibleUnidad: 'L', // hoy solo soportamos diésel/gasolina
-      intensidadGco2ePorTonKm: null, // futuro: persistir desde calculator.intensidadGco2ePorTonKm
+      intensidadGco2ePorTonKm: numOrNull(metrics.intensidadGco2ePorTkm),
       precisionMethod:
         (metrics.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
         'por_defecto',
       glecVersion: metrics.glecVersion ?? 'v3.0',
       emissionFactorUsado: numOrNull(metrics.emissionFactorUsed) ?? 0,
-      fuenteFactores: 'SEC Chile 2024 + GLEC v3.0',
+      // HC-003 T1: la fuente guardada al calcular; filas previas a 0068 → etiqueta legacy.
+      fuenteFactores: metrics.factoresFuente ?? 'SEC Chile 2024 + GLEC v3.0',
       calculatedAt: metrics.calculatedAt ?? new Date(),
       // ADR-028 — dual-source data fields. Si están NULL (trips legacy
       // pre-migración 0009 que no fueron recalculados), el cert-generator

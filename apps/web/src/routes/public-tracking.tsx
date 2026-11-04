@@ -14,7 +14,7 @@
  *   - Origen / destino (texto)
  *   - Vehículo: tipo + plate parcial enmascarada
  *   - Posición: lat/lng + velocidad + age (cuándo fue la última lectura)
- *   - Progress (cuando #121 merge): avg_speed + age en formato humano
+ *   - Progress: avg_speed + age en formato humano
  *
  * **NO mostrados** (privacy + decisión backend):
  *   - Plate completa
@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import {
   type PublicTrackingFoundResponse,
+  type PublicTrackingProgress,
   usePublicTracking,
 } from '../hooks/use-public-tracking.js';
 import { ApiError } from '../lib/api-client.js';
@@ -136,13 +137,11 @@ function TrackingContent({
       <RouteCard data={data} />
       <VehicleCard data={data} />
       <PositionCard data={data} />
-      {data.progress && (
-        <ProgressCard
-          progress={data.progress}
-          etaMinutes={data.eta_minutes}
-          hasPosition={data.position !== null}
-        />
-      )}
+      <ProgressCard
+        progress={data.progress}
+        etaMinutes={data.eta_minutes}
+        hasPosition={data.position !== null}
+      />
       <Footer />
     </div>
   );
@@ -323,7 +322,7 @@ function ProgressCard({
   etaMinutes,
   hasPosition,
 }: {
-  progress: NonNullable<PublicTrackingFoundResponse['progress']>;
+  progress: PublicTrackingProgress;
   etaMinutes: number | null;
   hasPosition: boolean;
 }) {
@@ -382,7 +381,7 @@ export function formatAge(seconds: number): string {
 function Footer() {
   return (
     <footer className="pt-2 pb-4 text-center">
-      <p className="text-neutral-500 text-xs">
+      <p className="text-neutral-600 text-xs">
         Powered by{' '}
         <a
           href="https://app.boosterchile.com"

@@ -24,7 +24,7 @@
 - Override por viaje: no. No hay superficie de edición de viaje que ya parchee flags; el spec lo deja fuera.
 - Peso en activación: copy + degradación existente. No se rechaza el PATCH.
 - Switch nativo (`<input type="checkbox" role="switch">`) con `<label for>` explícito. Sin primitiva nueva (freeze D1/D2).
-- Layout del shell de operador (sidebar). Copy en vos.
+- Layout del shell de operador (sidebar). Copy tuteo chileno.
 
 ## Archivos
 

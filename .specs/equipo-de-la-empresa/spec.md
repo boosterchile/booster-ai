@@ -25,13 +25,13 @@ El patrón correcto **ya existe en producción para conductores**: la empresa lo
 
 ## 3. Success criteria
 
-- [ ] SC1 — El dueño o admin de una empresa da de alta a alguien de su equipo desde **su propia app** (no desde el panel de Booster), indicando nombre, RUT, **email real** y rol.
-- [ ] SC2 — El sistema devuelve un **código de activación de un solo uso**, que la empresa entrega por su canal. Ese código **no es la contraseña**: sirve una vez para probar identidad.
-- [ ] SC3 — La persona activa su cuenta con RUT + código y **elige su propia clave numérica** de 6 dígitos. Nadie más la conoce: ni Booster ni quien la dio de alta.
-- [ ] SC4 — Tras activar, entra por el flujo principal (`POST /auth/login-rut`) con RUT + su clave.
-- [ ] SC5 — El **email real se conserva siempre**. Ningún paso lo reemplaza por un sintético; el sintético queda como identificador interno de Firebase y nada más.
-- [ ] SC6 — Solo `dueno` y `admin` de esa empresa pueden dar de alta; un `despachador` o `visualizador` recibe 403. Nadie puede sumar gente a una empresa que no es la suya.
-- [ ] SC7 — Un RUT que ya pertenece a otra persona no puede reclamarse (mismo criterio que `alta-cliente-autocontenida` SC6), y el rechazo no revela de quién es.
+- [x] SC1 — El dueño o admin de una empresa da de alta a alguien de su equipo desde **su propia app** (no desde el panel de Booster), indicando nombre, RUT, **email real** y rol.
+- [x] SC2 — El sistema devuelve un **código de activación de un solo uso**, que la empresa entrega por su canal. Ese código **no es la contraseña**: sirve una vez para probar identidad.
+- [x] SC3 — La persona activa su cuenta con RUT + código y **elige su propia clave numérica** de 6 dígitos. Nadie más la conoce: ni Booster ni quien la dio de alta.
+- [x] SC4 — Tras activar, entra por el flujo principal (`POST /auth/login-rut`) con RUT + su clave.
+- [x] SC5 — El **email real se conserva siempre**. Ningún paso lo reemplaza por un sintético; el sintético queda como identificador interno de Firebase y nada más.
+- [x] SC6 — Solo `dueno` y `admin` de esa empresa pueden dar de alta; un `despachador` o `visualizador` recibe 403. Nadie puede sumar gente a una empresa que no es la suya.
+- [x] SC7 — Un RUT que ya pertenece a otra persona no puede reclamarse (mismo criterio que `alta-cliente-autocontenida` SC6), y el rechazo no revela de quién es.
 - [ ] SC8 — Los conductores ya activados en producción **siguen entrando** después del cambio (no se rompe lo vivo). **Medido 2026-07-31: ese caso NO EXISTE** — ver §10.
 
 ## 4. User-visible behaviour
@@ -108,3 +108,18 @@ Todos creados el 22-jun-2026, ninguno entró jamás.
 - **OQ2 — Conductores ya activados: NO se les fuerza** a crear clave numérica. Migran cuando la roten. Es lo que hace verificable el SC8: lo que hoy funciona en producción sigue funcionando.
 - **OQ3 — El listado de Equipo NO incluye conductores.** Ellos mantienen su sección, que gestiona licencias y vencimientos; duplicarlos invitaría a editar la misma persona en dos lugares con reglas distintas.
 - **OQ4 (nueva, tras medir §10) — Los 6 conductores actuales se dan de alta de nuevo con el mecanismo nuevo.** Como ninguno activó, sus filas no tienen historia que preservar: no hay logins, ni claves, ni consentimientos. La empresa los vuelve a cargar desde la app —ahora con email obligatorio— y recibe un código por cada uno. Evita arrastrar un caso especial en el código para 6 filas que nadie usó, y de paso corrige el dato que falta (los correos). **Implicancia operativa**: Van Oosterwyk tiene que juntar los emails de sus 6 conductores antes de re-cargarlos.
+
+## Evidencia (2026-10-06, `main` + rama `cursor/aislamiento-multi-tenant-4567`)
+
+El código entró en #640 (2026-07-31). Se marcan los criterios que tienen test con nombre; SC8 queda como estaba (caso medido inexistente). El Status lo cierra el PO.
+
+| SC | Evidencia |
+|---|---|
+| SC1 | `routes/me-empresa-miembros.test.ts` «crea la persona y devuelve un código de activación», «la membresía nace pendiente de invitación, en la empresa del caller»; web `routes/equipo.test.tsx` «envía el alta y muestra el código para entregar» |
+| SC2 | `me-empresa-miembros.test.ts` «el código se persiste HASHEADO, nunca en claro»; `equipo.test.tsx` «explica que el código no es la contraseña de la persona» |
+| SC3 | `routes/auth-activar.test.ts` «guarda la clave que eligió la persona, hasheada, y borra el código», «el código NO queda como contraseña de Firebase», «rechaza una clave que no sea de 6 dígitos» |
+| SC4 | `test/integration/alta-admin-cadena.integration.test.ts` caso 5 (`login-rut` 200 con la clave elegida) |
+| SC5 | `me-empresa-miembros.test.ts` «guarda el email REAL de la persona, nunca un sintético»; `auth-activar.test.ts` «NO toca el email real de la persona» |
+| SC6 | `me-empresa-miembros.test.ts` «un despachador no puede sumar gente (SC6)», «un visualizador tampoco», «el admin de otra empresa no puede sumar a la nuestra: usa SU empresa activa» |
+| SC7 | `me-empresa-miembros.test.ts` «carrera contra el índice único de RUT responde 409», «reusa una cuenta ya activa sin pisar su código ni su clave» (409 sin decir de quién es) |
+| SC8 | Sin cambios: medido 2026-07-31, el caso no existe en producción |

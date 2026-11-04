@@ -127,6 +127,7 @@ const listadoConRobo = {
       litros_iniciales: 80,
       litros_finales: 70,
       km_por_litro: 4.25,
+      litros_por_100_km: 23.5,
       nota_combustible: null,
       posible_robo_combustible: true,
       event_lat: null,
@@ -149,7 +150,7 @@ describe('TrayectosTeltonikaRoute', () => {
     const get = vi.spyOn(api, 'get');
     renderPage();
     expect(
-      screen.getByText('No tenés permiso para ver el historial de trayectos.'),
+      screen.getByText('No tienes permiso para ver el historial de trayectos.'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ver en el mapa' })).not.toBeInTheDocument();
@@ -159,7 +160,7 @@ describe('TrayectosTeltonikaRoute', () => {
   it('el despachador tampoco entra', () => {
     estado.me = meDe('despachador', true);
     renderPage();
-    expect(screen.getByText(/No tenés permiso/)).toBeInTheDocument();
+    expect(screen.getByText(/No tienes permiso/)).toBeInTheDocument();
   });
 
   it('sin Teltonika muestra el vacío y el enlace para vincular', async () => {
@@ -175,7 +176,7 @@ describe('TrayectosTeltonikaRoute', () => {
       trayectos: [],
     });
     renderPage();
-    expect(await screen.findByText(/Todavía no tenés un Teltonika/)).toBeInTheDocument();
+    expect(await screen.findByText(/Todavía no tienes un Teltonika/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Vincular Teltonika' })).toHaveAttribute(
       'href',
       '/app/admin/dispositivos',
@@ -192,12 +193,35 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.getByText('80,0 L')).toBeInTheDocument();
     expect(screen.getByText('70,0 L')).toBeInTheDocument();
     expect(screen.getByText('4,25 km/L')).toBeInTheDocument();
-    // 10 L / 42,5 km × 100 = 23,529… → un decimal
+    // La API manda 23,5 (10 L / 42,5 km × 100)
     expect(screen.getByText('23,5 L/100 km')).toBeInTheDocument();
-    expect(screen.getByText(/armás el costo de operación por tu cuenta/)).toBeInTheDocument();
+    expect(screen.getByText(/armas el costo de operación por tu cuenta/)).toBeInTheDocument();
     expect(screen.queryByText(/CLP|\$/)).not.toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('muestra el L/100 km de la API y no lo deriva del km/L redondeado', async () => {
+    const [base] = listadoConRobo.trayectos;
+    // 100 / 3,34 = 29,9; la API calcula 30 L / 100,05 km × 100 = 30,0.
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      trayectos: [{ ...base, km_por_litro: 3.34, litros_por_100_km: 30 }],
+    });
+    renderPage();
+    expect(await screen.findByText('3,34 km/L')).toBeInTheDocument();
+    expect(screen.getByText('30,0 L/100 km')).toBeInTheDocument();
+    expect(screen.queryByText('29,9 L/100 km')).not.toBeInTheDocument();
+  });
+
+  it('con una API sin litros_por_100_km no inventa el L/100 km', async () => {
+    const [base] = listadoConRobo.trayectos;
+    const { litros_por_100_km: _omitido, ...sinCampo } = base ?? {};
+    vi.spyOn(api, 'get').mockResolvedValue({ ...listadoConRobo, trayectos: [sinCampo] });
+    renderPage();
+    expect(await screen.findByText('4,25 km/L')).toBeInTheDocument();
+    // El encabezado nombra «L/100 km»; lo que no debe aparecer es un valor.
+    expect(screen.queryByText(/^[\d.,]+ L\/100 km$/)).not.toBeInTheDocument();
   });
 
   it('sin sensor muestra la CTA y no inventa km/L', async () => {
@@ -219,7 +243,7 @@ describe('TrayectosTeltonikaRoute', () => {
       ],
     });
     renderPage();
-    expect(await screen.findByText(/Conectá el sensor para ver litros/)).toBeInTheDocument();
+    expect(await screen.findByText(/Conecta el sensor para ver litros/)).toBeInTheDocument();
     expect(screen.getAllByText(/costo de operación/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/\d[\d.,]* L\/100 km/)).not.toBeInTheDocument();
     expect(screen.getByText('ABCD12')).toBeInTheDocument();
@@ -247,13 +271,13 @@ describe('TrayectosTeltonikaRoute', () => {
   it('si la consulta falla, pide reintentar', async () => {
     vi.spyOn(api, 'get').mockRejectedValue(new Error('red'));
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Probá de nuevo/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Prueba de nuevo/);
   });
 
   it('un 403 de la API también se lee como falta de permiso', async () => {
     vi.spyOn(api, 'get').mockRejectedValue(new ApiError(403, 'rol_no_autorizado', null));
     renderPage();
-    expect(await screen.findByText(/No tenés permiso/)).toBeInTheDocument();
+    expect(await screen.findByText(/No tienes permiso/)).toBeInTheDocument();
   });
 
   it('con geo, el listado abre el mapa centrado en el pin', async () => {
@@ -314,7 +338,7 @@ describe('TrayectosTeltonikaRoute', () => {
     routerState.search = { detalle: 't-1', page: 2 };
     renderPage();
     expect(await screen.findByTestId('mapa-evento')).toBeInTheDocument();
-    expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20');
+    expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20', expect.anything());
     expect(screen.getByRole('link', { name: 'Volver al historial' })).toHaveAttribute(
       'href',
       '/app/trayectos?page=2',
@@ -409,7 +433,10 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(await screen.findByRole('button', { name: 'Siguiente' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20');
+      expect(get).toHaveBeenCalledWith(
+        '/trayectos-teltonika?page=2&page_size=20',
+        expect.anything(),
+      );
     });
   });
 });
@@ -443,6 +470,7 @@ const listadoConDato = {
       litros_iniciales: null,
       litros_finales: null,
       km_por_litro: 2.54,
+      litros_por_100_km: 39.4,
       fuente_combustible: 'consumo_can',
       litros_consumidos: 137.5,
       nivel_pct_inicial: 90,
@@ -523,7 +551,7 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     expect(screen.getByText('58 %')).toBeInTheDocument();
     expect(screen.getByText('77 %')).toBeInTheDocument();
     expect(screen.queryByText(/No hay una lectura válida/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Conectá el sensor de combustible/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Conecta el sensor de combustible/)).not.toBeInTheDocument();
   });
 
   it('explica una vez por causa qué informa cada camión, sin los que no tienen sensor', async () => {
@@ -557,11 +585,12 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     await waitFor(() => {
       expect(get).toHaveBeenCalledWith(
         '/trayectos-teltonika?page=1&page_size=20&combustible=sin_dato',
+        expect.anything(),
       );
     });
     expect(
       await screen.findByText(
-        'KZBB26 y VFZH-68 no tienen sensor de combustible conectado. Acá ves sus trayectos y kilómetros.',
+        'KZBB26 y VFZH-68 no tienen sensor de combustible conectado. Aquí ves sus trayectos y kilómetros.',
       ),
     ).toBeInTheDocument();
     expect(
@@ -649,5 +678,45 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     expect(url).toContain('desde=');
     expect(url).not.toContain('detalle=');
     expect(link).toHaveAttribute('href', `/app/trayectos?detalle=t-1&vehiculo=${vehiculo}`);
+  });
+});
+
+describe('TrayectosTeltonikaRoute — km/L no confiable', () => {
+  it('muestra la razón y los litros cuando la cobertura o el sensor no alcanzan', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 2,
+      trayectos: [
+        {
+          ...trayectoBase,
+          id: 't-cob',
+          patente: 'JLKT54',
+          distancia_km: 40,
+          litros_consumidos: 12,
+          km_por_litro: null,
+          nota_combustible: 'dato no confiable · cobertura baja',
+          posible_robo_combustible: false,
+        },
+        {
+          ...trayectoBase,
+          id: 't-sensor',
+          patente: 'KZBB26',
+          distancia_km: 18,
+          litros_iniciales: null,
+          litros_finales: null,
+          litros_consumidos: null,
+          km_por_litro: null,
+          nota_combustible: 'dato no confiable · sin sensor de combustible',
+          posible_robo_combustible: false,
+          sensor_combustible: 'ausente',
+          cta_sensor: true,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText('dato no confiable · cobertura baja')).toBeInTheDocument();
+    expect(screen.getByText('dato no confiable · sin sensor de combustible')).toBeInTheDocument();
+    expect(screen.getByText('12,0 L')).toBeInTheDocument();
+    expect(screen.queryByText(/\d,\d\d km\/L/)).toBeNull();
   });
 });

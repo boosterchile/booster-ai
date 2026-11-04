@@ -50,3 +50,27 @@ export {
   type MembershipTier,
   type TierSlug,
 } from './types.js';
+
+/**
+ * Modelo comercial v3 (ADR-079): comisión al generador por modalidad de
+ * carga. Coexiste con v2 detrás de `PRICING_V3_ACTIVATED`.
+ */
+export {
+  calcularLiquidacionV3,
+  PRICING_METHODOLOGY_VERSION_V3,
+  resolverComisionPct,
+  type ComisionesV3,
+  type LiquidacionV3Input,
+  type LiquidacionV3Output,
+  type ModalidadCarga,
+} from './liquidacion-v3.js';
+
+/** Suscripciones en UF (ADR-079 §4), neto + IVA. */
+export {
+  calcularCobroSuscripcionUf,
+  type CobroSuscripcionUfInput,
+  type CobroSuscripcionUfOutput,
+  type ConceptoSuscripcion,
+  type LineaSuscripcion,
+  type PreciosSuscripcionUf,
+} from './suscripcion-uf.js';

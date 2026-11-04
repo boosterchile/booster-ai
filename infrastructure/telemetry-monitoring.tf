@@ -663,6 +663,19 @@ locals {
       consumer        = "trip-state-machine"
       detail          = "El consumer de trip-transitions no está ackeando."
     }
+    # Auditoría de costos 2026-10-21: notification-service queda en 0
+    # instancias con los flags NOTIFICATIONS_* apagados (compute.tf). Si un flag
+    # se prende por fuera de Terraform, el api publica y nadie consume: la DLQ
+    # no se llena (no hay intentos) y los WhatsApp, también los de safety P0,
+    # vencen a las 24 h sin aviso. Con los flags apagados no hay mensajes y
+    # esta alerta no suena.
+    notification_events = {
+      subscription_id = "notification-events-sub"
+      threshold_s     = 600 # 10 min — el consumidor ackea en segundos; los reintentos a Twilio terminan en la DLQ antes
+      severity        = "CRITICAL"
+      consumer        = "notification-service"
+      detail          = "Los WhatsApp que el api publica en notification-events no se están entregando. Lo primero: ¿notification-service tiene instancias? Con un flag NOTIFICATIONS_* encendido debe tener min_instances=1; si el flag se prendió por fuera de Terraform, aplicar los flags con terraform apply (docs/runbooks/service-notification-service.md)."
+    }
   }
 }
 

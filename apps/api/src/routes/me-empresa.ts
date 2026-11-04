@@ -3,12 +3,12 @@ import {
   empresaCarbonMeasurementPatchSchema,
   empresaUmbralesRoboCombustiblePatchSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { empresas } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import type { UserContext } from '../services/user-context.js';
@@ -33,8 +33,7 @@ const umbralesRoboCounter = getBusinessCounter('umbrales_robo_combustible_cambio
 export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireEmpresaAdmin(c: Context<any, any, any>) {
+  function requireEmpresaAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };

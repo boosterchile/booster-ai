@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 /**
  * Hooks de "Booster Cobra Hoy" (ADR-029 + ADR-032).
@@ -85,9 +86,11 @@ export interface AdelantoHistorial {
 }
 
 export function useHistorialCobraHoy(opts: { enabled?: boolean } = {}) {
+  const scope = useEmpresaScope();
   return useQuery<{ adelantos: AdelantoHistorial[] }>({
-    queryKey: ['cobra-hoy', 'historial'],
-    queryFn: () => api.get<{ adelantos: AdelantoHistorial[] }>('/me/cobra-hoy/historial'),
+    queryKey: scope.key('cobra-hoy', 'historial'),
+    queryFn: () =>
+      api.get<{ adelantos: AdelantoHistorial[] }>('/me/cobra-hoy/historial', scope.init),
     enabled: opts.enabled ?? true,
     staleTime: 30_000,
     retry: (failureCount, error) => {

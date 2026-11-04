@@ -89,7 +89,7 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
           <EmptyState
             icon={<Clock3 className="h-10 w-10" aria-hidden />}
             title="Aún no tienes solicitudes de pronto pago"
-            description="Cuando un viaje quede entregado y liquidado, podrás solicitar el adelanto desde la pantalla del viaje. Acá quedará el historial."
+            description="Cuando un viaje quede entregado y liquidado, podrás solicitar el adelanto desde la pantalla del viaje. Aquí quedará el historial."
             action={
               <Link to="/app/ofertas" className={emptyStateActionClass}>
                 Ver ofertas activas
@@ -178,7 +178,7 @@ function NoCarrierPermission() {
       <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
         <h2 className="font-semibold text-neutral-900 text-xl">Sin permisos</h2>
         <p className="mt-2 text-neutral-600 text-sm">
-          El pronto pago es exclusivo de empresas transportistas. Si tu rol cambió, contactá al
+          El pronto pago es exclusivo de empresas transportistas. Si tu rol cambió, contacta al
           admin de tu empresa.
         </p>
         <Link to="/app" className="mt-4 inline-block text-primary-600 underline">

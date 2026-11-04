@@ -1,6 +1,6 @@
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace-base';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RedactingSpanExporter } from './index.js';
 
 /**
@@ -54,5 +54,38 @@ describe('RedactingSpanExporter', () => {
       'https://x/cb?token=[REDACTED]&key=[REDACTED]&access_token=[REDACTED]&signature=[REDACTED]',
     );
     expect(out.attributes.b).toBe('https://x/flota?region=RM&page=2');
+  });
+});
+
+describe('RedactingSpanExporter (delegación de ciclo de vida)', () => {
+  it('shutdown y forceFlush delegan en el exporter interno', async () => {
+    const shutdown = vi.fn(() => Promise.resolve());
+    const forceFlush = vi.fn(() => Promise.resolve());
+    const inner: SpanExporter = { export: (_spans, cb) => cb({ code: 0 }), shutdown, forceFlush };
+    const exporter = new RedactingSpanExporter(inner);
+
+    await exporter.forceFlush();
+    await exporter.shutdown();
+
+    expect(forceFlush).toHaveBeenCalledOnce();
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('forceFlush resuelve aunque el exporter interno no lo implemente', async () => {
+    const inner: SpanExporter = {
+      export: (_spans, cb) => cb({ code: 0 }),
+      shutdown: () => Promise.resolve(),
+    };
+    await expect(new RedactingSpanExporter(inner).forceFlush()).resolves.toBeUndefined();
+  });
+
+  it('no toca atributos string sin "=" ni valores no-string', async () => {
+    const inner = new InMemorySpanExporter();
+    const span = fakeSpan({ ruta: '/flota', n: 3, flag: true });
+    await new Promise<void>((resolve) =>
+      new RedactingSpanExporter(inner).export([span], () => resolve()),
+    );
+    const out = inner.getFinishedSpans()[0] as unknown as { attributes: Record<string, unknown> };
+    expect(out.attributes).toEqual({ ruta: '/flota', n: 3, flag: true });
   });
 });

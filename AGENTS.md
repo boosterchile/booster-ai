@@ -39,19 +39,19 @@ pnpm typecheck             # tsc --noEmit en todos los packages
 pnpm test                  # vitest run
 pnpm test:e2e              # playwright test
 pnpm build                 # build de producción
-pnpm ci                    # lint + typecheck + test + build (what CI does)
+pnpm run ci                # lint + typecheck + test + build (`pnpm ci` a secas falla en pnpm 10)
 ```
 
 ## Convenciones de commit
 
-Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `revert`. Commitlint lo aplica pre-commit.
+Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `style`, `test`, `refactor`, `perf`, `build`, `ci`, `revert`, `security`. Commitlint lo aplica en el hook `commit-msg`.
 
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
 - El repo no usa `agent-rigor` ni `booster-skills`, y no activa plugins ni hooks de Claude Code (ADR-078).
-- El agente no mergea a `main`. La protección de la rama son los checks (ADR-076). El gate humano queda en el deploy a producción.
-- Antes de introducir una dependencia nueva: crear ADR.
+- El agente mergea a `main` (squash) con todos los checks obligatorios en verde y sin `--admin`; los PRs que además necesitan el visto del PO están listados en [`CLAUDE.md`](./CLAUDE.md). La protección de la rama son los checks (ADR-076). El gate humano queda en el deploy a producción.
+- Dependencia que cambia el stack: ADR nuevo. Librería menor ya alineada al stack: decide el agente ([`CLAUDE.md`](./CLAUDE.md), frontera de decisiones).
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
 
 ## Archivos protegidos

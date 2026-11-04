@@ -54,8 +54,7 @@ resource "google_identity_platform_config" "default" {
   # SDK via web/mobile). Admin SDK `auth.createUser({email, displayName})`
   # invoked from server-side (apps/api/src/services/signup-request.ts T10
   # approveSignupRequest) is NOT affected — service account auth bypasses
-  # `clientPermissionConfig`. Verified via API docs + Sprint 2a precedent
-  # `harden-demo-accounts.ts` which uses `auth.createUser` from Admin SDK.
+  # `clientPermissionConfig`. Verified via API docs.
   #
   # **Google residual**: while this flag covers email/password client signup,
   # Google `signInWithPopup` still creates new Firebase users on first sign-in
@@ -85,8 +84,9 @@ resource "google_identity_platform_config" "default" {
 
   lifecycle {
     # No managed aquí:
-    #   - authorized_domains: gestionado manualmente (incluye boosterchile.com
-    #     y demo.boosterchile.com via console + DNS).
+    #   - authorized_domains: gestionado manualmente vía console + DNS
+    #     (incluye boosterchile.com). El dominio demo se quita a mano al
+    #     retirar esa superficie (T10-03, ADR-082).
     ignore_changes = [
       authorized_domains,
     ]

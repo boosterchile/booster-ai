@@ -4,17 +4,21 @@ import {
   invitarMiembroOrgStakeholderSchema,
   rutSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
+import { VINCULO_PERSONA_EXISTENTE, type VinculoPersona } from '../services/vinculo-persona.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
@@ -40,11 +44,17 @@ const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
 const STAKEHOLDER_MEMBERSHIP_ROLE = 'stakeholder_sostenibilidad' as const;
 
-export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger }) {
+export function createAdminStakeholderOrgsRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /** T10-04: el código le llega a la persona invitada por correo. */
+  emailSender?: EmailSender;
+  /** Base del enlace a `/activar`. */
+  webAppUrl?: string;
+}) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -215,20 +225,22 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       return c.json({ error: 'invalid_id' }, 400);
     }
     const body = c.req.valid('json');
-    const codigo = generateActivationPin();
-    const expiraEn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     // Normalizar RUT.
     const rutParsed = rutSchema.safeParse(body.rut);
     if (!rutParsed.success) {
-      return c.json({ error: 'invalid_rut', details: rutParsed.error.format() }, 400);
+      return c.json({ error: 'invalid_rut', details: z.treeifyError(rutParsed.error) }, 400);
     }
     const rut = rutParsed.data;
 
     // Verificar que la org exista y no esté eliminada.
     // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
     const orgRows = await opts.db
-      .select({ id: organizacionesStakeholder.id, deletedAt: organizacionesStakeholder.deletedAt })
+      .select({
+        id: organizacionesStakeholder.id,
+        deletedAt: organizacionesStakeholder.deletedAt,
+        nombreLegal: organizacionesStakeholder.nombreLegal,
+      })
       .from(organizacionesStakeholder)
       .where(eq(organizacionesStakeholder.id, orgId))
       .limit(1);
@@ -240,28 +252,50 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
     // Buscar usuario existente por RUT.
     // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
     const existingUsers = await opts.db
-      .select({ id: users.id, email: users.email })
+      .select({
+        id: users.id,
+        email: users.email,
+        fullName: users.fullName,
+        firebaseUid: users.firebaseUid,
+        claveNumericaHash: users.claveNumericaHash,
+        activationPinHash: users.activationPinHash,
+      })
       .from(users)
       .where(eq(users.rut, rut))
       .limit(1);
     let userId: string;
-    const usuarioNuevo = !existingUsers[0];
-    if (existingUsers[0]) {
-      userId = existingUsers[0].id;
+    let vinculo: VinculoPersona;
+    let codigoEmitido: string | null = null;
+    const existente = existingUsers[0];
+    if (existente) {
+      userId = existente.id;
+      vinculo = VINCULO_PERSONA_EXISTENTE;
     } else {
+      vinculo = 'nueva';
+      const codigo = generateActivationPin();
+      codigoEmitido = codigo;
       // firebase_uid `pending-rut:<rut>` hasta que active en /activar.
       // El código no es la clave: la elige la persona.
-      const [created] = await opts.db
-        .insert(users)
-        .values({
-          firebaseUid: `${PENDING_FIREBASE_UID_PREFIX}${rut}`,
-          email: body.email.toLowerCase(),
-          fullName: body.full_name,
-          rut,
-          activationPinHash: hashActivationPin(codigo),
-          status: 'pendiente_verificacion',
-        })
-        .returning({ id: users.id });
+      let created: { id: string } | undefined;
+      try {
+        const insertados = await opts.db
+          .insert(users)
+          .values({
+            firebaseUid: `${PENDING_FIREBASE_UID_PREFIX}${rut}`,
+            email: body.email.toLowerCase(),
+            fullName: body.full_name,
+            rut,
+            activationPinHash: hashActivationPin(codigo),
+            status: 'pendiente_verificacion',
+          })
+          .returning({ id: users.id });
+        created = insertados[0];
+      } catch (err) {
+        if (esRutDuplicado(err)) {
+          return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+        }
+        throw err;
+      }
       if (!created) {
         return c.json({ error: 'user_create_failed' }, 500);
       }
@@ -278,15 +312,7 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       return c.json({ error: 'already_member', membership_id: existingMembership[0].id }, 409);
     }
 
-    if (!usuarioNuevo) {
-      await opts.db
-        .update(users)
-        .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-        .where(eq(users.id, userId));
-    }
-
-    // Crear membership pending. Status `activa` cuando el user complete
-    // auth (post-Wave 4 será automático tras login universal).
+    // Persona existente: sin código nuevo. Toda invitación nace pendiente.
     const [membership] = await opts.db
       .insert(memberships)
       .values({
@@ -297,6 +323,7 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
         status: 'pendiente_invitacion',
         invitedByUserId: auth.adminUserId,
         invitedAt: new Date(),
+        joinedAt: null,
       })
       .returning({ id: memberships.id });
     if (!membership) {
@@ -315,6 +342,23 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
     );
     getBusinessCounter('alta_invitacion_stakeholder_total').add(1, { resultado: 'issued' });
 
+    if (codigoEmitido !== null && opts.emailSender) {
+      await enviarCorreoActivacionCuenta({
+        sender: opts.emailSender,
+        logger: opts.logger,
+        email: body.email.toLowerCase(),
+        nombre: body.full_name,
+        rut,
+        codigo: codigoEmitido,
+        empresa: org.nombreLegal,
+        rol: STAKEHOLDER_MEMBERSHIP_ROLE,
+        webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+      });
+    }
+
+    const expiraEn =
+      codigoEmitido === null ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     return c.json(
       {
         membership_id: membership.id,
@@ -323,8 +367,9 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
         email: body.email,
         full_name: body.full_name,
         status: 'pendiente_invitacion',
-        codigo_activacion: codigo,
-        expira_en: expiraEn.toISOString(),
+        codigo_activacion: codigoEmitido,
+        expira_en: expiraEn,
+        vinculo,
       },
       201,
     );
