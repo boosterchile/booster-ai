@@ -81,6 +81,7 @@ interface UserContextOpts {
   empresaId?: string;
   withActiveMembership?: boolean;
   role?: string;
+  puedeAceptarOfertas?: boolean;
 }
 function buildUserContext(opts: UserContextOpts = {}) {
   const empresa = {
@@ -104,7 +105,10 @@ function buildUserContext(opts: UserContextOpts = {}) {
       opts.withActiveMembership === false
         ? null
         : {
-            membership: { role: opts.role ?? 'dueno' } as Pick<MembershipRow, 'role'>,
+            membership: {
+              role: opts.role ?? 'dueno',
+              puedeAceptarOfertas: opts.puedeAceptarOfertas ?? false,
+            } as Pick<MembershipRow, 'role' | 'puedeAceptarOfertas'>,
             empresa: empresa as Pick<
               EmpresaRow,
               'id' | 'isTransportista' | 'isGeneradorCarga' | 'status'
@@ -405,10 +409,10 @@ describe('POST /offers/:id/accept — permisos por rol', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-  const aceptar = async (role: string) => {
+  const aceptar = async (role: string, puedeAceptarOfertas = false) => {
     const app = await buildAppWith({
       db: makeStubDbForList([]),
-      userContext: buildUserContext({ role }),
+      userContext: buildUserContext({ role, puedeAceptarOfertas }),
     });
     return app.request('/offers/off-1/accept', {
       method: 'POST',
@@ -417,18 +421,30 @@ describe('POST /offers/:id/accept — permisos por rol', () => {
     });
   };
 
-  it.each(['visualizador', 'conductor'])('%s → 403 forbidden_role', async (role) => {
+  it.each([
+    ['visualizador', false],
+    ['conductor', false],
+    ['despachador', false],
+  ] as const)('%s (permiso de ofertas=%s) → 403 capability_denied', async (role, permiso) => {
     const actions = await import('../../src/services/offer-actions.js');
-    const res = await aceptar(role);
+    const res = await aceptar(role, permiso);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    expect(await res.json()).toEqual({
+      error: 'forbidden',
+      code: 'capability_denied',
+      capability: 'puedeAceptarOferta',
+    });
     expect(actions.acceptOffer).not.toHaveBeenCalled();
   });
 
-  it.each(['dueno', 'admin', 'despachador'])('%s → llega a aceptar la oferta', async (role) => {
+  it.each([
+    ['dueno', false],
+    ['admin', false],
+    ['despachador', true],
+  ] as const)('%s (permiso de ofertas=%s) → llega a aceptar la oferta', async (role, permiso) => {
     const actions = await import('../../src/services/offer-actions.js');
     vi.mocked(actions.acceptOffer).mockRejectedValueOnce(new actions.OfferNotFoundError('off-1'));
-    const res = await aceptar(role);
+    const res = await aceptar(role, permiso);
     expect(res.status).toBe(404);
     expect(actions.acceptOffer).toHaveBeenCalledTimes(1);
   });
@@ -438,10 +454,10 @@ describe('POST /offers/:id/reject — permisos por rol', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-  const rechazar = async (role: string) => {
+  const rechazar = async (role: string, puedeAceptarOfertas = false) => {
     const app = await buildAppWith({
       db: makeStubDbForList([]),
-      userContext: buildUserContext({ role }),
+      userContext: buildUserContext({ role, puedeAceptarOfertas }),
     });
     return app.request('/offers/off-1/reject', {
       method: 'POST',
@@ -450,15 +466,27 @@ describe('POST /offers/:id/reject — permisos por rol', () => {
     });
   };
 
-  it.each(['visualizador', 'conductor'])('%s → 403 forbidden_role', async (role) => {
+  it.each([
+    ['visualizador', false],
+    ['conductor', false],
+    ['despachador', false],
+  ] as const)('%s (permiso de ofertas=%s) → 403 capability_denied', async (role, permiso) => {
     const actions = await import('../../src/services/offer-actions.js');
-    const res = await rechazar(role);
+    const res = await rechazar(role, permiso);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    expect(await res.json()).toEqual({
+      error: 'forbidden',
+      code: 'capability_denied',
+      capability: 'puedeAceptarOferta',
+    });
     expect(actions.rejectOffer).not.toHaveBeenCalled();
   });
 
-  it.each(['dueno', 'admin', 'despachador'])('%s → puede rechazar la oferta', async (role) => {
+  it.each([
+    ['dueno', false],
+    ['admin', false],
+    ['despachador', true],
+  ] as const)('%s (permiso de ofertas=%s) → puede rechazar la oferta', async (role, permiso) => {
     const actions = await import('../../src/services/offer-actions.js');
     vi.mocked(actions.rejectOffer).mockResolvedValueOnce({
       id: 'off-1',
@@ -466,7 +494,7 @@ describe('POST /offers/:id/reject — permisos por rol', () => {
       respondedAt: new Date(),
       rejectionReason: null,
     } as Awaited<ReturnType<typeof actions.rejectOffer>>);
-    const res = await rechazar(role);
+    const res = await rechazar(role, permiso);
     expect(res.status).toBe(200);
     expect(actions.rejectOffer).toHaveBeenCalledTimes(1);
   });

@@ -11,6 +11,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
@@ -24,7 +25,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
-import { ROLES_COMERCIALES, ROLES_CONFIRMAR_RECEPCION, exigirRol } from '../lib/exigir-rol.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { issuesPublicos, zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
@@ -269,6 +270,11 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
     const { texto } = c.req.valid('json');
     const resultado = await resolverEnlaceMapa({
       texto,
@@ -291,6 +297,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
 
     const input = c.req.valid('json');
@@ -762,11 +773,12 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
-    const rolRecepcion = auth.activeMembership.membership.role;
-    const sinRolRecepcion = exigirRol(c, rolRecepcion, ROLES_CONFIRMAR_RECEPCION);
-    if (sinRolRecepcion) {
-      return sinRolRecepcion;
+    // CHEQUEOS_REEMPLAZADOS trip-requests: confirmar recepción es escritura.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
+    const rolRecepcion = auth.activeMembership.membership.role;
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
@@ -923,6 +935,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
     const id = c.req.param('id');
     const body = c.req.valid('json');

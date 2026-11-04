@@ -11,10 +11,12 @@ export function InicioTransportista({
   nombreCompleto,
   legalName,
   esAdmin,
+  veFinanzas,
 }: {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
+  veFinanzas: boolean;
 }) {
   const { datos, reintentar } = useDatosInicio();
   const ahora = new Date();
@@ -22,6 +24,7 @@ export function InicioTransportista({
     nombreCompleto,
     legalName,
     esAdmin,
+    veFinanzas,
     ahora,
   });
   const negocio = buildNegocioHoy(datos, ahora);

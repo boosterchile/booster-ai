@@ -28,10 +28,12 @@ function makeCarrierCtx(role = 'dueno'): UserContext {
   return {
     user: { id: 'u1', firebaseUid: 'fb1', fullName: 'F', email: 'f@x.cl' },
     activeMembership: {
-      id: 'm1',
-      membership: { role },
-      role,
-      status: 'activa',
+      membership: {
+        id: 'm1',
+        role,
+        status: 'activa',
+        puedeAceptarOfertas: false,
+      },
       empresa: {
         id: EMPRESA_CARRIER_ID,
         legalName: 'E',
@@ -96,13 +98,20 @@ afterEach(() => {
 });
 
 describe('GET /me/liquidaciones — permisos por rol', () => {
-  it.each(['visualizador', 'conductor', 'despachador'])('%s → 403 forbidden_role', async (role) => {
-    const db = makeDb([]);
-    const res = await buildApp({ withContext: true, db, role }).request('/me/liquidaciones');
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
-    expect(db.select).not.toHaveBeenCalled();
-  });
+  it.each(['visualizador', 'conductor', 'despachador'])(
+    '%s → 403 capability_denied',
+    async (role) => {
+      const db = makeDb([]);
+      const res = await buildApp({ withContext: true, db, role }).request('/me/liquidaciones');
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: 'forbidden',
+        code: 'capability_denied',
+        capability: 'puedeVerFinanzas',
+      });
+      expect(db.select).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['dueno', 'admin'])('%s → 200', async (role) => {
     const res = await buildApp({ withContext: true, db: makeDb([]), role }).request(

@@ -150,7 +150,7 @@ async function buildApp(
       memberships: [],
       activeMembership: {
         membership: { id: 'm-1', role },
-        empresa: { id: EMPRESA_ID, legal_name: 'Test SA' },
+        empresa: { id: EMPRESA_ID, legal_name: 'Test SA', isTransportista: true },
       },
     });
     await next();
@@ -931,7 +931,7 @@ describe('vehiculos routes', () => {
       expect(withoutPos?.position).toBeNull();
     });
 
-    it('conductor (rol read) puede ver la flota', async () => {
+    it('conductor empleado no ve la flota', async () => {
       const stub = makeFlotaStub({
         vehicleRows: [
           {
@@ -947,6 +947,8 @@ describe('vehiculos routes', () => {
       const app = await buildApp(stub.db, { role: 'conductor' });
       const res = await app.request('/vehiculos/flota');
       expect(res.status).toBe(200);
+      const body = (await res.json()) as { fleet: unknown[] };
+      expect(body.fleet).toEqual([]);
     });
   });
 

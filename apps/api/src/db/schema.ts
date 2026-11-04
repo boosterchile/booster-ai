@@ -569,6 +569,16 @@ export const empresas = pgTable(
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
     /**
+     * Historia 0 — quién y cuándo prendió `es_generador_carga` sobre un
+     * transportista que ya existía. NULL si el flag vino del alta o si
+     * todavía no es generador. Una segunda activación no reescribe estos
+     * campos.
+     */
+    generadorCargaActivadoEn: timestamp('generador_carga_activado_en', {
+      withTimezone: true,
+    }),
+    generadorCargaActivadoPor: text('generador_carga_activado_por'),
+    /**
      * ADR-079 §2 — contrato programado habilitado por el platform-admin (con
      * quién y cuándo). Solo estos generadores pueden publicar
      * `modalidad_carga = 'programada'` (tasa menor). NULL = no habilitado.
@@ -852,6 +862,12 @@ export const memberships = pgTable(
       { onDelete: 'restrict' },
     ),
     role: membershipRoleEnum('rol').notNull(),
+    /**
+     * El despachador puede aceptar o rechazar ofertas solo con este flag.
+     * Dueño y admin no lo consultan: aceptan por rol. Default false para
+     * no abrir el contrato a membresías que ya existían (migración 0071).
+     */
+    puedeAceptarOfertas: boolean('puede_aceptar_ofertas').notNull().default(false),
     status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),
     invitedByUserId: uuid('invitado_por_id').references(() => users.id),
     invitedAt: timestamp('invitado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1958,7 +1974,20 @@ export const telemetryPoints = pgTable(
     vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
     // idx_telemetria_imei_ts e idx_telemetria_vehiculo_recibido dropeados
     // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
-    // proyecciones). telemetria_puntos paga 3 estructuras por INSERT, no 5.
+    // proyecciones).
+    // 0070: solo filas con fix. La última posición no camina los 0,0.
+    // Un insert sin fix no agrega hoja en estos dos. DESC igual que el SQL:
+    // el LIMIT 1 lee la hoja más nueva.
+    gpsValidoVehiculoIdx: index('idx_telemetria_vehiculo_gps_valido')
+      .on(table.vehicleId, table.timestampDevice.desc())
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
+    gpsValidoImeiIdx: index('idx_telemetria_imei_gps_valido')
+      .on(table.imei, table.timestampDevice.desc())
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
   }),
 );

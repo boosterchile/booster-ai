@@ -4,6 +4,7 @@ import {
   corregirEmailConductorBodySchema,
   createDriverBodySchema,
   esEmailDeRelleno,
+  puedeBorrarEnFlota,
   rutSchema,
   telefonoMovilConductorSchema,
   updateDriverBodySchema,
@@ -13,6 +14,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { ctxDeUserContext } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
 import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
@@ -1173,9 +1175,14 @@ export function createConductoresRoutes(opts: {
   // DELETE /:id — soft delete.
   // ---------------------------------------------------------------------
   app.delete('/:id', async (c) => {
-    const auth = requireWriteRole(c);
+    const auth = requireAuth(c);
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS flota: borrar es dueño o admin, igual que la web.
+    const ctxBorrar = ctxDeUserContext(auth.userContext);
+    if (!ctxBorrar || !puedeBorrarEnFlota(ctxBorrar)) {
+      return c.json({ error: 'forbidden', code: 'admin_required' }, 403);
     }
     const id = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;

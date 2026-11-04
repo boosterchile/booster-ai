@@ -9,6 +9,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 import {
   type NumericFieldRule,
@@ -181,8 +182,8 @@ export function SucursalesListRoute() {
 }
 
 function SucursalesListPage({ me }: { me: MeOnboarded }) {
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
+  // CHEQUEOS_REEMPLAZADOS sucursales: antes dueno|admin|despachador.
+  const canWrite = flagsDe(me).sucursales;
 
   const scope = useEmpresaScope();
   const q = useQuery({
@@ -380,9 +381,9 @@ function SucursalesDetallePage({ me }: { me: MeOnboarded }) {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
-  const canDelete = role === 'dueno' || role === 'admin';
+  const flags = flagsDe(me);
+  const canWrite = flags.sucursales;
+  const canDelete = flags.administrar && flags.sucursales;
 
   const q = useQuery({
     queryKey: ['sucursales', id],

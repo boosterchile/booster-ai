@@ -130,6 +130,7 @@ function Shell() {
         nombreCompleto={me.data.user.full_name}
         legalName={empresa.legal_name}
         esAdmin
+        veFinanzas
       />
     </>
   );
@@ -294,6 +295,7 @@ describe('Inicio transportista — refetch al montar', () => {
           nombreCompleto="   "
           legalName="Transportes Van Oosterwyk"
           esAdmin={false}
+          veFinanzas={false}
         />
       </QueryClientProvider>,
     );

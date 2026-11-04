@@ -135,6 +135,21 @@ describe('Layout — shell con sidebar', () => {
     expect(screen.queryByRole('link', { name: /^Ofertas$/ })).not.toBeInTheDocument();
   });
 
+  it('sidebar dual: transportista y generador ve Ofertas y Mis cargas', () => {
+    renderLayout(
+      <Layout
+        me={buildMe([membership('e-1', 'Van Oosterwyk', { transportista: true, generador: true })])}
+        title="Inicio"
+      >
+        <div>x</div>
+      </Layout>,
+    );
+    expect(screen.getByRole('link', { name: /Ofertas/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Mis cargas/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Crear carga/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Seguimiento de flota/ })).toBeInTheDocument();
+  });
+
   it('sidebar role-aware: transportista ve "Ofertas", NO "Mis cargas"', () => {
     renderLayout(
       <Layout me={buildMe([membership('e-1', 'Trans', { transportista: true })])} title="Inicio">

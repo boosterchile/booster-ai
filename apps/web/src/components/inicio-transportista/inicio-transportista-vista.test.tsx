@@ -33,6 +33,7 @@ function pintar(datos: DatosInicio) {
     nombreCompleto: 'Felipe Vicencio',
     legalName: 'Transportes Van Oosterwyk',
     esAdmin: true,
+    veFinanzas: true,
     ahora: AHORA,
   });
   render(
