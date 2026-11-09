@@ -78,10 +78,21 @@ describe('cambioPropuestoSchema (editar-anular-cargas §5, PR7 sin campos comerc
     expect(cambioPropuestoSchema.safeParse({}).success).toBe(false);
   });
 
-  it('rechaza datos libres y campos comerciales por esta vía', () => {
+  it('rechaza datos libres por esta vía', () => {
     expect(cambioPropuestoSchema.safeParse({ notes: 'x' }).success).toBe(false);
-    expect(cambioPropuestoSchema.safeParse({ proposed_price_clp: 1 }).success).toBe(false);
-    expect(cambioPropuestoSchema.safeParse({ modalidad_carga: 'spot' }).success).toBe(false);
+  });
+
+  it('precio y modalidad: el precio después del match es entero > 0 y no nulo (§5)', () => {
+    expect(cambioPropuestoSchema.parse({ proposed_price_clp: 900_000 })).toEqual({
+      proposed_price_clp: 900_000,
+    });
+    expect(cambioPropuestoSchema.parse({ modalidad_carga: 'programada' })).toEqual({
+      modalidad_carga: 'programada',
+    });
+    expect(cambioPropuestoSchema.safeParse({ proposed_price_clp: 0 }).success).toBe(false);
+    expect(cambioPropuestoSchema.safeParse({ proposed_price_clp: null }).success).toBe(false);
+    expect(cambioPropuestoSchema.safeParse({ proposed_price_clp: 10.5 }).success).toBe(false);
+    expect(cambioPropuestoSchema.safeParse({ modalidad_carga: 'retorno' }).success).toBe(false);
   });
 
   it('la ventana nueva debe empezar en el futuro', () => {
@@ -143,6 +154,23 @@ describe('payloads de solicitudes de cambio', () => {
     expect(
       cambioRespondidoPayloadSchema.parse({ solicitud_id: id, resultado: 'rechazado' }),
     ).toEqual({ solicitud_id: id, resultado: 'rechazado' });
+  });
+
+  it('carga_editada en modo cambio_aceptado con cambio comercial lleva el bloque comercial', () => {
+    const p = cargaEditadaPayloadSchema.parse({
+      modo: 'cambio_aceptado',
+      solicitud_id: id,
+      campos: ['proposed_price_clp'],
+      antes: { proposed_price_clp: 800_000 },
+      despues: { proposed_price_clp: 900_000 },
+      comercial: {
+        precio_acordado_antes: 800_000,
+        precio_acordado_despues: 900_000,
+        comision_pct_antes: '20.00',
+        comision_pct_despues: '20.00',
+      },
+    });
+    expect(p).toMatchObject({ comercial: { precio_acordado_despues: 900_000 } });
   });
 
   it('carga_editada en modo cambio_aceptado lleva antes y después', () => {
