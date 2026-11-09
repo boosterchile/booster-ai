@@ -74,14 +74,14 @@ function syntheticEmail(rut: string): string {
 const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
 
 /**
- * Hash de un código al azar, calculado una vez. Sin código pendiente, se
- * verifica contra él para gastar el mismo scrypt que un código incorrecto.
- * Ningún código lo satisface en la práctica, y su resultado se descarta.
+ * Hash de un código al azar, calculado una vez al cargar el módulo, con los
+ * mismos parámetros de scrypt que los códigos reales. Sin código pendiente, se
+ * verifica contra él para gastar el mismo scrypt que un código incorrecto; su
+ * resultado se descarta.
  */
-let hashDeRelleno: string | null = null;
+const HASH_DE_RELLENO = hashActivationPin(generateActivationPin());
 function verificarContraRelleno(codigo: string): void {
-  hashDeRelleno ??= hashActivationPin(generateActivationPin());
-  verifyActivationPin(codigo, hashDeRelleno);
+  verifyActivationPin(codigo, HASH_DE_RELLENO);
 }
 
 export function createAuthActivarRoutes(opts: {

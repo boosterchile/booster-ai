@@ -16,7 +16,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
+import { correoEnListaRespaldo, cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
 import { ctxDeUserContext } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
@@ -226,6 +226,14 @@ const CONFLICTO_CUENTA_PERSONAL = {
   code: CODIGO_CUENTA_PERSONAL_BOOSTER,
   message: MENSAJE_CUENTA_PERSONAL_BOOSTER,
 } as const;
+
+/** La cuenta quedó marcada como personal entre la lectura y la escritura. */
+class CuentaMarcadaAlEscribir extends Error {
+  constructor() {
+    super('la cuenta quedó marcada como personal de Booster antes de escribir');
+    this.name = 'CuentaMarcadaAlEscribir';
+  }
+}
 
 export function createConductoresRoutes(opts: {
   db: Db;
@@ -471,14 +479,17 @@ export function createConductoresRoutes(opts: {
           })
           .from(users)
           .where(eq(users.rut, rut))
+          // La fila queda bloqueada hasta el commit: el alta del personal en
+          // paralelo espera, y esta lectura ve la marca que dejó (SC7).
+          .for('update')
           .limit(1);
 
-        // Una cuenta del personal de Booster, o un correo de la lista de
-        // respaldo, no se gestiona desde una empresa (SC7).
+        // Una cuenta del personal de Booster no se gestiona desde una empresa
+        // (SC7), y ninguna cuenta recibe un correo de la lista de respaldo:
+        // se rechaza como un correo ya registrado, sin decir que es de la lista.
         if (
           cuentaGestionadaPorBooster({
             cuenta: existingUsers[0] ?? null,
-            correoNuevo: body.email,
             lista: opts.platformAdminEmails,
           })
         ) {
@@ -487,6 +498,9 @@ export function createConductoresRoutes(opts: {
             code: CODIGO_CUENTA_PERSONAL_BOOSTER,
             message: MENSAJE_CUENTA_PERSONAL_BOOSTER,
           };
+        }
+        if (correoEnListaRespaldo(body.email, opts.platformAdminEmails)) {
+          return { ok: false as const, code: 'email_already_registered' as const };
         }
 
         let userId: string;
@@ -925,17 +939,16 @@ export function createConductoresRoutes(opts: {
           return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
         }
 
-        // La cuenta del personal se gestiona solo desde Booster, y ninguna
-        // cuenta recibe un correo de la lista de respaldo (SC7).
-        if (
-          cuentaGestionadaPorBooster({
-            cuenta: fila,
-            correoNuevo: body.email,
-            lista: opts.platformAdminEmails,
-          })
-        ) {
+        // La cuenta del personal se gestiona solo desde Booster (SC7).
+        if (cuentaGestionadaPorBooster({ cuenta: fila, lista: opts.platformAdminEmails })) {
           record(CODIGO_CUENTA_PERSONAL_BOOSTER);
           return c.json(CONFLICTO_CUENTA_PERSONAL, 409);
+        }
+        // Ninguna cuenta recibe un correo de la lista de respaldo: misma
+        // respuesta que un correo ya registrado.
+        if (correoEnListaRespaldo(body.email, opts.platformAdminEmails)) {
+          record('email_already_registered');
+          return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
         }
 
         if (await emailOcupadoPorOtro(opts.db, body.email, fila.userId)) {
@@ -1010,10 +1023,11 @@ export function createConductoresRoutes(opts: {
                   : {}),
                 updatedAt: sql`now()`,
               })
-              .where(eq(users.id, fila.userId))
+              // Si la marcaron como personal desde la lectura, no se escribe.
+              .where(and(eq(users.id, fila.userId), eq(users.isPlatformAdmin, false)))
               .returning({ id: users.id });
             if (!actualizado[0]) {
-              throw new Error('update email conductor vacío');
+              throw new CuentaMarcadaAlEscribir();
             }
             const auditoria = await tx
               .insert(auditoriaEmailConductor)
@@ -1033,6 +1047,10 @@ export function createConductoresRoutes(opts: {
             }
           });
         } catch (err) {
+          if (err instanceof CuentaMarcadaAlEscribir) {
+            record(CODIGO_CUENTA_PERSONAL_BOOSTER);
+            return c.json(CONFLICTO_CUENTA_PERSONAL, 409);
+          }
           if (pgErrorCode(err) === '23505') {
             if (esEmailDuplicado(err)) {
               record('email_already_registered');
@@ -1190,10 +1208,12 @@ export function createConductoresRoutes(opts: {
                 : {}),
               updatedAt: sql`now()`,
             })
-            .where(eq(users.id, fila.userId))
+            // Si la marcaron como personal desde la lectura, no se escribe.
+            .where(and(eq(users.id, fila.userId), eq(users.isPlatformAdmin, false)))
             .returning({ id: users.id });
           if (!actualizado[0]) {
-            throw new Error('update teléfono conductor vacío');
+            record(CODIGO_CUENTA_PERSONAL_BOOSTER);
+            return c.json(CONFLICTO_CUENTA_PERSONAL, 409);
           }
 
           if (activationPin !== null && fila.rut) {

@@ -1,3 +1,5 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyActivationPin } from '../../src/services/activation-pin.js';
@@ -97,6 +99,10 @@ function makeDbStub(opts: {
   const insertQueue = [...(opts.insertReturning ?? [])];
   const updateQueue = [...(opts.updateReturning ?? [])];
 
+  /** Bloqueos de fila pedidos con `.for(...)`, en orden. */
+  const locks: string[] = [];
+  /** Predicado de cada `update().set().where(...)`, en orden. */
+  const updateWheres: unknown[] = [];
   const nextSelect = () => selectQueue.shift() ?? [];
   const nextInsert = () => insertQueue.shift() ?? [];
   const nextUpdate = () => updateQueue.shift() ?? [];
@@ -108,6 +114,10 @@ function makeDbStub(opts: {
     const where = vi.fn(() => ({
       orderBy,
       limit,
+      for: vi.fn((fuerza: string) => {
+        locks.push(fuerza);
+        return { limit };
+      }),
       then(
         onFulfilled: (rows: Record<string, unknown>[]) => unknown,
         onRejected?: (err: unknown) => unknown,
@@ -138,7 +148,10 @@ function makeDbStub(opts: {
       }
       return Promise.resolve(nextUpdate());
     });
-    const where = vi.fn(() => ({ returning }));
+    const where = vi.fn((predicado: unknown) => {
+      updateWheres.push(predicado);
+      return { returning };
+    });
     const set = vi.fn(() => ({ where }));
     return vi.fn(() => ({ set }));
   }
@@ -158,6 +171,8 @@ function makeDbStub(opts: {
       typeof import('../../src/routes/conductores.js').createConductoresRoutes
     >[0]['db'],
     spies: { select, insert, update, transaction },
+    locks,
+    updateWheres,
   };
 }
 
@@ -2134,21 +2149,79 @@ describe('conductores — cuenta del personal de Booster (SC7)', () => {
     expect(stub.spies.update).not.toHaveBeenCalled();
   });
 
-  it('alta de una persona nueva con un correo de la lista de respaldo → 409 y no inserta', async () => {
+  // Un correo nuevo de la lista se rechaza como un correo ya registrado: la
+  // respuesta no le dice a la empresa qué correos están en la lista.
+  it('alta de una persona nueva con un correo de la lista de respaldo → 409 email_already_registered y no inserta', async () => {
     const stub = makeDbStub({ selectQueueRows: [[], []] });
     const app = await buildApp(stub.db);
 
     const res = await post(app, '/conductores', { ...ALTA, email: 'respaldo@boosterchile.com' });
 
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject(RESPUESTA);
+    const body = (await res.json()) as { code: string; message?: string };
+    expect(body.code).toBe('email_already_registered');
+    expect(JSON.stringify(body)).not.toContain('personal de Booster');
     expect(stub.spies.insert).not.toHaveBeenCalled();
   });
+
+  it('el alta bloquea la fila de la persona hasta el commit', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[], []] });
+    const app = await buildApp(stub.db);
+
+    await post(app, '/conductores', ALTA);
+
+    expect(stub.locks[0]).toBe('update');
+  });
+
+  it('POST /:id/email con un correo nuevo de la lista → 409 email_already_registered, sin escribir', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+      updateReturning: [[{ id: USER_ID }]],
+      insertReturning: [[{ id: 'audit-1' }]],
+    });
+    const app = await buildApp(stub.db, { firebaseAuth: firebaseSinCuentas() });
+
+    const res = await post(app, `/conductores/${CONDUCTOR_ID}/email`, {
+      email: 'respaldo@boosterchile.com',
+    });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['email', 'telefono'] as const)(
+    'POST /:id/%s: el UPDATE exige que la cuenta siga sin marca; si la marcaron antes → 409, sin auditoría',
+    async (campo) => {
+      const stub = makeDbStub({
+        selectQueueRows: [[filaConductor()], []],
+        updateReturning: [[]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const app = await buildApp(stub.db, { firebaseAuth: firebaseSinCuentas() });
+
+      const res = await post(
+        app,
+        `/conductores/${CONDUCTOR_ID}/${campo}`,
+        campo === 'email' ? { email: EMAIL_REAL } : { phone: '+56987654321' },
+      );
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject(RESPUESTA);
+      expect(stub.spies.insert).not.toHaveBeenCalled();
+      const predicado = stub.updateWheres[0];
+      if (!(predicado instanceof SQL)) {
+        throw new Error('el UPDATE no recibió un predicado SQL');
+      }
+      const consulta = new PgDialect().sqlToQuery(predicado);
+      expect(consulta.sql).toContain('"usuarios"."es_admin_plataforma" = ');
+      expect(consulta.params).toContain(false);
+    },
+  );
 
   it.each([
     ['marcada como personal', { isPlatformAdmin: true }, EMAIL_REAL],
     ['con un correo de la lista de respaldo', { email: 'respaldo@boosterchile.com' }, EMAIL_REAL],
-    ['a la que se le pondría un correo de la lista', {}, 'respaldo@boosterchile.com'],
   ])(
     'POST /:id/email de una cuenta %s → 409, sin escribir ni tocar Firebase',
     async (_caso, overrides, email) => {

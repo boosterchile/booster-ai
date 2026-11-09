@@ -8,7 +8,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
+import { correoEnListaRespaldo, cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
 import {
   ctxDeUserContext,
   puedeAdministrarEmpresa,
@@ -182,19 +182,22 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         .select({ id: users.id, email: users.email, isPlatformAdmin: users.isPlatformAdmin })
         .from(users)
         .where(eq(users.rut, body.rut))
+        // La fila queda bloqueada hasta el commit: el alta del personal en
+        // paralelo espera, y esta lectura ve la marca que dejó (SC7).
+        .for('update')
         .limit(1);
       const existente = existentes[0];
 
-      // Una cuenta del personal de Booster, o un correo de la lista de
-      // respaldo, no se gestiona desde una empresa (SC7).
+      // Una cuenta del personal de Booster no se gestiona desde una empresa
+      // (SC7), y una cuenta nueva no recibe un correo de la lista de respaldo:
+      // se rechaza como un correo ya registrado, sin decir que es de la lista.
       if (
-        cuentaGestionadaPorBooster({
-          cuenta: existente ?? null,
-          correoNuevo: email,
-          lista: opts.platformAdminEmails,
-        })
+        cuentaGestionadaPorBooster({ cuenta: existente ?? null, lista: opts.platformAdminEmails })
       ) {
         return { conflicto: 'cuenta_personal_booster' as const };
+      }
+      if (!existente && correoEnListaRespaldo(email, opts.platformAdminEmails)) {
+        return { conflicto: 'email_registrado' as const };
       }
 
       if (existente) {
@@ -296,6 +299,9 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       }
       if (resultado.conflicto === 'rut_duplicado') {
         return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+      }
+      if (resultado.conflicto === 'email_registrado') {
+        return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
       }
       return c.json(
         { error: 'conflict', code: 'already_member', membership_id: resultado.membershipId },

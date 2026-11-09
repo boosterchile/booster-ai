@@ -118,7 +118,9 @@ describe('PersonalBooster — lista (SC1)', () => {
     expect(within(ana).getByText(/ana@boosterchile\.com/)).toBeInTheDocument();
     expect(within(ana).getByText(/11\.111\.111-1/)).toBeInTheDocument();
     expect(
-      within(ana).getByText('En la lista de respaldo: su acceso se quita en Terraform'),
+      within(ana).getByText(
+        /En la lista de respaldo: para quitarle el acceso, sácalo de Terraform/,
+      ),
     ).toBeInTheDocument();
     expect(within(ana).getByText('Activa')).toBeInTheDocument();
 
@@ -129,7 +131,9 @@ describe('PersonalBooster — lista (SC1)', () => {
     const carla = fila(CARLA.email);
     expect(within(carla).getByText('Sin cuenta')).toBeInTheDocument();
     expect(
-      within(carla).getByText('En la lista de respaldo: su acceso se quita en Terraform'),
+      within(carla).getByText(
+        /En la lista de respaldo: para quitarle el acceso, sácalo de Terraform/,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -792,7 +796,7 @@ describe('PersonalBooster — Quitar acceso (acceso-panel-plataforma SC12)', () 
     [
       'en_lista_respaldo',
       new ApiError(409, 'en_lista_respaldo', {}, 'conflict'),
-      'Su correo está en la lista de respaldo: ese acceso se quita en Terraform, no desde aquí.',
+      'Su correo está en la lista de respaldo: primero sácalo de Terraform y aplica; después quítale el acceso aquí.',
     ],
   ])('traduce %s en la fila', async (_caso, err, mensaje) => {
     await renderConLista();

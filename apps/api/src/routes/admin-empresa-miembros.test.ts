@@ -1019,6 +1019,23 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
     }
   });
 
+  // `.specs/acceso-panel-plataforma` SC9: el código de una cuenta del personal
+  // sale solo del panel del personal, no de la re-emisión de una empresa.
+  it('409 cuenta_personal_booster si la cuenta es del personal de Booster, sin escribir', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ joinedMembershipRows: [filaPendienteReemision({ isPlatformAdmin: true })] });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros/${MEMBERSHIP_ID}/codigo`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'cuenta_personal_booster' });
+    expect(d.updates).toHaveLength(0);
+  });
+
   it('404 membership_not_found si el join no trae la membresía', async () => {
     const mod = await loadMod();
     const d = makeDb({ joinedMembershipRows: [] });

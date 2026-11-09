@@ -103,33 +103,12 @@ describe('cuentaGestionadaPorBooster (SC7)', () => {
     ).toBe(true);
   });
 
-  it('un correo nuevo de la lista no se puede dejar en ninguna cuenta', () => {
-    expect(
-      cuentaGestionadaPorBooster({
-        cuenta: null,
-        correoNuevo: 'respaldo@boosterchile.com',
-        lista: LISTA,
-      }),
-    ).toBe(true);
-    expect(
-      cuentaGestionadaPorBooster({
-        cuenta: { isPlatformAdmin: false, email: 'juan@empresa.cl' },
-        correoNuevo: 'dev@boosterchile.com',
-        lista: LISTA,
-      }),
-    ).toBe(true);
-  });
-
   it('una cuenta de empresa con su correo de empresa la gestiona la empresa', () => {
     expect(
       cuentaGestionadaPorBooster({
         cuenta: { isPlatformAdmin: false, email: 'juan@empresa.cl' },
-        correoNuevo: 'juan.perez@empresa.cl',
         lista: LISTA,
       }),
-    ).toBe(false);
-    expect(
-      cuentaGestionadaPorBooster({ cuenta: null, correoNuevo: 'x@empresa.cl', lista: LISTA }),
     ).toBe(false);
     expect(cuentaGestionadaPorBooster({ cuenta: null, lista: LISTA })).toBe(false);
   });

@@ -264,9 +264,16 @@ export function createAdminPersonalBoosterRoutes(opts: {
                 return { tipo: 'rechazo', code: 'rut_mismatch' };
               }
               const clasificado = clasificarVinculoPersona(existente);
+              // Se conserva solo un código que el panel del personal emitió a
+              // esta cuenta ya marcada y que sigue vigente. Una provisoria que
+              // todavía no era del personal recibe siempre uno nuevo: el que
+              // tenía lo pudo conocer otra persona
+              // (`.specs/acceso-panel-plataforma` SC3).
+              const conservaCodigo =
+                existente.isPlatformAdmin === true &&
+                codigoPersonalVigente(existente.activacionVenceEn);
               const vinculo: VinculoPersonalBooster =
-                clasificado === 'codigo_vigente' &&
-                !codigoPersonalVigente(existente.activacionVenceEn)
+                clasificado === 'codigo_vigente' && !conservaCodigo
                   ? 'provisoria_sin_codigo'
                   : clasificado;
               const codigo = vinculo === 'provisoria_sin_codigo' ? generateActivationPin() : null;

@@ -601,7 +601,13 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
     const vence = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
     const d = makeDb({
       lookups: [
-        [existente({ activationPinHash: hashActivationPin('246810'), activacionVenceEn: vence })],
+        [
+          existente({
+            isPlatformAdmin: true,
+            activationPinHash: hashActivationPin('246810'),
+            activacionVenceEn: vence,
+          }),
+        ],
       ],
     });
     const app = await buildApp({ db: d.db });
@@ -1118,6 +1124,7 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
       lookups: [
         [
           existente({
+            isPlatformAdmin: true,
             activationPinHash: hashActivationPin('111111'),
             activacionVenceEn: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
           }),
@@ -1219,6 +1226,7 @@ describe('admin-personal-booster — métrica de negocio y span (SC9)', () => {
       [
         [
           existente({
+            isPlatformAdmin: true,
             activationPinHash: hashActivationPin('111111'),
             activacionVenceEn: EN_DOS_DIAS(),
           }),
@@ -1383,6 +1391,40 @@ describe('admin-personal-booster — métrica de negocio y span (SC9)', () => {
  * `.specs/acceso-panel-plataforma` SC5 — el alta que otorga el acceso deja un
  * evento de auditoría y avisa a cada correo de la lista de respaldo.
  */
+/**
+ * `.specs/acceso-panel-plataforma` SC3: una provisoria que todavía no era del
+ * personal recibe siempre un código nuevo del panel al darla de alta. Un
+ * código que ya tenía, aunque tenga vencimiento, lo pudo conocer otra persona.
+ */
+describe('POST /admin/personal-booster — provisoria que no estaba marcada (SC3)', () => {
+  it('con un vencimiento vigente que no dejó el panel del personal: emite uno nuevo', async () => {
+    const hashAnterior = hashActivationPin('246810');
+    const d = makeDb({
+      lookups: [
+        [
+          existente({
+            isPlatformAdmin: false,
+            activationPinHash: hashAnterior,
+            activacionVenceEn: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          }),
+        ],
+      ],
+    });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { vinculo: string; codigo_activacion: string | null };
+    expect(json.vinculo).toBe('provisoria_sin_codigo');
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    const cambios = d.updates[0] as Record<string, unknown>;
+    expect(cambios.isPlatformAdmin).toBe(true);
+    expect(cambios.activationPinHash).not.toBe(hashAnterior);
+    expect(cambios.activacionVenceEn).toBeInstanceOf(Date);
+  });
+});
+
 describe('POST /admin/personal-booster — aviso y auditoría del acceso otorgado (SC5)', () => {
   it('persona nueva: avisa a cada correo de la lista, sin el código', async () => {
     const d = makeDb({ lookups: [[], []] });

@@ -14,7 +14,9 @@ El orden normal para sumar a una persona es:
 2. **La persona activa en `/activar`** con su RUT, el código y la clave de 6 dígitos que elige. Para una cuenta marcada, `/auth/activar` exige un código emitido desde el panel que siga vigente. Un código que le haya dejado otro flujo no sirve: genera uno nuevo con **«Generar código nuevo»** en su fila (el anterior deja de servir y el plazo de 7 días corre desde ahí). Si falta una condición, la pantalla responde que no pudo activar la cuenta, sin decir cuál faltó: revisa la fila de la persona (vencimiento del código) antes de pedirle que reintente.
 3. **Entra por `/login`** eligiendo la tarjeta **«Booster»**, con su RUT y su clave.
 
-Para **quitar** a alguien, usa **«Quitar acceso»** en su fila. Deja de entrar al panel desde su próxima acción; su cuenta y su clave no cambian, y si todavía no activó su código deja de servir. No aplica a un correo de la lista de respaldo (ese acceso se quita en Terraform), ni deja el panel sin nadie con acceso.
+Para **quitar** a alguien, usa **«Quitar acceso»** en su fila. Deja de entrar al panel desde su próxima acción; su cuenta y su clave no cambian, y si todavía no activó su código deja de servir. No deja el panel sin nadie con acceso.
+
+Un correo de la lista de respaldo se quita en dos pasos, porque esas cuentas también quedan marcadas: (1) el PO lo saca de `booster_platform_admin_emails` en su `terraform.tfvars` local y aplica; (2) un platform-admin usa «Quitar acceso» en su fila, que recién entonces aparece. Con solo el paso 1 la persona sigue entrando por la marca.
 
 Cada alta que otorga el acceso y cada baja dejan un evento de auditoría (`personal_booster.acceso_otorgado`, `personal_booster.acceso_quitado`) y mandan un correo de aviso a los correos de la lista de respaldo.
 

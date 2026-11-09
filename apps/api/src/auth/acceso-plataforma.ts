@@ -48,21 +48,17 @@ export function tieneAccesoPlataforma(cuenta: CuentaParaAcceso, lista: readonly 
 /**
  * Las cuentas del personal se gestionan solo desde Booster (SC7). Un flujo de
  * empresa no toca una cuenta marcada (en cualquier estado) ni una cuyo correo
- * está en la lista de respaldo, y no deja en ninguna cuenta un correo de esa
- * lista.
+ * está en la lista de respaldo. Que un flujo no deje un correo de la lista en
+ * una cuenta lo decide `correoEnListaRespaldo` sobre el correo nuevo, con la
+ * respuesta de un correo ya registrado.
  */
 export function cuentaGestionadaPorBooster(opts: {
   cuenta: Pick<CuentaParaAcceso, 'email' | 'isPlatformAdmin'> | null;
-  /** Correo que el flujo escribiría en la cuenta, si escribe uno. */
-  correoNuevo?: string | null;
   lista: readonly string[];
 }): boolean {
-  const { cuenta, correoNuevo, lista } = opts;
+  const { cuenta, lista } = opts;
   if (cuenta?.isPlatformAdmin === true) {
     return true;
   }
-  if (correoEnListaRespaldo(cuenta?.email, lista)) {
-    return true;
-  }
-  return correoEnListaRespaldo(correoNuevo, lista);
+  return correoEnListaRespaldo(cuenta?.email, lista);
 }

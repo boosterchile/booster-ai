@@ -66,7 +66,7 @@ const MENSAJES_POR_CODIGO: Record<PersonalBoosterErrorCode, string> = {
   personal_not_found:
     'Esa persona no figura como personal de Booster. Repite el alta con su correo y RUT para marcarla.',
   en_lista_respaldo:
-    'Su correo está en la lista de respaldo: ese acceso se quita en Terraform, no desde aquí.',
+    'Su correo está en la lista de respaldo: primero sácalo de Terraform y aplica; después quítale el acceso aquí.',
   ultimo_acceso: 'No puedes quitar este acceso: el panel quedaría sin nadie que pueda entrar.',
 };
 
@@ -555,7 +555,10 @@ export function PersonalBooster() {
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 text-neutral-600 text-xs">
                           {persona.en_lista && (
-                            <span>En la lista de respaldo: su acceso se quita en Terraform</span>
+                            <span>
+                              En la lista de respaldo: para quitarle el acceso, sácalo de Terraform
+                              y después usa «Quitar acceso»
+                            </span>
                           )}
                           <DetalleEstado persona={persona} />
                         </div>

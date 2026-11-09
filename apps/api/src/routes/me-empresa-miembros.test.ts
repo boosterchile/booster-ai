@@ -42,12 +42,21 @@ function makeDb(opts: DbOpts = {}) {
   const insertedMemberships: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
 
+  /** Bloqueos de fila pedidos con `.for(...)`, en orden. */
+  const locks: string[] = [];
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        limit: vi.fn(async () => cola.shift() ?? []),
-        orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
-      })),
+      where: vi.fn(() => {
+        const limit = vi.fn(async () => cola.shift() ?? []);
+        return {
+          limit,
+          for: vi.fn((fuerza: string) => {
+            locks.push(fuerza);
+            return { limit };
+          }),
+          orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
+        };
+      }),
       innerJoin: vi.fn(() => ({
         where: vi.fn(() => ({
           orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
@@ -90,6 +99,7 @@ function makeDb(opts: DbOpts = {}) {
     insertedUsers,
     insertedMemberships,
     updates,
+    locks,
   };
 }
 
@@ -499,15 +509,26 @@ describe('POST /me/empresa/miembros — cuenta del personal de Booster (SC7)', (
     expect(d.insertedMemberships).toEqual([]);
   });
 
-  it('persona nueva con un correo de la lista de respaldo → 409 y no inserta', async () => {
+  // La respuesta no le dice a la empresa qué correos están en la lista.
+  it('persona nueva con un correo de la lista de respaldo → 409 email_already_registered y no inserta', async () => {
     const d = makeDb();
 
     const res = await invitar(buildApp(d.db), { email: 'respaldo@boosterchile.com' });
 
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject(RESPUESTA);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('email_already_registered');
+    expect(JSON.stringify(body)).not.toContain('personal de Booster');
     expect(d.insertedUsers).toEqual([]);
     expect(d.insertedMemberships).toEqual([]);
+  });
+
+  it('la lectura de la persona por RUT bloquea su fila hasta el commit', async () => {
+    const d = makeDb();
+
+    await invitar(buildApp(d.db));
+
+    expect(d.locks).toEqual(['update']);
   });
 
   it('una persona de la empresa con su correo de la empresa se suma igual', async () => {

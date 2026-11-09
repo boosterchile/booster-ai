@@ -666,7 +666,7 @@ describe('integration: el panel otorga y quita el acceso del personal de Booster
     expect(cuerpo).toMatchObject({ user_id: cuenta.id, vinculo: 'cuenta_activa', en_lista: true });
   });
 
-  test('14. la re-emisión del panel de empresas cuenta como código del panel: activa la cuenta marcada y su membresía', async () => {
+  test('14. el código de una cuenta del personal sale solo del panel del personal, también frente a la re-emisión del panel de empresas', async () => {
     const a = app(LISTA);
     const sufijo = randomUUID().slice(0, 8);
     const rut = rutAleatorio();
@@ -678,12 +678,17 @@ describe('integration: el panel otorga y quita el acceso del personal de Booster
       '/admin/personal-booster',
       json('POST', { email: correoPersona, full_name: 'Bea Personal', rut }, adminUid),
     );
-    const altaBody = (await alta.json()) as { user_id: string; vinculo: string };
+    const altaBody = (await alta.json()) as {
+      user_id: string;
+      vinculo: string;
+      codigo_activacion: string;
+    };
     expect(alta.status, JSON.stringify(altaBody)).toBe(201);
     expect(altaBody.vinculo).toBe('nueva');
     const personaId = altaBody.user_id;
+    const codigoDelPanel = altaBody.codigo_activacion;
 
-    // 2. Una empresa invita a la misma persona y re-emite el código de esa invitación.
+    // 2. Una empresa invita a la misma persona y pide re-emitir el código de esa invitación.
     await handle.db
       .insert(schema.plans)
       .values({
@@ -732,21 +737,22 @@ describe('integration: el panel otorga y quita el acceso del personal de Booster
     expect(invitacion.vinculo).toBe('codigo_vigente');
     expect(invitacion.codigo_activacion).toBeNull();
 
+    const antes = await filaPorId(personaId);
     const reemitirEmpresa = await a.request(
       `/admin/empresas/${empresa.empresa_id}/miembros/${invitacion.membership_id}/codigo`,
       json('POST', undefined, adminUid),
     );
-    const deLaEmpresa = (await reemitirEmpresa.json()) as { codigo_activacion: string };
-    expect(reemitirEmpresa.status, JSON.stringify(deLaEmpresa)).toBe(200);
-    // Solo un platform-admin re-emite desde ahí: deja el vencimiento del panel.
-    const conCodigoDelPanel = await filaPorId(personaId);
-    expect(conCodigoDelPanel.isPlatformAdmin).toBe(true);
-    expect(conCodigoDelPanel.activacionVenceEn).toBeInstanceOf(Date);
+    // Ese código se le entrega a la empresa: para una cuenta del personal, 409.
+    expect(reemitirEmpresa.status).toBe(409);
+    expect(await reemitirEmpresa.json()).toMatchObject({ code: 'cuenta_personal_booster' });
+    const sinCambios = await filaPorId(personaId);
+    expect(sinCambios.activationPinHash).toBe(antes.activationPinHash);
+    expect(sinCambios.activacionVenceEn?.getTime()).toBe(antes.activacionVenceEn?.getTime());
 
-    // 3. Ese código activa la cuenta marcada y la invitación vigente.
+    // 3. El código del panel del personal activa la cuenta y la invitación vigente.
     const activar = await a.request(
       '/auth/activar',
-      json('POST', { rut, codigo: deLaEmpresa.codigo_activacion, clave_numerica: clave }),
+      json('POST', { rut, codigo: codigoDelPanel, clave_numerica: clave }),
     );
     const sesion = (await activar.json()) as { activated?: boolean };
     expect(activar.status, JSON.stringify(sesion)).toBe(200);
@@ -761,6 +767,50 @@ describe('integration: el panel otorga y quita el acceso del personal de Booster
       .from(schema.memberships)
       .where(eq(schema.memberships.id, invitacion.membership_id));
     expect(membresia?.status).toBe('activa');
+
+    // 4. Orden inverso: la empresa invita primero y re-emite; después el panel
+    //    da de alta a la persona. El alta le emite un código propio, y el que
+    //    conoce la empresa ya no activa.
+    const rutB = rutAleatorio();
+    const correoB = `personal-despues-${sufijo}@test.invalid`;
+    const invitarB = await a.request(
+      `/admin/empresas/${empresa.empresa_id}/miembros`,
+      json(
+        'POST',
+        { email: correoB, full_name: 'Gabi Despues', rut: rutB, rol: 'despachador' },
+        adminUid,
+      ),
+    );
+    const invitacionB = (await invitarB.json()) as { membership_id: string; user_id: string };
+    expect(invitarB.status, JSON.stringify(invitacionB)).toBe(201);
+    const reemitirB = await a.request(
+      `/admin/empresas/${empresa.empresa_id}/miembros/${invitacionB.membership_id}/codigo`,
+      json('POST', undefined, adminUid),
+    );
+    const deLaEmpresaB = (await reemitirB.json()) as { codigo_activacion: string };
+    expect(reemitirB.status, JSON.stringify(deLaEmpresaB)).toBe(200);
+    // SC9: la re-emisión del panel de empresas deja su vencimiento.
+    expect((await filaPorId(invitacionB.user_id)).activacionVenceEn).toBeInstanceOf(Date);
+
+    const altaB = await a.request(
+      '/admin/personal-booster',
+      json('POST', { email: correoB, full_name: 'Gabi Despues', rut: rutB }, adminUid),
+    );
+    const altaBBody = (await altaB.json()) as { vinculo: string; codigo_activacion: string | null };
+    expect(altaB.status, JSON.stringify(altaBBody)).toBe(200);
+    expect(altaBBody.vinculo).toBe('provisoria_sin_codigo');
+    expect(altaBBody.codigo_activacion).toMatch(/^\d{6}$/);
+
+    const conElDeLaEmpresa = await a.request(
+      '/auth/activar',
+      json('POST', { rut: rutB, codigo: deLaEmpresaB.codigo_activacion, clave_numerica: clave }),
+    );
+    expect(conElDeLaEmpresa.status).toBe(401);
+    const conElDelPanel = await a.request(
+      '/auth/activar',
+      json('POST', { rut: rutB, codigo: altaBBody.codigo_activacion, clave_numerica: clave }),
+    );
+    expect(conElDelPanel.status, JSON.stringify(await conElDelPanel.clone().json())).toBe(200);
   });
 
   /** Transportista de prueba y su sesión de dueño para `/conductores`. */
