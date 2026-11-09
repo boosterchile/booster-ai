@@ -3196,11 +3196,11 @@ export const certificadosViaje = pgTable(
 
 /**
  * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
- * migración 0076). Cuando el panel del personal da de alta una cuenta que ya
- * tiene clave y vínculos con una empresa, el acceso lo confirma la persona
- * desde su sesión con un código de 6 dígitos que el admin le entrega en
- * persona. El código se guarda solo como hash, vence a las 24 horas y deja de
- * servir al quinto intento fallido. Una sola confirmación pendiente
+ * migración `NNNN_confirmaciones_acceso_booster`). Cuando el panel del
+ * personal da de alta una cuenta que ya tiene clave y vínculos con una
+ * empresa, el acceso lo confirma la persona desde su sesión con un código de
+ * 6 dígitos que el admin le entrega en persona. El código se guarda solo como
+ * hash, vence a las 24 horas y deja de servir al quinto intento fallido. Una sola confirmación pendiente
  * (`consumido_en` NULL) por persona: emitir una nueva borra la anterior.
  */
 export const confirmacionesAccesoBooster = pgTable(
