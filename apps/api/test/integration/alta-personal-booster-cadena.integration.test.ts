@@ -815,8 +815,9 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(altaBody.vinculo).toBe('nueva');
     const personaId = altaBody.user_id;
 
-    // 2. Una transportista registra a la misma persona como conductor y corrige
-    //    su teléfono: eso deja en la cuenta un código que no emitió el panel.
+    // 2. Una transportista registra a la misma persona como conductor, corrige
+    //    su teléfono y reenvía la invitación (#826: guardar el teléfono solo no
+    //    la reenvía): eso deja en la cuenta un código que no emitió el panel.
     const flota = await transportista(sufijo);
     const conductor = await flota.request(
       '/conductores',
@@ -840,7 +841,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
 
     const telefono = await flota.request(
       `/conductores/${conductorBody.conductor.id}/telefono`,
-      json('POST', { phone: '+56987654322' }),
+      json('POST', { phone: '+56987654322', reenviar_invitacion: true }),
     );
     const telefonoBody = (await telefono.json()) as { activation_pin?: string };
     expect(telefono.status, JSON.stringify(telefonoBody)).toBe(200);
