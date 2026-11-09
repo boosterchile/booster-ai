@@ -13,13 +13,16 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 interface Servicio {
   id: string;
-  status: 'asignado' | 'recogido';
+  /** `cancelado` solo llega si lo canceló el generador hace poco (ver API). */
+  status: 'asignado' | 'recogido' | 'cancelado';
   accepted_at: string | null;
   picked_up_at: string | null;
   agreed_price_clp: number | null;
   /** `null` = nadie va a manejar esta carga todavía. Es el dato central acá. */
   driver: { user_id: string; full_name: string | null } | null;
   vehicle: { id: string; plate: string | null } | null;
+  /** editar-anular-cargas §6.11: quién canceló, por qué y cuándo (null si no aplica). */
+  cancelacion?: { por_actor: string; razon: string | null; en: string | null } | null;
   trip: {
     id: string;
     tracking_code: string;
@@ -82,7 +85,8 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
   const servicios = [...(serviciosQ.data ?? [])].sort(
     (a, b) => Number(Boolean(b.trip.cambio_pendiente)) - Number(Boolean(a.trip.cambio_pendiente)),
   );
-  const sinConductor = servicios.filter((s) => !s.driver).length;
+  // Un servicio cancelado ya no se despacha: no cuenta como «sin conductor».
+  const sinConductor = servicios.filter((s) => !s.driver && !esCancelado(s)).length;
 
   return (
     <Layout me={me} title="Servicios">
@@ -164,12 +168,23 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
   );
 }
 
+function esCancelado(s: Servicio): boolean {
+  return s.status === 'cancelado';
+}
+
+const fechaCancelacion = new Intl.DateTimeFormat('es-CL', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'America/Santiago',
+});
+
 function ServicioCard({
   servicio: s,
   puedeAsignar,
 }: { servicio: Servicio; puedeAsignar: boolean }) {
   const precio =
     s.agreed_price_clp != null ? `$${s.agreed_price_clp.toLocaleString('es-CL')}` : null;
+  const cancelado = esCancelado(s);
 
   return (
     <li className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
@@ -192,9 +207,18 @@ function ServicioCard({
               {s.vehicle.plate}
             </span>
           )}
-          <span className="rounded-md bg-neutral-100 px-2 py-0.5 font-medium text-neutral-700 text-xs">
-            {s.status === 'recogido' ? 'En ruta' : 'Por recoger'}
-          </span>
+          {cancelado ? (
+            <span
+              data-testid="badge-cancelado-generador"
+              className="rounded-md bg-danger-50 px-2 py-0.5 font-semibold text-danger-700 text-xs"
+            >
+              Cancelado por el generador
+            </span>
+          ) : (
+            <span className="rounded-md bg-neutral-100 px-2 py-0.5 font-medium text-neutral-700 text-xs">
+              {s.status === 'recogido' ? 'En ruta' : 'Por recoger'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -212,7 +236,26 @@ function ServicioCard({
       {precio && <p className="mt-2 text-neutral-600 text-sm">Acordado: {precio}</p>}
 
       <div className="mt-4 border-neutral-100 border-t pt-3">
-        {s.driver ? (
+        {cancelado ? (
+          // Sin acciones operativas: el servicio ya no se despacha. El detalle
+          // sigue disponible para leer qué pasó.
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-danger-700 text-sm">
+              {s.cancelacion?.en
+                ? `Cancelado el ${fechaCancelacion.format(new Date(s.cancelacion.en))}`
+                : 'Cancelado'}
+              {s.cancelacion?.razon ? `: ${s.cancelacion.razon}` : ''}
+            </p>
+            <Link
+              to="/app/asignaciones/$id"
+              params={{ id: s.id }}
+              className="inline-flex items-center gap-1 font-medium text-primary-700 text-sm hover:underline"
+            >
+              Ver servicio
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          </div>
+        ) : s.driver ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="inline-flex items-center gap-2 text-neutral-700 text-sm">
               <UserRound className="h-4 w-4 text-neutral-500" aria-hidden />

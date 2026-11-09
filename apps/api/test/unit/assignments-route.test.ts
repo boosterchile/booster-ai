@@ -1066,6 +1066,70 @@ describe('GET /assignments', () => {
     expect((await res.json()) as { assignments: unknown[] }).toEqual({ assignments: [] });
   });
 
+  // editar-anular-cargas §9 + §6.11: la oficina se entera de la cancelación del generador.
+  it('una cancelada por el generador trae `cancelacion`; una activa trae null', async () => {
+    const app = await buildApp({
+      db: makeDb({
+        selects: [
+          [
+            {
+              ...LISTA_ROW,
+              assignmentStatus: 'cancelado',
+              tripStatus: 'cancelado',
+              cancelledByActor: 'generador_carga',
+              cancellationReason: 'Se cayó la venta',
+              cancelledAt: new Date('2026-11-09T12:00:00Z'),
+            },
+            { ...LISTA_ROW, assignmentId: 'otro' },
+          ],
+        ],
+      }),
+    });
+    const res = await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    const body = (await res.json()) as {
+      assignments: Array<{ status: string; cancelacion: unknown; trip: { cancelacion: unknown } }>;
+    };
+    const esperada = {
+      por_actor: 'generador_carga',
+      razon: 'Se cayó la venta',
+      en: '2026-11-09T12:00:00.000Z',
+    };
+    expect(body.assignments[0]?.status).toBe('cancelado');
+    expect(body.assignments[0]?.cancelacion).toEqual(esperada);
+    expect(body.assignments[0]?.trip.cancelacion).toEqual(esperada);
+    expect(body.assignments[1]?.cancelacion).toBeNull();
+    expect(body.assignments[1]?.trip.cancelacion).toBeNull();
+  });
+
+  it('el filtro incluye las canceladas por el generador de las últimas 72 horas', async () => {
+    const { PgDialect } = await import('drizzle-orm/pg-core');
+    const db = makeDb({ selects: [[]] });
+    const wheres: unknown[] = [];
+    const select = db.select;
+    db.select = vi.fn(() => {
+      const chain = select() as Record<string, unknown> & { where: (w: unknown) => unknown };
+      const where = chain.where;
+      chain.where = vi.fn((w: unknown) => {
+        wheres.push(w);
+        return where(w);
+      });
+      return chain;
+    }) as typeof db.select;
+    const antes = Date.now();
+    const app = await buildApp({ db });
+    await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    expect(wheres).toHaveLength(1);
+    const q = new PgDialect().sqlToQuery(wheres[0] as never);
+    expect(q.sql).toContain('"cancelado_por_actor"');
+    expect(q.sql).toContain('"cancelado_en"');
+    expect(q.params).toEqual(expect.arrayContaining([CARRIER_EMP, 'cancelado', 'generador_carga']));
+    const desde = q.params.find((p) => typeof p === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(p));
+    expect(desde).toBeDefined();
+    const ms = antes - new Date(desde as string).getTime();
+    expect(ms).toBeGreaterThanOrEqual(72 * 3600_000 - 5_000);
+    expect(ms).toBeLessThanOrEqual(72 * 3600_000 + 5_000);
+  });
+
   it('una fecha inválida no rompe la respuesta entera', async () => {
     // Mismo blindaje que `/me/assignments`: un Date con time NaN hace que
     // `toISOString()` tire RangeError y se lleve puesto el 200 completo.
