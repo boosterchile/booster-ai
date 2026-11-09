@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import * as schema from '../../src/db/schema.js';
 import { createAuthActivarRoutes } from '../../src/routes/auth-activar.js';
@@ -13,6 +14,9 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 /** Alta de miembro con un RUT ya registrado en Booster. */
 
 const noop = (): void => undefined;
+const sinRateLimit: MiddlewareHandler = async (_c, next) => {
+  await next();
+};
 const logger = {
   trace: noop,
   debug: noop,
@@ -121,7 +125,17 @@ describe('integration: alta de miembro con RUT existente', () => {
       await next();
     });
     a.route('/me/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: h.db, logger }));
-    a.route('/auth', createAuthActivarRoutes({ db: h.db, logger, firebaseAuth: firebase }));
+    a.route(
+      '/auth',
+      createAuthActivarRoutes({
+        db: h.db,
+        logger,
+        firebaseAuth: firebase,
+        // Nadie del personal de Booster en estos casos.
+        platformAdminEmails: [],
+        rateLimitPerRut: sinRateLimit,
+      }),
+    );
     return a;
   }
 

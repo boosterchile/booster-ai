@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { enviarCorreoActivacionCuenta } from './cuenta-activacion-email.js';
+import {
+  enviarCorreoActivacionCuenta,
+  enviarCorreoActivacionPersonalBooster,
+} from './cuenta-activacion-email.js';
 import type { EmailSender } from './email-sender.js';
 
 /**
@@ -141,5 +144,107 @@ describe('enviarCorreoActivacionCuenta', () => {
       logger.error.mock.calls,
     ]);
     expect(todo).not.toContain('731904');
+  });
+});
+
+/**
+ * `.specs/alta-personal-booster` SC9 — el correo del personal de Booster lleva
+ * la URL de `/activar`, el RUT y el código, y nunca deja el código en un log.
+ */
+describe('enviarCorreoActivacionPersonalBooster', () => {
+  const PERSONAL = {
+    userId: '7a4e2c1b-3d5f-4a6b-8c9d-0e1f2a3b4c5d',
+    email: 'ana.soto@boosterchile.com',
+    nombre: 'Ana Soto',
+    rut: '12345678-5',
+    codigo: '482017',
+    webAppUrl: 'https://app.boosterchile.com/',
+  };
+
+  it('va al correo de la persona con el enlace a /activar, el RUT y el código', async () => {
+    const { sender, send } = makeSender();
+    await enviarCorreoActivacionPersonalBooster({
+      sender,
+      logger: makeLogger() as never,
+      ...PERSONAL,
+    });
+    const msg = primerMensaje(send);
+    expect(msg.to).toBe('ana.soto@boosterchile.com');
+    expect(msg.subject).toBe('Activa tu acceso al panel de Booster');
+    expect(msg.text).toContain('Booster te dio acceso a su panel de administración');
+    expect(msg.text).toContain('https://app.boosterchile.com/activar');
+    expect(msg.html).toContain('href="https://app.boosterchile.com/activar"');
+    for (const parte of ['12345678-5', '482017', '7 días', 'tipo «Booster»']) {
+      expect(msg.text).toContain(parte);
+    }
+    expect(msg.text).toContain('https://app.boosterchile.com/login');
+  });
+
+  it('dice que el código sirve una vez y que la clave es propia', async () => {
+    const { sender, send } = makeSender();
+    await enviarCorreoActivacionPersonalBooster({
+      sender,
+      logger: makeLogger() as never,
+      ...PERSONAL,
+    });
+    const { text } = primerMensaje(send);
+    expect(text).toContain('sirve una sola vez');
+    expect(text).toContain('solo sabes tú');
+  });
+
+  it('escapa el HTML del nombre', async () => {
+    const { sender, send } = makeSender();
+    await enviarCorreoActivacionPersonalBooster({
+      sender,
+      logger: makeLogger() as never,
+      ...PERSONAL,
+      nombre: '<b>Ana</b>',
+    });
+    const { html } = primerMensaje(send);
+    expect(html).not.toContain('<b>Ana</b>');
+    expect(html).toContain('&lt;b&gt;Ana&lt;/b&gt;');
+  });
+
+  it('si el envío no sale avisa por warn; si el sender lanza registra error; nunca propaga', async () => {
+    const logger = makeLogger();
+    const { sender } = makeSender({ enviado: false, motivo: 'sin_proveedor' });
+    await expect(
+      enviarCorreoActivacionPersonalBooster({ sender, logger: logger as never, ...PERSONAL }),
+    ).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: PERSONAL.userId, motivo: 'sin_proveedor' }),
+      expect.any(String),
+    );
+
+    const falla = vi.fn<EmailSender['send']>().mockRejectedValue(new Error('482017'));
+    await expect(
+      enviarCorreoActivacionPersonalBooster({
+        sender: { send: falla },
+        logger: logger as never,
+        ...PERSONAL,
+      }),
+    ).resolves.toBeUndefined();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'Error' }),
+      expect.any(String),
+    );
+
+    const rechazoRaro = vi.fn<EmailSender['send']>().mockRejectedValue('timeout');
+    await enviarCorreoActivacionPersonalBooster({
+      sender: { send: rechazoRaro },
+      logger: logger as never,
+      ...PERSONAL,
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'desconocido' }),
+      expect.any(String),
+    );
+
+    const todo = JSON.stringify([
+      logger.info.mock.calls,
+      logger.warn.mock.calls,
+      logger.error.mock.calls,
+    ]);
+    expect(todo).not.toContain('482017');
   });
 });
