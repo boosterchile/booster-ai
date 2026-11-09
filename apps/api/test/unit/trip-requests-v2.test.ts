@@ -873,7 +873,9 @@ describe('GET /trip-requests-v2', () => {
       .map((pred) => sqlDe(pred))
       .find((sql) => sql.params.includes('emp-1'));
     expect(filtro?.texto).toContain('generador_carga_empresa_id');
-    expect(filtro?.params).toEqual(['emp-1']);
+    // Excluye las anuladas: cancelado sin asignación (editar-anular-cargas §8.7).
+    expect(filtro?.texto).toContain('not (estado =  and id is null)');
+    expect(filtro?.params).toEqual(['emp-1', 'cancelado']);
   });
 });
 

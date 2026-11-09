@@ -17,7 +17,7 @@ import {
   esEditablePreMatch,
   esEstadoViaje,
 } from '@booster-ai/trip-state-machine';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, not, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -558,7 +558,14 @@ export function createTripRequestsV2Routes(opts: {
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
       .leftJoin(assignments, eq(assignments.tripId, trips.id))
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
-      .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
+      .where(
+        and(
+          eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id),
+          // Las anuladas (cancelado sin asignación) salen del listado, también
+          // las históricas (editar-anular-cargas §8.7, §12-P10).
+          not(and(eq(trips.status, 'cancelado'), isNull(assignments.id)) ?? sql`false`),
+        ),
+      )
       .orderBy(desc(trips.createdAt));
 
     return c.json({
@@ -635,6 +642,7 @@ export function createTripRequestsV2Routes(opts: {
         delivered_at: assignments.deliveredAt,
         cancelled_at: assignments.cancelledAt,
         cancelled_by_actor: assignments.cancelledByActor,
+        cancellation_reason: assignments.cancellationReason,
         empresa_id: assignments.empresaId,
         empresa_legal_name: empresasTable.legalName,
         vehicle_id: assignments.vehicleId,
@@ -642,6 +650,8 @@ export function createTripRequestsV2Routes(opts: {
         vehicle_type: vehicles.vehicleType,
         driver_user_id: assignments.driverUserId,
         driver_name: usersTable.fullName,
+        driver_phone: usersTable.phone,
+        driver_whatsapp: usersTable.whatsappE164,
         // El token se acuña en el accept, sin mirar al destinatario. Si no
         // sale en este detalle, el generador no tiene enlace público cuando
         // el WhatsApp no tiene a quién escribir.
@@ -700,12 +710,59 @@ export function createTripRequestsV2Routes(opts: {
       etaMinutes = live.etaMinutes;
     }
 
+    // Anulada ≡ cancelado sin asignación (§8.8). Quién y cuándo salen del
+    // último evento `cancelado`; las históricas pueden no tenerlo.
+    let anulacion: { en: string; por_nombre: string | null; razon: string | null } | null = null;
+    if (trip.status === 'cancelado' && !assignmentRow) {
+      const [evento] = await opts.db
+        .select({
+          recordedAt: tripEvents.recordedAt,
+          payload: tripEvents.payload,
+          porNombre: usersTable.fullName,
+        })
+        .from(tripEvents)
+        .leftJoin(usersTable, eq(usersTable.id, tripEvents.recordedByUserId))
+        .where(and(eq(tripEvents.tripId, id), eq(tripEvents.eventType, 'cancelado')))
+        .orderBy(desc(tripEvents.recordedAt))
+        .limit(1);
+      const razon = evento ? motivoDelPayload(evento.payload) : null;
+      anulacion = {
+        en: (evento?.recordedAt ?? trip.updatedAt).toISOString(),
+        por_nombre: evento?.porNombre ?? null,
+        razon,
+      };
+    }
+    const cancelacion =
+      assignmentRow?.status === 'cancelado' && assignmentRow.cancelled_at
+        ? {
+            en: assignmentRow.cancelled_at.toISOString(),
+            razon: assignmentRow.cancellation_reason ?? null,
+          }
+        : null;
+
+    let assignmentOut: Record<string, unknown> | null = null;
+    if (assignmentRow) {
+      const { driver_phone, driver_whatsapp, ...resto } = assignmentRow;
+      // El teléfono del conductor solo mientras el viaje está activo (§12-P11).
+      const telefono = driver_phone ?? driver_whatsapp ?? null;
+      const viajeActivo = trip.status === 'asignado' || trip.status === 'en_proceso';
+      assignmentOut = {
+        ...resto,
+        ...(viajeActivo && telefono ? { conductor_telefono_e164: telefono } : {}),
+      };
+    }
+
     return c.json({
-      trip_request: { ...serializeTripDetail(trip, auth.userContext), comercial },
+      trip_request: {
+        ...serializeTripDetail(trip, auth.userContext),
+        comercial,
+        anulacion,
+        cancelacion,
+      },
       events,
       assignment: assignmentRow
         ? {
-            ...assignmentRow,
+            ...assignmentOut,
             // Siempre presente (uuid o null). Un destinatario vacío no lo omite.
             public_tracking_token: assignmentRow.public_tracking_token ?? null,
             ubicacion_actual: ubicacionActual,
@@ -1123,6 +1180,15 @@ export function createTripRequestsV2Routes(opts: {
   });
 
   return app;
+}
+
+/** El motivo guardado en el payload de un evento `cancelado`, si lo hay. */
+function motivoDelPayload(payload: unknown): string | null {
+  if (payload && typeof payload === 'object' && 'reason' in payload) {
+    const r = payload.reason;
+    return typeof r === 'string' && r.length > 0 ? r : null;
+  }
+  return null;
 }
 
 function serializeTripDetail(row: typeof trips.$inferSelect, userContext: unknown) {
