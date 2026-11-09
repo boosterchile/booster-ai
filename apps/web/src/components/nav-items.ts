@@ -42,9 +42,8 @@ const INICIO: NavItem = { label: 'Inicio', to: '/app', icon: Home };
  * en las secciones condicionales de `app.tsx`. Una empresa puede ser
  * transportista Y generador: se muestran ambas secciones.
  *
- * El conductor y el panel de platform-admin NO usan este shell (tienen shell
- * propio), así que no se modelan acá. La persona de Booster que entra a la web
- * de su empresa sí lo usa, con las secciones de su membresía.
+ * El conductor y el platform-admin NO usan este shell (tienen shell propio), así
+ * que no se modelan acá.
  */
 export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   const empresa = me.active_membership?.empresa;
@@ -69,6 +68,12 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   if (empresa && isAdmin) {
     inicioItems.push({ label: 'Empresa', to: '/app/empresa', icon: Leaf });
   }
+  // equipo-de-la-empresa / equipo-generador: la gente es de la empresa, no
+  // del rol de la empresa. La ve todo operador; el backend decide quién da
+  // de alta (dueño y admin).
+  if (empresa) {
+    inicioItems.push({ label: 'Equipo', to: '/app/equipo', icon: UserCog });
+  }
   const sections: NavSection[] = [{ items: inicioItems }];
 
   if (empresa?.is_transportista) {
@@ -83,10 +88,6 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Servicios', to: '/app/servicios', icon: ClipboardList },
       { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
       { label: 'Conductores', to: '/app/conductores', icon: Users },
-      // equipo-de-la-empresa: la gestión del equipo la hace el cliente, no
-      // Booster. El backend enforca por rol (dueño/admin escriben, el resto
-      // solo mira), así que el ítem es visible para todos los operadores.
-      { label: 'Equipo', to: '/app/equipo', icon: UserCog },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
     ];
     // CHEQUEOS_REEMPLAZADOS nav-gestion / inicio-plata: la plata es dueño y admin.
@@ -121,11 +122,6 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Sucursales', to: '/app/sucursales', icon: Building2 },
       { label: 'Certificados', to: '/app/certificados', icon: Leaf },
     );
-    // La generadora también gestiona su equipo. Si además es transportista,
-    // «Equipo» ya está en Transporte y no se repite.
-    if (!empresa.is_transportista) {
-      generador.push({ label: 'Equipo', to: '/app/equipo', icon: UserCog });
-    }
     sections.push({
       heading: 'Generador',
       items: generador,

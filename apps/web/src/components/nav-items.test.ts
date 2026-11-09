@@ -54,16 +54,16 @@ function labels(sections: ReturnType<typeof navSectionsForMe>): string[] {
 }
 
 describe('navSectionsForMe', () => {
-  it('generador → Inicio + Empresa + Crear carga/Mis cargas/Sucursales/Certificados/Equipo', () => {
+  it('generador → Inicio + Empresa + Crear carga/Mis cargas/Sucursales/Certificados', () => {
     const l = labels(navSectionsForMe(buildMe({ generador: true })));
     expect(l).toEqual([
       'Inicio',
       'Empresa',
+      'Equipo',
       'Crear carga',
       'Mis cargas',
       'Sucursales',
       'Certificados',
-      'Equipo',
     ]);
   });
 
@@ -139,43 +139,28 @@ describe('navSectionsForMe', () => {
     expect(sections.some((s) => s.heading === 'Generador')).toBe(true);
   });
 
+  // equipo-generador SC1: la gente de la empresa no depende del rol de la empresa.
+  it.each([
+    ['generador puro', { generador: true }],
+    ['transportista', { transportista: true }],
+    ['empresa dual', { transportista: true, generador: true }],
+  ] as const)('%s ve «Equipo» una vez, en la sección general', (_caso, flags) => {
+    for (const role of ['dueno', 'admin', 'despachador', 'visualizador'] as const) {
+      const sections = navSectionsForMe(buildMe({ ...flags, role }));
+      const l = labels(sections);
+      expect(
+        l.filter((x) => x === 'Equipo'),
+        role,
+      ).toHaveLength(1);
+      expect(
+        sections[0]?.items.map((i) => i.label),
+        role,
+      ).toContain('Equipo');
+    }
+  });
+
   it('stakeholder → solo Inicio + Zonas', () => {
     const l = labels(navSectionsForMe(buildMe({ stakeholder: true })));
     expect(l).toEqual(['Inicio', 'Zonas']);
-  });
-});
-
-/**
- * acceso-usuarios-empresa-panel SC8 — el backend deja a dueño y admin de
- * cualquier empresa dar de alta a su gente; la generadora también necesita
- * llegar a «Equipo».
- */
-describe('navSectionsForMe — Equipo (SC8)', () => {
-  function seccionDe(sections: ReturnType<typeof navSectionsForMe>, label: string) {
-    return sections.filter((s) => s.items.some((i) => i.label === label)).map((s) => s.heading);
-  }
-
-  it.each(['dueno', 'admin', 'despachador', 'visualizador'] as const)(
-    'generadora pura, rol %s → «Equipo» en la sección Generador',
-    (role) => {
-      const sections = navSectionsForMe(buildMe({ generador: true, role }));
-      expect(seccionDe(sections, 'Equipo')).toEqual(['Generador']);
-      const item = sections.flatMap((s) => s.items).find((i) => i.label === 'Equipo');
-      expect(item?.to).toBe('/app/equipo');
-    },
-  );
-
-  it('transportista → «Equipo» una sola vez, en Transporte', () => {
-    const l = labels(navSectionsForMe(buildMe({ transportista: true })));
-    expect(l.filter((x) => x === 'Equipo')).toHaveLength(1);
-    expect(seccionDe(navSectionsForMe(buildMe({ transportista: true })), 'Equipo')).toEqual([
-      'Transporte',
-    ]);
-  });
-
-  it('mixta → «Equipo» una sola vez, en Transporte', () => {
-    const sections = navSectionsForMe(buildMe({ transportista: true, generador: true }));
-    expect(labels(sections).filter((x) => x === 'Equipo')).toHaveLength(1);
-    expect(seccionDe(sections, 'Equipo')).toEqual(['Transporte']);
   });
 });

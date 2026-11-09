@@ -3,7 +3,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { esperarPendientesLimpios } from '../components/NombreMiembro.test-helper.js';
-import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 
 /**
@@ -14,53 +13,55 @@ import { ApiError, api } from '../lib/api-client.js';
  * elige después su propia clave, así que el código no es una contraseña.
  */
 
-type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
+// equipo-generador: cada test elige el tipo de empresa.
+const empresaFlags = { is_generador_carga: false, is_transportista: true };
 
-const ME: MeOnboarded = {
-  needs_onboarding: false,
-  user: {
-    id: 'u1',
-    email: 'duena@empresa.cl',
-    full_name: 'Dueña Generadora',
-    phone: null,
-    whatsapp_e164: null,
-    rut: '11111111-1',
-    is_platform_admin: false,
-    status: 'activo',
-  },
-  memberships: [],
-  active_membership: {
-    id: 'm1',
-    role: 'dueno',
-    status: 'activa',
-    joined_at: null,
-    empresa: {
-      id: 'e1',
-      legal_name: 'Retail Norte SpA',
-      rut: '76274900-9',
-      is_generador_carga: true,
-      is_transportista: false,
-      status: 'activa',
-    },
-  },
-};
-
-let providedContext: { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' } = {
-  kind: 'onboarded',
-  me: ME,
-};
-vi.mock('../components/ProtectedRoute.js', () => ({
-  ProtectedRoute: ({ children }: { children: (ctx: unknown) => ReactNode }) => (
-    <>{children(providedContext)}</>
+vi.mock('../components/Layout.js', () => ({
+  Layout: ({ children, title }: { children: ReactNode; title?: string }) => (
+    <main data-testid="layout" data-title={title}>
+      {children}
+    </main>
   ),
 }));
 
-// acceso-usuarios-empresa-panel SC8: `/app/equipo` se muestra con el menú de la app.
-vi.mock('../components/Layout.js', () => ({
-  Layout: ({ children, title, me }: { children: ReactNode; title: string; me: MeOnboarded }) => (
-    <main data-testid="layout" data-title={title} data-empresa={me.active_membership?.empresa?.id}>
-      {children}
-    </main>
+vi.mock('../components/ProtectedRoute.js', () => ({
+  ProtectedRoute: ({
+    children,
+  }: {
+    children: (ctx: { kind: 'onboarded'; me: unknown }) => ReactNode;
+  }) => (
+    <>
+      {children({
+        kind: 'onboarded',
+        me: {
+          needs_onboarding: false,
+          user: {
+            id: 'u',
+            email: 'dueno@example.com',
+            full_name: 'Dueño Ejemplo',
+            phone: null,
+            whatsapp_e164: null,
+            rut: '11.111.111-1',
+            is_platform_admin: false,
+            status: 'activo',
+          },
+          memberships: [],
+          active_membership: {
+            id: 'm-dueno',
+            role: 'dueno',
+            status: 'activa',
+            joined_at: null,
+            empresa: {
+              id: 'e',
+              legal_name: 'Transporte Ejemplo',
+              rut: '11.111.111-1',
+              ...empresaFlags,
+              status: 'activa',
+            },
+          },
+        },
+      })}
+    </>
   ),
 }));
 
@@ -113,29 +114,41 @@ function stubClipboard() {
 beforeEach(() => {
   vi.clearAllMocks();
   stubClipboard();
-  providedContext = { kind: 'onboarded', me: ME };
+  empresaFlags.is_generador_carga = false;
+  empresaFlags.is_transportista = true;
 });
 
-describe('Equipo — dentro del menú de la app (SC8)', () => {
-  it('se muestra dentro del Layout, con el título Equipo', async () => {
+describe('Equipo — shell y tipo de empresa (equipo-generador)', () => {
+  it('se muestra dentro del Layout con el título Equipo', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
-
     render(<EquipoRoute />, { wrapper: makeWrapper() });
-
-    const layout = screen.getByTestId('layout');
+    const layout = await screen.findByTestId('layout');
     expect(layout).toHaveAttribute('data-title', 'Equipo');
-    expect(layout).toHaveAttribute('data-empresa', 'e1');
-    expect(await screen.findByText('Gabriel Barros')).toBeInTheDocument();
+    expect(layout).toHaveTextContent('Gabriel Barros');
   });
 
-  it('sin contexto de empresa no renderiza la página', () => {
-    providedContext = { kind: 'unmanaged' };
-    const get = vi.spyOn(api, 'get');
-
+  it('generador puro: sin aviso de conductores ni permiso de ofertas', async () => {
+    empresaFlags.is_generador_carga = true;
+    empresaFlags.is_transportista = false;
+    vi.spyOn(api, 'get').mockResolvedValue({
+      miembros: [{ ...MIEMBROS[1], full_name: 'Paula Rojas', estado: 'activa' }],
+    });
     render(<EquipoRoute />, { wrapper: makeWrapper() });
+    expect(await screen.findByText('Paula Rojas')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar persona/ }));
+    expect(screen.queryByText(/Los conductores se agregan/)).not.toBeInTheDocument();
+  });
 
-    expect(screen.queryByTestId('layout')).not.toBeInTheDocument();
-    expect(get).not.toHaveBeenCalled();
+  it('transportista: el despachador conserva la casilla y el formulario el aviso', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      miembros: [{ ...MIEMBROS[1], full_name: 'Paula Rojas', estado: 'activa' }],
+    });
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+    expect(await screen.findByText('Paula Rojas')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar persona/ }));
+    expect(screen.getByText(/Los conductores se agregan/)).toBeInTheDocument();
   });
 });
 
@@ -171,89 +184,6 @@ describe('Equipo — listado', () => {
     render(<EquipoRoute />, { wrapper: makeWrapper() });
 
     expect(await screen.findByText(/todavía no|aún no/i)).toBeInTheDocument();
-  });
-});
-
-/**
- * capacidades-por-rol regla 7: dueño y admin editan en Equipo si un despachador
- * acepta ofertas. Las ofertas son de la transportista; en una generadora pura
- * el permiso no aplica y no se muestra.
- */
-describe('Equipo — permiso «Puede aceptar ofertas»', () => {
-  function meDe(
-    role: 'dueno' | 'visualizador',
-    tipo: { transportista: boolean; generador: boolean },
-  ): MeOnboarded {
-    const base = ME.active_membership;
-    if (!base?.empresa) {
-      throw new Error('ME sin empresa activa');
-    }
-    return {
-      ...ME,
-      active_membership: {
-        ...base,
-        role,
-        empresa: {
-          ...base.empresa,
-          is_transportista: tipo.transportista,
-          is_generador_carga: tipo.generador,
-        },
-      },
-    };
-  }
-
-  it('en una generadora pura no se muestra junto al despachador', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
-
-    render(<EquipoRoute />, { wrapper: makeWrapper() });
-
-    expect(await screen.findByText('Despachador')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Puede aceptar ofertas')).not.toBeInTheDocument();
-  });
-
-  it('en una transportista la dueña lo ve y al marcarlo se guarda', async () => {
-    providedContext = {
-      kind: 'onboarded',
-      me: meDe('dueno', { transportista: true, generador: false }),
-    };
-    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
-    const patch = vi.spyOn(api, 'patch').mockResolvedValue({ ok: true });
-
-    render(<EquipoRoute />, { wrapper: makeWrapper() });
-
-    const permiso = await screen.findByLabelText('Puede aceptar ofertas');
-    expect(permiso).not.toBeChecked();
-    fireEvent.click(permiso);
-    await waitFor(() =>
-      expect(patch).toHaveBeenCalledWith('/me/empresa/miembros/m2', {
-        puede_aceptar_ofertas: true,
-      }),
-    );
-  });
-
-  it('en una empresa mixta la dueña lo ve', async () => {
-    providedContext = {
-      kind: 'onboarded',
-      me: meDe('dueno', { transportista: true, generador: true }),
-    };
-    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
-
-    render(<EquipoRoute />, { wrapper: makeWrapper() });
-
-    expect(await screen.findByLabelText('Puede aceptar ofertas')).toBeInTheDocument();
-  });
-
-  it('el visualizador de una transportista no lo ve', async () => {
-    providedContext = {
-      kind: 'onboarded',
-      me: meDe('visualizador', { transportista: true, generador: false }),
-    };
-    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
-
-    render(<EquipoRoute />, { wrapper: makeWrapper() });
-
-    expect(await screen.findByText('Despachador')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Puede aceptar ofertas')).not.toBeInTheDocument();
   });
 });
 

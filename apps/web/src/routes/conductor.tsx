@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
+import { DocumentosViajeConductor } from '../components/conductor/DocumentosViajeConductor.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
 import { WakeWordBanner } from '../components/conductor/WakeWordBanner.js';
 import { SugerenciaRutaCard } from '../components/eco-routing/SugerenciaRutaCard.js';
@@ -945,6 +946,7 @@ export function AssignmentCard({
                 incidenteAbierto={incidenteAbierto}
                 onIncidente={() => setIncidenteAbierto((valor) => !valor)}
                 assignmentId={a.id}
+                tripId={a.trip.id}
               />
             ) : null}
             <NavegacionEnPantalla
@@ -1108,6 +1110,7 @@ function AccionesViaje({
   incidenteAbierto,
   onIncidente,
   assignmentId,
+  tripId,
 }: {
   onRuta: () => void;
   documentosAbiertos: boolean;
@@ -1115,6 +1118,7 @@ function AccionesViaje({
   incidenteAbierto: boolean;
   onIncidente: () => void;
   assignmentId: string;
+  tripId: string;
 }) {
   return (
     <div className="space-y-2">
@@ -1141,11 +1145,7 @@ function AccionesViaje({
           Incidente
         </button>
       </div>
-      {documentosAbiertos ? (
-        <p className="text-neutral-600 text-sm">
-          La guía y la factura las carga tu oficina. Desde esta pantalla no se suben.
-        </p>
-      ) : null}
+      {documentosAbiertos ? <DocumentosViajeConductor tripId={tripId} /> : null}
       {incidenteAbierto ? (
         <IncidentePanel assignmentId={assignmentId} onClose={onIncidente} />
       ) : null}
