@@ -892,6 +892,9 @@ export function createTripRequestsV2Routes(opts: {
       ...(opts.documentClosePolicy ? { documentClosePolicy: opts.documentClosePolicy } : {}),
     });
 
+    if (!result.ok && result.code === 'cambio_pendiente') {
+      getBusinessCounter('recogida_bloqueada_cambio_total').add(1, { via: 'entrega_generador' });
+    }
     if (!result.ok) {
       const statusCode =
         result.code === 'trip_not_found'
@@ -906,6 +909,7 @@ export function createTripRequestsV2Routes(opts: {
           ...(result.code === 'invalid_status' && result.currentStatus
             ? { current_status: result.currentStatus }
             : {}),
+          ...(result.code === 'cambio_pendiente' ? { solicitud_id: result.solicitudId } : {}),
         },
         statusCode,
       );

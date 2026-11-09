@@ -80,6 +80,8 @@ const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_tot
  * idempotente, distinguible para no inflar el conteo de recogidas nuevas).
  */
 const recogidasConfirmadasCounter = getBusinessCounter('recogidas_confirmadas_total');
+/** editar-anular-cargas §6: recogidas o entregas frenadas por un cambio de carga pendiente. */
+const recogidaBloqueadaCambioCounter = getBusinessCounter('recogida_bloqueada_cambio_total');
 
 /** Query de `GET /assignments/:id/traza`: cap de puntos (default 800, máx 2000). */
 const trazaCargaQuerySchema = z.object({
@@ -584,6 +586,10 @@ export function createAssignmentsRoutes(opts: {
                   : result.code === 'invalid_picked_up_at'
                     ? 400
                     : 409;
+            if (result.code === 'cambio_pendiente') {
+              // editar-anular-cargas §6.12: el transportista debe responder antes.
+              recogidaBloqueadaCambioCounter.add(1, { via });
+            }
             return c.json(
               {
                 error: result.code,
@@ -591,6 +597,7 @@ export function createAssignmentsRoutes(opts: {
                 ...(result.code === 'invalid_status' && result.currentStatus
                   ? { current_status: result.currentStatus }
                   : {}),
+                ...(result.code === 'cambio_pendiente' ? { solicitud_id: result.solicitudId } : {}),
               },
               statusCode,
             );
@@ -681,6 +688,9 @@ export function createAssignmentsRoutes(opts: {
       ...(opts.documentClosePolicy ? { documentClosePolicy: opts.documentClosePolicy } : {}),
     });
 
+    if (!result.ok && result.code === 'cambio_pendiente') {
+      recogidaBloqueadaCambioCounter.add(1, { via: 'entrega_carrier' });
+    }
     if (!result.ok) {
       const statusCode =
         result.code === 'trip_not_found'
@@ -695,6 +705,7 @@ export function createAssignmentsRoutes(opts: {
           ...(result.code === 'invalid_status' && result.currentStatus
             ? { current_status: result.currentStatus }
             : {}),
+          ...(result.code === 'cambio_pendiente' ? { solicitud_id: result.solicitudId } : {}),
         },
         statusCode,
       );

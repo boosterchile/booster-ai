@@ -112,11 +112,12 @@ export const cambiosGuardadosSchema = z
       latitude: true,
       longitude: true,
     }),
-    cargo_type: z.string(),
-    weight_kg: z.number(),
+    cargo_type: cargoTypeSchema,
+    // Nulos solo en cargas antiguas (intake por WhatsApp); una propuesta nunca los trae.
+    weight_kg: z.number().nullable(),
     volume_m3: z.number().nullable(),
     description: z.string().nullable(),
-    pickup_window: z.object({ start_at: z.string(), end_at: z.string() }),
+    pickup_window: z.object({ start_at: z.string(), end_at: z.string() }).nullable(),
   })
   .partial()
   .strict();

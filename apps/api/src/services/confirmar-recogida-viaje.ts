@@ -1,8 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
 import { assertTransicion } from '@booster-ai/trip-state-machine';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, tripEvents, trips } from '../db/schema.js';
+import { assignments, tripChangeRequests, tripEvents, trips } from '../db/schema.js';
 
 /**
  * Confirmar recogida — el paso que la máquina de estados modelaba y nadie
@@ -43,7 +43,9 @@ export type ConfirmarRecogidaResult =
       ok: false;
       code: 'assignment_not_found' | 'forbidden' | 'invalid_status' | 'invalid_picked_up_at';
       currentStatus?: string;
-    };
+    }
+  /** editar-anular-cargas §6.12: hay un cambio sin responder; no se recoge. */
+  | { ok: false; code: 'cambio_pendiente'; solicitudId: string };
 
 /**
  * Tolerancia hacia el futuro para un `pickedUpAt` provisto por el cliente:
@@ -69,6 +71,22 @@ export async function confirmarRecogidaViaje(opts: {
   const { db, logger, assignmentId, actor, pickedUpAt: pickedUpAtProvisto } = opts;
 
   return await db.transaction(async (tx) => {
+    // Lock del viaje ANTES de leer: una solicitud de cambio creada en paralelo
+    // toma el mismo lock, así que o la vemos aquí o espera a esta recogida
+    // (editar-anular-cargas §6.12). Mismo orden que cancelar-carga.
+    // rls-allowlist: el viaje se busca por su asignación; la empresa se valida abajo contra la fila.
+    await tx
+      .select({ id: trips.id })
+      .from(trips)
+      .where(
+        eq(
+          trips.id,
+          sql`(select ${assignments.tripId} from ${assignments} where ${assignments.id} = ${assignmentId})`,
+        ),
+      )
+      .for('update')
+      .limit(1);
+
     const rows = await tx
       .select({
         assignmentId: assignments.id,
@@ -120,6 +138,22 @@ export async function confirmarRecogidaViaje(opts: {
         code: 'invalid_status' as const,
         currentStatus: row.assignmentStatus,
       };
+    }
+
+    // rls-allowlist: solicitud del viaje de una asignación ya autorizada arriba (empresaId o conductor).
+    const [pendiente] = await tx
+      .select({ id: tripChangeRequests.id })
+      .from(tripChangeRequests)
+      .where(
+        and(eq(tripChangeRequests.tripId, row.tripId), eq(tripChangeRequests.status, 'pendiente')),
+      )
+      .limit(1);
+    if (pendiente) {
+      logger.info(
+        { assignmentId, tripId: row.tripId, solicitudId: pendiente.id },
+        'confirmar-recogida bloqueada: cambio de carga pendiente',
+      );
+      return { ok: false as const, code: 'cambio_pendiente' as const, solicitudId: pendiente.id };
     }
 
     // La legalidad la decide la tabla del trip-state-machine (ADR-061); este

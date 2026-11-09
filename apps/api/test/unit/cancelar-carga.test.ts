@@ -23,6 +23,7 @@ const logger = {
 const TRIP = 'e3b8c1d2-0000-4000-8000-000000000100';
 const EMPRESA = 'e3b8c1d2-0000-4000-8000-000000000300';
 const USER = 'e3b8c1d2-0000-4000-8000-000000000600';
+const SOL = 'e3b8c1d2-0000-4000-8000-000000000700';
 
 interface Escenario {
   viaje: { status: string; trackingCode: string } | null;
@@ -168,6 +169,25 @@ describe('cancelarCarga — después del match (cancelar)', () => {
         assignment_id: 'asg-1',
         reason: 'El cliente postergó el pedido',
       },
+    });
+  });
+
+  it('invalida la solicitud de cambio pendiente con su evento (§6.6)', async () => {
+    const { db, sets, eventos } = makeDb({
+      viaje: { status: 'asignado', trackingCode: 'BOO-1' },
+      asignacion: ASG,
+      updates: [[{ id: TRIP }], [{ id: 'asg-1' }], [{ id: SOL, assignmentId: 'asg-1' }]],
+    });
+    await cancelar(db, 'motivo');
+    expect(sets[2]).toMatchObject({
+      tabla: 'solicitudes_cambio_viaje',
+      valores: { status: 'invalidada', invalidationReason: 'viaje_cancelado' },
+    });
+    expect(eventos.map((e) => e.eventType)).toEqual(['cambio_respondido', 'cancelado']);
+    expect(eventos[0]?.payload).toEqual({
+      solicitud_id: SOL,
+      resultado: 'invalidado',
+      motivo_invalidacion: 'viaje_cancelado',
     });
   });
 
