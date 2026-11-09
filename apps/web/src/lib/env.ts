@@ -87,7 +87,7 @@ export type Env = z.infer<typeof envSchema>;
 const result = envSchema.safeParse(import.meta.env);
 if (!result.success) {
   // En desarrollo Vite muestra esto en consola, en prod la build falla antes.
-  logger.error({ issues: result.error.flatten() }, '[env] Invalid environment configuration');
+  logger.error({ issues: z.flattenError(result.error) }, '[env] Invalid environment configuration');
   throw new Error('Invalid env — check VITE_* vars in .env or .env.local');
 }
 

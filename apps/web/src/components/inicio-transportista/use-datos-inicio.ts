@@ -9,6 +9,7 @@ import {
   fetchAsignaciones,
   fetchConductores,
   fetchCumplimiento,
+  fetchEstadoCobraHoy,
   fetchFlota,
   fetchOfertasPendientes,
 } from '../../lib/consultas-transportista.js';
@@ -35,15 +36,24 @@ function aCarga<T>(query: { isError: boolean; data: T | undefined }): Carga<T> {
 }
 
 function seleccionarOfertas(data: OfertasCache): OfertaInicio[] {
-  return data.offers.map((oferta) => ({ expires_at: oferta.expires_at }));
+  return data.offers.map((oferta) => ({
+    expires_at: oferta.expires_at,
+    precioClp: oferta.proposed_price_clp ?? null,
+    origen: oferta.trip_request?.origin_address_raw ?? '',
+    destino: oferta.trip_request?.destination_address_raw ?? '',
+  }));
 }
 
 function seleccionarServicios(filas: AsignacionCache[]): AsignacionInicio[] {
   return filas.map((fila) => ({
+    ...(fila.id ? { id: fila.id } : {}),
     status: fila.status,
     sinConductor: fila.driver == null,
     pickupInicio: fila.trip.pickup_window_start,
     direccionOrigen: fila.trip.origin.address_raw,
+    direccionDestino: fila.trip.destination?.address_raw ?? '',
+    patente: fila.vehicle?.plate ?? null,
+    conductor: fila.driver?.full_name ?? null,
   }));
 }
 
@@ -72,6 +82,7 @@ function seleccionarCumplimiento(data: CumplimientoCache): CumplimientoInicio {
 function seleccionarFlota(fleet: FlotaCache[]): VehiculoFlotaInicio[] {
   return fleet.map((vehiculo) => {
     const item: VehiculoFlotaInicio = {
+      ...(vehiculo.id ? { id: vehiculo.id } : {}),
       plate: vehiculo.plate,
       teltonikaImei: vehiculo.teltonika_imei ?? null,
       timestampDevice: vehiculo.position?.timestamp_device ?? null,
@@ -107,13 +118,16 @@ export function useDatosInicio(): {
 } {
   const scope = useEmpresaScope();
 
+  // Sin refetchInterval: el Inicio y los badges del sidebar observan las
+  // mismas claves. Cada observer con intervalo tenía su propio timer
+  // (flota cada 20 s, ofertas y servicios cada 30 s) y una sesión quieta
+  // acumulaba cientos de GET. La pantalla dueña sigue poleando cuando está abierta.
   const ofertasQ = useQuery({
     queryKey: scope.key('offers', 'mine', 'pendiente'),
     queryFn: () => fetchOfertasPendientes(scope.init),
     select: seleccionarOfertas,
     retry: false,
     staleTime: 15_000,
-    refetchInterval: 30_000,
   });
 
   const serviciosQ = useQuery({
@@ -121,7 +135,6 @@ export function useDatosInicio(): {
     queryFn: () => fetchAsignaciones(scope.init),
     select: seleccionarServicios,
     retry: false,
-    refetchInterval: 30_000,
   });
 
   const cumplimientoQ = useQuery({
@@ -136,7 +149,6 @@ export function useDatosInicio(): {
     queryFn: () => fetchFlota(scope.init),
     select: seleccionarFlota,
     retry: false,
-    refetchInterval: 20_000,
   });
 
   const vehiculosQ = useQuery({
@@ -150,6 +162,14 @@ export function useDatosInicio(): {
     queryKey: scope.key('conductores'),
     queryFn: () => fetchConductores(scope.init),
     select: contarConductores,
+    retry: false,
+  });
+
+  // Clave distinta a la del historial: ahí la caché es `{ adelantos }`.
+  // Acá guardamos solo el estado local (apagado / error / disponible).
+  const cobraHoyQ = useQuery({
+    queryKey: scope.key('cobra-hoy', 'inicio'),
+    queryFn: () => fetchEstadoCobraHoy(scope.init),
     retry: false,
   });
 
@@ -185,6 +205,7 @@ export function useDatosInicio(): {
       flota: aCarga(flotaQ),
       vehiculos: aCarga(vehiculosQ),
       conductores: aCarga(conductoresQ),
+      cobraHoy: cobraHoyQ.data ?? 'cargando',
     },
     reintentar,
   };

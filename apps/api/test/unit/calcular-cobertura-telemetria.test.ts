@@ -245,12 +245,12 @@ describe('calcularCoberturaPura — kmCubiertos (T11: la distancia real ya no se
 
 describe('calcularCobertura — wrapper con I/O (T11: fuente ruteada + ventana real)', () => {
   const VEH_MOVIL = {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     teltonikaImei: null,
     teltonikaImeiEspejo: null,
   };
   const VEH_TELTONIKA = {
-    id: '33333333-3333-3333-3333-333333333333',
+    id: '33333333-3333-4333-8333-333333333333',
     teltonikaImei: '860693084796730',
     teltonikaImeiEspejo: null,
   };

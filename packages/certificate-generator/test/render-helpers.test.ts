@@ -13,114 +13,55 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  DISCLAIMER_SECUNDARIO_LINEAS,
+  FRASE_ISO,
+  TITULO_CERT,
   formatRouteDataSource,
   formatearNumeroPrincipal,
-  muestraDisclaimerSecundario,
-  subtituloHeader,
-  tamanoTitulo,
-  tituloHeader,
+  subtituloMetodologia,
+  textoDisclaimer,
 } from '../src/render-helpers.js';
 
-describe('tituloHeader', () => {
-  it('primario_verificable → "CERTIFICADO DE HUELLA DE CARBONO"', () => {
-    expect(tituloHeader('primario_verificable')).toBe('CERTIFICADO DE HUELLA DE CARBONO');
+describe('copy v2 (HC-004, copy de Felipe)', () => {
+  it('título único y frase ISO exacta', () => {
+    expect(TITULO_CERT).toBe('Certificado de huella de carbono');
+    expect(FRASE_ISO).toBe('Estos resultados han sido establecidos de acuerdo con ISO 14083:2023.');
   });
-
-  it('secundario_modeled → "REPORTE ESTIMATIVO DE HUELLA DE CARBONO"', () => {
-    expect(tituloHeader('secundario_modeled')).toBe('REPORTE ESTIMATIVO DE HUELLA DE CARBONO');
+  it('subtítulo con la versión de la emisión, sin v3.0 fijo', () => {
+    expect(subtituloMetodologia('v3.1')).toBe(
+      'GLEC Framework v3.1 · ISO 14083:2023 · Well-to-Wheel (combustión + upstream)',
+    );
   });
-
-  it('secundario_default también es "REPORTE ESTIMATIVO" (greenwashing prevention)', () => {
-    expect(tituloHeader('secundario_default')).toBe('REPORTE ESTIMATIVO DE HUELLA DE CARBONO');
-  });
-});
-
-describe('subtituloHeader', () => {
-  it('primario menciona "datos primarios verificables"', () => {
-    expect(subtituloHeader('primario_verificable')).toMatch(/Datos primarios verificables/);
-  });
-
-  it('secundario_modeled menciona "datos secundarios modelados"', () => {
-    expect(subtituloHeader('secundario_modeled')).toMatch(/Datos secundarios modelados/);
-  });
-
-  it('secundario_default también dice "datos secundarios modelados"', () => {
-    expect(subtituloHeader('secundario_default')).toMatch(/Datos secundarios modelados/);
-  });
-});
-
-describe('tamanoTitulo', () => {
-  it('primario usa tamaño 18 (texto más corto)', () => {
-    expect(tamanoTitulo('primario_verificable')).toBe(18);
-  });
-
-  it('secundario usa tamaño 14 (texto "REPORTE ESTIMATIVO..." es más largo; a 16 pisaba la marca)', () => {
-    expect(tamanoTitulo('secundario_modeled')).toBe(14);
-    expect(tamanoTitulo('secundario_default')).toBe(14);
-  });
-});
-
-describe('muestraDisclaimerSecundario', () => {
-  it('primario_verificable → false (cert auditable, sin disclaimer)', () => {
-    expect(muestraDisclaimerSecundario('primario_verificable')).toBe(false);
-  });
-
-  it('secundario_modeled → true (debe llevar disclaimer)', () => {
-    expect(muestraDisclaimerSecundario('secundario_modeled')).toBe(true);
-  });
-
-  it('secundario_default → true (worst case, definitivamente con disclaimer)', () => {
-    expect(muestraDisclaimerSecundario('secundario_default')).toBe(true);
-  });
-});
-
-describe('DISCLAIMER_SECUNDARIO_LINEAS', () => {
-  // Estas verificaciones aseguran que el copy del disclaimer mantiene
-  // los componentes claves obligatorios. Cualquier cambio que rompa
-  // estos asserts requiere update consciente del test (= update consciente
-  // del copy legal).
-  it('contiene mención explícita de "datos secundarios modelados"', () => {
-    const fullText = DISCLAIMER_SECUNDARIO_LINEAS.join(' ');
-    expect(fullText).toMatch(/datos secundarios modelados/i);
-  });
-
-  it('contiene mención explícita "NO auditable como dato primario"', () => {
-    const fullText = DISCLAIMER_SECUNDARIO_LINEAS.join(' ');
-    expect(fullText).toMatch(/NO auditable como dato primario/);
-  });
-
-  it('contiene path de upgrade vía Teltonika', () => {
-    const fullText = DISCLAIMER_SECUNDARIO_LINEAS.join(' ');
-    expect(fullText).toMatch(/Teltonika/);
-  });
-
-  it('cada línea no excede ~95 chars (no overflowea el PDF rect)', () => {
-    for (const line of DISCLAIMER_SECUNDARIO_LINEAS) {
-      expect(line.length).toBeLessThanOrEqual(110);
-    }
+  it('disclaimer exacto con fuente y versión de la emisión; nunca SEC Chile', () => {
+    const t = textoDisclaimer('GLEC v2.0 (2019), Tabla 32', 'v3.0');
+    expect(t).toBe(
+      'Cálculo basado en datos secundarios modelados (Google Routes API + factores GLEC v2.0 (2019), Tabla 32 + GLEC Framework v3.0). NO auditable como dato primario bajo SBTi, CDP o CSRD assurance. Para certificado verificable con datos primarios (telemetría Teltonika), contactar a Booster.',
+    );
+    expect(t).not.toContain('SEC Chile');
   });
 });
 
 describe('formatearNumeroPrincipal', () => {
-  it('sin uncertaintyFactor → "X.XX kg CO2e"', () => {
-    expect(formatearNumeroPrincipal(318.7)).toBe('318.70 kg CO2e');
+  it('sin uncertaintyFactor → valor es-CL y «kg CO₂e»', () => {
+    expect(formatearNumeroPrincipal(318.7)).toEqual({ valor: '318,70', detalle: 'kg CO\u2082e' });
   });
 
   it('uncertaintyFactor = 0 → omite el ± (sería ±0)', () => {
-    expect(formatearNumeroPrincipal(318.7, 0)).toBe('318.70 kg CO2e');
+    expect(formatearNumeroPrincipal(318.7, 0).detalle).toBe('kg CO\u2082e');
   });
 
-  it('uncertaintyFactor 0.05 sobre 318.7 → "318.70 ± 15.94 kg CO2e"', () => {
-    expect(formatearNumeroPrincipal(318.7, 0.05)).toBe('318.70 ± 15.94 kg CO2e');
+  it('uncertaintyFactor 0.05 sobre 318.7 → «± 15,94 kg»', () => {
+    expect(formatearNumeroPrincipal(318.7, 0.05).detalle).toBe('kg CO\u2082e (± 15,94 kg)');
   });
 
-  it('uncertaintyFactor 0.18 sobre 100 → "100.00 ± 18.00 kg CO2e"', () => {
-    expect(formatearNumeroPrincipal(100, 0.18)).toBe('100.00 ± 18.00 kg CO2e');
+  it('uncertaintyFactor 0.18 sobre 100 → miles es-CL', () => {
+    expect(formatearNumeroPrincipal(1234.5, 0.18)).toEqual({
+      valor: '1.234,50',
+      detalle: 'kg CO\u2082e (± 222,21 kg)',
+    });
   });
 
   it('uncertaintyFactor 1 (cap) → publica el ± completo', () => {
-    expect(formatearNumeroPrincipal(50, 1)).toBe('50.00 ± 50.00 kg CO2e');
+    expect(formatearNumeroPrincipal(50, 1).detalle).toBe('kg CO\u2082e (± 50,00 kg)');
   });
 
   it('uncertaintyFactor < 0 lanza error', () => {
@@ -151,5 +92,20 @@ describe('formatRouteDataSource', () => {
 
   it('valor desconocido se devuelve sin formatear (defensive)', () => {
     expect(formatRouteDataSource('phone_gps')).toBe('phone_gps');
+  });
+});
+
+describe('presentacionNivel (HC-004): badge, sello y disclaimer salen de la misma función', () => {
+  it('99,6 % no se redondea a 100 (piso)', async () => {
+    const { presentacionNivel } = await import('../src/render-helpers.js');
+    expect(
+      presentacionNivel({ certificationLevel: 'primario_verificable', coveragePct: 99.6 }).badge,
+    ).toBe('\u2713 Dato primario medido · 99% telemetría');
+  });
+  it('cobertura ausente → 0 % y nivel ausente → estimado', async () => {
+    const { presentacionNivel } = await import('../src/render-helpers.js');
+    const p = presentacionNivel({});
+    expect(p.estimado).toBe(true);
+    expect(p.badge).toBe('Estimado · datos secundarios modelados · 0% telemetría');
   });
 });

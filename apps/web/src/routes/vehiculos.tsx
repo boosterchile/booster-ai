@@ -19,6 +19,7 @@ import { VehiculosLista } from '../components/vehiculos-lista.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import {
   type NumericFieldRule,
   numericFieldError,
@@ -125,8 +126,8 @@ export function VehiculosListRoute() {
 }
 
 function VehiculosListPage({ me }: { me: MeOnboarded }) {
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
+  // CHEQUEOS_REEMPLAZADOS vehiculos-ui: antes dueno|admin|despachador.
+  const canWrite = flagsDe(me).gestionarFlota;
 
   return (
     <Layout me={me} title="Vehículos">
@@ -171,8 +172,7 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const role = me.active_membership?.role;
-  const canEditEstanque = role === 'dueno' || role === 'admin';
+  const canEditEstanque = flagsDe(me).borrarFlota;
 
   const createM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
@@ -254,17 +254,15 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const configRef = useRef<HTMLDetailsElement>(null);
   const menuRetiroRef = useRef<HTMLDivElement>(null);
 
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
-  const canDelete = role === 'dueno' || role === 'admin';
+  const flags = flagsDe(me);
+  const canWrite = flags.gestionarFlota;
+  const canDelete = flags.borrarFlota;
   // PATCH /:id/dispositivo exige dueno|admin en el backend
   // (requireOwnerOrAdminRole, vehiculos.ts) — misma frontera que canDelete,
   // separado en su propia constante para no acoplar semánticas distintas.
-  const canManageDispositivo = role === 'dueno' || role === 'admin';
+  const canManageDispositivo = flags.borrarFlota;
   const empresa = me.active_membership?.empresa;
-  const puedeVerTrayectos = Boolean(
-    empresa?.is_transportista && (role === 'dueno' || role === 'admin'),
-  );
+  const puedeVerTrayectos = Boolean(empresa?.is_transportista && flags.administrar);
 
   function abrirConfig() {
     setConfigAbierta(true);

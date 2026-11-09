@@ -1,6 +1,6 @@
 # Wave 3 D3 — TLS dual endpoint + cert-manager IAM.
 #
-# Capa Terraform que sostiene `infrastructure/k8s/cert-manager.yaml`:
+# Capa Terraform que sostiene cert-manager (`infrastructure/k8s/cert-manager-values.yaml`):
 #
 #   - IP estática externa para el Network LB del Service
 #     `telemetry-tcp-gateway-tls` (puerto 5061).

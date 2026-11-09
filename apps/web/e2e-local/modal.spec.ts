@@ -66,6 +66,10 @@ test.describe('Modal en Chromium', () => {
     await expect(page.getByTestId('demo-confirm')).toBeVisible();
     await page.mouse.click(8, 8);
     await expect(page.getByTestId('demo-confirm')).toBeVisible();
+    // El click en el backdrop saca el foco a <body> y el FocusScope de RAC lo
+    // devuelve en el frame siguiente (rAF). Esc solo cierra con el foco dentro:
+    // esperar ese estado evita que el keydown caiga en <body>.
+    await expect(page.locator('[data-testid="demo-confirm"]:focus-within')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('demo-confirm')).toBeHidden();
   });

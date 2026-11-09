@@ -1,9 +1,9 @@
 import type { Logger } from '@booster-ai/logger';
 import { empresaOnboardingInputSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import { hashOnboardingToken, verifyOnboardingToken } from '../services/onboarding-token.js';
 import {
   EmailAlreadyInUseError,
