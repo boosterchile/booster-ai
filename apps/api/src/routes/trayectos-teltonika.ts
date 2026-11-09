@@ -1,9 +1,9 @@
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { listarTrayectosTeltonika } from '../services/listar-trayectos-teltonika.js';
@@ -202,6 +202,7 @@ function serializarTrayecto(
     litros_iniciales: t.litrosIniciales,
     litros_finales: t.litrosFinales,
     km_por_litro: t.kmPorLitro,
+    litros_por_100_km: t.litrosPor100Km,
     fuente_combustible: t.fuenteCombustible,
     litros_consumidos: t.litrosConsumidos,
     nivel_pct_inicial: t.nivelPctInicial,

@@ -165,7 +165,7 @@ describe('Ofertas — tarjeta Aceptar por voz', () => {
     expect(screen.getByRole('button', { name: /Aceptar oferta/ })).toBeInTheDocument();
   });
 
-  it('conductor empleado con ficha no ve la tarjeta', () => {
+  it('conductor empleado con ficha no ve la tarjeta ni Aceptar', () => {
     providedContext = {
       kind: 'onboarded',
       me: makeMe({
@@ -177,7 +177,7 @@ describe('Ofertas — tarjeta Aceptar por voz', () => {
     conOfertas([ofertaPendiente('o-test')]);
     renderPage();
     expect(screen.queryByTestId('voice-accept-control')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Aceptar oferta/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Aceptar oferta/ })).not.toBeInTheDocument();
   });
 
   it('admin ve y usa el botón Aceptar, pero no la tarjeta de voz', async () => {

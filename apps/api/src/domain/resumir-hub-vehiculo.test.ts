@@ -19,6 +19,7 @@ function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika
     litrosIniciales: null,
     litrosFinales: null,
     kmPorLitro: null,
+    litrosPor100Km: null,
     fuenteCombustible: null,
     litrosConsumidos: null,
     nivelPctInicial: null,

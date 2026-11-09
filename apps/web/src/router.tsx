@@ -601,6 +601,33 @@ const aparienciaInicioRoute = createRoute({
   ),
 });
 
+const aparienciaInicioGeneradorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-generador',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-generador.js'),
+    'AparienciaInicioGeneradorRoute',
+  ),
+});
+
+const aparienciaInicioConductorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-conductor',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-conductor.js'),
+    'AparienciaInicioConductorRoute',
+  ),
+});
+
+const aparienciaInicioMixtaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-mixta',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-mixta.js'),
+    'AparienciaInicioMixtaRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -667,6 +694,9 @@ const routeTree = rootRoute.addChildren([
   aparienciaConductorRoute,
   aparienciaImpersonacionRoute,
   aparienciaInicioRoute,
+  aparienciaInicioGeneradorRoute,
+  aparienciaInicioMixtaRoute,
+  aparienciaInicioConductorRoute,
 ]);
 
 export const router = createRouter({

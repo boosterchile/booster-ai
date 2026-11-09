@@ -87,6 +87,26 @@ describe('resolveMatchingV2Weights', () => {
     expect(resolveMatchingV2Weights(logger)).toEqual(DEFAULT_WEIGHTS_V2);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[1]).toMatch(/shape inválido/);
+    // Contrato TRK-003: `errors` es error.format() de zod 3.
+    expect(warn.mock.calls[0]?.[0]).toMatchInlineSnapshot(`
+      {
+        "errors": {
+          "errors": [],
+          "properties": {
+            "reputacion": {
+              "errors": [
+                "Invalid input: expected number, received undefined",
+              ],
+            },
+            "tier": {
+              "errors": [
+                "Invalid input: expected number, received undefined",
+              ],
+            },
+          },
+        },
+      }
+    `);
   });
 
   it('valor negativo en campo → defaults + warn (shape inválido por min(0))', () => {

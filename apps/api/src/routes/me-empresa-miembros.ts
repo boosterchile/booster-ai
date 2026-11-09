@@ -1,17 +1,29 @@
 import type { Logger } from '@booster-ai/logger';
 import { invitarMiembroSchema } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { z } from 'zod';
+import {
+  ctxDeUserContext,
+  puedeAdministrarEmpresa,
+  puedeInvitarMiembro,
+} from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
-import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
+import {
+  VINCULO_PERSONA_EXISTENTE,
+  type VinculoPersona,
+  mascarEmail,
+  mascarRut,
+  personaPrevia,
+} from '../services/vinculo-persona.js';
 
 /**
  * equipo-de-la-empresa Fase A — la empresa gestiona su propia gente.
@@ -39,9 +51,6 @@ import { type VinculoPersona, clasificarVinculoPersona } from '../services/vincu
 
 /** Vencimiento del código: 7 días (decisión del PO — lo entrega la empresa en mano). */
 const CODIGO_TTL_DIAS = 7;
-
-/** Roles que pueden gestionar el equipo. El resto solo mira. */
-const ROLES_QUE_GESTIONAN = new Set(['dueno', 'admin']);
 
 function placeholderFirebaseUid(rut: string): string {
   return `pending-rut:${rut}`;
@@ -102,7 +111,10 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         rut: users.rut,
         rol: memberships.role,
         estado: memberships.status,
+        puedeAceptarOfertas: memberships.puedeAceptarOfertas,
         invitadoEn: memberships.invitedAt,
+        personaCreadaEn: users.createdAt,
+        membresiaCreadaEn: memberships.createdAt,
       })
       .from(memberships)
       .innerJoin(users, eq(users.id, memberships.userId))
@@ -111,16 +123,25 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       .limit(200);
 
     return c.json({
-      miembros: filas.map((f) => ({
-        membership_id: f.membershipId,
-        user_id: f.userId,
-        full_name: f.fullName,
-        email: f.email,
-        rut: f.rut,
-        rol: f.rol,
-        estado: f.estado,
-        invitado_en: f.invitadoEn,
-      })),
+      miembros: filas.map((f) => {
+        // Falla cerrado: fuera de 'activa' no se muestran datos de la persona.
+        const oculto = f.estado !== 'activa';
+        const pendiente =
+          f.estado === 'pendiente_invitacion' &&
+          personaPrevia(f.personaCreadaEn, f.membresiaCreadaEn);
+        return {
+          membership_id: f.membershipId,
+          user_id: f.userId,
+          full_name: oculto ? null : f.fullName,
+          email: oculto ? mascarEmail(f.email) : f.email,
+          rut: oculto ? mascarRut(f.rut) : f.rut,
+          rol: f.rol,
+          estado: f.estado,
+          invitado_en: f.invitadoEn,
+          puede_aceptar_ofertas: f.puedeAceptarOfertas === true,
+          pendiente_aceptar: pendiente,
+        };
+      }),
     });
   });
 
@@ -129,7 +150,9 @@ export function createMeEmpresaMiembrosRoutes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
-    if (!ROLES_QUE_GESTIONAN.has(auth.rol)) {
+    // CHEQUEOS_REEMPLAZADOS invitar: antes ROLES_QUE_GESTIONAN (dueno|admin).
+    const ctxInvitar = ctxDeUserContext(c.get('userContext'));
+    if (!ctxInvitar || !puedeInvitarMiembro(ctxInvitar)) {
       opts.logger.warn(
         { empresaId: auth.empresaId, rol: auth.rol },
         'me-empresa-miembros: rol sin permiso para gestionar el equipo',
@@ -144,14 +167,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       // rls-allowlist: lookup global por RUT — una persona puede trabajar en
       // más de una empresa, así que su identidad se reusa en vez de duplicarse.
       const existentes = await tx
-        .select({
-          id: users.id,
-          email: users.email,
-          fullName: users.fullName,
-          firebaseUid: users.firebaseUid,
-          claveNumericaHash: users.claveNumericaHash,
-          activationPinHash: users.activationPinHash,
-        })
+        .select({ id: users.id })
         .from(users)
         .where(eq(users.rut, body.rut))
         .limit(1);
@@ -175,20 +191,9 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       let codigoEmitido: string | null = null;
       if (existente) {
         userId = existente.id;
-        // La identidad es de la persona. Otra empresa no pisa su código ni su clave.
-        vinculo = clasificarVinculoPersona(existente);
-        if (vinculo === 'provisoria_sin_codigo') {
-          const codigo = generateActivationPin();
-          codigoEmitido = codigo;
-          await tx
-            .update(users)
-            .set({
-              activationPinHash: hashActivationPin(codigo),
-              activacionVenceEn: null,
-              updatedAt: new Date(),
-            })
-            .where(eq(users.id, userId));
-        }
+        // Persona existente: no se emite código y la respuesta es la misma
+        // para cualquier estado de su cuenta.
+        vinculo = VINCULO_PERSONA_EXISTENTE;
       } else {
         const codigo = generateActivationPin();
         codigoEmitido = codigo;
@@ -222,18 +227,17 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         userId = creado.id;
       }
 
-      const yaActiva = vinculo === 'cuenta_activa';
+      // Toda alta nace pendiente: nadie queda activo en una empresa sin activar.
       const membresias = await tx
         .insert(memberships)
         .values({
           userId,
           empresaId: auth.empresaId,
           role: body.rol,
-          // Quien ya tiene clave entra directo. El resto espera su código.
-          status: yaActiva ? 'activa' : 'pendiente_invitacion',
+          status: 'pendiente_invitacion',
           invitedByUserId: auth.callerId,
           invitedAt: new Date(),
-          joinedAt: yaActiva ? new Date() : null,
+          joinedAt: null,
         })
         .returning({ id: memberships.id });
       const membresia = membresias[0];
@@ -246,11 +250,8 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         membershipId: membresia.id,
         vinculo,
         codigoEmitido,
-        // Persona provisoria: su correo registrado, no el que tipeó la empresa.
-        destinatario: {
-          email: existente?.email ?? email,
-          nombre: existente?.fullName ?? body.full_name,
-        },
+        // Solo una persona nueva recibe código, en el correo que se tipeó al crearla.
+        destinatario: { email, nombre: body.full_name },
       };
     });
 
@@ -302,13 +303,57 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         user_id: resultado.userId,
         membership_id: resultado.membershipId,
         rol: body.rol,
-        estado: resultado.vinculo === 'cuenta_activa' ? 'activa' : 'pendiente_invitacion',
+        estado: 'pendiente_invitacion',
         codigo_activacion: resultado.codigoEmitido,
         expira_en: expiraEn,
         vinculo: resultado.vinculo,
       },
       201,
     );
+  });
+
+  const permisoOfertasSchema = z.object({
+    puede_aceptar_ofertas: z.boolean(),
+  });
+
+  app.patch('/:membershipId', zValidator('json', permisoOfertasSchema), async (c) => {
+    const auth = requireEmpresa(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const ctx = ctxDeUserContext(c.get('userContext'));
+    if (!ctx || !puedeAdministrarEmpresa(ctx)) {
+      return c.json({ error: 'forbidden', code: 'rol_sin_permiso' }, 403);
+    }
+
+    const membershipId = c.req.param('membershipId');
+    const body = c.req.valid('json');
+    const [target] = await opts.db
+      .select({
+        id: memberships.id,
+        role: memberships.role,
+        empresaId: memberships.empresaId,
+      })
+      .from(memberships)
+      .where(eq(memberships.id, membershipId))
+      .limit(1);
+    if (!target || target.empresaId !== auth.empresaId) {
+      return c.json({ error: 'not_found', code: 'miembro_no_encontrado' }, 404);
+    }
+    if (target.role !== 'despachador') {
+      return c.json({ error: 'conflict', code: 'permiso_no_aplica' }, 409);
+    }
+
+    await opts.db
+      .update(memberships)
+      .set({ puedeAceptarOfertas: body.puede_aceptar_ofertas })
+      .where(eq(memberships.id, membershipId));
+
+    return c.json({
+      ok: true,
+      membership_id: membershipId,
+      puede_aceptar_ofertas: body.puede_aceptar_ofertas,
+    });
   });
 
   return app;

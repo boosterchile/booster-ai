@@ -1,12 +1,17 @@
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import {
+  MENSAJES,
+  abrirDisputaSchema,
+  errorOpcion,
+  tripRequestCreateInputSchema,
+} from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
-import { zValidator } from '@hono/zod-validator';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
@@ -20,6 +25,8 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
+import { issuesPublicos, zValidator } from '../lib/validation.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
@@ -34,6 +41,7 @@ import {
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking } from '../services/get-public-tracking.js';
+import { filasListaUnicas, serializarFilaLista } from '../services/inicio-viaje-lista.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { liquidarTrip } from '../services/liquidar-trip.js';
 import {
@@ -88,8 +96,11 @@ function generateTrackingCode(): string {
 
 /** ADR-079 §1 — cotización previa a publicar (query string). */
 const cotizacionQuerySchema = z.object({
-  precio_transportista_clp: z.coerce.number().int().nonnegative(),
-  modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+  precio_transportista_clp: z.coerce
+    .number({ error: MENSAJES.numero })
+    .int(MENSAJES.numero)
+    .nonnegative(MENSAJES.numero),
+  modalidad_carga: z.enum(['spot', 'programada'], { error: errorOpcion }).default('spot'),
 });
 
 const cancelBodySchema = z.object({
@@ -226,7 +237,7 @@ export function createTripRequestsV2Routes(opts: {
     }
     const query = cotizacionQuerySchema.safeParse(c.req.query());
     if (!query.success) {
-      return c.json({ error: 'invalid_query', issues: query.error.issues }, 400);
+      return c.json({ error: 'invalid_query', issues: issuesPublicos(query.error.issues) }, 400);
     }
     const contratoEn = auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null;
     if (!modalidadPermitida(query.data.modalidad_carga, contratoEn)) {
@@ -260,6 +271,11 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
     const { texto } = c.req.valid('json');
     const resultado = await resolverEnlaceMapa({
       texto,
@@ -282,6 +298,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
 
     const input = c.req.valid('json');
@@ -496,13 +517,25 @@ export function createTripRequestsV2Routes(opts: {
         proposed_price_clp: trips.proposedPriceClp,
         created_at: trips.createdAt,
         certificate_issued_at: tripMetrics.certificateIssuedAt,
+        // Una sola consulta: la asignación es 1:1 con el viaje.
+        // El generador ve las ofertas pendientes (Felipe, 2026-10-19 17:41 CLT).
+        transportista_nombre: empresasTable.legalName,
+        assignment_status: assignments.status,
+        ofertas_pendientes: sql<number>`(
+          select count(*)::int from ${offers}
+          where ${offers.tripId} = ${trips.id} and ${offers.status} = 'pendiente'
+        )`,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .leftJoin(assignments, eq(assignments.tripId, trips.id))
+      .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
       .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
       .orderBy(desc(trips.createdAt));
 
-    return c.json({ trip_requests: rows });
+    return c.json({
+      trip_requests: filasListaUnicas(rows).map((row) => serializarFilaLista(row)),
+    });
   });
 
   // ---------------------------------------------------------------------
@@ -753,6 +786,12 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: confirmar recepción es escritura.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
+    const rolRecepcion = auth.activeMembership.membership.role;
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
@@ -816,7 +855,11 @@ export function createTripRequestsV2Routes(opts: {
           },
         );
         if (recepcion.ok) {
-          mandato = { pago: pagoParaGenerador(recepcion.pago) };
+          // El despachador confirma la recepción, pero el pago solo lo ven
+          // dueño y admin (igual que GET /:id/pago).
+          mandato = (ROLES_COMERCIALES as readonly string[]).includes(rolRecepcion)
+            ? { pago: pagoParaGenerador(recepcion.pago) }
+            : {};
         } else if (recepcion.code !== 'no_es_mandato') {
           opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
           mandato = { recepcion_conforme_pendiente: recepcion.code };
@@ -852,6 +895,10 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    const sinRol = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRol) {
+      return sinRol;
+    }
     const pago = await leerPagoDelGenerador(
       opts.db,
       c.req.param('id'),
@@ -870,6 +917,10 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    const sinRolDisputa = exigirRol(c, auth.activeMembership.membership.role, ROLES_COMERCIALES);
+    if (sinRolDisputa) {
+      return sinRolDisputa;
     }
     const r = await abrirDisputa(
       { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },
@@ -897,6 +948,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
     const id = c.req.param('id');
     const body = c.req.valid('json');

@@ -82,6 +82,7 @@ export function calcularModeladoConCategoria(
     intensidadGco2ePorTonKm: round2(intensidad),
     metodoPrecision: 'modelado',
     factorEmisionUsado: round5(factorWtw),
+    // Metodología (GLEC v3.0); la versión de los factores va en fuenteFactores.
     versionGlec: 'v3.0',
     fuenteFactores: factor.fuente,
   };

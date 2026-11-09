@@ -327,7 +327,7 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
     expect(u2?.claveNumericaHash).toBe(u?.claveNumericaHash);
   });
 
-  test('6. invitar un RUT ya activo a otra empresa: membresía activa, sin código, la clave anterior sigue', async () => {
+  test('6. invitar un RUT ya activo a otra empresa: membresía pendiente, sin código, la clave anterior sigue', async () => {
     const a = app();
     const crear = await a.request(
       '/admin/empresas',
@@ -360,8 +360,9 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
     };
     expect(invitar.status, JSON.stringify(invitado)).toBe(201);
     expect(invitado.user_id).toBe(userId);
-    expect(invitado.vinculo).toBe('cuenta_activa');
-    expect(invitado.estado).toBe('activa');
+    // Una persona existente queda pendiente.
+    expect(invitado.vinculo).toBe('codigo_vigente');
+    expect(invitado.estado).toBe('pendiente_invitacion');
     expect(invitado.codigo_activacion).toBeNull();
 
     const [despues] = await handle.db

@@ -32,6 +32,7 @@ import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import {
   CertDisabledError,
   CertNotIssuedError,
@@ -300,6 +301,7 @@ export function CargasListRoute() {
 
 function CargasListPage({ me }: { me: MeOnboarded }) {
   const isShipper = me.active_membership?.empresa?.is_generador_carga ?? false;
+  const puedePublicar = flagsDe(me).publicarCarga;
 
   const scope = useEmpresaScope();
   const tripsQ = useQuery({
@@ -336,13 +338,15 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
             Crea cargas, sigue el estado del matching y recibe certificados de huella de carbono.
           </p>
         </div>
-        <Link
-          to="/app/cargas/nueva"
-          className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700"
-        >
-          <Plus className="h-4 w-4" aria-hidden />
-          Nueva carga
-        </Link>
+        {puedePublicar && (
+          <Link
+            to="/app/cargas/nueva"
+            className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Nueva carga
+          </Link>
+        )}
       </div>
 
       {tripsQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
@@ -379,13 +383,15 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
                     <p className="mt-1 text-neutral-600 text-sm">
                       Crea una carga para que el sistema te conecte con transportistas disponibles.
                     </p>
-                    <Link
-                      to="/app/cargas/nueva"
-                      className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
-                    >
-                      <Plus className="h-4 w-4" aria-hidden />
-                      Crear carga
-                    </Link>
+                    {puedePublicar && (
+                      <Link
+                        to="/app/cargas/nueva"
+                        className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden />
+                        Crear carga
+                      </Link>
+                    )}
                   </div>
                 ) : (
                   <CargasTable trips={activas} />
@@ -622,7 +628,7 @@ export function CargasNuevoRoute() {
           return null;
         }
         const isShipper = ctx.me.active_membership?.empresa?.is_generador_carga ?? false;
-        if (!isShipper) {
+        if (!isShipper || !flagsDe(ctx.me).publicarCarga) {
           return (
             <Layout me={ctx.me} title="Nueva carga">
               <NoShipperPermission />
@@ -1294,7 +1300,9 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
   });
 
   const trip = tripQ.data?.trip_request;
-  const canCancel = trip ? CANCELLABLE_STATUSES.includes(trip.status) : false;
+  const canCancel = Boolean(
+    trip && CANCELLABLE_STATUSES.includes(trip.status) && flagsDe(me).cancelarCarga,
+  );
   const shareUrl = publicTrackingShareUrl(
     tripQ.data?.assignment?.public_tracking_token,
     trip?.status,

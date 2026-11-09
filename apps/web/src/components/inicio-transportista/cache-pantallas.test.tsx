@@ -244,10 +244,11 @@ describe('caché del inicio compatible con las pantallas dueñas', () => {
         nombreCompleto="Felipe Vicencio"
         legalName="Transportes Van Oosterwyk"
         esAdmin={false}
+        veFinanzas={false}
       />,
     );
-    expect(await screen.findByText('2 ofertas por responder')).toBeInTheDocument();
-    expect(screen.getByText('1 servicio sin conductor')).toBeInTheDocument();
+    expect(await screen.findByText('2 ofertas nuevas')).toBeInTheDocument();
+    expect(screen.getAllByText('Sin conductor').length).toBeGreaterThan(0);
 
     const clave = (
       dominio: 'offers' | 'assignments' | 'cumplimiento' | 'flota' | 'vehiculos' | 'conductores',
@@ -329,8 +330,9 @@ describe('caché del inicio compatible con las pantallas dueñas', () => {
         nombreCompleto="Felipe Vicencio"
         legalName="Transportes Van Oosterwyk"
         esAdmin={false}
+        veFinanzas={false}
       />,
     );
-    expect(await screen.findByText('2 ofertas por responder')).toBeInTheDocument();
+    expect(await screen.findByText('2 ofertas nuevas')).toBeInTheDocument();
   });
 });

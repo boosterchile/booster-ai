@@ -27,8 +27,12 @@ overrides:
   "@opentelemetry/resources@<2.8.0": ">=2.8.0"
   "@opentelemetry/sdk-trace-base@<2.8.0": ">=2.8.0"
   "@opentelemetry/propagator-jaeger@<2.9.0": ">=2.9.0"
-  "hono@<4.12.27": ">=4.12.27"
-  "@hono/node-server@<2.0.5": ">=2.0.5"
+  # 2026-11-02 (AUD-P4): GHSA-54fx, -5r4p, -79qm, -8j4g, -crvj, -f23p, -g6gw,
+  # -gqvv, -hxh3 (hono) y GHSA-rmxm (@hono/node-server), vía matching-engine,
+  # sms-fallback y whatsapp-bot (apps/api ya declara las versiones nuevas).
+  # Quitar cuando esas apps declaren hono ^4.13.11 / node-server ^2.1.3.
+  "hono@<4.13.11": ">=4.13.11 <5"
+  "@hono/node-server@<2.1.3": ">=2.1.3 <3"
   "websocket-driver@<0.7.5": ">=0.7.5"
   # 2026-10-06 (follow-up npm-audit-high-critical-2026-10): GHSA-p6vx-979v-rg4c (critical)
   # vía @tanstack/router-core; GHSA-xjh9-v7x6-24jw + GHSA-x8mw-p69m-v3mx vía firebase-admin.
@@ -38,19 +42,19 @@ overrides:
   # auto-instrumentations-node → instrumentation-host-metrics. Se queda en 5.x
   # (el rango de host-metrics es ^5.31.6).
   "systeminformation@<5.33.16": ">=5.33.16 <6"
-
-# Riesgo aceptado, no silenciado (2026-10-29, follow-up zod-4-migracion-2026-10).
-# Requiere el visto explícito del PO en el PR que lo introduce.
-# GHSA-mrhx-c7xc-m3w5 (CVE-2023-54404, CWE-770, solo disponibilidad): zod
-# acumula un issue por cada elemento inválido de un arreglo, sin tope. Rango
-# `< 4.6.6`: no hay ninguna 3.x parchada y todo el monorepo usa zod 3.25.76.
-# Migrar a zod 4 es un cambio mayor con efectos en contratos públicos (medido
-# en el follow-up). El análisis de exposición se entregó al PO por canal
-# privado. Mismo ID en `.trivyignore`. Se quita al cerrar la migración a zod 4,
-# y se revisa a más tardar el 2026-12-31.
-auditConfig:
-  ignoreGhsas:
-    - GHSA-mrhx-c7xc-m3w5
+  # 2026-11-02 (TRK-003): GHSA-4c8g-83qw-93j6, -7p8r-x3mc-p8w7, -f65p-4m7j-42xc,
+  # -fph4-wmhf-6fwf, -jqff-g426-hqxp, -qw65-cvwx-89v3, -v2hh-gcrm-f6hx (high) y
+  # medium/low hasta 3.1.9, vía web → @hookform/resolvers@5 → ajv@8 → fast-uri.
+  # Quitar cuando ajv o resolvers traigan fast-uri >=3.1.9 por su cuenta.
+  "fast-uri@<3.1.9": ">=3.1.9 <4"
+  # 2026-11-02 (AUD-P4): GHSA-4mjr-xmp4-gh2g, -6pq8-jhm2-2vcw, -x5fp-wj9c-mxmx
+  # (moderate) vía api → @google-cloud/opentelemetry-cloud-trace-exporter.
+  # Quitar cuando el exporter traiga qs >=6.16.1 por su cuenta.
+  "qs@<6.16.1": ">=6.16.1 <7"
+  # 2026-11-02 (AUD-P4): GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj (moderate)
+  # vía web → @tanstack/react-router. Quitar cuando router-core traiga
+  # seroval >=1.6.11 por su cuenta.
+  "seroval@<1.6.11": ">=1.6.11 <2"
 
 onlyBuiltDependencies:
   - "@biomejs/biome"

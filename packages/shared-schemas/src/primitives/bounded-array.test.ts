@@ -25,7 +25,7 @@ describe('boundedArray', () => {
     expect(result.error?.issues).toEqual([
       expect.objectContaining({
         code: 'too_big',
-        type: 'array',
+        origin: 'array',
         maximum: 3,
         inclusive: true,
         path: [],

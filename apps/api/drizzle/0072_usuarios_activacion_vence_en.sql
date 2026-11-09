@@ -1,4 +1,6 @@
--- Migration 0065 — vencimiento del código de activación en la cuenta.
+-- Migration 0072 — vencimiento del código de activación en la cuenta.
+--
+-- Se escribió como 0065 y se renumeró el 2026-11-09 (main ya ocupaba 0065–0071).
 --
 -- El alta del personal de Booster desde el panel (.specs/alta-personal-booster)
 -- emite un código de un solo uso sin invitación a una empresa, así que

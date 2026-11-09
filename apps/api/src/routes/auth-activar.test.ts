@@ -78,7 +78,10 @@ function makeDb(opts: DbOpts = {}) {
 
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
-      where: vi.fn(() => ({ limit: vi.fn(async () => cola.shift() ?? []) })),
+      where: vi.fn(() => {
+        const limit = vi.fn(async () => cola.shift() ?? []);
+        return { limit, orderBy: vi.fn(() => ({ limit })) };
+      }),
     })),
   }));
 

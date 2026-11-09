@@ -113,3 +113,18 @@ describe('tripRequestCreateInputSchema — lugar', () => {
     ).toBe(true);
   });
 });
+
+describe('tripRequestCreateInputSchema — mensajes del peso (TRK-003)', () => {
+  function primerMensaje(weight: unknown): string | undefined {
+    const parsed = tripRequestCreateInputSchema.safeParse({
+      ...base(),
+      cargo: { cargo_type: 'carga_seca', weight_kg: weight },
+    });
+    return parsed.success ? undefined : parsed.error.issues[0]?.message;
+  }
+
+  it('peso faltante usa required_error; de tipo incorrecto, invalid_type_error', () => {
+    expect(primerMensaje(undefined)).toBe('Ingresa el peso en kg');
+    expect(primerMensaje('1000')).toBe('Ingresa el peso en kg');
+  });
+});
