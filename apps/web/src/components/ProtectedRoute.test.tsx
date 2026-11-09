@@ -380,6 +380,35 @@ describe('ProtectedRoute — membresía de conductor', () => {
     expect(screen.getByTestId('navigate').textContent).toBe('/app/conductor');
   });
 
+  // `.specs/confirmar-acceso-booster` SC18: quien confirma el acceso al panel
+  // puede ser conductor de una empresa.
+  it('conductor en /app/confirmar-acceso-booster → renderiza la pantalla sin redirigir', () => {
+    window.history.pushState({}, '', '/app/confirmar-acceso-booster');
+    useMeMock.mockReturnValue({
+      data: meConductor({ platformAdmin: false }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('children')).toBeInTheDocument();
+  });
+
+  it('conductor en una ruta que solo empieza igual → /app/conductor', () => {
+    window.history.pushState({}, '', '/app/confirmar-acceso-booster-otra');
+    useMeMock.mockReturnValue({
+      data: meConductor({ platformAdmin: false }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId('navigate').textContent).toBe('/app/conductor');
+  });
+
   it('conductor ya en /app/conductor → renderiza sin redirigir', () => {
     window.history.pushState({}, '', '/app/conductor');
     useMeMock.mockReturnValue({

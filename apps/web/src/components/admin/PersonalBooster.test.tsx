@@ -72,6 +72,47 @@ const LISTA = { personal: [ANA, BETO, CARLA, DANI] };
 const AVISO_CORREO =
   'Intentamos enviarle el código por correo a esa dirección. Si no le llega, entrégaselo tú: cópialo antes de cerrar.';
 
+/** `.specs/confirmar-acceso-booster` SC16: lo que el admin lee junto al código de confirmación. */
+const INSTRUCCION_CONFIRMACION =
+  'Esta persona ya tiene cuenta en una empresa. Entrégale este código en persona: lo ingresa con su sesión iniciada en Confirmar acceso de Booster. No lo envíes por correo ni por chat.';
+
+const USER_FELI = 'b3e1c2d4-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
+const USER_GABI = 'c4f2d3e5-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+const USER_HANS = 'd5a3e4f6-7b8c-4d9e-8f1a-2b3c4d5e6f7a';
+
+/** Cuenta de una empresa dada de alta en el panel, con su confirmación vigente. */
+const FELI = {
+  email: 'feli@transportesuno.cl',
+  en_lista: false,
+  user_id: USER_FELI,
+  nombre: 'Feli Lagos',
+  rut: '44444444-4',
+  estado: 'pendiente_confirmacion' as const,
+  expira_en: '2099-11-10T16:00:00.000Z',
+  ultimo_login_en: null,
+};
+
+const GABI = {
+  ...FELI,
+  email: 'gabi@transportesuno.cl',
+  user_id: USER_GABI,
+  nombre: 'Gabi Mora',
+  rut: '55555555-5',
+  expira_en: '2020-01-01T12:00:00.000Z',
+};
+
+/** Confirmación sin intentos: el API no informa vencimiento. */
+const HANS = {
+  ...FELI,
+  email: 'hans@transportesuno.cl',
+  user_id: USER_HANS,
+  nombre: 'Hans Vidal',
+  rut: '66666666-6',
+  expira_en: null,
+};
+
+const LISTA_CON_CONFIRMACION = { personal: [ANA, BETO, FELI, GABI, HANS] };
+
 function stubClipboard(writeText: (text: string) => Promise<void>) {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 }
@@ -237,6 +278,14 @@ describe('PersonalBooster — orden del alta (acceso-panel-plataforma SC12)', ()
     expect(orden).not.toHaveTextContent('booster_platform_admin_emails');
     expect(orden).toHaveTextContent('Quitar acceso');
   });
+
+  it('explica el caso de una cuenta que ya es de una empresa (confirmar-acceso-booster SC16)', async () => {
+    await renderConLista();
+
+    const orden = screen.getByTestId('personal-orden-alta');
+    expect(orden).toHaveTextContent('Si ya tiene cuenta en una empresa');
+    expect(orden).toHaveTextContent('Confirmar acceso de Booster');
+  });
 });
 
 describe('PersonalBooster — alta (SC2)', () => {
@@ -278,6 +327,8 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(within(confirmacion).getByText('Eva Muñoz')).toBeInTheDocument();
     expect(within(confirmacion).getByText('22.222.222-2')).toBeInTheDocument();
     expect(confirmacion).toHaveTextContent('queda marcada como personal de Booster');
+    // confirmar-acceso-booster SC16: la cuenta de una empresa confirma con un código.
+    expect(confirmacion).toHaveTextContent('Si su cuenta ya es de una empresa');
     expect(confirmacion).not.toHaveTextContent('Terraform');
     expect(post).not.toHaveBeenCalled();
 
@@ -822,5 +873,186 @@ describe('PersonalBooster — Quitar acceso (acceso-panel-plataforma SC12)', () 
       'La respuesta del servidor no tiene el formato esperado.',
     );
     expect(logger.error).toHaveBeenCalled();
+  });
+});
+
+/**
+ * `.specs/confirmar-acceso-booster` SC16 — la cuenta activa de una empresa no
+ * queda marcada en el alta: el panel muestra un código de confirmación que el
+ * admin entrega en persona y la persona ingresa con su sesión.
+ */
+describe('PersonalBooster — código de confirmación (confirmar-acceso-booster SC16)', () => {
+  const URL_CONFIRMAR = `${window.location.origin}/app/confirmar-acceso-booster`;
+
+  it('el alta muestra el código una vez con la instrucción, el vencimiento y la dirección de la pantalla', async () => {
+    const get = await renderConLista();
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: USER_FELI,
+      vinculo: 'cuenta_activa_por_confirmar',
+      codigo_activacion: '604218',
+      expira_en: '2026-11-10T16:00:00.000Z',
+      en_lista: false,
+    });
+
+    const confirmacion = await altaHastaConfirmar({
+      email: FELI.email,
+      nombre: 'Feli Lagos',
+      rut: '44.444.444-4',
+    });
+    fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
+
+    const panel = await screen.findByTestId('personal-codigo-panel');
+    expect(panel).toHaveTextContent('Código de confirmación');
+    expect(within(panel).getByTestId('personal-confirmacion-instruccion')).toHaveTextContent(
+      INSTRUCCION_CONFIRMACION,
+    );
+    expect(screen.getAllByText('604218')).toHaveLength(1);
+    expect(within(panel).getByTestId('personal-codigo')).toHaveTextContent('604218');
+    expect(within(panel).getByText('44.444.444-4')).toBeInTheDocument();
+    expect(within(panel).getByText(/Vence el/)).toBeInTheDocument();
+    expect(within(panel).getByTestId('personal-url-confirmar')).toHaveTextContent(URL_CONFIRMAR);
+    expect(panel).toHaveTextContent('Se muestra una sola vez');
+    // No es un código de activación: ni /activar ni el aviso del correo.
+    expect(within(panel).queryByTestId('personal-url-activar')).not.toBeInTheDocument();
+    expect(within(panel).queryByTestId('personal-aviso-lista')).not.toBeInTheDocument();
+    expect(panel).not.toHaveTextContent('/activar');
+    expect(panel).not.toHaveTextContent('código de activación');
+    expect(panel).not.toHaveTextContent(AVISO_CORREO);
+
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Listo, cerrar' }));
+    expect(screen.queryByText('604218')).not.toBeInTheDocument();
+  });
+
+  it('Generar código nuevo en una fila por confirmar muestra un código de confirmación nuevo', async () => {
+    await renderConLista(LISTA_CON_CONFIRMACION);
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: USER_FELI,
+      vinculo: 'cuenta_activa_por_confirmar',
+      codigo_activacion: '913507',
+      expira_en: '2026-11-10T16:00:00.000Z',
+      en_lista: false,
+    });
+
+    const feli = fila(FELI.email);
+    fireEvent.click(within(feli).getByRole('button', { name: 'Generar código nuevo' }));
+
+    const panel = await within(feli).findByTestId('personal-codigo-panel');
+    expect(post.mock.calls).toEqual([[`/admin/personal-booster/${USER_FELI}/codigo`]]);
+    expect(panel).toHaveTextContent('Código de confirmación nuevo');
+    expect(panel).toHaveTextContent('El anterior deja de servir');
+    expect(panel).toHaveTextContent('24 horas');
+    expect(within(panel).getByTestId('personal-confirmacion-instruccion')).toHaveTextContent(
+      INSTRUCCION_CONFIRMACION,
+    );
+    expect(within(panel).getByTestId('personal-codigo')).toHaveTextContent('913507');
+    expect(within(panel).getByTestId('personal-url-confirmar')).toHaveTextContent(URL_CONFIRMAR);
+    expect(within(panel).queryByTestId('personal-url-activar')).not.toBeInTheDocument();
+    expect(within(panel).queryByTestId('personal-aviso-lista')).not.toBeInTheDocument();
+    expect(panel).not.toHaveTextContent('7 días');
+  });
+
+  it('la re-emisión con vinculo provisoria_sin_codigo sigue siendo el código de activación', async () => {
+    await renderConLista();
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: USER_PENDIENTE,
+      vinculo: 'provisoria_sin_codigo',
+      codigo_activacion: '771204',
+      expira_en: '2026-11-06T16:00:00.000Z',
+      en_lista: false,
+    });
+
+    fireEvent.click(within(fila(BETO.email)).getByRole('button', { name: 'Generar código nuevo' }));
+
+    const panel = await within(fila(BETO.email)).findByTestId('personal-codigo-panel');
+    expect(panel).toHaveTextContent('Código de activación nuevo');
+    expect(within(panel).getByTestId('personal-url-activar')).toBeInTheDocument();
+    expect(within(panel).queryByTestId('personal-url-confirmar')).not.toBeInTheDocument();
+    expect(panel).not.toHaveTextContent(INSTRUCCION_CONFIRMACION);
+  });
+
+  it('copiar el código de confirmación lo deja en el portapapeles', async () => {
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+    await renderConLista(LISTA_CON_CONFIRMACION);
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: USER_FELI,
+      vinculo: 'cuenta_activa_por_confirmar',
+      codigo_activacion: '913507',
+      expira_en: '2026-11-10T16:00:00.000Z',
+      en_lista: false,
+    });
+
+    fireEvent.click(within(fila(FELI.email)).getByRole('button', { name: 'Generar código nuevo' }));
+    const panel = await within(fila(FELI.email)).findByTestId('personal-codigo-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Copiar código' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('913507'));
+    expect(await within(panel).findByRole('button', { name: 'Copiado ✓' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * `.specs/confirmar-acceso-booster` SC17 — la persona por confirmar en la
+ * lista del personal.
+ */
+describe('PersonalBooster — persona por confirmar (confirmar-acceso-booster SC17)', () => {
+  it('se lee Pendiente de confirmar, con el vencimiento, el vencido o el código sin uso', async () => {
+    await renderConLista(LISTA_CON_CONFIRMACION);
+
+    const feli = fila(FELI.email);
+    expect(within(feli).getByText('Pendiente de confirmar')).toBeInTheDocument();
+    expect(within(feli).getByText(/Código de confirmación: vence el/)).toBeInTheDocument();
+    expect(within(feli).queryByText('vencido')).not.toBeInTheDocument();
+
+    const gabi = fila(GABI.email);
+    expect(within(gabi).getByText('Pendiente de confirmar')).toBeInTheDocument();
+    expect(within(gabi).getByText(/Código de confirmación: venció el/)).toBeInTheDocument();
+    expect(within(gabi).getByText('vencido')).toBeInTheDocument();
+
+    const hans = fila(HANS.email);
+    expect(
+      within(hans).getByText(
+        'El código de confirmación ya no sirve: usa «Generar código nuevo» para entregarle otro.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(hans).queryByText(/Sin código vigente del panel/)).not.toBeInTheDocument();
+  });
+
+  it('Generar código nuevo aparece en las filas por confirmar', async () => {
+    await renderConLista(LISTA_CON_CONFIRMACION);
+
+    for (const persona of [FELI, GABI, HANS]) {
+      expect(
+        within(fila(persona.email)).getByRole('button', { name: 'Generar código nuevo' }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('Quitar acceso de una persona por confirmar dice que el código deja de servir y no anuncia aviso', async () => {
+    const get = await renderConLista(LISTA_CON_CONFIRMACION);
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true, user_id: USER_FELI });
+
+    const feli = fila(FELI.email);
+    fireEvent.click(within(feli).getByRole('button', { name: 'Quitar acceso' }));
+    const confirmacion = within(feli).getByTestId('personal-quitar-confirmacion');
+    expect(confirmacion).toHaveTextContent('¿Quitar el acceso al panel a Feli Lagos?');
+    expect(confirmacion).toHaveTextContent('Todavía no confirmó su acceso');
+    expect(confirmacion).toHaveTextContent('su código de confirmación deja de servir');
+    expect(confirmacion).not.toHaveTextContent('Avisamos a la lista de respaldo');
+
+    fireEvent.click(within(feli).getByRole('button', { name: 'Sí, quitar acceso' }));
+
+    const aviso = await screen.findByRole('status');
+    expect(aviso).toHaveTextContent(
+      'Anulamos el código de confirmación de Feli Lagos: no recibe acceso al panel.',
+    );
+    expect(aviso).not.toHaveTextContent('Avisamos a la lista de respaldo');
+    expect(post.mock.calls).toEqual([[`/admin/personal-booster/${USER_FELI}/quitar-acceso`]]);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 });
