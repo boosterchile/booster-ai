@@ -1126,6 +1126,9 @@ describe('POST /conductores/:id/email', () => {
       expect(mensaje.text).toContain(body.activation_pin);
       expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
       expect(firebase.updateUser).not.toHaveBeenCalled();
+      expect(
+        payloadsDeUpdate(stub.spies.update).find((payload) => 'activationPinHash' in payload),
+      ).toHaveProperty('activacionVenceEn', null);
     },
   );
 
@@ -1580,6 +1583,9 @@ describe('POST /conductores/:id/telefono', () => {
     expect(
       payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === TELEFONO_NUEVO),
     ).toBe(true);
+    expect(
+      payloadsDeUpdate(stub.spies.update).find((payload) => 'activationPinHash' in payload),
+    ).toHaveProperty('activacionVenceEn', null);
     expect(sendContent).toHaveBeenCalledTimes(1);
     expect(sendContent.mock.calls[0]?.[0]).toMatchObject({ to: TELEFONO_NUEVO });
     expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
@@ -1795,6 +1801,7 @@ describe('POST /conductores — reactivación de un conductor retirado', () => {
     const fila = payloads.find((payload) => 'driverStatus' in payload);
     expect(usuario?.phone).toBe('+56957790379');
     expect(usuario?.activationPinHash).not.toBe('hash-previo');
+    expect(usuario).toHaveProperty('activacionVenceEn', null);
     expect(verifyActivationPin(body.activation_pin ?? '', String(usuario?.activationPinHash))).toBe(
       true,
     );
@@ -1848,6 +1855,9 @@ describe('POST /conductores — reactivación de un conductor retirado', () => {
         (payload) => payload.email === EMAIL_REAL && payload.phone === '+56957790379',
       ),
     ).toBe(true);
+    expect(
+      payloadsDeUpdate(stub.spies.update).find((payload) => 'activationPinHash' in payload),
+    ).toHaveProperty('activacionVenceEn', null);
     expect(stub.spies.insert).toHaveBeenCalledTimes(1);
     expect(sendContent).toHaveBeenCalledTimes(1);
   });

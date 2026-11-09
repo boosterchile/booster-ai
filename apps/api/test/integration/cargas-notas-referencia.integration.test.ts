@@ -8,7 +8,7 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  * editar-anular-cargas M1 (PR3) contra Postgres real: notas y referencia en
  * `viajes`, con su tope, y los tipos de evento de edición en el enum.
  */
-describe('integration: notas, referencia y eventos de edición (migración 0074)', () => {
+describe('integration: notas, referencia y eventos de edición (migración 0075)', () => {
   let handle: TestDbHandle;
   beforeAll(() => {
     handle = createTestDb();

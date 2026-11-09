@@ -38,6 +38,7 @@ import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
+import { createAdminPersonalBoosterRoutes } from './routes/admin-personal-booster.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -871,6 +872,26 @@ export function createServer(opts: CreateServerOptions): Hono {
       }),
     );
 
+    // alta-personal-booster — el platform-admin da de alta a otra persona de
+    // Booster con acceso al panel. Mismo chain que /admin/empresas; la
+    // autorización real la da `requirePlatformAdmin` dentro de cada handler.
+    // La lista de Terraform sigue decidiendo quién entra: se pasa para marcar
+    // `en_lista` y decidir si el código sale por correo.
+    app.use('/admin/personal-booster', firebaseAuthMiddleware);
+    app.use('/admin/personal-booster/*', firebaseAuthMiddleware);
+    app.use('/admin/personal-booster', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/personal-booster/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/personal-booster',
+      createAdminPersonalBoosterRoutes({
+        db: opts.db,
+        logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
+
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
     // y copy desde la PWA; demo/login/onboarding leen la versión
     // publicada via GET /public/site-settings (cache 5min).
@@ -1131,8 +1152,9 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // equipo-de-la-empresa — POST /auth/activar. Pre-auth por diseño: lo usa
     // alguien que todavía no tiene credencial (la está creando en este acto).
-    // Rate limit propio y fail-closed, igual que login-rut: el código es de 6
-    // dígitos y sin límite sería fuerza bruta trivial.
+    // Límites de intentos propios y fail-closed, igual que login-rut: el
+    // código es de 6 dígitos. Dos cubos: el de la IP (arriba) y el del RUT
+    // (dentro de la ruta), con prefijos que no comparte ningún otro endpoint.
     app.use(
       '/auth/activar',
       createRateLimitSignupMiddleware({
@@ -1141,12 +1163,22 @@ export function createServer(opts: CreateServerOptions): Hono {
         keyPrefix: 'rl:activar-cuenta:',
       }),
     );
+    const rateLimitActivarPorRut = createRateLimitPinMiddleware({
+      redis: redisForRateLimit,
+      logger,
+      keyPrefix: 'rl:activar-cuenta-rut:',
+      ipKeyPrefix: 'rl:activar-cuenta-rut:ip:',
+    });
     app.route(
       '/auth',
       createAuthActivarRoutes({
         db: opts.db,
         logger,
         firebaseAuth: opts.firebaseAuth,
+        // alta-personal-booster SC6: el personal de Booster activa solo si su
+        // correo está en la lista de Terraform.
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        rateLimitPerRut: rateLimitActivarPorRut,
       }),
     );
 

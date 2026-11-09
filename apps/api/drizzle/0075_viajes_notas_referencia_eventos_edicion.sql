@@ -1,4 +1,4 @@
--- Migration 0074 — Notas y referencia de la carga + eventos de edición
+-- Migration 0075 — Notas y referencia de la carga + eventos de edición
 -- (spec editar-anular-cargas, M1).
 --
 -- viajes.notas (≤ 1000) y viajes.referencia (≤ 100): datos libres que el
