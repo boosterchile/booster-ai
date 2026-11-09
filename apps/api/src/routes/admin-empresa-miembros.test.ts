@@ -674,6 +674,19 @@ describe('POST /admin/empresas/:id/miembros — correo sin distinguir mayúscula
     expect(await res.json()).toEqual(YA_REGISTRADO);
     expect(d.insertedMemberships).toHaveLength(0);
   });
+
+  it('otro error del INSERT de la persona no se traduce a 409: sube', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      insertUserError: Object.assign(new Error('otra restricción'), { code: '23514' }),
+    });
+    const a = makeAuthStub();
+
+    const res = await post(buildApp(mod, d.db, a.auth), BODY.email);
+
+    expect(res.status).toBe(500);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
 });
 
 describe('PATCH /admin/empresas/:id — activar sin SQL', () => {

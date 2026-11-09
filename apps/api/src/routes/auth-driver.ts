@@ -9,6 +9,7 @@ import { conductores, memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
+import { codigoError } from '../services/identidad-firebase-conductor.js';
 import { codigoPersonalVigente, cuentaYaActivada } from '../services/vinculo-persona.js';
 
 /**
@@ -22,6 +23,35 @@ import { codigoPersonalVigente, cuentaYaActivada } from '../services/vinculo-per
  */
 function driverSyntheticEmail(rut: string): string {
   return `drivers+${rut.replace(/[.\-]/g, '')}@boosterchile.invalid`;
+}
+
+/**
+ * Crea la cuenta Firebase del conductor. Si otro pedido de la misma primera
+ * activación la creó entre la lectura y la creación, Firebase rechaza el
+ * correo repetido: se usa esa cuenta, que es la del mismo RUT, y la escritura
+ * con predicado decide cuál de los dos pedidos activa
+ * (`.specs/correos-solicitudes-panel` SC2). Cualquier otro error sube.
+ */
+async function crearCuentaFirebaseConductor(
+  auth: Auth,
+  syntheticEmail: string,
+  rut: string,
+): Promise<string> {
+  try {
+    const created = await auth.createUser({
+      email: syntheticEmail,
+      emailVerified: false,
+      displayName: `Conductor ${rut}`,
+      disabled: false,
+    });
+    return created.uid;
+  } catch (err) {
+    if (codigoError(err) !== 'auth/email-already-exists') {
+      throw err;
+    }
+    const creadaPorOtroPedido = await auth.getUserByEmail(syntheticEmail);
+    return creadaPorOtroPedido.uid;
+  }
 }
 
 /**
@@ -59,6 +89,11 @@ function driverSyntheticEmail(rut: string): string {
  * Estado de la cuenta (`.specs/acceso-panel-plataforma` SC10): una cuenta
  * `suspendido` o `eliminado` no se activa. Responde la misma 401 de un PIN
  * incorrecto, y la escritura exige que siga sin estar en esos estados.
+ *
+ * Primera activación simultánea (`.specs/correos-solicitudes-panel` SC2): si
+ * dos pedidos crean a la vez la cuenta Firebase, el que recibe
+ * `auth/email-already-exists` usa la que creó el otro y sigue a la escritura
+ * con predicado. Uno solo entra; el otro recibe la misma 401.
  */
 const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
 
@@ -199,13 +234,7 @@ export function createDriverAuthRoutes(opts: {
         // Caso retry (e.g. la primera vez el UPDATE de la DB falló post-Firebase).
         firebaseUid = existing.uid;
       } else {
-        const created = await opts.firebaseAuth.createUser({
-          email: syntheticEmail,
-          emailVerified: false,
-          displayName: `Conductor ${rut}`,
-          disabled: false,
-        });
-        firebaseUid = created.uid;
+        firebaseUid = await crearCuentaFirebaseConductor(opts.firebaseAuth, syntheticEmail, rut);
       }
     } catch (err) {
       opts.logger.error({ err, rut }, 'Firebase user create/update failed in driver-activate');

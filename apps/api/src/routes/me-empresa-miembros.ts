@@ -8,17 +8,18 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { correoEnListaRespaldo, cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
+import { cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
 import {
   ctxDeUserContext,
   puedeAdministrarEmpresa,
   puedeInvitarMiembro,
 } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
-import { esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { correoOcupado } from '../services/correo-de-cuenta.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
@@ -189,14 +190,16 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       const existente = existentes[0];
 
       // Una cuenta del personal de Booster no se gestiona desde una empresa
-      // (SC7), y una cuenta nueva no recibe un correo de la lista de respaldo:
-      // se rechaza como un correo ya registrado, sin decir que es de la lista.
+      // (SC7), y una cuenta nueva no recibe un correo de la lista de respaldo
+      // ni el de otra cuenta, sin distinguir mayúsculas
+      // (`.specs/correos-solicitudes-panel` SC3): se rechaza como un correo ya
+      // registrado, sin decir cuál de los dos casos es.
       if (
         cuentaGestionadaPorBooster({ cuenta: existente ?? null, lista: opts.platformAdminEmails })
       ) {
         return { conflicto: 'cuenta_personal_booster' as const };
       }
-      if (!existente && correoEnListaRespaldo(email, opts.platformAdminEmails)) {
+      if (!existente && (await correoOcupado({ db: tx, email, lista: opts.platformAdminEmails }))) {
         return { conflicto: 'email_registrado' as const };
       }
 
@@ -244,6 +247,10 @@ export function createMeEmpresaMiembrosRoutes(opts: {
         } catch (err) {
           if (esRutDuplicado(err)) {
             return { conflicto: 'rut_duplicado' as const };
+          }
+          // Otra alta guardó el mismo correo entre la búsqueda y el INSERT.
+          if (esEmailDuplicado(err)) {
+            return { conflicto: 'email_registrado' as const };
           }
           throw err;
         }

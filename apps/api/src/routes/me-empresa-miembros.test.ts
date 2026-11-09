@@ -602,4 +602,15 @@ describe('POST /me/empresa/miembros — correo sin distinguir mayúsculas (corre
     expect(await res.json()).toEqual(YA_REGISTRADO);
     expect(d.insertedMemberships).toHaveLength(0);
   });
+
+  it('otro error del INSERT de la persona no se traduce a 409: sube', async () => {
+    const d = makeDb({
+      insertUserError: Object.assign(new Error('otra restricción'), { code: '23514' }),
+    });
+
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(500);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
 });

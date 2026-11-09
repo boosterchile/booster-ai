@@ -4,6 +4,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import type { Db } from '../db/client.js';
 import { solicitudesRegistro, users } from '../db/schema.js';
+import { correoOcupado } from './correo-de-cuenta.js';
 import type { SignupRequestNotifier } from './notifications/signup-request-email.js';
 import { createOnboardingToken } from './onboarding-token.js';
 
@@ -49,17 +50,19 @@ export async function submitSignupRequest(
   logger: Logger,
   input: SubmitSignupRequestInput,
   correlationId: string,
+  /**
+   * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. Un correo de la lista
+   * se trata como uno ya usado (`.specs/correos-solicitudes-panel` SC1).
+   * Obligatoria: sin ella el chequeo quedaría apagado sin aviso.
+   */
+  platformAdminEmails: readonly string[],
 ): Promise<SubmitSignupRequestResult> {
   const emailLower = input.email.toLowerCase().trim();
   const nombreTrimmed = input.nombreCompleto.trim();
 
-  const existingUser = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, emailLower))
-    .limit(1);
-
-  if (existingUser.length > 0) {
+  // Correo de una cuenta, sin distinguir mayúsculas, o de la lista de
+  // respaldo (`.specs/correos-solicitudes-panel` SC1 y SC3).
+  if (await correoOcupado({ db, email: emailLower, lista: platformAdminEmails })) {
     // Email enumeration defense: no INSERT, no error al caller. Solo
     // structured log para que Booster pueda medir la rate de shadowed
     // (señal de attack o de UX confusion donde users registrados intentan
@@ -194,8 +197,10 @@ export type ApproveSignupRequestResult =
  * Error cases:
  *   - `not_found`: id no existe en `solicitudes_registro`.
  *   - `already_processed`: race condition con otro admin (estado != pending).
- *   - `firebase_user_already_exists`: Firebase rechaza createUser (email-already-exists);
- *     el row queda intacto pendiente para revisión manual.
+ *   - `firebase_user_already_exists`: Firebase rechaza createUser (email-already-exists),
+ *     o el correo de la solicitud está en la lista de respaldo o ya es de una
+ *     cuenta, sin distinguir mayúsculas (`.specs/correos-solicitudes-panel`
+ *     SC1); el row queda intacto pendiente para revisión manual.
  */
 export async function approveSignupRequest(
   db: Db,
@@ -207,6 +212,14 @@ export async function approveSignupRequest(
     approverEmail: string;
     loginLinkUrl: string;
     correlationId: string;
+    /**
+     * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. La aprobación crea la
+     * cuenta Firebase del correo de la solicitud, así que un correo de la
+     * lista se rechaza como uno que ya tiene cuenta
+     * (`.specs/correos-solicitudes-panel` SC1). Obligatoria: sin ella el
+     * chequeo quedaría apagado sin aviso.
+     */
+    platformAdminEmails: readonly string[];
     /**
      * Presente ⇔ `ADMIN_PROVISIONED_ONBOARDING_ENABLED` ON (T1.3/T1.4). Cuando
      * está, el approve emite el token one-shot, persiste `token_hash`/`expira_en`/
@@ -235,6 +248,19 @@ export async function approveSignupRequest(
       'signup-request.approve: already_processed',
     );
     return { outcome: 'already_processed' };
+  }
+
+  // El correo de la solicitud no queda en una cuenta nueva si está en la
+  // lista de respaldo o ya es de una cuenta, sin distinguir mayúsculas
+  // (`.specs/correos-solicitudes-panel` SC1), en los dos modos. Responde como
+  // un correo que ya tiene cuenta en Firebase: sin cuenta nueva, sin enlace y
+  // con la solicitud pendiente.
+  if (await correoOcupado({ db, email: request.email, lista: opts.platformAdminEmails })) {
+    logger.warn(
+      { correlationId: opts.correlationId, requestId: opts.id },
+      'signup-request.approve: el correo ya está ocupado; no se crea la cuenta',
+    );
+    return { outcome: 'firebase_user_already_exists' };
   }
 
   // Firebase Admin SDK createUser. Si Firebase rechaza por email-already-

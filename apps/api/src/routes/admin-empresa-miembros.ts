@@ -13,16 +13,16 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { correoOcupado } from '../services/correo-de-cuenta.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import {
@@ -676,19 +676,16 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           vinculo = VINCULO_PERSONA_EXISTENTE;
         } else {
           // Una cuenta nueva no recibe un correo de la lista de respaldo del
-          // panel (`.specs/bordes-autenticacion` SC5): misma respuesta que un
-          // correo ya usado.
-          if (correoEnListaRespaldo(email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
-            record('email_already_registered');
-            return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
-          }
-          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-          const porEmail = await opts.db
-            .select({ id: users.id })
-            .from(users)
-            .where(eq(users.email, email))
-            .limit(1);
-          if (porEmail[0]) {
+          // panel (`.specs/bordes-autenticacion` SC5) ni el de otra cuenta,
+          // sin distinguir mayúsculas (`.specs/correos-solicitudes-panel`
+          // SC3): la misma respuesta en los dos casos.
+          if (
+            await correoOcupado({
+              db: opts.db,
+              email,
+              lista: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+            })
+          ) {
             record('email_already_registered');
             return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
           }
@@ -714,6 +711,11 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             if (esRutDuplicado(err)) {
               record('rut_already_registered');
               return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+            }
+            // Otra alta guardó el mismo correo entre la búsqueda y el INSERT.
+            if (esEmailDuplicado(err)) {
+              record('email_already_registered');
+              return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
             }
             throw err;
           }

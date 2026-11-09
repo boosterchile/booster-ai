@@ -191,6 +191,7 @@ export function createAdminSignupRequestsRoutes(opts: {
               signingSecret,
               ttlMs: appConfig.ONBOARDING_TOKEN_TTL_HOURS * 60 * 60 * 1000,
             },
+            platformAdminEmails: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
           });
           if (result.outcome !== 'issued') {
             record(result.outcome);
@@ -267,6 +268,7 @@ export function createAdminSignupRequestsRoutes(opts: {
           approverEmail: auth.adminEmail,
           loginLinkUrl: body.loginLinkUrl ?? DEFAULT_LOGIN_LINK_URL,
           correlationId,
+          platformAdminEmails: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
           ...(adminProvisionedOnboarding ? { adminProvisionedOnboarding } : {}),
         });
         if (result.outcome === 'not_found') {

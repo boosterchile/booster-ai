@@ -3,7 +3,8 @@ import type { Logger } from '@booster-ai/logger';
 import { eq } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import type { Db } from '../db/client.js';
-import { solicitudesRegistro, users } from '../db/schema.js';
+import { solicitudesRegistro } from '../db/schema.js';
+import { correoOcupado } from './correo-de-cuenta.js';
 import { decidirAltaExencion } from './decidir-alta-exencion.js';
 import type { SignupRequestNotifier } from './notifications/signup-request-email.js';
 import { approveSignupRequest } from './signup-request.js';
@@ -25,6 +26,13 @@ export interface EmitirAltaExencionInput {
   correlationId: string;
   loginLinkUrl: string;
   adminProvisionedOnboarding: { signingSecret: string; ttlMs: number };
+  /**
+   * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. El enlace de esta alta
+   * crea la cuenta del dueño, así que un correo de la lista se rechaza como
+   * uno ya registrado (`.specs/correos-solicitudes-panel` SC1). Obligatoria:
+   * sin ella el chequeo quedaría apagado sin aviso.
+   */
+  platformAdminEmails: readonly string[];
 }
 
 export type EmitirAltaExencionResult =
@@ -57,11 +65,14 @@ export async function emitirAltaExencion(
   const emailLower = input.email.toLowerCase().trim();
   const nombreTrimmed = input.nombreCompleto.trim();
 
-  const existingUser = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, emailLower))
-    .limit(1);
+  // Cuenta con ese correo, sin distinguir mayúsculas, o correo de la lista de
+  // respaldo: los dos casos responden `email_already_registered`
+  // (`.specs/correos-solicitudes-panel` SC1 y SC3).
+  const usuarioExiste = await correoOcupado({
+    db,
+    email: emailLower,
+    lista: input.platformAdminEmails,
+  });
 
   const solicitudes = await db
     .select({ id: solicitudesRegistro.id, estado: solicitudesRegistro.estado })
@@ -70,7 +81,7 @@ export async function emitirAltaExencion(
     .limit(20);
 
   const decision = decidirAltaExencion({
-    usuarioExiste: existingUser.length > 0,
+    usuarioExiste,
     solicitudes,
   });
 
@@ -103,6 +114,7 @@ export async function emitirAltaExencion(
     approverEmail: input.approverEmail,
     loginLinkUrl: input.loginLinkUrl,
     correlationId: input.correlationId,
+    platformAdminEmails: input.platformAdminEmails,
     adminProvisionedOnboarding: input.adminProvisionedOnboarding,
   });
 

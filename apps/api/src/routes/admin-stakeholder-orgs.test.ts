@@ -315,6 +315,18 @@ describe('POST /admin/stakeholder-orgs/:id/invitar — correo sin distinguir may
     expect(await res.json()).toEqual(YA_REGISTRADO);
     expect(d.inserted).toHaveLength(0);
   });
+
+  it('otro error del INSERT de la persona no se traduce a 409: sube', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], [], []], [[{ id: 'm-1' }]], {
+      insertUserError: Object.assign(new Error('otra restricción'), { code: '23514' }),
+    });
+
+    const res = await invitar(buildApp(mod, d.db), 'persona@acme.cl');
+
+    expect(res.status).toBe(500);
+    expect(d.inserted).toHaveLength(0);
+  });
 });
 
 /**

@@ -7,15 +7,15 @@ import {
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { correoOcupado } from '../services/correo-de-cuenta.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import { VINCULO_PERSONA_EXISTENTE, type VinculoPersona } from '../services/vinculo-persona.js';
@@ -255,8 +255,16 @@ export function createAdminStakeholderOrgsRoutes(opts: {
       vinculo = VINCULO_PERSONA_EXISTENTE;
     } else {
       // Una cuenta nueva no recibe un correo de la lista de respaldo del panel
-      // (`.specs/bordes-autenticacion` SC5): misma respuesta que un correo ya usado.
-      if (correoEnListaRespaldo(body.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
+      // (`.specs/bordes-autenticacion` SC5) ni el de otra cuenta, sin
+      // distinguir mayúsculas (`.specs/correos-solicitudes-panel` SC3): la
+      // misma respuesta en los dos casos.
+      if (
+        await correoOcupado({
+          db: opts.db,
+          email: body.email,
+          lista: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        })
+      ) {
         return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
       }
       vinculo = 'nueva';
@@ -281,6 +289,10 @@ export function createAdminStakeholderOrgsRoutes(opts: {
       } catch (err) {
         if (esRutDuplicado(err)) {
           return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+        }
+        // Otra alta guardó el mismo correo entre la búsqueda y el INSERT.
+        if (esEmailDuplicado(err)) {
+          return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
         }
         throw err;
       }
