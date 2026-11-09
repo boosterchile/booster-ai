@@ -250,9 +250,17 @@ describe('CargasNuevoRoute — correo del destinatario', () => {
     await llenarCargaValida(user);
     await user.type(screen.getByLabelText(/Nombre del destinatario/), 'Bodega La Serena');
     await user.type(screen.getByLabelText(/Correo del destinatario/), 'Recepcion@Cliente.CL');
+    await user.type(screen.getByLabelText(/Notas para el transportista/), 'Andén 4');
+    await user.type(screen.getByLabelText(/^Referencia/), 'PO-1');
     await user.click(screen.getByRole('button', { name: 'Crear carga' }));
     await waitFor(() => expect(post).toHaveBeenCalled());
-    const [, body] = post.mock.calls[0] as [string, { consignee?: unknown }];
+    const [, body] = post.mock.calls[0] as [
+      string,
+      { consignee?: unknown; notes?: string; reference?: string },
+    ];
+    // editar-anular-cargas §12-P4: notas y referencia al crear.
+    expect(body.notes).toBe('Andén 4');
+    expect(body.reference).toBe('PO-1');
     // El API lo guarda en minúsculas (schema compartido); la web lo manda tal cual, sin espacios.
     expect(body.consignee).toEqual({ name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' });
   });
@@ -302,6 +310,43 @@ describe('CargasDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasDetalleRoute />);
     await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
+  });
+
+  // editar-anular-cargas §9: «Contacto y notas» en el detalle.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('datos libres permitidos=%s → botón Editar visible=%s', async (permitido, visible) => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 'trip-1',
+        tracking_code: 'BST-999',
+        status: permitido ? 'asignado' : 'entregado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        cargo_volume_m3: null,
+        pickup_window_start: null,
+        pickup_window_end: null,
+        created_at: '2026-05-10T10:00:00Z',
+        consignee: { name: 'Bodega', phone_e164: null, email: null },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+        acciones_permitidas: { editar_datos_libres: permitido },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText('Contacto y notas')).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+    expect(screen.getByText('PO-1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar' }) !== null).toBe(visible);
   });
 
   it('en_proceso sin destinatario y con token → muestra el enlace público', async () => {
