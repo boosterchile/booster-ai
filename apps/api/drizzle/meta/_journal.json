@@ -505,6 +505,13 @@
       "when": 1780876800080,
       "tag": "0071_membresias_puede_aceptar_ofertas",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1780876800090,
+      "tag": "0072_retiro_superficie_demo",
+      "breakpoints": true
     }
   ]
 }
