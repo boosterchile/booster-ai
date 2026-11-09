@@ -11,22 +11,22 @@ import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
- * T6 de `.specs/alta-personal-booster/spec.md` (SC7): la cadena real del alta
- * del personal de Booster contra Postgres, en el orden del runbook.
+ * T6 de `.specs/alta-personal-booster/spec.md` (SC7) y T9 de
+ * `.specs/acceso-panel-plataforma/spec.md` (SC14): la cadena real del personal
+ * de Booster contra Postgres, en el orden del runbook.
  *
- *   1. `POST /admin/personal-booster`            → cuenta provisoria + código
- *   2. el correo todavía no está en la lista     → `/auth/activar` responde 401
- *   3. el PO agrega el correo a la lista          → «Generar código nuevo»
- *   4. `POST /auth/activar` con el código nuevo   → clave propia, sesión
- *   5. `POST /auth/login-rut`                     → entra con esa clave
- *   6. `GET /me`                                  → `is_platform_admin: true`
- *   7. `GET /admin/personal-booster` como ella    → 200
+ *   1. `POST /admin/personal-booster`            → cuenta marcada + código
+ *   2. «Generar código nuevo»                     → el anterior deja de servir
+ *   3. `POST /auth/activar` con el código nuevo   → clave propia, sesión
+ *   4. `POST /auth/login-rut`                     → entra con esa clave
+ *   5. `GET /me`                                  → `is_platform_admin: true`
+ *   6. `GET /admin/personal-booster` como ella    → 200
+ *   7. «Quitar acceso»                            → 403 y `/me` en false
  *
- * La lista de Terraform tiene dos lecturas: `requirePlatformAdmin` y `/me` la
- * leen de `config` al importar (por eso el env se fija en `vi.hoisted`, con el
- * estado final: el admin y la persona), y las rutas nuevas la reciben por
- * opciones. El paso 2 pasa la lista sin la persona para reproducir el orden:
- * primero el alta, después la lista.
+ * El acceso lo da la marca que pone el panel: la persona NO está en la lista
+ * de respaldo. `requirePlatformAdmin` y `/me` leen la lista de `config` al
+ * importar (por eso el env se fija en `vi.hoisted`, solo con el admin), y las
+ * rutas del personal la reciben por opciones.
  *
  * Firebase se inyecta como un `Auth` en memoria (mismo doble que
  * `alta-admin-cadena`). El middleware de idToken se reemplaza por un shim que
@@ -40,8 +40,7 @@ const PERSONA_EMAIL = 'personal-it@test.invalid';
 // `config` lee la lista al importarse. vi.hoisted corre antes de los imports
 // de este archivo; las rutas se importan recién en beforeAll.
 vi.hoisted(() => {
-  process.env.BOOSTER_PLATFORM_ADMIN_EMAILS =
-    'admin-personal-it@test.invalid,personal-it@test.invalid';
+  process.env.BOOSTER_PLATFORM_ADMIN_EMAILS = 'admin-personal-it@test.invalid';
 });
 
 // Códigos de activación predecibles y siempre distintos entre sí, para que el
@@ -138,7 +137,7 @@ async function cargarRutas() {
   };
 }
 
-describe('integration: alta del personal de Booster desde el panel (SC7)', () => {
+describe('integration: el panel otorga y quita el acceso del personal de Booster', () => {
   let handle: TestDbHandle;
   let rutas: Awaited<ReturnType<typeof cargarRutas>>;
   let firebase: ReturnType<typeof authEnMemoria>;
@@ -155,9 +154,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     child: () => logger,
   } as never;
 
-  // La persona entra a la lista de Terraform en el paso 3.
-  const LISTA_ANTES = [ADMIN_EMAIL];
-  const LISTA_DESPUES = [ADMIN_EMAIL, PERSONA_EMAIL];
+  // La lista de respaldo: solo el admin. La persona entra al panel por la marca.
+  const LISTA = [ADMIN_EMAIL];
 
   beforeAll(async () => {
     handle = createTestDb();
@@ -222,7 +220,6 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
         db,
         logger,
         firebaseAuth: firebase.auth,
-        platformAdminEmails: lista,
         rateLimitPerRut: sinRateLimit,
       }),
     );
@@ -273,8 +270,13 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
   let primerCodigo = '';
   let codigo = '';
 
-  test('1. el admin da de alta a la persona antes de que su correo esté en la lista', async () => {
-    const res = await app(LISTA_ANTES).request(
+  /** Correos enviados a una dirección con un asunto que empieza así. */
+  function correosA(to: string, asunto: string) {
+    return correo.enviados.filter((m) => m.to === to && m.subject.startsWith(asunto));
+  }
+
+  test('1. el admin da de alta a la persona fuera de la lista: queda marcada, el código sale por correo y la lista recibe el aviso', async () => {
+    const res = await app(LISTA).request(
       '/admin/personal-booster',
       json('POST', { email: PERSONA_EMAIL, full_name: persona.nombre, rut: persona.rut }, adminUid),
     );
@@ -292,8 +294,16 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(body.expira_en).toBeTruthy();
     userId = body.user_id;
     primerCodigo = body.codigo_activacion ?? '';
-    // Fuera de la lista no sale correo.
-    expect(correo.enviados).toHaveLength(0);
+
+    // La lista ya no es condición: el código sale por correo a la persona.
+    const activacion = correosA(PERSONA_EMAIL, 'Activa tu acceso');
+    expect(activacion).toHaveLength(1);
+    expect(activacion[0]?.text).toContain(primerCodigo);
+    // Aviso a la lista de respaldo, sin el código.
+    const aviso = correosA(ADMIN_EMAIL, 'Booster: acceso al panel otorgado');
+    expect(aviso).toHaveLength(1);
+    expect(aviso[0]?.text).toContain(PERSONA_EMAIL);
+    expect(aviso[0]?.text).not.toContain(primerCodigo);
 
     const u = await filaPersona();
     expect(u.id).toBe(userId);
@@ -307,21 +317,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(new Date(body.expira_en ?? '').getTime()).toBe(u.activacionVenceEn?.getTime());
   });
 
-  test('2. sin el correo en la lista, /auth/activar responde la 401 genérica y no escribe', async () => {
-    const antes = await filaPersona();
-    const res = await app(LISTA_ANTES).request(
-      '/auth/activar',
-      json('POST', { rut: persona.rut, codigo: primerCodigo, clave_numerica: persona.clave }),
-    );
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: 'invalid_credentials', code: 'invalid_credentials' });
-    const despues = await filaPersona();
-    expect(despues.activationPinHash).toBe(antes.activationPinHash);
-    expect(despues.claveNumericaHash).toBeNull();
-  });
-
-  test('3. con el correo ya en la lista, el admin genera un código nuevo y sale por correo', async () => {
-    const res = await app(LISTA_DESPUES).request(
+  test('2. el admin genera un código nuevo y sale por correo aunque la persona no esté en la lista', async () => {
+    const res = await app(LISTA).request(
       `/admin/personal-booster/${userId}/codigo`,
       json('POST', undefined, adminUid),
     );
@@ -333,20 +330,20 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     };
     expect(res.status, JSON.stringify(body)).toBe(200);
     expect(body.user_id).toBe(userId);
-    expect(body.en_lista).toBe(true);
+    expect(body.en_lista).toBe(false);
     expect(body.codigo_activacion).toMatch(/^\d{6}$/);
     codigo = body.codigo_activacion;
 
-    expect(correo.enviados).toHaveLength(1);
-    const msg = correo.enviados[0];
-    expect(msg?.to).toBe(PERSONA_EMAIL);
+    const activacion = correosA(PERSONA_EMAIL, 'Activa tu acceso');
+    expect(activacion).toHaveLength(2);
+    const msg = activacion[1];
     expect(msg?.text).toContain('https://app.test.invalid/activar');
     expect(msg?.text).toContain(codigo);
     expect(msg?.text).toContain(persona.rut);
   });
 
-  test('4. el código anterior ya no sirve; el nuevo activa con la clave que elige la persona', async () => {
-    const a = app(LISTA_DESPUES);
+  test('3. el código anterior ya no sirve; el nuevo activa sin la lista, con la clave que elige la persona', async () => {
+    const a = app(LISTA);
     expect(primerCodigo).not.toBe(codigo);
     const viejo = await a.request(
       '/auth/activar',
@@ -375,8 +372,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(u.email).toBe(PERSONA_EMAIL);
   });
 
-  test('5-7. entra por login-rut, /me la ve como platform-admin y una ruta /admin/* responde 200', async () => {
-    const a = app(LISTA_DESPUES);
+  test('4-6. entra por login-rut, /me la ve como platform-admin por la marca y una ruta /admin/* responde 200', async () => {
+    const a = app(LISTA);
     const u = await filaPersona();
 
     const login = await a.request(
@@ -409,8 +406,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     );
   });
 
-  test('8. después de activar, el código ya no sirve y la clave no cambia', async () => {
-    const a = app(LISTA_DESPUES);
+  test('7. después de activar, el código ya no sirve y la clave no cambia', async () => {
+    const a = app(LISTA);
     const antes = await filaPersona();
     const reuso = await a.request(
       '/auth/activar',
@@ -427,8 +424,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(mal.status).toBe(401);
   });
 
-  test('9. una cuenta activa no recibe código nuevo y un alta repetida no la toca', async () => {
-    const a = app(LISTA_DESPUES);
+  test('8. una cuenta activa no recibe código nuevo y un alta repetida no la toca', async () => {
+    const a = app(LISTA);
     const antes = await filaPersona();
 
     const reemision = await a.request(
@@ -458,8 +455,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(despues.firebaseUid).toBe(antes.firebaseUid);
   });
 
-  test('10. rechazos contra la base real: otro RUT para el correo y RUT de otra persona', async () => {
-    const a = app(LISTA_DESPUES);
+  test('9. rechazos contra la base real: otro RUT para el correo y RUT de otra persona', async () => {
+    const a = app(LISTA);
 
     const mismatch = await a.request(
       '/admin/personal-booster',
@@ -487,8 +484,8 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(creadas).toEqual([]);
   });
 
-  test('11. sin sesión 401; una cuenta que no es platform-admin 403', async () => {
-    const a = app(LISTA_DESPUES);
+  test('10. sin sesión 401; una cuenta que no es platform-admin 403', async () => {
+    const a = app(LISTA);
     expect((await a.request('/admin/personal-booster')).status).toBe(401);
 
     const otraUid = `fb-otra-${randomUUID().slice(0, 8)}`;
@@ -510,14 +507,16 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     return u;
   }
 
-  test('12. una cuenta activa fuera de la lista no se marca; con el correo en la lista, sí', async () => {
+  test('11. una cuenta activa fuera de la lista queda con acceso al darla de alta, y «Quitar acceso» se lo quita', async () => {
+    const a = app(LISTA);
     const sufijo = randomUUID().slice(0, 8);
     const correoActiva = `activa-${sufijo}@test.invalid`;
+    const uidActiva = `fb-activa-${sufijo}`;
     const rut = rutAleatorio();
     const [cuenta] = await handle.db
       .insert(schema.users)
       .values({
-        firebaseUid: `fb-activa-${sufijo}`,
+        firebaseUid: uidActiva,
         email: correoActiva,
         fullName: 'Dueña Generadora',
         rut,
@@ -528,36 +527,73 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     if (!cuenta) {
       throw new Error('fixture: cuenta activa no creada');
     }
-    const datos = { email: correoActiva, full_name: 'Dueña Generadora', rut };
+    const comoElla = { headers: { 'x-test-uid': uidActiva } };
+    const esAdmin = async () =>
+      (
+        (await (await a.request('/me', comoElla)).json()) as {
+          user: { is_platform_admin: boolean };
+        }
+      ).user.is_platform_admin;
 
-    const fuera = await app(LISTA_DESPUES).request(
+    // Antes del alta: sin acceso.
+    expect((await a.request('/admin/personal-booster', comoElla)).status).toBe(403);
+    expect(await esAdmin()).toBe(false);
+
+    // El alta la marca y le da el acceso, aunque su correo no esté en la lista.
+    const alta = await a.request(
       '/admin/personal-booster',
-      json('POST', datos, adminUid),
+      json('POST', { email: correoActiva, full_name: 'Dueña Generadora', rut }, adminUid),
     );
-    const cuerpoFuera = (await fuera.json()) as Record<string, unknown>;
-    expect(fuera.status, JSON.stringify(cuerpoFuera)).toBe(200);
-    expect(cuerpoFuera).toMatchObject({
+    const cuerpo = (await alta.json()) as Record<string, unknown>;
+    expect(alta.status, JSON.stringify(cuerpo)).toBe(200);
+    expect(cuerpo).toMatchObject({
       user_id: cuenta.id,
       vinculo: 'cuenta_activa',
       codigo_activacion: null,
       en_lista: false,
     });
-    expect((await filaPorId(cuenta.id)).isPlatformAdmin).toBe(false);
-
-    const dentro = await app([...LISTA_DESPUES, correoActiva]).request(
-      '/admin/personal-booster',
-      json('POST', datos, adminUid),
-    );
-    const cuerpoDentro = (await dentro.json()) as Record<string, unknown>;
-    expect(dentro.status, JSON.stringify(cuerpoDentro)).toBe(200);
-    expect(cuerpoDentro).toMatchObject({ vinculo: 'cuenta_activa', en_lista: true });
     const marcada = await filaPorId(cuenta.id);
     expect(marcada.isPlatformAdmin).toBe(true);
     expect(marcada.claveNumericaHash).toBe('hash-clave-existente');
     expect(marcada.fullName).toBe('Dueña Generadora');
+    expect((await a.request('/admin/personal-booster', comoElla)).status).toBe(200);
+    expect(await esAdmin()).toBe(true);
+    expect(correosA(ADMIN_EMAIL, 'Booster: acceso al panel otorgado a Dueña')).toHaveLength(1);
+
+    // «Quitar acceso»: el guard lo ve en la request siguiente.
+    const baja = await a.request(
+      `/admin/personal-booster/${cuenta.id}/quitar-acceso`,
+      json('POST', undefined, adminUid),
+    );
+    expect(baja.status, JSON.stringify(await baja.clone().json())).toBe(200);
+    expect(await baja.json()).toEqual({ ok: true, user_id: cuenta.id });
+    const desmarcada = await filaPorId(cuenta.id);
+    expect(desmarcada.isPlatformAdmin).toBe(false);
+    expect(desmarcada.claveNumericaHash).toBe('hash-clave-existente');
+    expect(desmarcada.status).toBe('activo');
+    expect((await a.request('/admin/personal-booster', comoElla)).status).toBe(403);
+    expect(await esAdmin()).toBe(false);
+    expect(correosA(ADMIN_EMAIL, 'Booster: acceso al panel quitado a Dueña')).toHaveLength(1);
+
+    // Ya no está marcada: 404. Y el correo de la lista no se quita desde el panel.
+    const otraVez = await a.request(
+      `/admin/personal-booster/${cuenta.id}/quitar-acceso`,
+      json('POST', undefined, adminUid),
+    );
+    expect(otraVez.status).toBe(404);
+    const [admin] = await handle.db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.firebaseUid, adminUid));
+    const alRespaldo = await a.request(
+      `/admin/personal-booster/${admin?.id}/quitar-acceso`,
+      json('POST', undefined, adminUid),
+    );
+    expect(alRespaldo.status).toBe(409);
+    expect(((await alRespaldo.json()) as { code: string }).code).toBe('en_lista_respaldo');
   });
 
-  test('13. el firebase_uid provisorio de ese RUT ya tomado → 409 rut_already_registered, sin escribir', async () => {
+  test('12. el firebase_uid provisorio de ese RUT ya tomado → 409 rut_already_registered, sin escribir', async () => {
     const sufijo = randomUUID().slice(0, 8);
     const rut = rutAleatorio();
     // Fila con el uid provisorio del RUT pero sin el RUT en su columna.
@@ -569,7 +605,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     });
     const correoNuevo = `nueva-${sufijo}@test.invalid`;
 
-    const res = await app(LISTA_DESPUES).request(
+    const res = await app(LISTA).request(
       '/admin/personal-booster',
       json('POST', { email: correoNuevo, full_name: 'Persona Nueva', rut }, adminUid),
     );
@@ -583,7 +619,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(creadas).toEqual([]);
   });
 
-  test('14. la lista trae la cuenta sin marca cuyo correo está en la lista, y el alta encuentra un correo guardado con mayúsculas', async () => {
+  test('13. la lista trae la cuenta sin marca cuyo correo está en la lista, y el alta encuentra un correo guardado con mayúsculas', async () => {
     const sufijo = randomUUID().slice(0, 8);
     const correoGuardado = `Mayus-${sufijo}@Test.Invalid`;
     const rut = rutAleatorio();
@@ -601,7 +637,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     if (!cuenta) {
       throw new Error('fixture: cuenta con mayúsculas no creada');
     }
-    const a = app([...LISTA_DESPUES, correoGuardado.toLowerCase()]);
+    const a = app([...LISTA, correoGuardado.toLowerCase()]);
 
     const panel = await a.request('/admin/personal-booster', {
       headers: { 'x-test-uid': adminUid },
@@ -630,13 +666,12 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(cuerpo).toMatchObject({ user_id: cuenta.id, vinculo: 'cuenta_activa', en_lista: true });
   });
 
-  test('15. un código que no emitió el panel no activa a una cuenta marcada; el que re-emite el panel, sí', async () => {
-    const a = app(LISTA_DESPUES);
+  test('14. la re-emisión del panel de empresas cuenta como código del panel: activa la cuenta marcada y su membresía', async () => {
+    const a = app(LISTA);
     const sufijo = randomUUID().slice(0, 8);
     const rut = rutAleatorio();
     const correoPersona = `personal-empresa-${sufijo}@test.invalid`;
     const clave = '736251';
-    const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
 
     // 1. Alta en el panel: la cuenta queda marcada con un código del panel.
     const alta = await a.request(
@@ -703,37 +738,18 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     );
     const deLaEmpresa = (await reemitirEmpresa.json()) as { codigo_activacion: string };
     expect(reemitirEmpresa.status, JSON.stringify(deLaEmpresa)).toBe(200);
-    const conCodigoDeLaEmpresa = await filaPorId(personaId);
-    expect(conCodigoDeLaEmpresa.isPlatformAdmin).toBe(true);
+    // Solo un platform-admin re-emite desde ahí: deja el vencimiento del panel.
+    const conCodigoDelPanel = await filaPorId(personaId);
+    expect(conCodigoDelPanel.isPlatformAdmin).toBe(true);
+    expect(conCodigoDelPanel.activacionVenceEn).toBeInstanceOf(Date);
 
-    // 3. Ese código no activa la cuenta marcada, aunque la invitación esté vigente.
-    const conElDeLaEmpresa = await a.request(
+    // 3. Ese código activa la cuenta marcada y la invitación vigente.
+    const activar = await a.request(
       '/auth/activar',
       json('POST', { rut, codigo: deLaEmpresa.codigo_activacion, clave_numerica: clave }),
     );
-    expect(conElDeLaEmpresa.status).toBe(401);
-    expect(await conElDeLaEmpresa.json()).toEqual(rechazo);
-    const sinActivar = await filaPorId(personaId);
-    expect(sinActivar.claveNumericaHash).toBeNull();
-    expect(sinActivar.activationPinHash).toBe(conCodigoDeLaEmpresa.activationPinHash);
-    // La re-emisión de la empresa dejó su código sin el vencimiento del panel.
-    expect(sinActivar.activacionVenceEn).toBeNull();
-
-    // 4. El panel re-emite: ese código activa la cuenta y la membresía.
-    const reemitirPanel = await a.request(
-      `/admin/personal-booster/${personaId}/codigo`,
-      json('POST', undefined, adminUid),
-    );
-    const delPanel = (await reemitirPanel.json()) as { codigo_activacion: string };
-    expect(reemitirPanel.status, JSON.stringify(delPanel)).toBe(200);
-    expect(delPanel.codigo_activacion).not.toBe(deLaEmpresa.codigo_activacion);
-
-    const conElDelPanel = await a.request(
-      '/auth/activar',
-      json('POST', { rut, codigo: delPanel.codigo_activacion, clave_numerica: clave }),
-    );
-    const sesion = (await conElDelPanel.json()) as { activated?: boolean };
-    expect(conElDelPanel.status, JSON.stringify(sesion)).toBe(200);
+    const sesion = (await activar.json()) as { activated?: boolean };
+    expect(activar.status, JSON.stringify(sesion)).toBe(200);
     expect(sesion.activated).toBe(true);
     const activada = await filaPorId(personaId);
     expect(activada.status).toBe('activo');
@@ -795,37 +811,24 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     });
     flota.route(
       '/conductores',
-      rutas.createConductoresRoutes({ db, logger, platformAdminEmails: LISTA_DESPUES }),
+      rutas.createConductoresRoutes({ db, logger, platformAdminEmails: LISTA }),
     );
     return flota;
   }
 
-  test('16. /auth/driver-activate aplica la misma regla: un código que no emitió el panel no activa a una cuenta marcada; el del panel, sí', async () => {
-    const a = app(LISTA_DESPUES);
+  test('15. la flota no gestiona una cuenta del personal: 409 cuenta_personal_booster; el código del panel activa por /auth/driver-activate', async () => {
+    const a = app(LISTA);
     const sufijo = randomUUID().slice(0, 8);
     const rut = rutAleatorio();
     const correoPersona = `personal-conductor-${sufijo}@test.invalid`;
     const clave = '648213';
     const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
+    const personalBooster = {
+      code: 'cuenta_personal_booster',
+      message: 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+    };
 
-    // 1. Alta en el panel: la cuenta queda marcada con un código del panel.
-    const alta = await a.request(
-      '/admin/personal-booster',
-      json('POST', { email: correoPersona, full_name: 'Caro Personal', rut }, adminUid),
-    );
-    const altaBody = (await alta.json()) as { user_id: string; vinculo: string };
-    expect(alta.status, JSON.stringify(altaBody)).toBe(201);
-    expect(altaBody.vinculo).toBe('nueva');
-    const personaId = altaBody.user_id;
-
-    // 2. Una transportista registra a la misma persona como conductor, corrige
-    //    su teléfono y reenvía la invitación (#826: guardar el teléfono solo no
-    //    la reenvía): eso deja en la cuenta un código que no emitió el panel.
-    //    La transportista puede reenviarla porque la persona y el conductor
-    //    nacen dentro de la tolerancia de `personaPrevia` (60 s): los pasos 1
-    //    y 2 corren seguidos. Si los separa más que eso, `/telefono` responde
-    //    409 `identidad_vinculada` y el caso cae en el paso 2, no en la regla
-    //    de `activacion_vence_en`.
+    // 1. Una transportista registra a la persona como conductor: recibe su PIN.
     const flota = await transportista(sufijo);
     const conductor = await flota.request(
       '/conductores',
@@ -845,42 +848,56 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
       activation_pin?: string;
     };
     expect(conductor.status, JSON.stringify(conductorBody)).toBe(201);
-    expect(conductorBody.activation_pin).toBeUndefined();
+    const pinDeLaFlota = conductorBody.activation_pin ?? '';
+    expect(pinDeLaFlota).toMatch(/^\d{6}$/);
 
+    // 2. El panel la da de alta: su código no era del panel, así que emite uno.
+    const alta = await a.request(
+      '/admin/personal-booster',
+      json('POST', { email: correoPersona, full_name: 'Caro Personal', rut }, adminUid),
+    );
+    const altaBody = (await alta.json()) as {
+      user_id: string;
+      vinculo: string;
+      codigo_activacion: string | null;
+    };
+    expect(alta.status, JSON.stringify(altaBody)).toBe(200);
+    expect(altaBody.vinculo).toBe('provisoria_sin_codigo');
+    const codigoDelPanel = altaBody.codigo_activacion ?? '';
+    const personaId = altaBody.user_id;
+    const marcada = await filaPorId(personaId);
+    expect(marcada.isPlatformAdmin).toBe(true);
+    expect(marcada.activacionVenceEn).toBeInstanceOf(Date);
+
+    // 3. Desde ahí la flota ya no toca la cuenta: teléfono, correo ni alta.
     const telefono = await flota.request(
       `/conductores/${conductorBody.conductor.id}/telefono`,
       json('POST', { phone: '+56987654322', reenviar_invitacion: true }),
     );
-    const telefonoBody = (await telefono.json()) as { activation_pin?: string };
-    expect(telefono.status, JSON.stringify(telefonoBody)).toBe(200);
-    expect(telefonoBody.activation_pin).toMatch(/^\d{6}$/);
-    const conOtroCodigo = await filaPorId(personaId);
-    expect(conOtroCodigo.isPlatformAdmin).toBe(true);
-    expect(conOtroCodigo.activacionVenceEn).toBeNull();
+    expect(telefono.status).toBe(409);
+    expect(await telefono.json()).toMatchObject(personalBooster);
+    const email = await flota.request(
+      `/conductores/${conductorBody.conductor.id}/email`,
+      json('POST', { email: `otro-${sufijo}@test.invalid` }),
+    );
+    expect(email.status).toBe(409);
+    expect(await email.json()).toMatchObject(personalBooster);
+    const sinCambios = await filaPorId(personaId);
+    expect(sinCambios.activationPinHash).toBe(marcada.activationPinHash);
+    expect(sinCambios.email).toBe(correoPersona);
+    expect(sinCambios.phone).toBe('+56987654321');
 
-    // 3. Ese código no activa la cuenta marcada por /auth/driver-activate.
+    // 4. El PIN de la flota ya no activa; el código del panel, sí.
     const conElDeLaFlota = await a.request(
       '/auth/driver-activate',
-      json('POST', { rut, pin: telefonoBody.activation_pin, clave_numerica: clave }),
+      json('POST', { rut, pin: pinDeLaFlota, clave_numerica: clave }),
     );
     expect(conElDeLaFlota.status).toBe(401);
     expect(await conElDeLaFlota.json()).toEqual(rechazo);
-    const sinActivar = await filaPorId(personaId);
-    expect(sinActivar.claveNumericaHash).toBeNull();
-    expect(sinActivar.firebaseUid).toBe(`pending-rut:${rut}`);
-    expect(sinActivar.activationPinHash).toBe(conOtroCodigo.activationPinHash);
-
-    // 4. El panel re-emite: ese código activa la cuenta por el mismo endpoint.
-    const reemitirPanel = await a.request(
-      `/admin/personal-booster/${personaId}/codigo`,
-      json('POST', undefined, adminUid),
-    );
-    const delPanel = (await reemitirPanel.json()) as { codigo_activacion: string };
-    expect(reemitirPanel.status, JSON.stringify(delPanel)).toBe(200);
 
     const conElDelPanel = await a.request(
       '/auth/driver-activate',
-      json('POST', { rut, pin: delPanel.codigo_activacion, clave_numerica: clave }),
+      json('POST', { rut, pin: codigoDelPanel, clave_numerica: clave }),
     );
     const sesion = (await conElDelPanel.json()) as { custom_token?: string };
     expect(conElDelPanel.status, JSON.stringify(sesion)).toBe(200);
@@ -892,7 +909,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(activada.activacionVenceEn).toBeNull();
   });
 
-  test('17. /auth/activar escribe solo si el código sigue siendo el verificado y la cuenta sigue sin clave', async () => {
+  test('16. /auth/activar escribe solo si el código sigue siendo el verificado y la cuenta sigue sin clave', async () => {
     const sufijo = randomUUID().slice(0, 8);
     const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
     const clave = '529184';
@@ -900,7 +917,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     // a) El panel re-emite el código entre la verificación y la escritura.
     const correoA = `personal-reemite-${sufijo}@test.invalid`;
     const rutA = rutAleatorio();
-    const a = app([...LISTA_DESPUES, correoA]);
+    const a = app(LISTA);
     const altaA = await a.request(
       '/admin/personal-booster',
       json('POST', { email: correoA, full_name: 'Dani Personal', rut: rutA }, adminUid),
@@ -941,7 +958,7 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     // b) La cuenta recibe una clave entre la verificación y la escritura.
     const correoB = `personal-clave-${sufijo}@test.invalid`;
     const rutB = rutAleatorio();
-    const b = app([...LISTA_DESPUES, correoB]);
+    const b = app(LISTA);
     const altaB = await b.request(
       '/admin/personal-booster',
       json('POST', { email: correoB, full_name: 'Eva Personal', rut: rutB }, adminUid),
@@ -965,5 +982,43 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     expect(conClave.claveNumericaHash).toBe('hash-de-otra-escritura');
     expect(conClave.activationPinHash).toBeTruthy();
     expect(conClave.firebaseUid).toBe(`pending-rut:${rutB}`);
+  });
+
+  test('17. una cuenta suspendida o eliminada con un código vigente no se activa por ningún endpoint', async () => {
+    const a = app(LISTA);
+    const rechazo = { error: 'invalid_credentials', code: 'invalid_credentials' };
+    for (const estado of ['suspendido', 'eliminado'] as const) {
+      const sufijo = randomUUID().slice(0, 8);
+      const rut = rutAleatorio();
+      const alta = await a.request(
+        '/admin/personal-booster',
+        json(
+          'POST',
+          { email: `suspendida-${sufijo}@test.invalid`, full_name: 'Fran Suspendida', rut },
+          adminUid,
+        ),
+      );
+      const cuerpo = (await alta.json()) as { user_id: string; codigo_activacion: string };
+      expect(alta.status, JSON.stringify(cuerpo)).toBe(201);
+      await handle.db
+        .update(schema.users)
+        .set({ status: estado })
+        .where(eq(schema.users.id, cuerpo.user_id));
+      const antes = await filaPorId(cuerpo.user_id);
+
+      for (const [ruta, body] of [
+        ['/auth/activar', { rut, codigo: cuerpo.codigo_activacion, clave_numerica: '615243' }],
+        ['/auth/driver-activate', { rut, pin: cuerpo.codigo_activacion, clave_numerica: '615243' }],
+      ] as const) {
+        const res = await a.request(ruta, json('POST', body));
+        expect(res.status, `${estado} ${ruta}`).toBe(401);
+        expect(await res.json()).toEqual(rechazo);
+      }
+      const despues = await filaPorId(cuerpo.user_id);
+      expect(despues.status).toBe(estado);
+      expect(despues.claveNumericaHash).toBeNull();
+      expect(despues.activationPinHash).toBe(antes.activationPinHash);
+      expect(despues.firebaseUid).toBe(`pending-rut:${rut}`);
+    }
   });
 });
