@@ -13,7 +13,7 @@ Cinco reglas de autenticación que quedaron fuera de `acceso-panel-plataforma`, 
 
 ## 2. Why now
 
-La revisión previa a #893 las encontró en `main`. Ya estaban ahí antes de ese cambio y quedaron fuera de su alcance a propósito. El PO pidió cerrarlas en un PR propio.
+Quedaron fuera del alcance de `acceso-panel-plataforma` (#893) para mantenerlo acotado. El PO pidió cerrarlas en un PR propio.
 
 ## 3. Success criteria
 
@@ -26,7 +26,7 @@ La revisión previa a #893 las encontró en `main`. Ya estaban ahí antes de ese
 
 ## 4. Contratos
 
-- `POST /auth/driver-activate` 410: el cuerpo pasa de `{ error, code, synthetic_email }` a `{ error, code }` (SC1). El 200 no cambia.
+- `POST /auth/driver-activate` 410: el cuerpo queda en `{ error, code }` (SC1). El 200 no cambia.
 - Nuevo código de error 401 `impersonation_revoked` en las superficies autenticadas, solo para sesiones impersonadas (SC4).
 - `POST /admin/empresas/:id/miembros`, `POST /admin/stakeholder-orgs/:id/invitar`, `POST /empresas/onboarding` y `POST /empresas/onboarding-admin` reutilizan su 409 `email_already_registered` (SC5).
 
@@ -50,7 +50,7 @@ La revisión previa a #893 las encontró en `main`. Ya estaban ahí antes de ese
 
 ## 8. Test list
 
-- T1 (SC1, rojo) — `auth-driver.test.ts`: el 410 no trae `synthetic_email` ni el correo de la cuenta.
+- T1 (SC1, rojo) — `auth-driver.test.ts`: el cuerpo del 410 es exactamente `{ error, code }`.
 - T2 (SC2, rojo) — `me-platform-admin.test.ts`: un correo de la lista sin verificar no crea la cuenta.
 - T3 (SC3, rojo) — `auth-driver.test.ts`: el predicado del UPDATE exige el hash verificado y `clave_numerica_hash IS NULL`; sin filas escritas → 401 sin sesión.
 - T4 (SC4, rojo) — `impersonation-write-guard.test.ts`: lectura y escritura impersonadas con quien impersona sin acceso, suspendido o inexistente → 401 `impersonation_revoked`; con acceso → sigue igual; sesión normal → sin consulta.
