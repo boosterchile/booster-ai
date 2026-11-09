@@ -30,6 +30,8 @@ interface Servicio {
     cargo_weight_kg: number | null;
     pickup_window_start: string | null;
     pickup_window_end: string | null;
+    /** editar-anular-cargas §6.11: hay un cambio del generador sin responder. */
+    cambio_pendiente?: { existe: true; creado_en: string | null } | null;
   };
 }
 
@@ -75,7 +77,11 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
       (await api.get<{ assignments: Servicio[] }>('/assignments', scope.init)).assignments,
   });
 
-  const servicios = serviciosQ.data ?? [];
+  // Los servicios con un cambio sin responder van primero: bloquean la recogida
+  // hasta que alguien de la oficina responda (editar-anular-cargas §9).
+  const servicios = [...(serviciosQ.data ?? [])].sort(
+    (a, b) => Number(Boolean(b.trip.cambio_pendiente)) - Number(Boolean(a.trip.cambio_pendiente)),
+  );
   const sinConductor = servicios.filter((s) => !s.driver).length;
 
   return (
@@ -172,6 +178,14 @@ function ServicioCard({
           {s.trip.tracking_code}
         </span>
         <div className="flex items-center gap-2">
+          {s.trip.cambio_pendiente && (
+            <span
+              data-testid="badge-cambio-pendiente"
+              className="rounded-md bg-amber-100 px-2 py-0.5 font-semibold text-amber-900 text-xs"
+            >
+              Cambio pendiente
+            </span>
+          )}
           {s.vehicle?.plate && (
             <span className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-0.5 font-medium text-neutral-700 text-xs">
               <Truck className="h-3 w-3" aria-hidden />

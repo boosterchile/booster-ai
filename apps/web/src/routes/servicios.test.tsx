@@ -127,6 +127,31 @@ describe('/app/servicios', () => {
     expect(apiGetSpy).toHaveBeenCalledWith('/assignments', expect.anything());
   });
 
+  // editar-anular-cargas §9: un cambio sin responder bloquea la recogida.
+  it('un servicio con cambio pendiente lleva el badge y va primero', async () => {
+    const base = servicio();
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        base,
+        servicio({
+          id: 'as-2',
+          trip: {
+            ...base.trip,
+            id: 't2',
+            tracking_code: 'BOO-CAMB',
+            cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00Z' },
+          },
+        }),
+      ],
+    });
+    renderRoute();
+    const badge = await screen.findByTestId('badge-cambio-pendiente');
+    expect(badge).toHaveTextContent('Cambio pendiente');
+    expect(screen.getAllByTestId('badge-cambio-pendiente')).toHaveLength(1);
+    const codigos = screen.getAllByText(/^BOO-/).map((e) => e.textContent);
+    expect(codigos).toEqual(['BOO-CAMB', 'BOO-4F2A']);
+  });
+
   it('un servicio SIN conductor se ve como problema y ofrece asignarlo', async () => {
     apiGetSpy.mockResolvedValue({ assignments: [servicio({ driver: null })] });
     renderRoute();

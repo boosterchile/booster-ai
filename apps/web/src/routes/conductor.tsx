@@ -96,6 +96,8 @@ export interface DriverAssignment {
     consignee?: { name: string | null; phone_e164: string | null } | null;
     notes?: string | null;
     reference?: string | null;
+    /** editar-anular-cargas §12-P7: el conductor solo sabe que existe, no qué propone. */
+    cambio_pendiente?: { existe: true; creado_en: string | null } | null;
   };
   carrier_empresa: { id: string; legal_name: string | null };
   vehicle: { id: string; plate: string | null; has_teltonika: boolean } | null;
@@ -687,6 +689,7 @@ export function AssignmentCard({
     assignmentId: a.id,
     initialRecogida: a.status === 'recogido',
     geofence: reporter.lastGeofence,
+    cambioPendiente: a.trip.cambio_pendiente?.existe === true,
   });
 
   const fase: FaseServicio = entregada
@@ -925,7 +928,15 @@ export function AssignmentCard({
         {fase === 'por_recoger' && (
           <>
             {instruccionesRetiro && <InstruccionesRetiroConductor tripId={a.trip.id} />}
-            {recogida.sugerida && (
+            {recogida.bloqueadaPorCambio && (
+              <output
+                data-testid="cambio-pendiente-conductor"
+                className="block rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900 text-sm"
+              >
+                Hay un cambio pendiente. Espera la respuesta de tu transportista antes de recoger.
+              </output>
+            )}
+            {recogida.sugerida && !recogida.bloqueadaPorCambio && (
               // El geofence solo sugiere: <output> anuncia la llegada al punto
               // de recogida sin disparar nada. El tap sigue siendo del conductor.
               <output
@@ -938,7 +949,7 @@ export function AssignmentCard({
             {/* Confirmarla mueve el viaje a `en_proceso`, que es lo que destraba la
                 posición en el link de tracking del destinatario y lo que hace que
                 su empresa deje de ver «Por recoger» en Servicios. */}
-            {confirmando === 'recogida' ? (
+            {confirmando === 'recogida' && !recogida.bloqueadaPorCambio ? (
               <ConfirmacionInline
                 pregunta="¿Confirmas que ya cargaste esta carga en el camión?"
                 onConfirmar={() => void ejecutarConfirmacion()}
@@ -948,7 +959,7 @@ export function AssignmentCard({
               <button
                 type="button"
                 onClick={() => setConfirmando('recogida')}
-                disabled={recogida.recogiendo}
+                disabled={recogida.recogiendo || recogida.bloqueadaPorCambio}
                 data-testid="confirmar-recogida"
                 className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
               >

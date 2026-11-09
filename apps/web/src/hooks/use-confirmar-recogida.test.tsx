@@ -167,3 +167,48 @@ describe('useConfirmarRecogida', () => {
     expect(result.current.error ?? '').toMatch(/señal/i);
   });
 });
+
+// editar-anular-cargas §9: un cambio pendiente bloquea la recogida.
+describe('useConfirmarRecogida — cambio pendiente', () => {
+  it('con cambio pendiente queda bloqueada y confirmar() no llama al API', async () => {
+    const { result } = renderHook(() =>
+      useConfirmarRecogida({
+        assignmentId: ASSIGNMENT_ID,
+        initialRecogida: false,
+        geofence: lectura('dentro', T1),
+        cambioPendiente: true,
+      }),
+    );
+    expect(result.current.bloqueadaPorCambio).toBe(true);
+    await act(() => result.current.confirmar());
+    expect(apiPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it('un 409 cambio_pendiente bloquea, explica y no deja reintentar', async () => {
+    apiPatchSpy.mockRejectedValueOnce(new ApiError(409, 'cambio_pendiente', null));
+    const { result } = renderHook(() =>
+      useConfirmarRecogida({ assignmentId: ASSIGNMENT_ID, initialRecogida: false, geofence: null }),
+    );
+    await act(() => result.current.confirmar());
+    await waitFor(() => expect(result.current.bloqueadaPorCambio).toBe(true));
+    expect(result.current.error).toMatch(/Espera la respuesta de tu transportista/);
+    await act(() => result.current.confirmar());
+    expect(apiPatchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('cuando la lista vuelve sin cambio pendiente, se libera', async () => {
+    const { result, rerender } = renderHook(
+      ({ pendiente }: { pendiente: boolean }) =>
+        useConfirmarRecogida({
+          assignmentId: ASSIGNMENT_ID,
+          initialRecogida: false,
+          geofence: null,
+          cambioPendiente: pendiente,
+        }),
+      { initialProps: { pendiente: true } },
+    );
+    expect(result.current.bloqueadaPorCambio).toBe(true);
+    rerender({ pendiente: false });
+    expect(result.current.bloqueadaPorCambio).toBe(false);
+  });
+});
