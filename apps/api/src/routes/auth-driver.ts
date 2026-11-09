@@ -9,7 +9,7 @@ import { conductores, memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
-import { cuentaYaActivada } from '../services/vinculo-persona.js';
+import { codigoPersonalVigente, cuentaYaActivada } from '../services/vinculo-persona.js';
 
 /**
  * Genera el email sintético usado por los users-conductores en Firebase
@@ -49,6 +49,11 @@ function driverSyntheticEmail(rut: string): string {
  *   - 410 already_activated → user ya tiene firebase_uid real. El cliente
  *     debe usar Firebase email/password con el email sintético.
  *   - 503 not_a_driver → user existe pero no tiene fila conductores activa.
+ *
+ * Personal de Booster (`.specs/alta-personal-booster` §6.6): una cuenta con
+ * `es_admin_plataforma = true` se activa solo con un código del panel vigente
+ * según `activacion_vence_en`, la misma regla que `/auth/activar`. Si no, la
+ * respuesta es la misma 401 de un PIN incorrecto.
  */
 const activateBodySchema = z.object({
   rut: z.string().min(1),
@@ -104,6 +109,8 @@ export function createDriverAuthRoutes(opts: {
         rut: users.rut,
         activationPinHash: users.activationPinHash,
         claveNumericaHash: users.claveNumericaHash,
+        isPlatformAdmin: users.isPlatformAdmin,
+        activacionVenceEn: users.activacionVenceEn,
       })
       .from(users)
       .where(eq(users.rut, rut))
@@ -136,6 +143,17 @@ export function createDriverAuthRoutes(opts: {
     }
     const pinOk = verifyActivationPin(body.pin, user.activationPinHash);
     if (!pinOk) {
+      return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
+    }
+
+    // 3b. Una cuenta marcada como personal activa solo con el código del
+    //     panel, igual que en `/auth/activar`. Va antes de buscar la fila de
+    //     conductor: la respuesta no depende de si es conductor.
+    if (user.isPlatformAdmin && !codigoPersonalVigente(user.activacionVenceEn)) {
+      opts.logger.info(
+        { userId: user.id },
+        'driver-activate: cuenta del personal sin código vigente del panel',
+      );
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
 
@@ -200,6 +218,7 @@ export function createDriverAuthRoutes(opts: {
           // comunicación con la plataforma. El sintético existe solo como
           // identificador interno de Firebase.
           activationPinHash: null,
+          activacionVenceEn: null,
           status: 'activo',
           lastLoginAt: sql`now()`,
           updatedAt: sql`now()`,

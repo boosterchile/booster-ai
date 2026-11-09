@@ -39,6 +39,7 @@ describe('router', () => {
         'app/asignaciones/$id',
         'app/chat/$id',
         'app/zonas',
+        'app/platform-admin/personal',
         'solicitar-acceso',
       ]),
     );

@@ -855,7 +855,11 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
             await tx
               .update(users)
-              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: ahora })
+              .set({
+                activationPinHash: hashActivationPin(codigo),
+                activacionVenceEn: null,
+                updatedAt: ahora,
+              })
               .where(eq(users.id, fila.userId));
             // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
             await tx

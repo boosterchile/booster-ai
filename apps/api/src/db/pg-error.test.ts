@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { esEmailDuplicado, esRutDuplicado, pgConstraintName, pgErrorCode } from './pg-error.js';
+import {
+  esEmailDuplicado,
+  esFirebaseUidDuplicado,
+  esRutDuplicado,
+  pgConstraintName,
+  pgErrorCode,
+} from './pg-error.js';
 
 describe('pg-error', () => {
   it('lee code y constraint anidados en cause', () => {
@@ -24,5 +30,21 @@ describe('pg-error', () => {
       false,
     );
     expect(esEmailDuplicado({ code: '23505' })).toBe(false);
+  });
+
+  it('solo el unique de firebase_uid es un firebase_uid duplicado', () => {
+    expect(esFirebaseUidDuplicado({ code: '23505', constraint: 'usuarios_firebase_uid_key' })).toBe(
+      true,
+    );
+    expect(
+      esFirebaseUidDuplicado({
+        cause: { code: '23505', constraint: 'usuarios_firebase_uid_unique' },
+      }),
+    ).toBe(true);
+    expect(esFirebaseUidDuplicado({ code: '23505', constraint: 'uq_usuarios_rut' })).toBe(false);
+    expect(esFirebaseUidDuplicado({ code: '23503', constraint: 'usuarios_firebase_uid_key' })).toBe(
+      false,
+    );
+    expect(esFirebaseUidDuplicado({ code: '23505' })).toBe(false);
   });
 });
