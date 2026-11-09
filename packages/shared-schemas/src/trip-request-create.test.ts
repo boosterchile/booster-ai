@@ -128,3 +128,31 @@ describe('tripRequestCreateInputSchema — mensajes del peso (TRK-003)', () => {
     expect(primerMensaje('1000')).toBe('Ingresa el peso en kg');
   });
 });
+
+// seguimiento-por-correo SC5: correo opcional del destinatario.
+describe('tripRequestCreateInputSchema — correo del destinatario', () => {
+  it('guarda el correo sin espacios y en minúsculas', () => {
+    const r = tripRequestCreateInputSchema.parse({
+      ...base(),
+      consignee: { name: 'Bodega', email: '  Recepcion@Cliente.CL ' },
+    });
+    expect(r.consignee?.email).toBe('recepcion@cliente.cl');
+  });
+
+  it('rechaza un correo con formato inválido, con mensaje en español', () => {
+    const r = tripRequestCreateInputSchema.safeParse({
+      ...base(),
+      consignee: { email: 'no-es-correo' },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const issue = r.error.issues.find((i) => i.path.join('.') === 'consignee.email');
+      expect(issue?.message).toBe('Ingresa un correo válido, como nombre@empresa.cl');
+    }
+  });
+
+  it('el correo es opcional', () => {
+    const r = tripRequestCreateInputSchema.parse({ ...base(), consignee: { name: 'Bodega' } });
+    expect(r.consignee?.email).toBeUndefined();
+  });
+});

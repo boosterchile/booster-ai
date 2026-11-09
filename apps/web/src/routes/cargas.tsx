@@ -668,6 +668,8 @@ interface TripFormValues {
    */
   consignee_name: string;
   consignee_phone_e164: string;
+  /** seguimiento-por-correo — el link también le llega por correo. */
+  consignee_email: string;
 }
 
 const EMPTY_FORM: TripFormValues = {
@@ -691,6 +693,7 @@ const EMPTY_FORM: TripFormValues = {
   modalidad_carga: 'spot',
   consignee_name: '',
   consignee_phone_e164: '',
+  consignee_email: '',
 };
 
 /** Precio del form como entero CLP, o null si está vacío o no es válido. */
@@ -759,11 +762,12 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
     // Phase 5 PR-L3c — consignee opt-in. Solo incluir el bloque si el
     // shipper llenó al menos un campo; si ambos vacíos, no enviamos
     // `consignee` (el zod schema lo permite optional).
-    ...(v.consignee_name.trim() || v.consignee_phone_e164.trim()
+    ...(v.consignee_name.trim() || v.consignee_phone_e164.trim() || v.consignee_email.trim()
       ? {
           consignee: {
             ...(v.consignee_name.trim() ? { name: v.consignee_name.trim() } : {}),
             ...(v.consignee_phone_e164.trim() ? { phone_e164: v.consignee_phone_e164.trim() } : {}),
+            ...(v.consignee_email.trim() ? { email: v.consignee_email.trim() } : {}),
           },
         }
       : {}),
@@ -793,6 +797,7 @@ const SCHEMA_PATH_TO_FIELD: Record<string, keyof TripFormValues> = {
   proposed_price_clp: 'proposed_price_clp',
   'consignee.name': 'consignee_name',
   'consignee.phone_e164': 'consignee_phone_e164',
+  'consignee.email': 'consignee_email',
 };
 
 type TripFieldErrors = Partial<Record<keyof TripFormValues, string>>;
@@ -1170,9 +1175,8 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Destinatario (opcional)</h2>
         <p className="mt-1 text-neutral-600 text-sm">
-          Si llenas estos datos, el destinatario recibirá el link de seguimiento por WhatsApp
-          automáticamente al asignar el viaje. Si los dejas vacíos, recibirás el link tú y se lo
-          puedes reenviar.
+          Si llenas estos datos, el destinatario recibirá el link de seguimiento por WhatsApp o por
+          correo al asignar el viaje. Tú también lo recibes, y se lo puedes reenviar.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
@@ -1202,6 +1206,23 @@ function TripForm({
                 {...register('consignee_phone_e164')}
                 className={fieldInputClass(!!errors.consignee_phone_e164)}
                 placeholder="+56912345678"
+              />
+            )}
+          />
+          <FormField
+            label="Correo del destinatario"
+            error={errors.consignee_email?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                maxLength={254}
+                {...register('consignee_email')}
+                className={fieldInputClass(!!errors.consignee_email)}
+                placeholder="recepcion@empresa.cl"
               />
             )}
           />

@@ -186,6 +186,18 @@ export const tripRequestCreateInputSchema = z
           .string()
           .regex(/^\+\d{8,15}$/, 'Debe estar en formato E.164 (+56912345678)')
           .optional(),
+        /**
+         * seguimiento-por-correo — correo opcional. Si está, el link de
+         * tracking también le llega por correo al asignar. Se guarda sin
+         * espacios y en minúsculas.
+         */
+        email: z
+          .string()
+          .trim()
+          .toLowerCase()
+          .email('Ingresa un correo válido, como nombre@empresa.cl')
+          .max(254)
+          .optional(),
       })
       .optional(),
   })
