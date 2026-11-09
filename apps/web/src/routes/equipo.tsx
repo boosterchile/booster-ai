@@ -1,6 +1,7 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { Layout } from '../components/Layout.js';
 import { NombreMiembro } from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
@@ -78,7 +79,10 @@ export function EquipoRoute() {
 
 function EquipoPage({ me }: { me: MeOnboarded }) {
   const puedeInvitar = flagsDe(me).invitar;
-  const puedeEditarOfertas = flagsDe(me).administrar;
+  // El permiso de ofertas y el aviso de conductores son de transporte:
+  // `puedeAceptarOferta` exige que la empresa sea transportista.
+  const esTransportista = me.active_membership?.empresa?.is_transportista === true;
+  const puedeEditarOfertas = flagsDe(me).administrar && esTransportista;
   const [miembros, setMiembros] = useState<Miembro[]>([]);
   const [cargando, setCargando] = useState(true);
   const [errorLista, setErrorLista] = useState<string | null>(null);
@@ -109,108 +113,116 @@ function EquipoPage({ me }: { me: MeOnboarded }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <Users className="mt-1 h-6 w-6 shrink-0 text-primary-700" aria-hidden />
-          <div>
-            <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">Equipo</h1>
-            <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Las personas de tu empresa que usan Booster. Al agregar a alguien recibes un código
-              para entregarle; con ese código crea su propia clave de acceso.
-            </p>
+    <Layout me={me} title="Equipo">
+      <div className="mx-auto w-full max-w-4xl px-6 py-8">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Users className="mt-1 h-6 w-6 shrink-0 text-primary-700" aria-hidden />
+            <div>
+              <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">Equipo</h1>
+              <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+                Las personas de tu empresa que usan Booster. Al agregar a alguien recibes un código
+                para entregarle; con ese código crea su propia clave de acceso.
+              </p>
+            </div>
           </div>
+          {puedeInvitar && !mostrarForm && (
+            <button
+              type="button"
+              onClick={() => setMostrarForm(true)}
+              className="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
+            >
+              <UserPlus className="h-4 w-4" aria-hidden />
+              Agregar persona
+            </button>
+          )}
         </div>
-        {puedeInvitar && !mostrarForm && (
-          <button
-            type="button"
-            onClick={() => setMostrarForm(true)}
-            className="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
-          >
-            <UserPlus className="h-4 w-4" aria-hidden />
-            Agregar persona
-          </button>
+
+        {alta && <CodigoEntregable alta={alta} onCerrar={() => setAlta(null)} />}
+
+        {mostrarForm && (
+          <FormAlta
+            onCreado={handleAlta}
+            onCancelar={() => setMostrarForm(false)}
+            esTransportista={esTransportista}
+          />
         )}
+
+        <section className="mt-8 rounded-lg border border-neutral-200 bg-white">
+          {cargando && (
+            <div className="flex items-center gap-2 p-5 text-neutral-500 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Cargando equipo…
+            </div>
+          )}
+          {errorLista && (
+            <div
+              role="alert"
+              className="m-4 rounded-md border border-danger-200 bg-danger-50 p-3 text-danger-700 text-sm"
+            >
+              {errorLista}
+            </div>
+          )}
+          {!cargando && !errorLista && miembros.length === 0 && (
+            <p className="p-5 text-neutral-500 text-sm">
+              Todavía no agregaste a nadie. Usa “Agregar persona” para sumar a alguien de tu equipo.
+            </p>
+          )}
+          {!cargando && !errorLista && miembros.length > 0 && (
+            <ul className="divide-y divide-neutral-100">
+              {miembros.map((m) => (
+                <li key={m.membership_id} className="flex items-center justify-between gap-4 p-4">
+                  <div className="min-w-0">
+                    {m.estado === 'activa' ? (
+                      <>
+                        <NombreMiembro nombre={m.full_name} pendiente={false} />
+                        <div className="text-neutral-500 text-sm">
+                          {m.email}
+                          {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}
+                        </div>
+                      </>
+                    ) : (
+                      <NombreMiembro nombre={m.full_name} pendiente rut={m.rut} />
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="text-neutral-600 text-sm">{ROL_LABEL[m.rol] ?? m.rol}</span>
+                    {puedeEditarOfertas && m.rol === 'despachador' && (
+                      <label className="inline-flex items-center gap-2 text-neutral-700 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={m.puede_aceptar_ofertas === true}
+                          onChange={(ev) => {
+                            void api
+                              .patch(`/me/empresa/miembros/${m.membership_id}`, {
+                                puede_aceptar_ofertas: ev.target.checked,
+                              })
+                              .then(() => cargar())
+                              .catch((err: unknown) => {
+                                setErrorLista(err instanceof Error ? err.message : String(err));
+                              });
+                          }}
+                        />
+                        Puede aceptar ofertas
+                      </label>
+                    )}
+                    {m.estado === 'pendiente_invitacion' ? (
+                      <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700 text-xs">
+                        {m.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente de activar'}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-success-50 px-2 py-0.5 font-medium text-success-700 text-xs">
+                        Activa
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
-
-      {alta && <CodigoEntregable alta={alta} onCerrar={() => setAlta(null)} />}
-
-      {mostrarForm && <FormAlta onCreado={handleAlta} onCancelar={() => setMostrarForm(false)} />}
-
-      <section className="mt-8 rounded-lg border border-neutral-200 bg-white">
-        {cargando && (
-          <div className="flex items-center gap-2 p-5 text-neutral-500 text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            Cargando equipo…
-          </div>
-        )}
-        {errorLista && (
-          <div
-            role="alert"
-            className="m-4 rounded-md border border-danger-200 bg-danger-50 p-3 text-danger-700 text-sm"
-          >
-            {errorLista}
-          </div>
-        )}
-        {!cargando && !errorLista && miembros.length === 0 && (
-          <p className="p-5 text-neutral-500 text-sm">
-            Todavía no agregaste a nadie. Usa “Agregar persona” para sumar a alguien de tu equipo.
-          </p>
-        )}
-        {!cargando && !errorLista && miembros.length > 0 && (
-          <ul className="divide-y divide-neutral-100">
-            {miembros.map((m) => (
-              <li key={m.membership_id} className="flex items-center justify-between gap-4 p-4">
-                <div className="min-w-0">
-                  {m.estado === 'activa' ? (
-                    <>
-                      <NombreMiembro nombre={m.full_name} pendiente={false} />
-                      <div className="text-neutral-500 text-sm">
-                        {m.email}
-                        {m.rut && <span className="ml-2 font-mono text-xs">{m.rut}</span>}
-                      </div>
-                    </>
-                  ) : (
-                    <NombreMiembro nombre={m.full_name} pendiente rut={m.rut} />
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-neutral-600 text-sm">{ROL_LABEL[m.rol] ?? m.rol}</span>
-                  {puedeEditarOfertas && m.rol === 'despachador' && (
-                    <label className="inline-flex items-center gap-2 text-neutral-700 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={m.puede_aceptar_ofertas === true}
-                        onChange={(ev) => {
-                          void api
-                            .patch(`/me/empresa/miembros/${m.membership_id}`, {
-                              puede_aceptar_ofertas: ev.target.checked,
-                            })
-                            .then(() => cargar())
-                            .catch((err: unknown) => {
-                              setErrorLista(err instanceof Error ? err.message : String(err));
-                            });
-                        }}
-                      />
-                      Puede aceptar ofertas
-                    </label>
-                  )}
-                  {m.estado === 'pendiente_invitacion' ? (
-                    <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700 text-xs">
-                      {m.pendiente_aceptar ? 'Pendiente de aceptar' : 'Pendiente de activar'}
-                    </span>
-                  ) : (
-                    <span className="rounded bg-success-50 px-2 py-0.5 font-medium text-success-700 text-xs">
-                      Activa
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
+    </Layout>
   );
 }
 
@@ -304,9 +316,11 @@ const aria = (err: Partial<Record<CampoAlta, string>>, campo: CampoAlta) => ({
 function FormAlta({
   onCreado,
   onCancelar,
+  esTransportista,
 }: {
   onCreado: (res: AltaResponse, nombre: string) => void;
   onCancelar: () => void;
+  esTransportista: boolean;
 }) {
   const [fullName, setFullName] = useState('');
   const [rut, setRut] = useState('');
@@ -438,9 +452,11 @@ function FormAlta({
           ))}
         </select>
         <ErrorCampo campo="rol" mensaje={errCampo.rol} />
-        <span className="text-neutral-500 text-xs">
-          Los conductores se agregan desde la sección Conductores, con su licencia.
-        </span>
+        {esTransportista && (
+          <span className="text-neutral-500 text-xs">
+            Los conductores se agregan desde la sección Conductores, con su licencia.
+          </span>
+        )}
       </label>
 
       {error && (
