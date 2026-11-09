@@ -526,6 +526,13 @@
       "when": 1780876800110,
       "tag": "0074_usuarios_activacion_vence_en",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1780876800210,
+      "tag": "0076_ofertas_unica_pendiente",
+      "breakpoints": true
     }
   ]
 }
