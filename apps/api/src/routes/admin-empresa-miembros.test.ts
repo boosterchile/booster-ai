@@ -108,7 +108,8 @@ function makeDb(opts: DbOpts = {}) {
               id: 'empresa-nueva-uuid',
               legalName: vals.legalName,
               rut: vals.rut,
-              status: 'pendiente_verificacion',
+              // El `returning` devuelve el estado que se insertó.
+              status: vals.status,
               isGeneradorCarga: vals.isGeneradorCarga,
               isTransportista: vals.isTransportista,
             },
@@ -737,7 +738,10 @@ const EMPRESA_BODY = {
 };
 
 describe('POST /admin/empresas', () => {
-  it('crea un generador de carga pendiente, sin usuario ni clave', async () => {
+  // acceso-usuarios-empresa-panel SC5: el admin de Booster es el gate. La
+  // empresa que crea nace activa, para que su gente pueda crear cargas y
+  // recibir ofertas sin un segundo paso manual.
+  it('crea un generador de carga activo, sin usuario ni clave', async () => {
     const mod = await loadMod();
     const d = makeDb({
       lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
@@ -762,7 +766,7 @@ describe('POST /admin/empresas', () => {
     };
     expect(json.ok).toBe(true);
     expect(json.empresa_id).toBe('empresa-nueva-uuid');
-    expect(json.estado).toBe('pendiente_verificacion');
+    expect(json.estado).toBe('activa');
     expect(json.es_generador_carga).toBe(true);
     expect(json.es_transportista).toBe(false);
     expect(json.codigo_activacion).toBeUndefined();
@@ -773,10 +777,53 @@ describe('POST /admin/empresas', () => {
       isGeneradorCarga: true,
       isTransportista: false,
       planId: 'plan-gratis',
-      status: 'pendiente_verificacion',
+      status: 'activa',
     });
     expect(d.insertedCarrierMemberships).toHaveLength(0);
     expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('el evento de log del alta registra el estado inicial', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(EMPRESA_BODY),
+    });
+
+    expect(res.status).toBe(201);
+    expect(noopLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: 'empresa-nueva-uuid', estado: 'activa' }),
+      'admin-empresas: ficha creada',
+    );
+  });
+
+  it('la transportista también nace activa y con carrier_memberships free', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...EMPRESA_BODY, is_transportista: true }),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { estado: string; es_transportista: boolean };
+    expect(json.estado).toBe('activa');
+    expect(json.es_transportista).toBe(true);
+    expect(d.insertedEmpresas[0]).toMatchObject({ status: 'activa', isTransportista: true });
+    expect(d.insertedCarrierMemberships[0]).toMatchObject({ tierSlug: 'free', status: 'activa' });
   });
 
   it('abre carrier_memberships free cuando la empresa es transportista', async () => {

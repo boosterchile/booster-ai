@@ -313,3 +313,83 @@ describe('ProtectedRoute', () => {
     expect(screen.getByTestId('kind').textContent).toBe('pre-onboarding');
   });
 });
+
+/** `/me` de alguien con membresía activa de conductor en una transportista. */
+function meConductor({ platformAdmin }: { platformAdmin: boolean }) {
+  return {
+    needs_onboarding: false,
+    user: { id: 'u-conductor', is_platform_admin: platformAdmin },
+    memberships: [],
+    active_membership: {
+      id: 'm-conductor',
+      role: 'conductor',
+      status: 'activa',
+      empresa: {
+        id: 'e-transportes',
+        legal_name: 'Transportes Uno SpA',
+        is_transportista: true,
+        is_generador_carga: false,
+      },
+    },
+  };
+}
+
+describe('ProtectedRoute — membresía de conductor', () => {
+  beforeEach(() => {
+    useAuthMock.mockReturnValue({ user: { uid: 'u' }, loading: false });
+  });
+
+  it('conductor en /app → va a /app/conductor', () => {
+    window.history.pushState({}, '', '/app');
+    useMeMock.mockReturnValue({
+      data: meConductor({ platformAdmin: false }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId('navigate').textContent).toBe('/app/conductor');
+    expect(screen.queryByTestId('children')).not.toBeInTheDocument();
+  });
+
+  it('persona de Booster con membresía de conductor en /app → /app decide y la lleva al panel (SC9)', () => {
+    window.history.pushState({}, '', '/app');
+    useMeMock.mockReturnValue({
+      data: meConductor({ platformAdmin: true }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('children')).toBeInTheDocument();
+  });
+
+  it('persona de Booster con membresía de conductor en otra ruta del shell → /app/conductor', () => {
+    window.history.pushState({}, '', '/app/cargas');
+    useMeMock.mockReturnValue({
+      data: meConductor({ platformAdmin: true }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId('navigate').textContent).toBe('/app/conductor');
+  });
+
+  it('conductor ya en /app/conductor → renderiza sin redirigir', () => {
+    window.history.pushState({}, '', '/app/conductor');
+    useMeMock.mockReturnValue({
+      data: meConductor({ platformAdmin: false }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId('children')).toBeInTheDocument();
+  });
+});

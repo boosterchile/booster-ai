@@ -55,6 +55,7 @@ import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
 import { createHealthSignupFlowRouter } from './routes/health-signup-flow.js';
 import { createHealthRouter } from './routes/health.js';
+import { createPickupInstructionsRoutes } from './routes/instrucciones-retiro.js';
 import { createInternalSafetyEventsRoutes } from './routes/internal-safety-events.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -224,6 +225,11 @@ export function createServer(opts: CreateServerOptions): Hono {
         {
           method: 'POST',
           path: /^\/transport-orders\/[^/]+\/documents$/,
+          maxBytes: MAX_DOCUMENT_BYTES + MULTIPART_ENVELOPE_BYTES,
+        },
+        {
+          method: 'PUT',
+          path: /^\/viajes\/[^/]+\/instrucciones-retiro$/,
           maxBytes: MAX_DOCUMENT_BYTES + MULTIPART_ENVELOPE_BYTES,
         },
         {
@@ -622,6 +628,21 @@ export function createServer(opts: CreateServerOptions): Hono {
       app.use(prefix, userContextMiddleware, impersonationWriteGuardMiddleware);
     }
     app.route('/', transportDocsRouter);
+
+    // Instrucciones de retiro (spec instrucciones-retiro): el QR o comprobante
+    // del lugar de retiro. Mismo borde que el repositorio documental:
+    // firebaseAuth + rate-limit de escrituras + userContext + guard de
+    // impersonación, y la autorización por viaje la resuelve el handler con
+    // autorizarSobreViaje. Comparte la cuota de escrituras de documentos.
+    const pickupInstructionsRouter = createPickupInstructionsRoutes({
+      db: opts.db,
+      logger,
+      ...(config.INSTRUCCIONES_RETIRO_BUCKET ? { bucket: config.INSTRUCCIONES_RETIRO_BUCKET } : {}),
+    });
+    app.use('/viajes/*', firebaseAuthMiddleware);
+    app.use('/viajes/*', rateLimitTransportDocs);
+    app.use('/viajes/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/', pickupInstructionsRouter);
 
     // Admin jobs — endpoints internos disparados por Cloud Scheduler
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del

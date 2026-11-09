@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api-client.js';
 
 /**
@@ -105,6 +105,20 @@ describe('Activar cuenta', () => {
     expect(alerta.textContent ?? '').not.toMatch(/no existe|ya (fue|está) activad|vencid/i);
   });
 
+  it('el rechazo pide el código nuevo a quien dio de alta a la persona', async () => {
+    vi.spyOn(api, 'post').mockRejectedValue(
+      Object.assign(new Error('unauthorized'), { code: 'invalid_credentials', status: 401 }),
+    );
+
+    render(<ActivarRoute />);
+    completar();
+    fireEvent.click(screen.getByRole('button', { name: /Activar mi cuenta/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /si venció, pide uno nuevo a quien te dio de alta/i,
+    );
+  });
+
   it('si la activación funciona pero no llega la sesión, guía al login', async () => {
     vi.spyOn(api, 'post').mockResolvedValue({ ok: true, activated: true } as never);
 
@@ -115,5 +129,97 @@ describe('Activar cuenta', () => {
     // La cuenta quedó activa: entra con su RUT y la clave que acaba de crear.
     expect(await screen.findByText(/ya puedes entrar/i)).toBeInTheDocument();
     expect(signInWithCustomTokenMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC3 — a `/activar` llega gente que dio de alta
+ * Booster o su empresa, a veces desde `/login` con su RUT ya tecleado.
+ */
+describe('Activar cuenta — RUT precargado y textos (SC3)', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('precarga el RUT que llega en ?rut=', () => {
+    window.history.replaceState({}, '', '/activar?rut=12345678-5');
+    render(<ActivarRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('12345678-5');
+  });
+
+  it('normaliza el RUT de ?rut= antes de precargarlo', () => {
+    window.history.replaceState({}, '', '/activar?rut=12.345.678-5');
+    render(<ActivarRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('12345678-5');
+  });
+
+  it('no precarga un ?rut= que no es un RUT válido', () => {
+    window.history.replaceState({}, '', '/activar?rut=no-es-rut');
+    render(<ActivarRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('');
+  });
+
+  it('sin ?rut= el campo parte vacío', () => {
+    render(<ActivarRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('');
+  });
+
+  it('dice que el código lo entrega Booster o la empresa', () => {
+    render(<ActivarRoute />);
+    expect(screen.getByText(/Booster o tu empresa te dio de alta/i)).toBeInTheDocument();
+    expect(screen.getByText(/Los 6 dígitos que te dio Booster o tu empresa/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC1 — el conductor que en `/login` eligió otro
+ * tipo llega acá con su PIN, que solo sirve en `/login/conductor`. Esta
+ * pantalla le ofrece ese camino, con el RUT que ya tecleó.
+ */
+describe('Activar cuenta — camino del conductor (SC1)', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('ofrece activar con el PIN en /login/conductor, con el RUT que llegó en ?rut=', () => {
+    window.history.replaceState({}, '', '/activar?rut=5864136-7');
+    render(<ActivarRoute />);
+    const link = screen.getByTestId('activar-link-conductor');
+    expect(link).toHaveTextContent('¿Eres conductor?');
+    expect(link).toHaveAttribute('href', '/login/conductor?rut=5864136-7');
+  });
+
+  it('arrastra el RUT que la persona escribe en el campo', () => {
+    render(<ActivarRoute />);
+    fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '5.864.136-7' } });
+    expect(screen.getByTestId('activar-link-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor?rut=5864136-7',
+    );
+  });
+
+  it('sin un RUT válido el enlace va a /login/conductor sin RUT', () => {
+    render(<ActivarRoute />);
+    fireEvent.change(screen.getByLabelText(/^RUT/i), { target: { value: '123' } });
+    expect(screen.getByTestId('activar-link-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor',
+    );
+  });
+
+  it('el rechazo también le recuerda el camino del conductor', async () => {
+    vi.spyOn(api, 'post').mockRejectedValue(
+      Object.assign(new Error('unauthorized'), { code: 'invalid_credentials', status: 401 }),
+    );
+
+    render(<ActivarRoute />);
+    completar({ rut: '5.864.136-7' });
+    fireEvent.click(screen.getByRole('button', { name: /Activar mi cuenta/i }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByTestId('activar-link-conductor')).toHaveAttribute(
+      'href',
+      '/login/conductor?rut=5864136-7',
+    );
   });
 });

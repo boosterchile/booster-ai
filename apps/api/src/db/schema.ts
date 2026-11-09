@@ -709,7 +709,7 @@ export const users = pgTable(
     claveNumericaHash: text('clave_numerica_hash'),
     /**
      * Hasta cuándo vale el código de activación de una cuenta del personal de
-     * Booster (`.specs/alta-personal-booster`, migración 0072). Ese código no
+     * Booster (`.specs/alta-personal-booster`, migración 0073). Ese código no
      * viene de una invitación a empresa, así que `/auth/activar` no tiene un
      * `invitado_en` del que sacar el plazo de 7 días. Se borra al activar.
      * NULL para el resto de las cuentas.
@@ -2897,6 +2897,45 @@ export const transportDocuments = pgTable(
     viajeIdx: index('idx_documentos_transporte_viaje').on(table.viajeId),
     // Para el worker/listados que filtran por estado de extracción.
     estadoIdx: index('idx_documentos_transporte_estado').on(table.extractionStatus),
+  }),
+);
+
+/**
+ * Instrucciones de retiro (spec `instrucciones-retiro`, migración 0072). El
+ * generador sube el QR o comprobante que le entrega el lugar de retiro, con
+ * el lugar y una nota, para que el conductor lo muestre al retirar. Una fila
+ * por viaje (la vigente); reemplazar actualiza la fila.
+ *
+ * Va aparte de `documentos_transporte` por decisión del PO (2026-11-09): no
+ * pasa por el TED, no tiene retención de 6 años y no cuenta para el cierre.
+ */
+export const pickupInstructions = pgTable(
+  'instrucciones_retiro',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    viajeId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    // Objeto GCS `instrucciones-retiro/{viajeId}/{uuid}.{ext}` en el bucket
+    // INSTRUCCIONES_RETIRO_BUCKET. Va junto con `fileMime`.
+    filePath: text('archivo_path'),
+    fileMime: text('archivo_mime'),
+    place: text('lugar'),
+    note: text('nota'),
+    uploadedBy: uuid('subido_por').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    viajeUnico: unique('uq_instrucciones_retiro_viaje').on(table.viajeId),
+    contenidoCheck: check(
+      'ck_instrucciones_retiro_contenido',
+      sql`${table.filePath} IS NOT NULL OR ${table.note} IS NOT NULL`,
+    ),
+    archivoCheck: check(
+      'ck_instrucciones_retiro_archivo',
+      sql`(${table.filePath} IS NULL) = (${table.fileMime} IS NULL)`,
+    ),
   }),
 );
 

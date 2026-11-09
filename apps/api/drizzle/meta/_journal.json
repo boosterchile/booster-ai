@@ -510,7 +510,14 @@
       "idx": 72,
       "version": "7",
       "when": 1780876800090,
-      "tag": "0072_usuarios_activacion_vence_en",
+      "tag": "0072_instrucciones_retiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1780876800100,
+      "tag": "0073_usuarios_activacion_vence_en",
       "breakpoints": true
     }
   ]

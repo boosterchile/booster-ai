@@ -13,14 +13,18 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  * T6 de `.specs/alta-desde-panel-admin/spec.md` (plan multi-tenant §2.F):
  * la cadena real de alta contra Postgres, tal como la recorre el panel.
  *
- *   1. `POST /admin/empresas`            → empresa `pendiente_verificacion`
- *   2. `PATCH /admin/empresas/:id`       → `activa`
+ *   1. `POST /admin/empresas`            → empresa `activa`
+ *   2. sin `PATCH /admin/empresas/:id`   → la empresa ya puede operar
  *   3. `POST /admin/empresas/:id/miembros` (rol dueño) → código de activación
  *   4. `POST /auth/activar`              → clave propia, membresía `activa`, custom token
  *   5. `POST /auth/login-rut`            → entra con RUT + clave
  *
- * Son cinco llamadas, no una transacción: ese es el contrato en producción y
- * no se reescribe acá. Firebase se inyecta (decisión §3.4 (i)): las rutas ya
+ * El paso 2 cambió con `acceso-usuarios-empresa-panel` SC5: el admin de
+ * Booster que crea la empresa es la verificación, así que nace activa.
+ *
+ * Son cuatro llamadas, no una transacción: ese es el contrato en producción y
+ * no se reescribe acá. El caso 7 recorre aparte `PATCH /admin/empresas/:id`
+ * (suspender y reactivar), que sigue en uso. Firebase se inyecta (decisión §3.4 (i)): las rutas ya
  * reciben `Auth` por opts, así que un Auth en memoria basta y el job de
  * integración no necesita el emulador.
  */
@@ -217,7 +221,7 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
   let codigo = '';
   let userId = '';
 
-  test('1-3. el admin crea la empresa, la activa e invita al dueño: sale un código, no una clave', async () => {
+  test('1-3. el admin crea la empresa, que nace activa, e invita al dueño: sale un código, no una clave', async () => {
     const a = app();
     const crear = await a.request(
       '/admin/empresas',
@@ -235,16 +239,15 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
     );
     const creada = (await crear.json()) as { empresa_id: string; estado: string };
     expect(crear.status, JSON.stringify(creada)).toBe(201);
-    expect(creada.estado).toBe('pendiente_verificacion');
+    expect(creada.estado).toBe('activa');
     empresaId = creada.empresa_id;
 
-    const activar = await a.request(
-      `/admin/empresas/${empresaId}`,
-      json('PATCH', { estado: 'activa' }),
-    );
-    const activada = (await activar.json()) as { estado: string };
-    expect(activar.status, JSON.stringify(activada)).toBe(200);
-    expect(activada.estado).toBe('activa');
+    // Sin PATCH de por medio: en la BD la empresa ya está activa.
+    const [empresa] = await handle.db
+      .select({ status: schema.empresas.status })
+      .from(schema.empresas)
+      .where(eq(schema.empresas.id, empresaId));
+    expect(empresa?.status).toBe('activa');
 
     const invitar = await a.request(
       `/admin/empresas/${empresaId}/miembros`,
@@ -343,9 +346,9 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
         is_transportista: true,
       }),
     );
-    const segunda = (await crear.json()) as { empresa_id: string };
+    const segunda = (await crear.json()) as { empresa_id: string; estado: string };
     expect(crear.status).toBe(201);
-    await a.request(`/admin/empresas/${segunda.empresa_id}`, json('PATCH', { estado: 'activa' }));
+    expect(segunda.estado).toBe('activa');
 
     const [antes] = await handle.db.select().from(schema.users).where(eq(schema.users.id, userId));
     const invitar = await a.request(
@@ -378,5 +381,62 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
       json('POST', { rut: dueno.rut, clave: dueno.clave }),
     );
     expect(login.status).toBe(200);
+  });
+
+  // El PATCH de estado sigue en uso (las empresas que llegan por enlace nacen
+  // en verificación, y el panel suspende o reactiva). Se recorre contra la BD.
+  test('7. PATCH /admin/empresas/:id suspende y reactiva la empresa en la BD', async () => {
+    expect(empresaId).not.toBe('');
+    const a = app();
+    const estadoEnBd = async () => {
+      const [fila] = await handle.db
+        .select({ status: schema.empresas.status })
+        .from(schema.empresas)
+        .where(eq(schema.empresas.id, empresaId));
+      return fila?.status;
+    };
+
+    const suspender = await a.request(
+      `/admin/empresas/${empresaId}`,
+      json('PATCH', { estado: 'suspendida' }),
+    );
+    const suspendida = (await suspender.json()) as {
+      estado: string;
+      estado_anterior: string;
+      unchanged: boolean;
+    };
+    expect(suspender.status, JSON.stringify(suspendida)).toBe(200);
+    expect(suspendida).toMatchObject({
+      estado: 'suspendida',
+      estado_anterior: 'activa',
+      unchanged: false,
+    });
+    expect(await estadoEnBd()).toBe('suspendida');
+
+    const reactivar = await a.request(
+      `/admin/empresas/${empresaId}`,
+      json('PATCH', { estado: 'activa' }),
+    );
+    const reactivada = (await reactivar.json()) as {
+      estado: string;
+      estado_anterior: string;
+      unchanged: boolean;
+    };
+    expect(reactivar.status, JSON.stringify(reactivada)).toBe(200);
+    expect(reactivada).toMatchObject({
+      estado: 'activa',
+      estado_anterior: 'suspendida',
+      unchanged: false,
+    });
+    expect(await estadoEnBd()).toBe('activa');
+
+    const repetir = await a.request(
+      `/admin/empresas/${empresaId}`,
+      json('PATCH', { estado: 'activa' }),
+    );
+    const igual = (await repetir.json()) as { estado: string; unchanged: boolean };
+    expect(repetir.status, JSON.stringify(igual)).toBe(200);
+    expect(igual).toMatchObject({ estado: 'activa', unchanged: true });
+    expect(await estadoEnBd()).toBe('activa');
   });
 });

@@ -3,7 +3,7 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
  * T1 de `.specs/alta-personal-booster/spec.md` — verificación a nivel DB de
- * `usuarios.activacion_vence_en` tras aplicar la migración 0072 (globalSetup
+ * `usuarios.activacion_vence_en` tras aplicar la migración 0073 (globalSetup
  * corre runMigrations). Complementa el test unitario del contrato Drizzle
  * (`test/unit/usuarios-activacion-vence-en-columns.test.ts`).
  */
@@ -13,7 +13,7 @@ interface ColumnRow {
   column_default: string | null;
 }
 
-describe('integration: columna usuarios.activacion_vence_en (0072)', () => {
+describe('integration: columna usuarios.activacion_vence_en (0073)', () => {
   let handle: TestDbHandle;
 
   beforeAll(() => {
