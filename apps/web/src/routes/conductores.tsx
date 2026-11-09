@@ -1,4 +1,6 @@
 import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
   MENSAJE_TELEFONO_CONDUCTOR,
   conductorContactEmailSchema,
   ensureRutHasDash,
@@ -437,6 +439,10 @@ function codigoDeError(err: Error): string {
 
 function mensajeErrorAltaConductor(err: Error): string {
   const codigo = codigoDeError(err);
+  // `.specs/acceso-panel-plataforma` SC8.
+  if (codigo.includes(CODIGO_CUENTA_PERSONAL_BOOSTER)) {
+    return MENSAJE_CUENTA_PERSONAL_BOOSTER;
+  }
   if (codigo.includes('user_already_driver')) {
     return 'Ese RUT ya está asociado a un conductor activo. Si dejó la empresa, primero retíralo desde su perfil.';
   }
@@ -929,7 +935,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     },
     onError: (err: Error) => {
       setPinReenviado(null);
-      if (err.message.includes('email_already_registered')) {
+      if (codigoDeError(err).includes(CODIGO_CUENTA_PERSONAL_BOOSTER)) {
+        setEmailError(MENSAJE_CUENTA_PERSONAL_BOOSTER);
+      } else if (err.message.includes('email_already_registered')) {
         setEmailError('Ese email ya está registrado en otra persona.');
       } else if (err.message.includes('identidad_vinculada')) {
         setEmailError(
@@ -981,7 +989,11 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     onError: (err: Error) => {
       setPinTelefono(null);
       setTelefonoGuardado(false);
-      setTelefonoError(err.message);
+      setTelefonoError(
+        codigoDeError(err).includes(CODIGO_CUENTA_PERSONAL_BOOSTER)
+          ? MENSAJE_CUENTA_PERSONAL_BOOSTER
+          : err.message,
+      );
     },
   });
   const reenviandoInvitacion = telefonoM.isPending && telefonoM.variables?.reenviarInvitacion;

@@ -1,3 +1,5 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -37,6 +39,11 @@ function makeDbStub(opts: {
   userRow?: Record<string, unknown> | null;
   conductorRow?: Record<string, unknown> | null;
   updateOk?: boolean;
+  /**
+   * Filas que devuelve el UPDATE de la cuenta con `returning()`. Vacío = la
+   * cuenta ya no cumplía el predicado cuando llegó la escritura.
+   */
+  filasActualizadas?: unknown[];
 }) {
   const userQueueRows = opts.userRow === null ? [] : [opts.userRow ?? {}];
   const conductorQueueRows = opts.conductorRow === null ? [] : [opts.conductorRow ?? {}];
@@ -50,9 +57,20 @@ function makeDbStub(opts: {
   const from = vi.fn(() => ({ where }));
   const select = vi.fn(() => ({ from }));
 
-  const updateWhere = vi.fn(() =>
-    opts.updateOk === false ? Promise.reject(new Error('db error')) : Promise.resolve(undefined),
-  );
+  // Predicado de cada `update().set().where(...)`, en orden.
+  const updateWheres: unknown[] = [];
+  const resultado = <T>(valor: T): Promise<T> =>
+    opts.updateOk === false ? Promise.reject(new Error('db error')) : Promise.resolve(valor);
+  // `where` se puede esperar directo o seguir con `returning()`. La promesa se
+  // crea al consumirla, para no dejar un rechazo sin manejar.
+  const updateWhere = vi.fn((predicado: unknown) => {
+    updateWheres.push(predicado);
+    return {
+      then: (ok: (v: undefined) => unknown, falla: (e: unknown) => unknown) =>
+        resultado(undefined).then(ok, falla),
+      returning: vi.fn(() => resultado(opts.filasActualizadas ?? [{ id: USER_ID }])),
+    };
+  });
   // Captura los valores del UPDATE para poder afirmar QUÉ columnas se tocan
   // (Fase B: el email real no debe estar entre ellas).
   const capturedUpdates: Record<string, unknown>[] = [];
@@ -67,6 +85,7 @@ function makeDbStub(opts: {
       typeof import('../../src/routes/auth-driver.js').createDriverAuthRoutes
     >[0]['db'],
     capturedUpdates,
+    updateWheres,
   };
 }
 
@@ -608,5 +627,83 @@ describe('POST /auth/driver-activate — cuenta del personal de Booster', () => 
     const res = await activar(app);
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /auth/driver-activate — estado de la cuenta (acceso-panel-plataforma SC10)', () => {
+  const RECHAZO = { error: 'invalid_credentials', code: 'invalid_credentials' };
+
+  function stubConEstado(status: string, filasActualizadas?: unknown[]) {
+    return makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'conductor.real@gmail.com',
+        rut: VALID_RUT,
+        activationPinHash: hashActivationPin('123456'),
+        claveNumericaHash: null,
+        isPlatformAdmin: false,
+        activacionVenceEn: null,
+        status,
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+      ...(filasActualizadas ? { filasActualizadas } : {}),
+    });
+  }
+
+  function activar(app: Hono) {
+    return app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
+    });
+  }
+
+  it.each(['suspendido', 'eliminado'])(
+    'cuenta %s con el PIN correcto → la misma 401 que un PIN incorrecto, sin tocar Firebase ni la base',
+    async (status) => {
+      const stub = stubConEstado(status);
+      const firebase = makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' });
+      const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+      const res = await activar(app);
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(stub.capturedUpdates).toEqual([]);
+      expect(firebase.createUser).not.toHaveBeenCalled();
+      expect(firebase.createCustomToken).not.toHaveBeenCalled();
+    },
+  );
+
+  it('el UPDATE exige que la cuenta no esté suspendida ni eliminada', async () => {
+    const stub = stubConEstado('pendiente_verificacion');
+    const app = await buildApp({
+      db: stub.db,
+      firebaseAuth: makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' }),
+    });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+    const predicado = stub.updateWheres[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('driver-activate no pasó un predicado SQL al UPDATE');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toContain('"usuarios"."estado" not in');
+    expect(consulta.params).toEqual(expect.arrayContaining(['suspendido', 'eliminado']));
+  });
+
+  it('si la cuenta cambió de estado antes de escribir → la misma 401 y sin sesión', async () => {
+    const stub = stubConEstado('pendiente_verificacion', []);
+    const firebase = makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(RECHAZO);
+    expect(firebase.createCustomToken).not.toHaveBeenCalled();
   });
 });

@@ -4,12 +4,13 @@ import { MENSAJES } from '../primitives/mensajes.js';
 
 /**
  * Alta del personal de Booster desde el panel de administración
- * (`.specs/alta-personal-booster/spec.md` §4).
+ * (`.specs/alta-personal-booster/spec.md` §4 y
+ * `.specs/acceso-panel-plataforma/spec.md` §4).
  *
- * La lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`) sigue decidiendo
- * quién entra al panel. El alta crea la cuenta provisoria y entrega un código
- * de un solo uso; la persona elige su propia clave en `/activar`. El orden es
- * alta en el panel → el PO agrega el correo a la lista → la persona activa.
+ * El panel otorga y quita el acceso: el alta marca la cuenta como personal y,
+ * si no tiene clave, entrega un código de un solo uso; la persona elige su
+ * propia clave en `/activar`. La lista de Terraform
+ * (`BOOSTER_PLATFORM_ADMIN_EMAILS`) queda como respaldo para el primer admin.
  */
 
 /** Código de activación de 6 dígitos. Solo viaja en la respuesta que lo emite. */
@@ -50,7 +51,7 @@ export type PersonalBoosterEstado = z.infer<typeof personalBoosterEstadoSchema>;
 /** Ítem de `GET /admin/personal-booster`. Nunca trae el código. */
 export const personalBoosterSchema = z.object({
   email: z.string(),
-  /** El correo está en `BOOSTER_PLATFORM_ADMIN_EMAILS`. */
+  /** El correo está en la lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. */
   en_lista: z.boolean(),
   user_id: z.string().uuid().nullable(),
   nombre: z.string().nullable(),
@@ -72,8 +73,8 @@ export type ListaPersonalBoosterResponse = z.infer<typeof listaPersonalBoosterRe
 /**
  * Qué encontró el alta en `usuarios`:
  *   - `nueva`: no existía; se creó la cuenta provisoria con su código.
- *   - `cuenta_activa`: ya tenía clave; sin código. Se marca como personal
- *     solo si el correo está en la lista.
+ *   - `cuenta_activa`: ya tenía clave; sin código. Queda marcada como
+ *     personal, con acceso desde ese momento.
  *   - `codigo_vigente`: provisoria con un código vigente emitido desde el
  *     panel; se conserva.
  *   - `provisoria_sin_codigo`: provisoria sin un código vigente del panel: se
@@ -149,12 +150,28 @@ export type ReemitirCodigoPersonalBoosterResponse = z.infer<
 >;
 
 /**
+ * `POST /admin/personal-booster/:userId/quitar-acceso` (sin body) → 200. La
+ * cuenta deja de estar marcada como personal (`.specs/acceso-panel-plataforma`
+ * SC4).
+ */
+export const quitarAccesoPersonalBoosterResponseSchema = z.object({
+  ok: z.literal(true),
+  user_id: z.string().uuid(),
+});
+export type QuitarAccesoPersonalBoosterResponse = z.infer<
+  typeof quitarAccesoPersonalBoosterResponseSchema
+>;
+
+/**
  * Códigos de error de las rutas del personal (campo `code` de la respuesta):
  *   - 409 `rut_mismatch`: el correo es de una cuenta con otro RUT (o sin RUT).
  *   - 409 `rut_already_registered`: el RUT es de otra persona.
  *   - 409 `email_already_registered`: otra cuenta tomó el correo durante el alta.
  *   - 409 `already_activated`: la cuenta ya eligió su clave; no se re-emite.
  *   - 404 `personal_not_found`: el usuario no existe o no es del personal.
+ *   - 409 `en_lista_respaldo`: el correo está en la lista de respaldo; ese
+ *     acceso se quita en Terraform, no desde el panel.
+ *   - 409 `ultimo_acceso`: quitarlo dejaría el panel sin nadie con acceso.
  */
 export const personalBoosterErrorCodeSchema = z.enum([
   'rut_mismatch',
@@ -162,5 +179,18 @@ export const personalBoosterErrorCodeSchema = z.enum([
   'email_already_registered',
   'already_activated',
   'personal_not_found',
+  'en_lista_respaldo',
+  'ultimo_acceso',
 ]);
 export type PersonalBoosterErrorCode = z.infer<typeof personalBoosterErrorCodeSchema>;
+
+/**
+ * Las cuentas del personal se gestionan solo desde Booster
+ * (`.specs/acceso-panel-plataforma` SC7 y SC8). Los flujos de empresa
+ * (conductores y equipo) responden 409 con este código cuando la cuenta está
+ * marcada como personal o su correo, actual o nuevo, está en la lista de
+ * respaldo. La web muestra el mensaje.
+ */
+export const CODIGO_CUENTA_PERSONAL_BOOSTER = 'cuenta_personal_booster' as const;
+export const MENSAJE_CUENTA_PERSONAL_BOOSTER =
+  'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.';

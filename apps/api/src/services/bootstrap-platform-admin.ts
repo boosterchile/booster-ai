@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { and, eq, ne } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
+import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
 import { hashClaveNumerica, isValidClaveFormat } from './clave-numerica.js';
@@ -140,9 +141,9 @@ export async function bootstrapPlatformAdmin(opts: {
     throw new InvalidBootstrapInputError('La clave debe ser exactamente 6 dígitos.');
   }
 
-  // 2. Gate de allowlist — fail-closed ANTES de tocar Firebase o BD.
-  const allowlist = opts.allowlist.map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (!allowlist.includes(email)) {
+  // 2. Gate de la lista de respaldo — fail-closed ANTES de tocar Firebase o BD.
+  //    Mismo criterio que la regla de acceso (`auth/acceso-plataforma.ts`).
+  if (!correoEnListaRespaldo(email, opts.allowlist)) {
     throw new NotInAllowlistError(email);
   }
 

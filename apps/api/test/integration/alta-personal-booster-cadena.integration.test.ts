@@ -793,7 +793,10 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
       });
       await next();
     });
-    flota.route('/conductores', rutas.createConductoresRoutes({ db, logger }));
+    flota.route(
+      '/conductores',
+      rutas.createConductoresRoutes({ db, logger, platformAdminEmails: LISTA_DESPUES }),
+    );
     return flota;
   }
 

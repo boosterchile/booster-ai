@@ -10,9 +10,10 @@ import {
   ensureRutHasDash,
   listaPersonalBoosterResponseSchema,
   personalBoosterErrorCodeSchema,
+  quitarAccesoPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
 } from '@booster-ai/shared-schemas';
-import { Copy, KeyRound, Loader2, UserPlus, Users } from 'lucide-react';
+import { Copy, KeyRound, Loader2, UserMinus, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { ZodError } from 'zod';
 import { urlActivar } from '../../lib/activar-url.js';
@@ -21,23 +22,20 @@ import { logger } from '../../lib/logger.js';
 import { formatRut } from '../../lib/rut.js';
 
 /**
- * Platform-admin: alta del personal de Booster con acceso al panel
- * (`.specs/alta-personal-booster/spec.md`, SC1, SC2, SC5 y SC10).
+ * Platform-admin: personal de Booster con acceso al panel
+ * (`.specs/alta-personal-booster/spec.md` y
+ * `.specs/acceso-panel-plataforma/spec.md` SC12).
  *
- * La lista de Terraform (`booster_platform_admin_emails`) sigue decidiendo
- * quién entra al panel. Aquí el admin crea la cuenta con correo, nombre y RUT;
- * la persona elige su clave en `/activar` con un código de un solo uso. El
- * orden es: alta aquí → el PO agrega el correo a la lista y aplica → la
- * persona activa.
+ * El panel otorga y quita el acceso. El admin crea la cuenta con correo,
+ * nombre y RUT; la persona elige su clave en `/activar` con un código de un
+ * solo uso y entra por `/login`. «Quitar acceso» la desmarca. La lista de
+ * respaldo de Terraform queda para el primer admin.
  *
  * El código llega solo en la respuesta del alta o de la re-emisión y se
  * muestra una sola vez: al cerrar el panel, o al emitir otro, deja de estar
  * en pantalla. La lista nunca lo trae.
  */
 
-const LISTA_TERRAFORM = 'booster_platform_admin_emails';
-
-const AVISO_AGREGAR_A_LISTA = `Agrega este correo a la lista de Terraform (${LISTA_TERRAFORM}) y aplica; recién entonces la persona podrá activar. Si el código vence antes, genera uno nuevo aquí.`;
 // La API no informa si el proveedor de correo entregó el mensaje: el aviso no
 // lo afirma y pide entregar el código a mano si no llega.
 const AVISO_CORREO_ENVIADO =
@@ -67,6 +65,9 @@ const MENSAJES_POR_CODIGO: Record<PersonalBoosterErrorCode, string> = {
   already_activated: 'Esa persona ya activó su cuenta: entra con su RUT y su clave.',
   personal_not_found:
     'Esa persona no figura como personal de Booster. Repite el alta con su correo y RUT para marcarla.',
+  en_lista_respaldo:
+    'Su correo está en la lista de respaldo: ese acceso se quita en Terraform, no desde aquí.',
+  ultimo_acceso: 'No puedes quitar este acceso: el panel quedaría sin nadie que pueda entrar.',
 };
 
 /** Mensaje por campo del body del alta, en el orden del formulario. */
@@ -149,14 +150,12 @@ interface CodigoEmitido {
   rut: string | null;
   codigo: string;
   expiraEn: string;
-  enLista: boolean;
 }
 
 interface AltaSinCodigo {
   tipo: 'sin_codigo';
   vinculo: Extract<VinculoPersonalBooster, 'cuenta_activa' | 'codigo_vigente'>;
   expiraEn: string | null;
-  enLista: boolean;
 }
 
 type Panel = CodigoEmitido | AltaSinCodigo;
@@ -172,7 +171,6 @@ function panelDelAlta(res: AltaPersonalBoosterResponse, datos: AltaPersonalBoost
       rut: datos.rut,
       codigo: res.codigo_activacion,
       expiraEn: res.expira_en,
-      enLista: res.en_lista,
     };
   }
   if (res.vinculo === 'cuenta_activa' || res.vinculo === 'codigo_vigente') {
@@ -180,7 +178,6 @@ function panelDelAlta(res: AltaPersonalBoosterResponse, datos: AltaPersonalBoost
       tipo: 'sin_codigo',
       vinculo: res.vinculo,
       expiraEn: res.expira_en,
-      enLista: res.en_lista,
     };
   }
   // El schema exige código en `nueva` y `provisoria_sin_codigo`: no se llega aquí.
@@ -188,14 +185,8 @@ function panelDelAlta(res: AltaPersonalBoosterResponse, datos: AltaPersonalBoost
 }
 
 function avisoDeLista(panel: CodigoEmitido): string {
-  // Sin RUT no puede activar aunque el correo esté en la lista: ese aviso va primero.
-  if (panel.rut === null) {
-    return AVISO_SIN_RUT;
-  }
-  if (!panel.enLista) {
-    return AVISO_AGREGAR_A_LISTA;
-  }
-  return AVISO_CORREO_ENVIADO;
+  // Sin RUT no puede activar: ese aviso va primero.
+  return panel.rut === null ? AVISO_SIN_RUT : AVISO_CORREO_ENVIADO;
 }
 
 export function PersonalBooster() {
@@ -218,6 +209,11 @@ export function PersonalBooster() {
     userId: string;
     mensaje: string;
   } | null>(null);
+
+  const [confirmandoQuitar, setConfirmandoQuitar] = useState<string | null>(null);
+  const [quitandoId, setQuitandoId] = useState<string | null>(null);
+  const [errorQuitar, setErrorQuitar] = useState<{ userId: string; mensaje: string } | null>(null);
+  const [accesoQuitado, setAccesoQuitado] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -312,13 +308,36 @@ export function PersonalBooster() {
         rut: persona.rut,
         codigo: parsed.data.codigo_activacion,
         expiraEn: parsed.data.expira_en,
-        enLista: parsed.data.en_lista,
       });
       void cargar();
     } catch (err) {
       setErrorReemision({ userId, mensaje: mensajeError(err) });
     } finally {
       setReemitiendoId(null);
+    }
+  }
+
+  async function quitarAcceso(persona: PersonaDelPersonal, userId: string) {
+    setQuitandoId(userId);
+    setErrorQuitar(null);
+    setAccesoQuitado(null);
+    try {
+      // Sin body: el endpoint no lo lee y el cliente no manda Content-Type.
+      const parsed = quitarAccesoPersonalBoosterResponseSchema.safeParse(
+        await api.post<unknown>(`/admin/personal-booster/${userId}/quitar-acceso`),
+      );
+      if (!parsed.success) {
+        throw respuestaInesperada('quitar_acceso', parsed.error);
+      }
+      setConfirmandoQuitar(null);
+      setAccesoQuitado(
+        `Quitamos el acceso al panel a ${persona.nombre ?? persona.email}. Avisamos a la lista de respaldo.`,
+      );
+      void cargar();
+    } catch (err) {
+      setErrorQuitar({ userId, mensaje: mensajeError(err) });
+    } finally {
+      setQuitandoId(null);
     }
   }
 
@@ -330,10 +349,6 @@ export function PersonalBooster() {
   }
 
   const cerrarPanel = () => setPanel(null);
-  const enListaConfirmacion =
-    confirmacion === null || errorLista !== null
-      ? null
-      : personal.some((p) => p.email.toLowerCase() === confirmacion.email && p.en_lista);
 
   return (
     <div className="mt-6 space-y-8">
@@ -406,8 +421,9 @@ export function PersonalBooster() {
           >
             <div className="font-semibold text-neutral-900">Confirma el alta</div>
             <p className="mt-1 text-neutral-700 text-sm">
-              Revisa los datos. Si la persona no tiene cuenta, se crea con un código de activación
-              de un solo uso que vence en 7 días.
+              Revisa los datos. Al crearla, la persona queda marcada como personal de Booster con
+              acceso al panel. Si no tiene cuenta, se crea con un código de activación de un solo
+              uso que vence en 7 días; si ya tiene una activa, entra desde ya con su clave.
             </p>
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
               <dt className="text-neutral-600">Correo</dt>
@@ -417,13 +433,6 @@ export function PersonalBooster() {
               <dt className="text-neutral-600">RUT</dt>
               <dd className="font-mono text-neutral-900">{formatRut(confirmacion.rut)}</dd>
             </dl>
-            {enListaConfirmacion !== null && (
-              <p className="mt-3 text-neutral-700 text-sm">
-                {enListaConfirmacion
-                  ? 'Este correo ya está en la lista de Terraform: podrá activar apenas tenga el código.'
-                  : 'Este correo todavía no está en la lista de Terraform: después del alta, hay que agregarlo y aplicar para que la persona pueda activar.'}
-              </p>
-            )}
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -473,12 +482,17 @@ export function PersonalBooster() {
           <div>
             <h2 className="font-semibold text-neutral-900">Personal con acceso al panel</h2>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Los correos de la lista de Terraform y las cuentas marcadas como personal de Booster.
+              Las cuentas marcadas como personal de Booster y los correos de la lista de respaldo.
             </p>
           </div>
         </div>
 
         <div className="mt-4">
+          {accesoQuitado !== null && (
+            <output className="mb-3 block rounded-md border border-success-200 bg-success-50 p-3 text-sm text-success-700">
+              {accesoQuitado}
+            </output>
+          )}
           {cargando && personal.length === 0 && (
             <div className="inline-flex items-center gap-2 text-neutral-500 text-sm">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -496,7 +510,7 @@ export function PersonalBooster() {
           )}
           {!cargando && !errorLista && personal.length === 0 && (
             <p className="text-neutral-500 text-sm" data-testid="personal-lista-vacia">
-              Todavía no hay personal de Booster registrado ni correos en la lista de Terraform.
+              Todavía no hay personal de Booster registrado ni correos en la lista de respaldo.
             </p>
           )}
           {personal.length > 0 && (
@@ -504,6 +518,9 @@ export function PersonalBooster() {
               {personal.map((persona) => {
                 const userId = persona.user_id;
                 const puedeReemitir = userId !== null && persona.estado === 'pendiente_activacion';
+                // Una fila con cuenta y fuera de la lista es una cuenta marcada:
+                // el panel le quita el acceso. El de la lista se quita en Terraform.
+                const puedeQuitar = userId !== null && !persona.en_lista;
                 return (
                   <li
                     key={persona.email}
@@ -537,11 +554,9 @@ export function PersonalBooster() {
                           )}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 text-neutral-600 text-xs">
-                          <span>
-                            {persona.en_lista
-                              ? 'En la lista de Terraform: sí'
-                              : 'En la lista de Terraform: no'}
-                          </span>
+                          {persona.en_lista && (
+                            <span>En la lista de respaldo: su acceso se quita en Terraform</span>
+                          )}
                           <DetalleEstado persona={persona} />
                         </div>
                       </div>
@@ -565,8 +580,63 @@ export function PersonalBooster() {
                             {reemitiendoId === userId ? 'Generando…' : 'Generar código nuevo'}
                           </button>
                         )}
+                        {puedeQuitar && confirmandoQuitar !== userId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmandoQuitar(userId);
+                              setErrorQuitar(null);
+                              setAccesoQuitado(null);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-danger-200 bg-white px-3 py-1.5 font-medium text-danger-700 text-sm hover:bg-danger-50"
+                          >
+                            <UserMinus className="h-4 w-4" aria-hidden />
+                            Quitar acceso
+                          </button>
+                        )}
                       </div>
                     </div>
+                    {puedeQuitar && confirmandoQuitar === userId && (
+                      <div
+                        className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-3 text-sm"
+                        data-testid="personal-quitar-confirmacion"
+                      >
+                        <p className="font-medium text-danger-700">
+                          {`¿Quitar el acceso al panel a ${persona.nombre ?? persona.email}?`}
+                        </p>
+                        <p className="mt-1 text-neutral-700">
+                          Deja de entrar al panel desde su próxima acción. Su cuenta y su clave no
+                          cambian; si todavía no activó, su código deja de servir. Avisamos a la
+                          lista de respaldo.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={quitandoId === userId}
+                            onClick={() => void quitarAcceso(persona, userId)}
+                            className="rounded-md bg-danger-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-danger-700 disabled:opacity-50"
+                          >
+                            {quitandoId === userId ? 'Quitando…' : 'Sí, quitar acceso'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={quitandoId === userId}
+                            onClick={() => {
+                              setConfirmandoQuitar(null);
+                              setErrorQuitar(null);
+                            }}
+                            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {errorQuitar !== null && errorQuitar.userId === userId && (
+                      <p role="alert" className="mt-2 text-danger-700 text-sm">
+                        {errorQuitar.mensaje}
+                      </p>
+                    )}
                     {errorReemision !== null && errorReemision.userId === userId && (
                       <p role="alert" className="mt-2 text-danger-700 text-sm">
                         {errorReemision.mensaje}
@@ -588,7 +658,7 @@ export function PersonalBooster() {
   );
 }
 
-/** SC10: el orden del alta, fijo en la pantalla. */
+/** El orden del alta, fijo en la pantalla (`.specs/acceso-panel-plataforma` SC12). */
 function OrdenDelAlta() {
   return (
     <section
@@ -601,22 +671,21 @@ function OrdenDelAlta() {
           <h2 className="font-semibold text-neutral-900">Cómo se suma a alguien del equipo</h2>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-neutral-700 text-sm">
             <li>
-              Crea la cuenta aquí con su correo, nombre completo y RUT. Desde ese momento el correo
-              queda reservado para esa persona.
+              Crea la cuenta aquí con su correo, nombre completo y RUT. Desde ese momento queda
+              marcada como personal de Booster.
             </li>
             <li>
-              El PO agrega el correo a la lista de Terraform ({LISTA_TERRAFORM}) y la aplica. Esa
-              lista decide quién entra a este panel.
+              Entrégale el código o usa «Generar código nuevo» en su fila: también se lo enviamos
+              por correo. La persona lo usa en /activar con su RUT y elige su clave de 6 dígitos.
             </li>
             <li>
-              Con el correo ya en la lista, entrégale el código o usa «Generar código nuevo» en su
-              fila: también intentamos enviárselo por correo. La persona lo usa en /activar con su
-              RUT, elige su clave de 6 dígitos y entra por /login con el tipo «Booster».
+              Entra por /login con el tipo «Booster». Si ya tenía cuenta, entra con su clave de
+              siempre.
             </li>
           </ol>
           <p className="mt-2 text-neutral-600 text-sm">
-            Mientras el correo no esté en la lista, lo verás marcado con «En la lista de Terraform:
-            no» y no le enviamos el código por correo.
+            Para quitarle el acceso, usa «Quitar acceso» en su fila. Cada alta y cada baja se avisan
+            a la lista de respaldo.
           </p>
         </div>
       </div>
@@ -763,9 +832,6 @@ function PanelCodigoPendiente({ panel }: { panel: AltaSinCodigo }) {
       {panel.expiraEn !== null && (
         <p className="mt-1 text-amber-700 text-xs">Vence el {fechaHora(panel.expiraEn)}.</p>
       )}
-      {!panel.enLista && (
-        <p className="mt-2 font-medium text-amber-900 text-sm">{AVISO_AGREGAR_A_LISTA}</p>
-      )}
     </>
   );
 }
@@ -780,25 +846,14 @@ function PanelSinCodigo({ panel, onCerrar }: { panel: AltaSinCodigo; onCerrar: (
       {panel.vinculo === 'cuenta_activa' ? (
         <>
           <div className="font-semibold text-amber-900">Esta persona ya tiene cuenta</div>
-          {panel.enLista ? (
-            <p className="mt-1 text-amber-800 text-sm">
-              La marcamos como personal de Booster. Entra con su RUT y su clave de siempre por
-              /login, con el tipo «Booster». No se generó código: su clave no cambia.
-            </p>
-          ) : (
-            <>
-              <p className="mt-1 text-amber-800 text-sm">
-                Sigue entrando con su RUT y su clave de siempre. No se generó código: su clave no
-                cambia.
-              </p>
-              <p className="mt-2 font-medium text-amber-900 text-sm">
-                Su correo todavía no está en la lista de Terraform ({LISTA_TERRAFORM}), así que no
-                la marcamos como personal: hasta entonces sigue en el inicio de su empresa, como
-                siempre. Cuando el PO agregue el correo y aplique, entra a este panel con el tipo
-                «Booster»; repite el alta en ese momento para dejarla marcada.
-              </p>
-            </>
-          )}
+          <p className="mt-1 text-amber-800 text-sm">
+            La marcamos como personal de Booster: desde ya entra a este panel con su RUT y su clave
+            de siempre, por /login con el tipo «Booster». No se generó código: su clave no cambia.
+          </p>
+          <p className="mt-2 font-medium text-amber-900 text-sm">
+            Confirma con la persona que esta cuenta es suya: quien entra con ese RUT y esa clave
+            tiene acceso al panel. Si no corresponde, usa «Quitar acceso» en su fila.
+          </p>
         </>
       ) : (
         <PanelCodigoPendiente panel={panel} />

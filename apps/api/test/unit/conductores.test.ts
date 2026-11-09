@@ -16,6 +16,9 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
 
+/** Lista de respaldo de los tests (`.specs/acceso-panel-plataforma`). */
+const LISTA_RESPALDO = ['respaldo@boosterchile.com'];
+
 const noop = (): void => undefined;
 const noopLogger = {
   trace: noop,
@@ -175,6 +178,7 @@ async function buildApp(
       typeof import('../../src/routes/conductores.js').createConductoresRoutes
     >[0]['whatsappClient'];
     activacionContentSid?: string;
+    platformAdminEmails?: readonly string[];
   } = {
     role: 'dueno',
   },
@@ -202,6 +206,7 @@ async function buildApp(
     createConductoresRoutes({
       db,
       logger: opts.logger ?? noopLogger,
+      platformAdminEmails: opts.platformAdminEmails ?? LISTA_RESPALDO,
       ...(opts.firebaseAuth ? { firebaseAuth: opts.firebaseAuth } : {}),
       ...(opts.emailSender ? { emailSender: opts.emailSender } : {}),
       ...(opts.whatsappClient ? { whatsappClient: opts.whatsappClient } : {}),
@@ -2067,5 +2072,133 @@ describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
         "status": 400,
       }
     `);
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC7 — las cuentas del personal de Booster
+ * se gestionan solo desde Booster. Los flujos de la empresa responden 409
+ * `cuenta_personal_booster` sin escribir.
+ */
+describe('conductores — cuenta del personal de Booster (SC7)', () => {
+  const RESPUESTA = {
+    code: 'cuenta_personal_booster',
+    message: 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+  };
+  const ALTA = {
+    rut: VALID_RUT,
+    full_name: 'Ana Soto',
+    phone: '+56957790379',
+    email: 'ana.soto@empresa.cl',
+    license_class: 'A5',
+    license_number: 'LIC-1',
+    license_expiry: '2028-06-28',
+  };
+
+  function post(app: Hono, ruta: string, body: unknown) {
+    return app.request(ruta, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true, email: 'ana.soto@boosterchile.com' }],
+    [
+      'con un correo de la lista de respaldo',
+      { isPlatformAdmin: false, email: 'Respaldo@BoosterChile.com' },
+    ],
+  ])('alta con el RUT de una cuenta %s → 409 y no escribe', async (_caso, cuenta) => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Ana Soto',
+            firebaseUid: 'fb-ana',
+            claveNumericaHash: 'h',
+            ...cuenta,
+          },
+        ],
+        [],
+      ],
+    });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, '/conductores', ALTA);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('alta de una persona nueva con un correo de la lista de respaldo → 409 y no inserta', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[], []] });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, '/conductores', { ...ALTA, email: 'respaldo@boosterchile.com' });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true }, EMAIL_REAL],
+    ['con un correo de la lista de respaldo', { email: 'respaldo@boosterchile.com' }, EMAIL_REAL],
+    ['a la que se le pondría un correo de la lista', {}, 'respaldo@boosterchile.com'],
+  ])(
+    'POST /:id/email de una cuenta %s → 409, sin escribir ni tocar Firebase',
+    async (_caso, overrides, email) => {
+      const stub = makeDbStub({
+        selectQueueRows: [[filaConductor(overrides)], []],
+        updateReturning: [[{ id: USER_ID }]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const firebase = firebaseSinCuentas();
+      const app = await buildApp(stub.db, { firebaseAuth: firebase });
+
+      const res = await post(app, `/conductores/${CONDUCTOR_ID}/email`, { email });
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject(RESPUESTA);
+      expect(stub.spies.update).not.toHaveBeenCalled();
+      expect(stub.spies.insert).not.toHaveBeenCalled();
+      expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true }],
+    ['con un correo de la lista de respaldo', { email: 'respaldo@boosterchile.com' }],
+  ])('POST /:id/telefono de una cuenta %s → 409 y no escribe', async (_caso, overrides) => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor(overrides)], []],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, `/conductores/${CONDUCTOR_ID}/telefono`, {
+      phone: '+56987654321',
+      reenviar_invitacion: true,
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('una cuenta de la empresa con su correo de la empresa sigue igual', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ isPlatformAdmin: false })], []],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, `/conductores/${CONDUCTOR_ID}/telefono`, { phone: '+56987654321' });
+
+    expect(res.status).toBe(200);
   });
 });

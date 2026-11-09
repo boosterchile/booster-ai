@@ -466,6 +466,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       createMeEmpresaMiembrosRoutes({
         db: opts.db,
         logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
       }),
@@ -807,14 +808,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
 
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
-    // ADR-032). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist dentro
-    // del handler (no por role de empresa).
+    // ADR-032). Auth con requirePlatformAdmin dentro del handler (regla
+    // única de acceso al panel; no por rol de empresa).
     app.use('/admin/cobra-hoy/*', firebaseAuthMiddleware);
     app.use('/admin/cobra-hoy/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: CRUD de organizaciones stakeholder (ADR-034).
-    // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
+    // Auth con requirePlatformAdmin en el handler.
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -827,8 +828,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       }),
     );
 
-    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth vía
-    // allowlist BOOSTER_PLATFORM_ADMIN_EMAILS en el handler.
+    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth con
+    // requirePlatformAdmin en el handler.
     app.use('/admin/observatorio/*', firebaseAuthMiddleware);
     app.use('/admin/observatorio/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -971,13 +972,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
     // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).
 
-    // ADR-033 §8 — Admin matching backtest. Misma allowlist platform-admin.
+    // ADR-033 §8 — Admin matching backtest. Mismo guard platform-admin.
     app.use('/admin/matching/*', firebaseAuthMiddleware);
     app.use('/admin/matching/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
 
     // F0-0 paso 1 — backfill de re-derivación de distancia real. Gate
-    // platform-admin (allowlist), NO /admin/jobs (SA de cron) ni JWT genérico:
+    // platform-admin (requirePlatformAdmin), NO /admin/jobs (SA de cron) ni JWT genérico:
     // reescribe la huella de toda la flota. Default dry-run; escritura exige
     // confirmación explícita + conteo que coincide.
     app.use('/admin/backfill-distancia/*', firebaseAuthMiddleware);
@@ -1087,6 +1088,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       createConductoresRoutes({
         db: opts.db,
         logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
         ...(opts.firebaseAuth ? { firebaseAuth: opts.firebaseAuth } : {}),
@@ -1173,9 +1175,6 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         firebaseAuth: opts.firebaseAuth,
-        // alta-personal-booster SC6: el personal de Booster activa solo si su
-        // correo está en la lista de Terraform.
-        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         rateLimitPerRut: rateLimitActivarPorRut,
       }),
     );

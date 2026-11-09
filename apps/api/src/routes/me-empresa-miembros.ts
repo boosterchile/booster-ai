@@ -1,9 +1,14 @@
 import type { Logger } from '@booster-ai/logger';
-import { invitarMiembroSchema } from '@booster-ai/shared-schemas';
+import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
+  invitarMiembroSchema,
+} from '@booster-ai/shared-schemas';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
 import {
   ctxDeUserContext,
   puedeAdministrarEmpresa,
@@ -59,6 +64,13 @@ function placeholderFirebaseUid(rut: string): string {
 export function createMeEmpresaMiembrosRoutes(opts: {
   db: Db;
   logger: Logger;
+  /**
+   * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. La empresa no suma a
+   * su equipo una cuenta del personal de Booster ni deja un correo de esta
+   * lista en una cuenta nueva (`.specs/acceso-panel-plataforma` SC7).
+   * Obligatoria: sin ella el chequeo quedaría apagado sin aviso.
+   */
+  platformAdminEmails: readonly string[];
   /**
    * T10-04: el código le llega a la persona invitada por correo. Ausente en
    * tests que no ejercitan el envío; en prod siempre está (con Resend o, sin
@@ -167,11 +179,23 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       // rls-allowlist: lookup global por RUT — una persona puede trabajar en
       // más de una empresa, así que su identidad se reusa en vez de duplicarse.
       const existentes = await tx
-        .select({ id: users.id })
+        .select({ id: users.id, email: users.email, isPlatformAdmin: users.isPlatformAdmin })
         .from(users)
         .where(eq(users.rut, body.rut))
         .limit(1);
       const existente = existentes[0];
+
+      // Una cuenta del personal de Booster, o un correo de la lista de
+      // respaldo, no se gestiona desde una empresa (SC7).
+      if (
+        cuentaGestionadaPorBooster({
+          cuenta: existente ?? null,
+          correoNuevo: email,
+          lista: opts.platformAdminEmails,
+        })
+      ) {
+        return { conflicto: 'cuenta_personal_booster' as const };
+      }
 
       if (existente) {
         const yaMiembro = await tx
@@ -256,6 +280,20 @@ export function createMeEmpresaMiembrosRoutes(opts: {
     });
 
     if ('conflicto' in resultado) {
+      if (resultado.conflicto === 'cuenta_personal_booster') {
+        opts.logger.info(
+          { empresaId: auth.empresaId, invitadoPor: auth.callerId },
+          'me-empresa-miembros: la cuenta es del personal de Booster; no se suma',
+        );
+        return c.json(
+          {
+            error: 'conflict',
+            code: CODIGO_CUENTA_PERSONAL_BOOSTER,
+            message: MENSAJE_CUENTA_PERSONAL_BOOSTER,
+          },
+          409,
+        );
+      }
       if (resultado.conflicto === 'rut_duplicado') {
         return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
       }

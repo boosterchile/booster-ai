@@ -981,8 +981,10 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
     const inviteUpdate = d.updates.find((u) => 'invitedAt' in u);
     expect(pinUpdate?.activationPinHash).toEqual(expect.any(String));
     expect(pinUpdate?.activationPinHash).not.toBe(json.codigo_activacion);
-    // Solo el panel del personal deja `activacion_vence_en`; este código la limpia.
-    expect(pinUpdate).toHaveProperty('activacionVenceEn', null);
+    // `.specs/acceso-panel-plataforma` SC9: la re-emisión es solo de
+    // platform-admin y cuenta como código del panel: deja su vencimiento.
+    expect(pinUpdate?.activacionVenceEn).toBeInstanceOf(Date);
+    expect((pinUpdate?.activacionVenceEn as Date).getTime()).toBe(expira);
     expect(inviteUpdate?.invitedAt).toBeInstanceOf(Date);
     expect(d.updates.some((u) => u.status === 'activa')).toBe(false);
     expect(d.updates.some((u) => 'claveNumericaHash' in u)).toBe(false);

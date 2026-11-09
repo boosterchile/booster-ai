@@ -123,6 +123,7 @@ function buildApp(
     createMeEmpresaMiembrosRoutes({
       db,
       logger: noopLogger,
+      platformAdminEmails: ['respaldo@boosterchile.com'],
       ...(emailSender ? { emailSender, webAppUrl: 'https://app.boosterchile.com' } : {}),
     }),
   );
@@ -453,5 +454,67 @@ describe('correo de activación del equipo de la empresa', () => {
       (noopLogger.error as ReturnType<typeof vi.fn>).mock.calls,
     ]);
     expect(logs).not.toContain(json.codigo_activacion);
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC7 — la empresa no suma a su equipo una
+ * cuenta del personal de Booster ni deja en una cuenta un correo de la lista
+ * de respaldo.
+ */
+describe('POST /me/empresa/miembros — cuenta del personal de Booster (SC7)', () => {
+  const RESPUESTA = {
+    code: 'cuenta_personal_booster',
+    message: 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+  };
+
+  function invitar(app: Hono, body: Record<string, unknown> = {}) {
+    return app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        full_name: 'Ana Soto',
+        rut: '12345678-5',
+        email: 'ana.soto@empresa.cl',
+        rol: 'despachador',
+        ...body,
+      }),
+    });
+  }
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true, email: 'ana.soto@boosterchile.com' }],
+    [
+      'con un correo de la lista de respaldo',
+      { isPlatformAdmin: false, email: 'RESPALDO@boosterchile.com' },
+    ],
+  ])('RUT de una cuenta %s → 409 y no escribe', async (_caso, cuenta) => {
+    const d = makeDb({ userByRut: [{ id: 'user-ana', ...cuenta }] });
+
+    const res = await invitar(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(d.insertedUsers).toEqual([]);
+    expect(d.insertedMemberships).toEqual([]);
+  });
+
+  it('persona nueva con un correo de la lista de respaldo → 409 y no inserta', async () => {
+    const d = makeDb();
+
+    const res = await invitar(buildApp(d.db), { email: 'respaldo@boosterchile.com' });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(d.insertedUsers).toEqual([]);
+    expect(d.insertedMemberships).toEqual([]);
+  });
+
+  it('una persona de la empresa con su correo de la empresa se suma igual', async () => {
+    const d = makeDb();
+
+    const res = await invitar(buildApp(d.db));
+
+    expect(res.status).toBe(201);
   });
 });

@@ -431,6 +431,29 @@ describe('ConductoresNuevoRoute', () => {
     expect(await screen.findByText(/otra empresa o tiene otro rol/)).toBeInTheDocument();
     expect(screen.queryByText(/PIN de activación/)).toBeNull();
   });
+
+  // `.specs/acceso-panel-plataforma` SC8.
+  it('error cuenta_personal_booster en el alta → explica que la cuenta se gestiona desde Booster', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(
+        409,
+        'cuenta_personal_booster',
+        { code: 'cuenta_personal_booster' },
+        'API error 409 (cuenta_personal_booster)',
+      ),
+    );
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(
+      await screen.findByText(
+        'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/cuenta_personal_booster/)).toBeNull();
+    expect(screen.queryByText(/PIN de activación/)).toBeNull();
+  });
 });
 
 describe('ConductoresDetalleRoute', () => {
@@ -905,5 +928,67 @@ describe('ConductoresNuevoRoute — teléfono obligatorio (canal WhatsApp)', () 
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect((post.mock.calls[0]?.[1] as { phone?: string }).phone).toBe('+56957790379');
+  });
+});
+
+// `.specs/acceso-panel-plataforma` SC8: la cuenta del personal de Booster se
+// gestiona desde Booster; la ficha y el alta lo explican en tuteo.
+describe('conductores — cuenta del personal de Booster (SC8)', () => {
+  const MENSAJE = 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.';
+  const rechazoPersonal = () =>
+    new ApiError(
+      409,
+      'cuenta_personal_booster',
+      { code: 'cuenta_personal_booster', message: MENSAJE },
+      'API error 409 (cuenta_personal_booster)',
+    );
+
+  it('ficha: cambiar el email → muestra el mensaje', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Camila Rojas',
+          rut: '11.111.111-1',
+          email: 'pending-rut-111111111@boosterchile.invalid',
+          phone: null,
+          is_pending: true,
+        },
+      }),
+    });
+    vi.spyOn(api, 'post').mockRejectedValueOnce(rechazoPersonal());
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    await userEvent.type(await screen.findByLabelText(/Email de contacto/), 'usuario@example.com');
+    await userEvent.click(
+      screen.getByRole('button', { name: /Guardar email y reenviar invitación/ }),
+    );
+
+    expect(await screen.findByText(MENSAJE)).toBeInTheDocument();
+  });
+
+  it('ficha: guardar el teléfono → muestra el mensaje', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Juan Pérez',
+          rut: '11.111.111-1',
+          email: 'viejo@example.com',
+          phone: '+56911111111',
+          is_pending: true,
+        },
+      }),
+    });
+    vi.spyOn(api, 'post').mockRejectedValueOnce(rechazoPersonal());
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    await userEvent.clear(input);
+    await userEvent.type(input, '+56987654321');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar teléfono' }));
+
+    expect(await screen.findByText(MENSAJE)).toBeInTheDocument();
+    expect(screen.queryByText(/API error 409/)).toBeNull();
   });
 });

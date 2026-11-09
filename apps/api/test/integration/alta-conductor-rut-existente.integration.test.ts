@@ -43,7 +43,7 @@ describe('integration: alta de conductor con RUT existente', () => {
       } as never);
       await next();
     });
-    a.route('/conductores', createConductoresRoutes({ db: h.db, logger }));
+    a.route('/conductores', createConductoresRoutes({ db: h.db, logger, platformAdminEmails: [] }));
     return a;
   }
 

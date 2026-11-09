@@ -1,6 +1,6 @@
 /**
  * Lógica pura de autorización de impersonación (target-side) — impersonación
- * auditada. El caller-side (feature flag + auth + allowlist platform-admin) lo
+ * auditada. El caller-side (feature flag + auth + acceso al panel) lo
  * resuelve `requirePlatformAdmin` en la ruta; acá decidimos si, dado un admin
  * válido, el TARGET es impersonable.
  *

@@ -90,7 +90,7 @@ function miembroPendienteDe(row: {
  * `/auth/activar` la pasa a `activa`. La trazabilidad queda en
  * `invitado_por_id` / `invitado_en`.
  *
- * Audiencia: platform-admin (allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`).
+ * Audiencia: platform-admin (`requirePlatformAdmin`).
  */
 export function createAdminEmpresaMiembrosRoutes(opts: {
   db: Db;
@@ -857,7 +857,10 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               .update(users)
               .set({
                 activationPinHash: hashActivationPin(codigo),
-                activacionVenceEn: null,
+                // Solo un platform-admin re-emite desde aquí: cuenta como
+                // código del panel y deja su vencimiento
+                // (`.specs/acceso-panel-plataforma` SC9).
+                activacionVenceEn: expiraEn,
                 updatedAt: ahora,
               })
               .where(eq(users.id, fila.userId));
