@@ -68,6 +68,7 @@ function route(startLocation: { lat: number; lng: number } | null) {
     fuelL: null,
     polylineEncoded: 'poly',
     startLocation,
+    endLocation: null,
   };
 }
 

@@ -989,6 +989,36 @@ describe('GET /assignments', () => {
     expect(a?.trip.origin.address_raw).toBe('Av. Presidente Riesco 5335');
   });
 
+  // editar-anular-cargas §6.11: el listado marca el servicio con un cambio sin responder.
+  it('marca el cambio pendiente y trae contacto, notas y referencia', async () => {
+    const app = await buildApp({
+      db: makeDb({
+        selects: [
+          [
+            {
+              ...LISTA_ROW,
+              consigneeName: 'Bodega',
+              consigneeWhatsappE164: '+56911111111',
+              notes: 'Andén 4',
+              reference: 'PO-1',
+              cambioPendienteEn: new Date('2026-11-09T15:00:00Z'),
+            },
+            { ...LISTA_ROW, assignmentId: 'otro', cambioPendienteEn: null },
+          ],
+        ],
+      }),
+    });
+    const res = await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    const body = (await res.json()) as { assignments: Array<{ trip: Record<string, unknown> }> };
+    expect(body.assignments[0]?.trip).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111' },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+      cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00.000Z' },
+    });
+    expect(body.assignments[1]?.trip.cambio_pendiente).toBeNull();
+  });
+
   it('con conductor asignado lo devuelve con nombre', async () => {
     const app = await buildApp({
       db: makeDb({

@@ -94,6 +94,22 @@ describe('camposQueCambian', () => {
   });
 });
 
+describe('precisión de coordenadas', () => {
+  it('el mismo punto con más de 7 decimales no cuenta como cambio (numeric(10,7))', () => {
+    const propuesta = normalizarPropuesta({
+      origin: {
+        address_raw: 'Av. Apoquindo 4500, Las Condes',
+        region_code: 'XIII',
+        comuna_code: '13114',
+        latitude: -33.410000004,
+        longitude: -70.580000049,
+      },
+    });
+    expect(camposQueCambian(valoresActuales(VIAJE), propuesta)).toEqual([]);
+    expect(propuesta.origin).toMatchObject({ latitude: -33.41, longitude: -70.58 });
+  });
+});
+
 describe('soloCampos', () => {
   it('se queda con los campos pedidos', () => {
     expect(soloCampos(valoresActuales(VIAJE), ['weight_kg', 'volume_m3'])).toEqual({

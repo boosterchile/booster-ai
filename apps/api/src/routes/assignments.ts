@@ -18,7 +18,7 @@
 
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -36,6 +36,7 @@ import {
   empresas as empresasTable,
   posicionesMovilConductor,
   telemetryPoints,
+  tripChangeRequests,
   tripMetrics,
   trips,
   users as usersTable,
@@ -68,7 +69,6 @@ import {
   registrarRespuestaSugerenciaRuta,
 } from '../services/eco-routing-tiempo-real.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
-import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
@@ -92,6 +92,10 @@ const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_tot
 const recogidasConfirmadasCounter = getBusinessCounter('recogidas_confirmadas_total');
 /** editar-anular-cargas §6: respuestas del transportista a un cambio de carga. */
 const solicitudCambioCounter = getBusinessCounter('solicitud_cambio_total');
+/** Ids de las rutas de solicitudes: un id mal formado es un recurso que no existe (404). */
+const idsSolicitudSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
+const idsSolicitudInvalidos = (r: { success: boolean }, c: Context) =>
+  r.success ? undefined : c.json({ error: 'not_found', code: 'not_found' }, 404);
 /** Body de `POST /:id/solicitudes-cambio/:sid/rechazar` (§6.10). */
 const rechazarCambioBodySchema = z.object({ reason: z.string().trim().min(1).max(500).optional() });
 /** editar-anular-cargas §6: recogidas o entregas frenadas por un cambio de carga pendiente. */
@@ -236,6 +240,17 @@ export function createAssignmentsRoutes(opts: {
         cargoWeightKg: trips.cargoWeightKg,
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
+        // editar-anular-cargas §6.11: datos libres y si hay un cambio sin responder.
+        consigneeName: trips.consigneeName,
+        consigneeWhatsappE164: trips.consigneeWhatsappE164,
+        notes: trips.notes,
+        reference: trips.reference,
+        cambioPendienteEn: sql<Date | string | null>`(
+          select ${tripChangeRequests.createdAt} from ${tripChangeRequests}
+          where ${tripChangeRequests.tripId} = ${trips.id}
+            and ${tripChangeRequests.status} = 'pendiente'
+          limit 1
+        )`,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
@@ -276,6 +291,13 @@ export function createAssignmentsRoutes(opts: {
           cargo_weight_kg: r.cargoWeightKg,
           pickup_window_start: safeIsoString(r.pickupWindowStart),
           pickup_window_end: safeIsoString(r.pickupWindowEnd),
+          consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
+          notes: r.notes,
+          reference: r.reference,
+          // El listado solo marca el servicio; el diff vive en el detalle.
+          cambio_pendiente: r.cambioPendienteEn
+            ? { existe: true, creado_en: safeIsoString(r.cambioPendienteEn) }
+            : null,
         },
       })),
     });
@@ -1408,98 +1430,91 @@ export function createAssignmentsRoutes(opts: {
   // responde un cambio que propuso el generador (editar-anular-cargas §6.9–10).
   // `requireCarrierAuth` no mira el rol: el chequeo de capacidad es obligatorio.
   // ---------------------------------------------------------------------
-  app.post('/:id/solicitudes-cambio/:sid/aceptar', async (c) => {
-    const auth = requireCarrierAuth(c);
-    if (!auth.ok) {
-      return auth.response;
-    }
-    const sinPermiso = denegarResponderCambioCarga(c, auth.userContext);
-    if (sinPermiso) {
-      return sinPermiso;
-    }
-    const assignmentId = c.req.param('id');
-    const solicitudId = c.req.param('sid');
-    const r = await withBusinessSpan(
-      {
-        name: 'asignaciones.solicitud_cambio.aceptar',
-        attributes: { 'booster.assignment_id': assignmentId, 'booster.solicitud_id': solicitudId },
-      },
-      async (span) => {
-        const res = await aceptarSolicitudCambio(
-          { db: opts.db, logger: opts.logger },
-          {
-            assignmentId,
-            empresaId: auth.activeMembership.empresa.id,
-            userId: auth.userContext.user.id,
-            solicitudId,
+  app.post(
+    '/:id/solicitudes-cambio/:sid/aceptar',
+    zValidator('param', idsSolicitudSchema, idsSolicitudInvalidos),
+    async (c) => {
+      const auth = requireCarrierAuth(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarResponderCambioCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const { id: assignmentId, sid: solicitudId } = c.req.valid('param');
+      const r = await withBusinessSpan(
+        {
+          name: 'asignaciones.solicitud_cambio.aceptar',
+          attributes: {
+            'booster.assignment_id': assignmentId,
+            'booster.solicitud_id': solicitudId,
           },
-        );
-        const resultado = res.ok ? 'aceptada' : res.code;
-        setResultAttributes(span, { 'booster.outcome': resultado });
-        solicitudCambioCounter.add(1, { resultado, comercial: false });
-        return res;
-      },
-    );
-    if (!r.ok) {
-      switch (r.code) {
-        case 'assignment_not_found':
-        case 'solicitud_not_found':
-          return c.json({ error: r.code, code: r.code }, 404);
-        case 'solicitud_no_vigente':
-          return c.json({ error: r.code, code: r.code }, 409);
-        case 'solicitud_invalidada':
-          return c.json({ error: r.code, code: r.code, motivo: r.motivo }, 409);
-        case 'excede_capacidad_vehiculo':
-          return c.json(
-            { error: r.code, code: r.code, capacidad_kg: r.capacidadKg, peso_kg: r.pesoKg },
-            422,
+        },
+        async (span) => {
+          const res = await aceptarSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            {
+              assignmentId,
+              empresaId: auth.activeMembership.empresa.id,
+              userId: auth.userContext.user.id,
+              solicitudId,
+            },
           );
-      }
-    }
-
-    // Post-commit: coordenadas del origen nuevo, huella estimada y avisos.
-    // Ninguno revierte la aceptación; cada fallo queda logueado.
-    const { aviso } = r;
-    if (r.origenSinCoordenadas && opts.routesProjectId) {
-      try {
-        await geocodificarOrigen({
-          db: opts.db,
-          logger: opts.logger,
-          tripId: aviso.tripId,
-          originAddress: r.origenSinCoordenadas.originAddress,
-          destinationAddress: r.origenSinCoordenadas.destinationAddress,
-          routesProjectId: opts.routesProjectId,
-        });
-      } catch (err) {
-        opts.logger.error({ err, tripId: aviso.tripId }, 'geocodificar origen tras cambio falló');
-      }
-    }
-    if (cambiaHuella(r.campos)) {
-      try {
-        await calcularMetricasEstimadas({
-          db: opts.db,
-          logger: opts.logger,
-          tripId: aviso.tripId,
-          vehicleId: r.vehicleId,
-          routesProjectId: opts.routesProjectId,
-        });
-      } catch (err) {
-        opts.logger.error({ err, tripId: aviso.tripId }, 'recalcular huella tras cambio falló');
-      }
-    }
-    try {
-      await notifyCambioCarga(
-        { db: opts.db, logger: opts.logger },
-        { tripId: aviso.tripId, asignacion: aviso.asignacion, evento: 'cambio_aceptado' },
+          const resultado = res.ok ? 'aceptada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          solicitudCambioCounter.add(1, { resultado, comercial: false });
+          return res;
+        },
       );
-    } catch (err) {
-      opts.logger.error({ err, tripId: aviso.tripId }, 'avisar cambio aceptado falló');
-    }
-    return c.json({ ok: true, solicitud_id: solicitudId, campos: r.campos });
-  });
+      if (!r.ok) {
+        switch (r.code) {
+          case 'assignment_not_found':
+          case 'solicitud_not_found':
+            return c.json({ error: r.code, code: r.code }, 404);
+          case 'solicitud_no_vigente':
+            return c.json({ error: r.code, code: r.code }, 409);
+          case 'solicitud_invalidada':
+            return c.json({ error: r.code, code: r.code, motivo: r.motivo }, 409);
+          case 'excede_capacidad_vehiculo':
+            return c.json(
+              { error: r.code, code: r.code, capacidad_kg: r.capacidadKg, peso_kg: r.pesoKg },
+              422,
+            );
+        }
+      }
+
+      // Post-commit: huella estimada y avisos. Ninguno revierte la aceptación;
+      // cada fallo queda logueado.
+      const { aviso } = r;
+      if (cambiaHuella(r.campos)) {
+        try {
+          await calcularMetricasEstimadas({
+            db: opts.db,
+            logger: opts.logger,
+            tripId: aviso.tripId,
+            vehicleId: r.vehicleId,
+            routesProjectId: opts.routesProjectId,
+          });
+        } catch (err) {
+          opts.logger.error({ err, tripId: aviso.tripId }, 'recalcular huella tras cambio falló');
+        }
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId: aviso.tripId, asignacion: aviso.asignacion, evento: 'cambio_aceptado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId: aviso.tripId }, 'avisar cambio aceptado falló');
+      }
+      return c.json({ ok: true, solicitud_id: solicitudId, campos: r.campos });
+    },
+  );
 
   app.post(
     '/:id/solicitudes-cambio/:sid/rechazar',
+    zValidator('param', idsSolicitudSchema, idsSolicitudInvalidos),
     zValidator('json', rechazarCambioBodySchema),
     async (c) => {
       const auth = requireCarrierAuth(c);
@@ -1510,8 +1525,7 @@ export function createAssignmentsRoutes(opts: {
       if (sinPermiso) {
         return sinPermiso;
       }
-      const assignmentId = c.req.param('id');
-      const solicitudId = c.req.param('sid');
+      const { id: assignmentId, sid: solicitudId } = c.req.valid('param');
       const { reason } = c.req.valid('json');
       const r = await withBusinessSpan(
         {
