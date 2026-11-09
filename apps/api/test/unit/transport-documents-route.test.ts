@@ -655,6 +655,46 @@ describe('GET de documentos — rol conductor', () => {
     expect(getSignedUrlMock).not.toHaveBeenCalled();
   });
 
+  // Empresa dual (generadora y transportista): el conductor no entra por la
+  // rama del generador dueño; también ahí ve solo su viaje.
+  it.each([
+    ['asignado a otro conductor', { empresaId: SHIPPER_EMP, driverUserId: OTRO_CONDUCTOR }],
+    ['sin asignación', null],
+  ] as const)('empresa dual, viaje %s → 403 en lista y detalle', async (_caso, assignment) => {
+    const lista = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment,
+      list: [{ id: DOC_ID, extractionStatus: 'decodificado' }],
+    });
+    const resLista = await buildApp(lista, SHIPPER_EMP, true, 'conductor').request(
+      `/transport-orders/${TRIP_ID}/documents`,
+    );
+    expect(resLista.status).toBe(403);
+
+    const detalle = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment,
+      doc: docRow(),
+    });
+    const resDetalle = await buildApp(detalle, SHIPPER_EMP, true, 'conductor').request(
+      `/documents/${DOC_ID}`,
+    );
+    expect(resDetalle.status).toBe(403);
+    expect(getSignedUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('empresa dual, viaje asignado a él → 200', async () => {
+    const db = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment: { empresaId: SHIPPER_EMP, driverUserId: USER_ID },
+      list: [],
+    });
+    const res = await buildApp(db, SHIPPER_EMP, true, 'conductor').request(
+      `/transport-orders/${TRIP_ID}/documents`,
+    );
+    expect(res.status).toBe(200);
+  });
+
   it.each(['dueno', 'admin', 'despachador', 'visualizador'])(
     '%s de la transportista lee aunque el viaje sea de otro conductor',
     async (role) => {
