@@ -7,6 +7,11 @@
  * correo (sin distinguir mayúsculas) recibe uno solo. Los correos sintéticos
  * de dominio `.invalid` no son buzones reales y se descartan.
  *
+ * Contenido (`.specs/seguimiento-publico-minimizacion/` §3.3): la patente va
+ * enmascarada como en la página pública; el nombre de la empresa transportista
+ * va solo al generador, que ya lo ve en su panel. Si ambos comparten correo,
+ * sale una vez con el texto del generador.
+ *
  * Idempotencia propia (`asignaciones.tracking_link_email_enviado_en`),
  * independiente del WhatsApp: si un canal está caído, el otro sale igual. La
  * marca se toma con un UPDATE condicional antes de enviar, así dos despachos
@@ -22,6 +27,7 @@ import type { Db } from '../db/client.js';
 import { assignments, empresas, trips, users, vehicles } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { maskPlate } from './get-public-tracking.js';
 import type { EmailMessage, EmailSender } from './notifications/email-sender.js';
 
 export interface NotifyTrackingLinkEmailDeps {
@@ -69,7 +75,9 @@ function armarCorreo(datos: {
 }): EmailMessage {
   const lineaTransporte = datos.transportista
     ? `Transporta: ${datos.transportista}${datos.patente ? ` (patente ${datos.patente})` : ''}.`
-    : null;
+    : datos.patente
+      ? `Vehículo: patente ${datos.patente}.`
+      : null;
   const text = [
     `Tu carga ${datos.trackingCode} ya tiene transportista.`,
     `Ruta: ${datos.origen} → ${datos.destino}.`,
@@ -153,10 +161,15 @@ async function enviarCorreoTracking(
     return { assignmentId, skipped: true, reason: 'no_token' };
   }
 
-  const destinatarios: string[] = [];
-  for (const candidato of [correoUsable(row.shipperEmail), correoUsable(row.consigneeEmail)]) {
-    if (candidato && !destinatarios.some((d) => d.toLowerCase() === candidato.toLowerCase())) {
-      destinatarios.push(candidato);
+  // El generador va primero: si comparte correo con el destinatario, gana su texto.
+  const destinatarios: Array<{ to: string; esGenerador: boolean }> = [];
+  for (const candidato of [
+    { to: correoUsable(row.shipperEmail), esGenerador: true },
+    { to: correoUsable(row.consigneeEmail), esGenerador: false },
+  ]) {
+    const to = candidato.to;
+    if (to && !destinatarios.some((d) => d.to.toLowerCase() === to.toLowerCase())) {
+      destinatarios.push({ to, esGenerador: candidato.esGenerador });
     }
   }
   if (destinatarios.length === 0) {
@@ -180,15 +193,16 @@ async function enviarCorreoTracking(
 
   const url = `${webAppUrl.replace(/\/$/, '')}/tracking/${row.publicToken}`;
   let enviados = 0;
-  for (const to of destinatarios) {
+  const patente = row.vehiclePlate ? maskPlate(row.vehiclePlate) : null;
+  for (const destinatario of destinatarios) {
     const resultado = await emailSender.send(
       armarCorreo({
-        to,
+        to: destinatario.to,
         trackingCode: row.trackingCode,
         origen: regionLabel(row.originRegion),
         destino: regionLabel(row.destRegion),
-        transportista: row.carrierName,
-        patente: row.vehiclePlate,
+        transportista: destinatario.esGenerador ? row.carrierName : null,
+        patente,
         url,
       }),
     );

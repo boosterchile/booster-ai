@@ -727,9 +727,11 @@ function makeQueryDb(opts: {
     leftJoin: leftJoinFn,
     where: whereFn,
   }));
+  const innerJoinFn = vi.fn(() => ({ where: whereFn }));
   const fromFn = vi.fn(() => ({
     where: whereFn,
     leftJoin: leftJoinFn,
+    innerJoin: innerJoinFn,
   }));
   const selectFn = vi.fn((shape?: unknown) => {
     if (shape !== undefined) {
@@ -983,7 +985,9 @@ describe('GET /trip-requests-v2/:id', () => {
             },
           ],
           [], // no metrics
-          // 4to limit: telemetry last point (where + orderBy + limit). Vacío
+          // asignado: ¿el vehículo sirve otro viaje en proceso? (ninguno).
+          [],
+          // telemetry last point (where + orderBy + limit). Vacío
           // → ubicacion_actual será null en la respuesta.
           [],
         ],
@@ -1128,6 +1132,8 @@ describe('GET /trip-requests-v2/:id', () => {
           ...(opts.status === 'asignado' ? [[]] : []),
           [LIVE_ASSIGNMENT],
           [],
+          // asignado: ¿el vehículo sirve otro viaje en proceso? (ninguno).
+          ...(opts.status === 'asignado' ? [[]] : []),
           opts.teltonika ?? [],
           opts.mobile ?? [],
         ],

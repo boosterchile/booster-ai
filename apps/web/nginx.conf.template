@@ -48,6 +48,17 @@ server {
         expires 0;
     }
 
+    # Seguimiento público (enlace personal, sin sesión): los buscadores no lo
+    # indexan y el navegador no lo manda como referente. `index.html` se sirve
+    # DENTRO de este location (no como fallback de try_files, que haría un
+    # redirect interno a `location /` y perdería estas cabeceras).
+    location /tracking/ {
+        add_header Cache-Control "no-cache";
+        add_header X-Robots-Tag "noindex, nofollow";
+        add_header Referrer-Policy "no-referrer";
+        try_files /index.html =404;
+    }
+
     # SPA fallback — index.html nunca se cachea (debe verse en cada deploy).
     location / {
         add_header Cache-Control "no-cache";
