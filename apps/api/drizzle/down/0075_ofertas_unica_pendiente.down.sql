@@ -1,5 +1,5 @@
 -- =============================================================================
--- Revierte la migración 0076 (unicidad de ofertas solo para pendientes).
+-- Revierte la migración 0075 (unicidad de ofertas solo para pendientes).
 --
 -- Solo es seguro si ningún par (viaje_id, empresa_id) tiene más de una oferta.
 -- Después de un re-matching puede haberlos (una expirada y una pendiente para
@@ -12,7 +12,7 @@
 -- ofertas para el mismo par, así que convive con el índice parcial.
 --
 -- Aplicar a mano vía bastion en modo password (DDL):
---   AUTH_MODE=password bash scripts/db/connect.sh -f apps/api/drizzle/down/0076_ofertas_unica_pendiente.down.sql
+--   AUTH_MODE=password bash scripts/db/connect.sh -f apps/api/drizzle/down/0075_ofertas_unica_pendiente.down.sql
 --
 -- ⚠️ NO actualiza drizzle.__drizzle_migrations: si la migración forward sigue en
 --    el repo, el próximo startup la re-aplica. Parche puente, no undo permanente.
