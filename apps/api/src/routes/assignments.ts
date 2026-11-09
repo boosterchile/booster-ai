@@ -53,7 +53,7 @@ import {
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
 import { calcularMetricasEstimadas } from '../services/calcular-metricas-viaje.js';
-import { cambiaHuella } from '../services/cambio-carga-valores.js';
+import { cambiaComercial, cambiaHuella } from '../services/cambio-carga-valores.js';
 import { explicarCoberturaCero } from '../services/clasificar-cobertura-cero.js';
 import {
   type DocumentClosePolicy,
@@ -1436,7 +1436,10 @@ export function createAssignmentsRoutes(opts: {
         );
         const resultado = res.ok ? 'aceptada' : res.code;
         setResultAttributes(span, { 'booster.outcome': resultado });
-        solicitudCambioCounter.add(1, { resultado, comercial: false });
+        solicitudCambioCounter.add(1, {
+          resultado,
+          comercial: res.ok ? cambiaComercial(res.campos) : false,
+        });
         return res;
       },
     );
@@ -1454,6 +1457,8 @@ export function createAssignmentsRoutes(opts: {
             { error: r.code, code: r.code, capacidad_kg: r.capacidadKg, peso_kg: r.pesoKg },
             422,
           );
+        case 'contrato_programado_no_habilitado':
+          return c.json({ error: r.code, code: r.code }, 422);
       }
     }
 
