@@ -6,7 +6,7 @@ import {
   errorOpcion,
   tripRequestCreateInputSchema,
 } from '@booster-ai/shared-schemas';
-import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
+import { esAnulablePorGenerador, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -91,7 +91,7 @@ function generateTrackingCode(): string {
 }
 
 // Cancelable pre-asignación: lo decide la tabla de transiciones del
-// package (esCancelablePorShipper — ADR-061). Una vez `asignado` o
+// package (esAnulablePorGenerador — ADR-061). Una vez `asignado` o
 // posterior, el shipper coordina con el transportista (fuera del scope).
 
 /** ADR-079 §1 — cotización previa a publicar (query string). */
@@ -940,7 +940,7 @@ export function createTripRequestsV2Routes(opts: {
   // ---------------------------------------------------------------------
   // PATCH /:id/cancelar — cancel pre-asignación.
   //
-  // Solo permite cancelar si la tabla de transiciones lo autoriza (esCancelablePorShipper). Una vez
+  // Solo permite cancelar si la tabla de transiciones lo autoriza (esAnulablePorGenerador). Una vez
   // `asignado` o posterior, el shipper debe coordinar la cancelación con
   // el transportista (fuera del scope de este endpoint).
   // ---------------------------------------------------------------------
@@ -979,7 +979,7 @@ export function createTripRequestsV2Routes(opts: {
 
       // Re-check post-lock: si un accept concurrente ganó la carrera,
       // acá vemos 'asignado' y abortamos con 409.
-      if (!esEstadoViaje(trip.status) || !esCancelablePorShipper(trip.status)) {
+      if (!esEstadoViaje(trip.status) || !esAnulablePorGenerador(trip.status)) {
         return { kind: 'not_cancellable' as const, currentStatus: trip.status };
       }
 

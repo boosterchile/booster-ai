@@ -10,3 +10,4 @@ export const PACKAGE_NAME = '@booster-ai/trip-state-machine' as const;
 
 export * from './estados.js';
 export * from './transiciones.js';
+export * from './edicion.js';

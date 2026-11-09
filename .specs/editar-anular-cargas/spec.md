@@ -216,7 +216,14 @@ ALTER TABLE ofertas DROP CONSTRAINT uq_ofertas_viaje_empresa;
 - **Precio y comisión:** se reutilizan `viajes.precio_propuesto_clp`, `viajes.modalidad_carga`, `viajes.comision_pct_aplicada`, `viajes.configuracion_comercial_id` y `asignaciones.precio_acordado_clp`. No se agrega columna.
 - **Reenvío del link de tracking:** no se agrega la columna `tracking_link_enviado_en` (§8).
 
-### Dominio canónico: `packages/shared-schemas/src/domain/cambio-carga.ts`
+### Dominio canónico
+
+Implementado en PR2 (2026-11-09):
+
+- La regla pura de qué campo se edita en qué estado vive en `packages/trip-state-machine/src/edicion.ts`, junto a la tabla de transiciones de la que deriva. Eso incluye las listas de campos, `clasificarEdicion` y `TRANSICIONES_SOLICITUD`, y evita una dependencia nueva entre paquetes.
+- Los Zod schemas de la propuesta y de los eventos van en `packages/shared-schemas/src/domain/cambio-carga.ts`, en el PR que los consume primero (PR3 o PR7).
+
+Contenido:
 
 - `CAMPOS_LIBRES = ['consignee', 'notes', 'reference']`.
 - `CAMPOS_CON_ACEPTACION = ['origin', 'destination', 'cargo_type', 'weight_kg', 'volume_m3', 'description', 'pickup_window', 'proposed_price_clp', 'modalidad_carga']`. Comuna, región y lat/lng van dentro de origen o destino.
