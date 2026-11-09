@@ -1483,7 +1483,11 @@ export const offers = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    tripEmpresaUnique: unique('uq_ofertas_viaje_empresa').on(table.tripId, table.empresaId),
+    // Solo una oferta pendiente por transportista y viaje: tras una edición el
+    // re-matching vuelve a ofertar a la misma empresa (migración 0076, M2).
+    tripEmpresaPendienteUnique: uniqueIndex('uq_ofertas_viaje_empresa_pendiente')
+      .on(table.tripId, table.empresaId)
+      .where(sql`estado = 'pendiente'`),
     tripIdx: index('idx_ofertas_viaje').on(table.tripId),
     empresaIdx: index('idx_ofertas_empresa').on(table.empresaId),
     statusIdx: index('idx_ofertas_estado').on(table.status),
