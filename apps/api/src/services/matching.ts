@@ -120,9 +120,18 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
 
   return await db
     .transaction(async (tx) => {
-      // 1. Cargar trip.
+      // 1. Cargar trip con FOR UPDATE (editar-anular-cargas §6.1): la fila
+      // queda tomada hasta el CAS y el resto de la tx. Una edición (PUT)
+      // concurrente espera, y si una ya la tenía tomada, el matching espera y
+      // lee los datos nuevos — sin el lock leía la versión anterior y ofertaba
+      // con el precio/peso/región viejos.
       // rls-allowlist: matching core scoped por tripId ya validado en la ruta (rls-viabilidad §3)
-      const tripRows = await tx.select().from(trips).where(eq(trips.id, tripId)).limit(1);
+      const tripRows = await tx
+        .select()
+        .from(trips)
+        .where(eq(trips.id, tripId))
+        .for('update')
+        .limit(1);
       const trip = tripRows[0];
       if (!trip) {
         throw new TripRequestNotFoundError(tripId);

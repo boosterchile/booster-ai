@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Db } from '../db/client.js';
 
@@ -59,6 +61,15 @@ function makeDb(opts: { updateRejects?: Error } = {}) {
   const setFn = vi.fn(() => ({ where: whereFn }));
   const updateFn = vi.fn(() => ({ set: setFn }));
   return { db: { update: updateFn } as unknown as Db, updateFn, setFn };
+}
+
+/** UPDATE condicionado: `.where(...).returning(...)` devuelve `filas`. */
+function makeDbCondicionado(filas: { id: string }[]) {
+  const returningFn = vi.fn().mockResolvedValue(filas);
+  const whereFn = vi.fn((_predicado: SQL) => ({ returning: returningFn }));
+  const setFn = vi.fn(() => ({ where: whereFn }));
+  const updateFn = vi.fn(() => ({ set: setFn }));
+  return { db: { update: updateFn } as unknown as Db, whereFn, setFn, returningFn };
 }
 
 function route(startLocation: { lat: number; lng: number } | null) {
@@ -233,6 +244,93 @@ describe('geocodificarOrigen', () => {
     expect(counterAdd).toHaveBeenCalledWith(1, {
       resultado: 'degradado',
       motivo: 'error_inesperado',
+    });
+  });
+
+  describe('soloSiOrigenVigente (editar-anular-cargas §6.1)', () => {
+    it('condiciona el UPDATE a la dirección geocodificada y origin_latitude en NULL; persiste si la fila sigue igual', async () => {
+      vi.mocked(computeRoutes).mockResolvedValueOnce([
+        route({ lat: -33.4188917, lng: -70.6045211 }),
+      ]);
+      const { db, whereFn, setFn } = makeDbCondicionado([{ id: TRIP_ID }]);
+
+      const result = await geocodificarOrigen({
+        db,
+        logger: makeLogger(),
+        tripId: TRIP_ID,
+        originAddress: ORIGIN,
+        destinationAddress: DESTINATION,
+        routesProjectId: 'booster-ai-494222',
+        soloSiOrigenVigente: true,
+      });
+
+      expect(result).toEqual({ lat: -33.4188917, lng: -70.6045211 });
+      expect(setFn).toHaveBeenCalledWith(
+        expect.objectContaining({ originLatitude: '-33.4188917', originLongitude: '-70.6045211' }),
+      );
+      const predicado = whereFn.mock.calls[0]?.[0];
+      if (!predicado) {
+        throw new Error('el UPDATE no recibió WHERE');
+      }
+      const { sql, params } = new PgDialect().sqlToQuery(predicado);
+      expect(sql).toContain('"origen_direccion_raw" = $');
+      expect(sql).toContain('"origin_latitude" is null');
+      expect(params).toEqual(expect.arrayContaining([TRIP_ID, ORIGIN]));
+      expect(counterAdd).toHaveBeenCalledWith(1, { resultado: 'ok' });
+    });
+
+    it('respuesta atrasada: el origen cambió (0 filas) → null, no persiste, log y métrica origen_cambio', async () => {
+      vi.mocked(computeRoutes).mockResolvedValueOnce([
+        route({ lat: -33.4188917, lng: -70.6045211 }),
+      ]);
+      const { db } = makeDbCondicionado([]);
+      const logger = makeLogger();
+
+      const result = await geocodificarOrigen({
+        db,
+        logger,
+        tripId: TRIP_ID,
+        originAddress: ORIGIN,
+        destinationAddress: DESTINATION,
+        routesProjectId: 'booster-ai-494222',
+        soloSiOrigenVigente: true,
+      });
+
+      expect(result).toBeNull();
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ tripId: TRIP_ID, motivo: 'origen_cambio' }),
+        expect.any(String),
+      );
+      expect(counterAdd).toHaveBeenCalledWith(1, {
+        resultado: 'degradado',
+        motivo: 'origen_cambio',
+      });
+    });
+
+    it('sin la opción, el UPDATE sigue siendo solo por id', async () => {
+      vi.mocked(computeRoutes).mockResolvedValueOnce([
+        route({ lat: -33.4188917, lng: -70.6045211 }),
+      ]);
+      const whereFn = vi.fn((_p: SQL) => Promise.resolve(undefined));
+      const db = {
+        update: vi.fn(() => ({ set: vi.fn(() => ({ where: whereFn })) })),
+      } as unknown as Db;
+
+      await geocodificarOrigen({
+        db,
+        logger: makeLogger(),
+        tripId: TRIP_ID,
+        originAddress: ORIGIN,
+        destinationAddress: DESTINATION,
+        routesProjectId: 'booster-ai-494222',
+      });
+
+      const predicado = whereFn.mock.calls[0]?.[0];
+      if (!predicado) {
+        throw new Error('el UPDATE no recibió WHERE');
+      }
+      const { sql } = new PgDialect().sqlToQuery(predicado);
+      expect(sql).not.toContain('origen_direccion_raw');
     });
   });
 });

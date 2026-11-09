@@ -41,7 +41,7 @@ import { VehicleMap } from '../components/map/VehicleMap.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
 import {
   CertDisabledError,
@@ -107,7 +107,10 @@ interface TripDetail extends TripSummary {
   consignee?: DatosLibresCarga['consignee'];
   notes?: string | null;
   reference?: string | null;
+  /** §9: cuántas transportistas evalúan la carga (solo en ofertas_enviadas). */
+  ofertas_pendientes?: number;
   acciones_permitidas?: {
+    editar?: boolean;
     editar_datos_libres: boolean;
     solicitar_cambio?: boolean;
     retirar_cambio?: boolean;
@@ -600,6 +603,148 @@ export function CargasNuevoRoute() {
   );
 }
 
+export function CargasEditarRoute() {
+  return (
+    <ProtectedRoute meRequirement="require-onboarded">
+      {(ctx) => {
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
+        const isShipper = ctx.me.active_membership?.empresa?.is_generador_carga ?? false;
+        if (!isShipper || !flagsDe(ctx.me).editarCarga) {
+          return (
+            <Layout me={ctx.me} title="Editar carga">
+              <NoShipperPermission />
+            </Layout>
+          );
+        }
+        return <CargaEditarPage me={ctx.me} />;
+      }}
+    </ProtectedRoute>
+  );
+}
+
+/** El 409 de una carga que ya no se edita así se explica sin culpar al usuario (§9). */
+export function mensajeErrorEdicion(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case 'trip_not_editable':
+        return 'La carga cambió mientras editabas (ya tiene transportista). Recargamos sus datos.';
+      case 'trip_busy':
+        return 'Estamos buscando transportista en este momento. Inténtalo en unos segundos.';
+      case 'contrato_programado_no_habilitado':
+        return 'Tu empresa no tiene contrato programado habilitado.';
+    }
+  }
+  return err instanceof Error ? err.message : 'No pudimos guardar la carga.';
+}
+
+function CargaEditarPage({ me }: { me: MeOnboarded }) {
+  const { id } = useParams({ strict: false }) as { id: string };
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [porConfirmar, setPorConfirmar] = useState<TripFormValues | null>(null);
+  const tripQ = useQuery({
+    queryKey: ['cargas', id],
+    queryFn: async () => await api.get<TripDetailResponse>(`/trip-requests-v2/${id}`),
+  });
+  const trip = tripQ.data?.trip_request;
+
+  const guardar = useMutation({
+    mutationFn: async (values: TripFormValues) =>
+      await api.put(`/trip-requests-v2/${id}`, tripFormToBody(values)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cargas'] });
+      void navigate({ to: '/app/cargas/$id', params: { id } });
+    },
+    onError: (err) => {
+      setPorConfirmar(null);
+      setError(mensajeErrorEdicion(err));
+      if (err instanceof ApiError && err.code === 'trip_not_editable') {
+        queryClient.invalidateQueries({ queryKey: ['cargas', id] });
+      }
+    },
+  });
+
+  const inicial = trip ? formDesdeDetalle(trip) : null;
+  return (
+    <Layout me={me} title="Editar carga">
+      <div className="mb-6 flex items-center gap-3">
+        <Link
+          to="/app/cargas/$id"
+          params={{ id }}
+          className="text-neutral-500 hover:text-neutral-900"
+          aria-label="Volver al detalle"
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden />
+        </Link>
+        <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
+          Editar {trip?.tracking_code ?? 'carga'}
+        </h1>
+      </div>
+      {tripQ.isLoading && <p className="text-neutral-500">Cargando…</p>}
+      {trip && !trip.acciones_permitidas?.editar && (
+        <p className="mb-4 text-neutral-700 text-sm">
+          Esta carga ya no se edita directamente. Si ya tiene transportista, propón el cambio desde
+          su detalle.
+        </p>
+      )}
+      {porConfirmar && trip && (
+        <div
+          role="alertdialog"
+          aria-label="Confirmar cambios"
+          className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm"
+        >
+          <p className="text-amber-900">
+            Hay {trip.ofertas_pendientes ?? 0} transportistas evaluando esta carga. Si cambias estos
+            datos, sus ofertas se anulan y buscaremos transportista de nuevo. Si no hay candidatos,
+            la carga quedará sin transportista.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => guardar.mutate(porConfirmar)}
+              disabled={guardar.isPending}
+              className="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white disabled:opacity-60"
+            >
+              Sí, guardar cambios
+            </button>
+            <button
+              type="button"
+              onClick={() => setPorConfirmar(null)}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700"
+            >
+              Volver
+            </button>
+          </div>
+        </div>
+      )}
+      {inicial && trip?.acciones_permitidas?.editar && (
+        <TripForm
+          initialValues={inicial}
+          submitLabel="Guardar cambios"
+          onSubmit={(values) => {
+            setError(null);
+            if (trip.status === 'ofertas_enviadas' && cambiaAlgoMaterial(inicial, values)) {
+              setPorConfirmar(values);
+              return;
+            }
+            guardar.mutate(values);
+          }}
+          submitting={guardar.isPending}
+          error={error}
+        />
+      )}
+      {error && !trip?.acciones_permitidas?.editar && (
+        <p role="alert" className="text-danger-700 text-sm">
+          {error}
+        </p>
+      )}
+    </Layout>
+  );
+}
+
 interface TripFormValues {
   origin_address_raw: string;
   origin_region_code: RegionCode | '';
@@ -676,6 +821,71 @@ function aIsoLocal(valor: string): string {
   }
   const fecha = new Date(valor);
   return Number.isNaN(fecha.getTime()) ? '' : fecha.toISOString();
+}
+
+/** ISO → valor de un `<input type="datetime-local">` en la hora del navegador. */
+function isoALocal(iso: string | null): string {
+  if (!iso) {
+    return '';
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return '';
+  }
+  const dos = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}T${dos(d.getHours())}:${dos(d.getMinutes())}`;
+}
+
+/**
+ * La carga publicada como valores del formulario (editar-anular-cargas §9). El
+ * detalle no trae coordenadas: el API conserva las del viaje si la dirección
+ * no cambia.
+ */
+export function formDesdeDetalle(t: TripDetail): TripFormValues {
+  return {
+    ...EMPTY_FORM,
+    origin_address_raw: t.origin_address_raw,
+    origin_region_code: t.origin_region_code ?? '',
+    origin_comuna_code: t.origin_comuna_code ?? '',
+    destination_address_raw: t.destination_address_raw,
+    destination_region_code: t.destination_region_code ?? '',
+    destination_comuna_code: t.destination_comuna_code ?? '',
+    cargo_type: t.cargo_type,
+    cargo_weight_kg: t.cargo_weight_kg?.toString() ?? '',
+    cargo_volume_m3: t.cargo_volume_m3?.toString() ?? '',
+    cargo_description: t.cargo_description ?? '',
+    notes: t.notes ?? '',
+    reference: t.reference ?? '',
+    pickup_start_local: isoALocal(t.pickup_window_start),
+    pickup_end_local: isoALocal(t.pickup_window_end),
+    proposed_price_clp: t.proposed_price_clp?.toString() ?? '',
+    modalidad_carga: t.modalidad_carga === 'programada' ? 'programada' : 'spot',
+    consignee_name: t.consignee?.name ?? '',
+    consignee_phone_e164: t.consignee?.phone_e164 ?? '',
+    consignee_email: t.consignee?.email ?? '',
+  };
+}
+
+const CAMPOS_MATERIALES_FORM: readonly (keyof TripFormValues)[] = [
+  'origin_address_raw',
+  'origin_region_code',
+  'origin_comuna_code',
+  'destination_address_raw',
+  'destination_region_code',
+  'destination_comuna_code',
+  'cargo_type',
+  'cargo_weight_kg',
+  'cargo_volume_m3',
+  'cargo_description',
+  'pickup_start_local',
+  'pickup_end_local',
+  'proposed_price_clp',
+  'modalidad_carga',
+];
+
+/** Cambió algo que no es un dato libre: con ofertas vivas, las anula (§7). */
+export function cambiaAlgoMaterial(antes: TripFormValues, despues: TripFormValues): boolean {
+  return CAMPOS_MATERIALES_FORM.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
 }
 
 function puntoEnBody(
@@ -851,10 +1061,15 @@ function TripForm({
   onSubmit,
   submitting,
   error,
+  initialValues = EMPTY_FORM,
+  submitLabel,
 }: {
   onSubmit: (v: TripFormValues) => void;
   submitting: boolean;
   error: string | null;
+  /** editar-anular-cargas §9: la edición reutiliza el formulario precargado. */
+  initialValues?: TripFormValues;
+  submitLabel?: string;
 }) {
   const {
     register,
@@ -866,7 +1081,7 @@ function TripForm({
     formState: { errors, submitCount },
   } = useForm<TripFormValues>({
     mode: 'onSubmit',
-    defaultValues: EMPTY_FORM,
+    defaultValues: initialValues,
   });
 
   useScrollToFirstError(errors, submitCount);
@@ -1247,7 +1462,7 @@ function TripForm({
           disabled={submitting}
           className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
         >
-          {submitting ? 'Creando…' : 'Crear carga'}
+          {submitting ? 'Guardando…' : (submitLabel ?? 'Crear carga')}
         </button>
       </div>
     </form>
@@ -1345,6 +1560,18 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
 
       {tripQ.isLoading && <p className="text-neutral-500">Cargando…</p>}
       {tripQ.error && <p className="text-danger-700">Error al cargar la carga.</p>}
+
+      {trip?.acciones_permitidas?.editar && flagsDe(me).editarCarga && (
+        <div className="mb-4">
+          <Link
+            to="/app/cargas/$id/editar"
+            params={{ id: trip.id }}
+            className="inline-flex rounded-md border border-primary-300 px-3 py-1.5 font-medium text-primary-700 text-sm hover:bg-primary-50"
+          >
+            Editar carga
+          </Link>
+        </div>
+      )}
 
       {modoBaja && trip && (
         <div className="mb-6">

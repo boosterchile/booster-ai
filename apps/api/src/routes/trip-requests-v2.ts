@@ -9,6 +9,7 @@ import {
   puedeCancelarCarga,
   puedePublicarCarga,
   tripRequestCreateInputSchema,
+  tripRequestEditInputSchema,
 } from '@booster-ai/shared-schemas';
 import {
   aceptaDatosLibres,
@@ -55,6 +56,7 @@ import {
   modalidadPermitida,
   tasaParaPublicacion,
 } from '../services/cotizacion-comercial.js';
+import { editarCargaPreMatch } from '../services/editar-carga.js';
 import { editarDatosLibres } from '../services/editar-datos-libres.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
@@ -85,6 +87,7 @@ import {
   retirarSolicitudCambio,
   solicitudPendienteDeViaje,
 } from '../services/solicitud-cambio-carga.js';
+import { valoresViajeDesdeInput } from '../services/valores-viaje.js';
 
 /**
  * Endpoint canónico para que un generador de carga autenticado:
@@ -370,7 +373,6 @@ export function createTripRequestsV2Routes(opts: {
     }
 
     const origenPunto = puntoNumerico(input.origin.latitude, input.origin.longitude);
-    const destinoPunto = puntoNumerico(input.destination.latitude, input.destination.longitude);
 
     const [trip] = await opts.db
       .insert(trips)
@@ -378,43 +380,8 @@ export function createTripRequestsV2Routes(opts: {
         trackingCode: generateTrackingCode(),
         generadorCargaEmpresaId: auth.activeMembership.empresa.id,
         createdByUserId: auth.userContext.user.id,
-        originAddressRaw: input.origin.address_raw,
-        originRegionCode: input.origin.region_code,
-        ...(input.origin.comuna_code ? { originComunaCode: input.origin.comuna_code } : {}),
-        ...(origenPunto
-          ? { originLatitude: origenPunto.latitude, originLongitude: origenPunto.longitude }
-          : {}),
-        destinationAddressRaw: input.destination.address_raw,
-        destinationRegionCode: input.destination.region_code,
-        ...(input.destination.comuna_code
-          ? { destinationComunaCode: input.destination.comuna_code }
-          : {}),
-        ...(destinoPunto
-          ? {
-              destinationLatitude: destinoPunto.latitude,
-              destinationLongitude: destinoPunto.longitude,
-            }
-          : {}),
-        cargoType: input.cargo.cargo_type,
-        cargoWeightKg: input.cargo.weight_kg,
-        ...(input.cargo.volume_m3 ? { cargoVolumeM3: input.cargo.volume_m3 } : {}),
-        ...(input.cargo.description ? { cargoDescription: input.cargo.description } : {}),
-        pickupDateRaw: `${input.pickup_window.start_at} → ${input.pickup_window.end_at}`,
-        pickupWindowStart: new Date(input.pickup_window.start_at),
-        pickupWindowEnd: new Date(input.pickup_window.end_at),
-        ...(input.proposed_price_clp !== null
-          ? { proposedPriceClp: input.proposed_price_clp }
-          : {}),
-        // Phase 5 PR-L3b — datos consignee opt-in para tracking link directo.
-        ...(input.consignee?.name ? { consigneeName: input.consignee.name } : {}),
-        ...(input.consignee?.email ? { consigneeEmail: input.consignee.email } : {}),
-        // editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
-        ...(input.notes ? { notes: input.notes } : {}),
-        ...(input.reference ? { reference: input.reference } : {}),
-        ...(input.consignee?.phone_e164
-          ? { consigneeWhatsappE164: input.consignee.phone_e164 }
-          : {}),
-        modalidadCarga: input.modalidad_carga,
+        // editar-anular-cargas §6.1: el mismo mapeo que usa la edición (PUT).
+        ...valoresViajeDesdeInput(input),
         ...(congelado
           ? {
               comisionPctAplicada: congelado.comisionPct.toFixed(2),
@@ -456,6 +423,8 @@ export function createTripRequestsV2Routes(opts: {
           originAddress: input.origin.address_raw,
           destinationAddress: input.destination.address_raw,
           routesProjectId: opts.routesProjectId,
+          // Si una edición cambió el origen mientras Routes respondía, no se pisa.
+          soloSiOrigenVigente: true,
         });
         opts.logger.info(
           { tripId: trip.id, originGeocoded: origen !== null },
@@ -643,6 +612,15 @@ export function createTripRequestsV2Routes(opts: {
       .where(eq(tripEvents.tripId, id))
       .orderBy(asc(tripEvents.recordedAt));
 
+    // §9: la edición avisa cuántas transportistas están evaluando la carga.
+    const [pendientes] =
+      trip.status === 'ofertas_enviadas'
+        ? await opts.db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(offers)
+            .where(and(eq(offers.tripId, trip.id), eq(offers.status, 'pendiente')))
+        : [{ n: 0 }];
+
     // Solo una carga asignada puede tener un cambio pendiente (§6.3).
     const cambioPendiente =
       trip.status === 'asignado' ? await solicitudPendienteDeViaje(opts.db, trip.id) : null;
@@ -780,6 +758,7 @@ export function createTripRequestsV2Routes(opts: {
         comercial,
         anulacion,
         cancelacion,
+        ofertas_pendientes: pendientes?.n ?? 0,
       },
       events,
       assignment: assignmentRow
@@ -1128,6 +1107,118 @@ export function createTripRequestsV2Routes(opts: {
       }
     }
     return c.json({ trip_request: { id: tripId, campos: resultado.campos } });
+  });
+
+  // ---------------------------------------------------------------------
+  // PUT /:id — edición total antes del match (editar-anular-cargas §6.1).
+  // La lógica vive en services/editar-carga.ts; post-commit, igual que el
+  // POST: geocodificar el origen y correr el matching.
+  // ---------------------------------------------------------------------
+  app.put('/:id', zValidator('json', tripRequestEditInputSchema), async (c) => {
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const sinPermiso = denegarEditarCarga(c, auth.userContext);
+    if (sinPermiso) {
+      return sinPermiso;
+    }
+    const tripId = c.req.param('id');
+    const input = c.req.valid('json');
+    const r = await withBusinessSpan(
+      { name: 'cargas.editar_pre_match', attributes: { 'booster.trip_id': tripId } },
+      async (span) => {
+        const res = await editarCargaPreMatch(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            empresaId: auth.activeMembership.empresa.id,
+            userId: auth.userContext.user.id,
+            input,
+            contratoProgramadoActivadoEn:
+              auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null,
+          },
+        );
+        const resultado = res.ok ? (res.cambio ? 'editada' : 'sin_cambios') : res.code;
+        setResultAttributes(span, { 'booster.outcome': resultado });
+        if (res.ok && res.cambio) {
+          getBusinessCounter('carga_editada_total').add(1, { modo: 'pre_match' });
+        }
+        return res;
+      },
+    );
+    if (!r.ok) {
+      switch (r.code) {
+        case 'trip_not_found':
+          return c.json({ error: r.code, code: r.code }, 404);
+        case 'trip_busy':
+          return c.json({ error: r.code, code: r.code }, 409);
+        case 'trip_not_editable':
+          return c.json({ error: r.code, code: r.code, current_status: r.currentStatus }, 409);
+        case 'contrato_programado_no_habilitado':
+          return c.json({ error: r.code, code: r.code }, 422);
+      }
+    }
+
+    if (r.geocodificarOrigen && opts.routesProjectId) {
+      try {
+        await geocodificarOrigen({
+          db: opts.db,
+          logger: opts.logger,
+          tripId,
+          originAddress: r.geocodificarOrigen.originAddress,
+          destinationAddress: r.geocodificarOrigen.destinationAddress,
+          routesProjectId: opts.routesProjectId,
+          // Una respuesta atrasada no pisa un origen editado después.
+          soloSiOrigenVigente: true,
+        });
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'geocodificar origen tras editar la carga falló');
+      }
+    }
+
+    // §7: guardar en esperando_match corre el matching aunque no haya
+    // cambios — destraba una carga cuyo matching falló al crearse. El CAS de
+    // runMatching descarta una corrida concurrente.
+    let matching: Awaited<ReturnType<typeof runMatching>> | null = null;
+    if (r.estado === 'esperando_match') {
+      try {
+        matching = await runMatching({
+          db: opts.db,
+          logger: opts.logger,
+          tripId,
+          ...(opts.notify ? { notify: opts.notify } : {}),
+          ...(opts.ranking ? { ranking: opts.ranking } : {}),
+        });
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'matching tras editar la carga falló; queda esperando');
+      }
+    }
+
+    const [actualizada] = await opts.db
+      .select()
+      .from(trips)
+      .where(
+        and(
+          eq(trips.id, tripId),
+          eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id),
+        ),
+      )
+      .limit(1);
+    if (!actualizada) {
+      return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+    }
+    return c.json({
+      trip_request: serializeTripDetail(actualizada, auth.userContext),
+      matching: matching
+        ? {
+            candidates_evaluated: matching.candidatesEvaluated,
+            offers_created: matching.offersCreated,
+            offer_ids: matching.offers.map((o) => o.id),
+          }
+        : null,
+      invalidated_offers: r.ofertasInvalidadas,
+    });
   });
 
   // ---------------------------------------------------------------------
