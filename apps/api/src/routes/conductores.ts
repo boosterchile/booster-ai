@@ -536,6 +536,7 @@ export function createConductoresRoutes(opts: {
               .set({
                 email: body.email,
                 activationPinHash: hashActivationPin(activationPin),
+                activacionVenceEn: null,
                 updatedAt: sql`now()`,
                 ...telefono,
               })
@@ -551,7 +552,7 @@ export function createConductoresRoutes(opts: {
               .update(users)
               .set({
                 ...(activationPin !== null
-                  ? { activationPinHash: hashActivationPin(activationPin) }
+                  ? { activationPinHash: hashActivationPin(activationPin), activacionVenceEn: null }
                   : {}),
                 ...telefono,
                 updatedAt: sql`now()`,
@@ -955,7 +956,9 @@ export function createConductoresRoutes(opts: {
               .update(users)
               .set({
                 email: body.email,
-                ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
+                ...(activationPin
+                  ? { activationPinHash: hashActivationPin(activationPin), activacionVenceEn: null }
+                  : {}),
                 updatedAt: sql`now()`,
               })
               .where(eq(users.id, fila.userId))
@@ -1126,7 +1129,9 @@ export function createConductoresRoutes(opts: {
             .update(users)
             .set({
               phone: body.phone,
-              ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
+              ...(activationPin
+                ? { activationPinHash: hashActivationPin(activationPin), activacionVenceEn: null }
+                : {}),
               updatedAt: sql`now()`,
             })
             .where(eq(users.id, fila.userId))

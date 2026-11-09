@@ -708,6 +708,14 @@ export const users = pgTable(
      */
     claveNumericaHash: text('clave_numerica_hash'),
     /**
+     * Hasta cuándo vale el código de activación de una cuenta del personal de
+     * Booster (`.specs/alta-personal-booster`, migración 0074). Ese código no
+     * viene de una invitación a empresa, así que `/auth/activar` no tiene un
+     * `invitado_en` del que sacar el plazo de 7 días. Se borra al activar.
+     * NULL para el resto de las cuentas.
+     */
+    activacionVenceEn: timestamp('activacion_vence_en', { withTimezone: true }),
+    /**
      * ADR-035 — Hash scrypt del OTP de recovery enviado por WhatsApp
      * cuando el usuario olvidó su clave numérica. Single-use; expira en
      * 10 minutos vía `recoveryOtpExpiresAt`.

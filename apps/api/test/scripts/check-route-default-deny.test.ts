@@ -245,3 +245,24 @@ describe('check-route-default-deny — los 4 mounts verificados (INTENTIONAL-OPE
     expect(ROUTE_CLASSIFICATION[factory]?.category).toBe('INTENTIONAL-OPEN');
   });
 });
+
+// alta-personal-booster SC8 — las rutas del personal de Booster quedan
+// clasificadas y montadas en server.ts con la misma cadena que /admin/empresas.
+describe('check-route-default-deny — alta del personal de Booster (SC8)', () => {
+  it('createAdminPersonalBoosterRoutes está montada en /admin/personal-booster', () => {
+    expect(enumerateRouteMounts(REAL_SERVER_SOURCE)).toContainEqual({
+      path: '/admin/personal-booster',
+      key: 'createAdminPersonalBoosterRoutes',
+    });
+  });
+
+  it('createAdminPersonalBoosterRoutes clasificada ENFORCED', () => {
+    expect(ROUTE_CLASSIFICATION.createAdminPersonalBoosterRoutes?.category).toBe('ENFORCED');
+  });
+
+  it('createAuthActivarRoutes: el rationale describe la activación del personal de Booster', () => {
+    const rationale = ROUTE_CLASSIFICATION.createAuthActivarRoutes?.rationale ?? '';
+    expect(rationale).toContain('BOOSTER_PLATFORM_ADMIN_EMAILS');
+    expect(rationale).toContain('activacion_vence_en');
+  });
+});
