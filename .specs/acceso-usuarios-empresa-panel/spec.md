@@ -31,9 +31,9 @@ Además, la empresa creada desde el panel nace en `pendiente_verificacion` (`adm
 - [ ] SC5 — `POST /admin/empresas` crea la empresa en estado `activa`. El resto del contrato no cambia: 201, mismos campos, `carrier_memberships` free si es transportista, mismos errores. El evento de log del alta registra el estado inicial. El alta por enlace (`/onboarding-admin`) sigue naciendo en `pendiente_verificacion`.
 - [ ] SC6 — Después de crear la empresa, el panel lo dice («quedó activa») y el formulario «Invitar persona» la deja preseleccionada con el rol `dueno` por defecto. Sin empresa preseleccionada, el rol por defecto sigue siendo `admin`.
 - [ ] SC7 — Al invitar a una persona, la lista de empresas del panel se refresca y la invitación pendiente aparece con su botón «Generar código nuevo», sin recargar la página. La lista arranca en el filtro «Todas», para que una empresa activa recién creada y sus pendientes se vean sin cambiar el filtro.
-- [ ] SC8 — En una empresa solo generadora, dueño, admin, despachador y visualizador ven «Equipo» en el menú, en la sección Generador. En una transportista o mixta el ítem sigue donde está y aparece una sola vez. `/app/equipo` se muestra dentro del `Layout` de la app (con menú). El backend no cambia.
+- [ ] SC8 — En una empresa solo generadora, dueño, admin, despachador y visualizador ven «Equipo» en el menú, en la sección Generador. En una transportista o mixta el ítem sigue donde está y aparece una sola vez. `/app/equipo` se muestra dentro del `Layout` de la app (con menú). En una generadora pura, Equipo no muestra el permiso «Puede aceptar ofertas»: las ofertas son de la transportista (regla 7 de `capacidades-por-rol`). El backend no cambia.
 - [ ] SC9 — Una persona de Booster (`is_platform_admin`) que tiene una membresía activa:
-  - al entrar a `/app` sigue yendo al panel, como hoy;
+  - al entrar a `/app` sigue yendo al panel, como hoy, también si su membresía es de conductor;
   - en el panel ve «Ir a mi empresa» con el nombre de su empresa activa, que la lleva a la web de su empresa y la deja ahí al navegar por el menú (incluido «Inicio»);
   - en el menú de la web de la empresa ve «Panel de Booster», que la devuelve al panel.
 
@@ -52,7 +52,7 @@ Además, la empresa creada desde el panel nace en `pendiente_verificacion` (`adm
 - Que el backend indique en el 410 si la cuenta es de conductor o de empresa. La web decide el camino con el tipo que eligió la persona y ofrece los dos; el contrato de `/auth/login-rut` no cambia.
 - Crear empresa y dueño en un solo paso (SC1 de `alta-desde-panel-admin`): siguen siendo dos formularios en la misma página.
 - Gestionar miembros activos desde el panel (quitar, cambiar rol) y el aviso de «empresa en verificación» para las empresas que llegan por enlace.
-- Los cambios de capacidades por rol de los PRs abiertos #817–#819.
+- Cambiar las capacidades por rol de `.specs/capacidades-por-rol/` (#817–#819, ya en main). Esta spec las respeta y solo precisa dos puntos: el permiso de ofertas en la generadora pura (SC8) y la entrada al panel con membresía de conductor (SC9).
 
 ## 6. Constraints
 
@@ -78,10 +78,11 @@ Además, la empresa creada desde el panel nace en `pendiente_verificacion` (`adm
 - T4 (SC4) — `InvitarMiembroEmpresa.test.tsx` y `ActivarEmpresa.test.tsx`: la URL absoluta de `/activar` aparece junto al código.
 - T5 (SC5, rojo exhibido) — `admin-empresa-miembros.test.ts`: el insert de `POST /` lleva `status: 'activa'` y la respuesta trae `estado: 'activa'`. Integración `alta-admin-cadena`: el caso de alta sigue verde con el estado nuevo.
 - T6 (SC6, SC7) — rol por defecto `dueno` con `preferEmpresaId`; `onInvitado` refresca la lista; filtro inicial «Todas».
-- T7 (SC8) — `nav-items.test.ts`: generadora pura tiene «Equipo» en Generador; transportista y mixta, una sola vez. `equipo.test.tsx`: renderiza con `Layout`.
-- T8 (SC9) — `app.test.tsx`: platform-admin sin preferencia → redirige al panel; con preferencia «empresa» → dashboard. Enlaces del panel y del menú fijan y limpian la preferencia. `sessionStorage` que lanza → comportamiento de hoy.
+- T7 (SC8) — `nav-items.test.ts`: generadora pura tiene «Equipo» en Generador; transportista y mixta, una sola vez. `equipo.test.tsx`: renderiza con `Layout`; «Puede aceptar ofertas» no aparece en la generadora pura y sí en la transportista y en la mixta.
+- T8 (SC9) — `app.test.tsx`: platform-admin sin preferencia → redirige al panel; con preferencia «empresa» → dashboard. Enlaces del panel y del menú fijan y limpian la preferencia. `sessionStorage` que lanza → comportamiento de hoy. `ProtectedRoute.test.tsx`: con membresía de conductor, la persona de Booster en `/app` no va a `/app/conductor`; en otra ruta de la app, sí.
 
 ## 9. Decision log
 
 - 2026-10-30 — El PO aclara que la «UI de administración de Booster» es el panel `/app/platform-admin` y que los usuarios a crear son personal de Booster, que puede además ser usuario de una generadora y/o transportista (spec hermana).
 - 2026-10-30 — El PO decide: la empresa creada desde el panel nace `activa` (cierra OQ1 de `alta-desde-panel-admin` en sentido contrario a su propuesta y reemplaza SC2 de `reemision-codigo-activacion-admin`); la generadora ve «Equipo»; la persona de Booster con empresa puede alternar entre el panel y la web de su empresa; se arregla el login del invitado que no es conductor en este mismo trabajo.
+- 2026-11-09 — Al integrar main con #819 (agente, pendiente del visto del PO en el PR): la persona de Booster con membresía de conductor sigue entrando al panel por `/app` (SC9), y Equipo de una generadora pura no muestra «Puede aceptar ofertas» (SC8). Las demás rutas del menú siguen la regla de #819 para el conductor.
