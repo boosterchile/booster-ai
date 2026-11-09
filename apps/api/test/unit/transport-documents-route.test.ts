@@ -65,7 +65,7 @@ interface DbScenario {
    * el route filtra por estados vigentes (excluye 'cancelado', finding 2), y el
    * mock replica ese filtro para que el test valide comportamiento, no solo SQL.
    */
-  assignment?: { empresaId: string; status?: string } | null;
+  assignment?: { empresaId: string; status?: string; driverUserId?: string | null } | null;
   /** doc row para manual-entry / GET detail. */
   doc?: {
     id: string;
@@ -601,6 +601,74 @@ describe('GET /transport-orders/:id/documents', () => {
     const res = await app.request(`/transport-orders/${TRIP_ID}/documents`);
     expect(res.status).toBe(403);
   });
+});
+
+// documentos-conductor SC1–SC3: el conductor lee solo los documentos de su viaje.
+describe('GET de documentos — rol conductor', () => {
+  const OTRO_CONDUCTOR = 'b3b8c1d2-0000-4000-8000-000000000700';
+
+  it('su propia asignación → lista y detalle 200', async () => {
+    const lista = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment: { empresaId: CARRIER_EMP, driverUserId: USER_ID },
+      list: [{ id: DOC_ID, extractionStatus: 'decodificado' }],
+    });
+    const resLista = await buildApp(lista, CARRIER_EMP, true, 'conductor').request(
+      `/transport-orders/${TRIP_ID}/documents`,
+    );
+    expect(resLista.status).toBe(200);
+
+    const detalle = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment: { empresaId: CARRIER_EMP, driverUserId: USER_ID },
+      doc: docRow(),
+    });
+    const resDetalle = await buildApp(detalle, CARRIER_EMP, true, 'conductor').request(
+      `/documents/${DOC_ID}`,
+    );
+    expect(resDetalle.status).toBe(200);
+  });
+
+  it.each([
+    ['otro conductor', OTRO_CONDUCTOR],
+    ['sin conductor', null],
+  ])('asignación de %s → 403 en lista y detalle', async (_caso, driverUserId) => {
+    const lista = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment: { empresaId: CARRIER_EMP, driverUserId },
+      list: [{ id: DOC_ID, extractionStatus: 'decodificado' }],
+    });
+    const resLista = await buildApp(lista, CARRIER_EMP, true, 'conductor').request(
+      `/transport-orders/${TRIP_ID}/documents`,
+    );
+    expect(resLista.status).toBe(403);
+
+    const detalle = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      assignment: { empresaId: CARRIER_EMP, driverUserId },
+      doc: docRow(),
+    });
+    const resDetalle = await buildApp(detalle, CARRIER_EMP, true, 'conductor').request(
+      `/documents/${DOC_ID}`,
+    );
+    expect(resDetalle.status).toBe(403);
+    expect(getSignedUrlMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin', 'despachador', 'visualizador'])(
+    '%s de la transportista lee aunque el viaje sea de otro conductor',
+    async (role) => {
+      const db = makeDb({
+        trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+        assignment: { empresaId: CARRIER_EMP, driverUserId: OTRO_CONDUCTOR },
+        list: [],
+      });
+      const res = await buildApp(db, CARRIER_EMP, true, role).request(
+        `/transport-orders/${TRIP_ID}/documents`,
+      );
+      expect(res.status).toBe(200);
+    },
+  );
 });
 
 describe('GET /documents/:id', () => {
