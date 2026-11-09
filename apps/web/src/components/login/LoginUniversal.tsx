@@ -222,7 +222,14 @@ export function LoginUniversal() {
   }
 
   if (step === 'needs-activation') {
-    return <NeedsActivationView onBack={handleBackToSelector} message={submitError} rut={rut} />;
+    return (
+      <NeedsActivationView
+        onBack={handleBackToSelector}
+        message={submitError}
+        rut={rut}
+        tipo={tipo}
+      />
+    );
   }
 
   if (step === 'needs-rotation') {
@@ -407,6 +414,21 @@ function FormView(props: FormViewProps) {
               y crea tu clave.
             </p>
           )}
+          {/* Quien no es conductor llega con un código de activación que le
+              entregó Booster o su empresa; su camino es `/activar`. */}
+          {props.tipo !== 'conductor' && (
+            <p className="rounded-md border border-primary-200 bg-primary-50 p-3 text-primary-800 text-sm">
+              ¿Te dieron un código de activación?{' '}
+              <a
+                href="/activar"
+                className="font-medium text-primary-700 underline"
+                data-testid="login-link-activar-codigo"
+              >
+                Activa tu cuenta
+              </a>{' '}
+              y crea tu clave.
+            </p>
+          )}
 
           {props.submitError && (
             <div
@@ -451,44 +473,75 @@ function FormView(props: FormViewProps) {
 }
 
 // ---------------------------------------------------------------------------
-// NeedsActivation — el conductor que todavía no canjeó su PIN.
+// NeedsActivation — la cuenta provisoria que todavía no se activó.
 //
 // Existe por un incidente de producción (2026-08-03): un conductor recién dado
 // de alta entró por acá y le ofrecimos "Usar método anterior (Google o email +
 // contraseña)". Nunca tuvo método anterior. Quedó sin poder entrar.
+//
+// El 410 no dice si la cuenta es de conductor (PIN, `/login/conductor`) o de
+// alguien que Booster o su empresa dio de alta con un código (`/activar`). Se
+// decide con el tipo que eligió la persona y siempre se ofrece el otro camino.
 // ---------------------------------------------------------------------------
+
+function conRut(path: '/login/conductor' | '/activar', rut: string): string {
+  return rut ? `${path}?rut=${encodeURIComponent(rut)}` : path;
+}
 
 function NeedsActivationView({
   onBack,
   message,
   rut,
-}: { onBack: () => void; message: string | null; rut: string }) {
+  tipo,
+}: { onBack: () => void; message: string | null; rut: string; tipo: UserTypeHint | null }) {
   // Arrastramos el RUT ya tecleado: el conductor está en su celular, muchas
   // veces en la cabina, y no tiene por qué escribirlo dos veces.
   const rutLimpio = ensureRutHasDash(rut.replace(/\./g, '').trim());
-  const href = rutLimpio
-    ? `/login/conductor?rut=${encodeURIComponent(rutLimpio)}`
-    : '/login/conductor';
+  const esConductor = tipo === 'conductor';
+  const hrefConductor = conRut('/login/conductor', rutLimpio);
+  const hrefCodigo = conRut('/activar', rutLimpio);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
       <div className="w-full max-w-md rounded-lg border border-primary-200 bg-primary-50 p-6 shadow-sm">
         <h1 className="font-semibold text-lg text-primary-900">Activa tu cuenta primero</h1>
-        <p className="mt-2 text-primary-800 text-sm">
-          {message ??
-            'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa.'}
-        </p>
-        <p className="mt-3 text-primary-700 text-sm">
-          Con ese PIN vas a crear tu propia clave de 6 dígitos. Después entras siempre con tu RUT y
-          esa clave.
-        </p>
+        {esConductor ? (
+          <>
+            <p className="mt-2 text-primary-800 text-sm">
+              {message ??
+                'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa.'}
+            </p>
+            <p className="mt-3 text-primary-700 text-sm">
+              Con ese PIN vas a crear tu propia clave de 6 dígitos. Después entras siempre con tu
+              RUT y esa clave.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-primary-800 text-sm">
+              Tu cuenta todavía no está activada. Usa el código de activación que te entregó Booster
+              o tu empresa.
+            </p>
+            <p className="mt-3 text-primary-700 text-sm">
+              Con ese código vas a crear tu propia clave de 6 dígitos. Después entras siempre con tu
+              RUT y esa clave.
+            </p>
+          </>
+        )}
         <div className="mt-4 flex flex-col gap-2">
           <a
-            href={href}
+            href={esConductor ? hrefConductor : hrefCodigo}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white hover:bg-primary-700"
             data-testid="needs-activation-go-activar"
           >
             Activar mi cuenta
+          </a>
+          <a
+            href={esConductor ? hrefCodigo : hrefConductor}
+            className="text-center font-medium text-primary-700 text-sm underline"
+            data-testid="needs-activation-alternativa"
+          >
+            {esConductor ? '¿Te dio de alta Booster o tu empresa?' : '¿Eres conductor?'}
           </a>
           <button
             type="button"

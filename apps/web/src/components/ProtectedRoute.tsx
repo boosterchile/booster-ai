@@ -115,9 +115,18 @@ export function ProtectedRoute({
       me.user.has_clave_numerica === false &&
       impersonation.active !== true;
     // CHEQUEOS_REEMPLAZADOS nav-gestion: el conductor empleado no usa el shell.
+    // La persona de Booster entra por `/app` al panel aunque su membresía sea
+    // de conductor: ahí decide `/app` (acceso-usuarios-empresa-panel SC9).
     const capacidades = flagsDe(me);
     const path = typeof window !== 'undefined' ? window.location.pathname : '';
-    if (capacidades.ctx && !capacidades.menuGestion && !path.startsWith('/app/conductor')) {
+    const entradaAlPanel =
+      me.user.is_platform_admin === true && (path === '/app' || path === '/app/');
+    if (
+      capacidades.ctx &&
+      !capacidades.menuGestion &&
+      !path.startsWith('/app/conductor') &&
+      !entradaAlPanel
+    ) {
       return <Navigate to="/app/conductor" />;
     }
     return (

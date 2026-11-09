@@ -210,7 +210,9 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   // POST /admin/empresas — ficha legal sin persona. Un generador de carga es
   // esta fila con `es_generador_carga`; un transportista, con el otro flag.
   // La credencial de quien entra se emite después, con el código de
-  // activación. La empresa queda en verificación: matching exige `activa`.
+  // activación. La empresa nace `activa`: el admin de Booster que la crea es
+  // la verificación (acceso-usuarios-empresa-panel SC5). El alta por enlace
+  // (`/onboarding-admin`) sigue naciendo en `pendiente_verificacion`.
   app.post('/', zValidator('json', crearEmpresaAdminSchema), async (c) => {
     const admin = requirePlatformAdmin(c);
     if (!admin.ok) {
@@ -275,7 +277,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
                 isGeneradorCarga: body.is_generador_carga,
                 isTransportista: body.is_transportista,
                 planId: plan.id,
-                status: 'pendiente_verificacion',
+                status: 'activa',
                 timezone: 'America/Santiago',
               })
               .returning({
@@ -315,6 +317,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           opts.logger.info(
             {
               empresaId: creada.id,
+              estado: creada.status,
               planSlug: body.plan_slug,
               isGeneradorCarga: creada.isGeneradorCarga,
               isTransportista: creada.isTransportista,

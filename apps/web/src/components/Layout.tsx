@@ -13,8 +13,10 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * role-aware; colapsa a **drawer** en móvil. Envuelto en `RegisterProvider`
  * (registro **operador**) para que las primitivas D2 respondan al registro.
  *
- * El **conductor** (`conductor.tsx`) y el **platform-admin** (`platform-admin.tsx`)
- * tienen shell propio y NO usan este Layout — el sidebar no los alcanza.
+ * El **conductor** (`conductor.tsx`) y el **panel de platform-admin**
+ * (`platform-admin.tsx`) tienen shell propio y NO usan este Layout. La persona
+ * de Booster que entra a la web de su empresa sí lo usa, y el sidebar le
+ * ofrece volver al panel.
  *
  * Siempre que crees una página de operador bajo `/app/*`, envuelve el cuerpo en
  * `<Layout me={me} title="…">`. Sin Layout, el usuario pierde el sidebar, el
