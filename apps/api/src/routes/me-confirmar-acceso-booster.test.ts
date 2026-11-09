@@ -64,6 +64,7 @@ const PERSONA_ID = '9c8b7a6d-5e4f-4a3b-9c1d-0e9f8a7b6c5d';
 const CONFIRMACION_ID = '3e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b';
 const CORREO = 'ana.soto@empresa.cl';
 const LISTA = [ADMIN_EMAIL, 'ops@boosterchile.com'];
+const ADMIN_QUE_IMPERSONA = '7d0c1f2a-3b4c-4d5e-8f60-718293a4b5c6';
 const CODIGO = '482915';
 const HASH = hashActivationPin(CODIGO);
 const UNA_HORA_MS = 60 * 60 * 1000;
@@ -589,12 +590,27 @@ describe('POST /me/confirmar-acceso-booster — sesión e impersonación (SC4, S
           emailVerified: false,
           name: undefined,
           picture: undefined,
-          custom: { impersonated_by: 'admin-uid-1' },
+          custom: { impersonated_by: ADMIN_QUE_IMPERSONA },
         } as never,
       );
       await next();
     });
-    app.use('*', createImpersonationWriteGuardMiddleware({ logger }));
+    // El guard vuelve a leer a quien impersona con su propia base; la de la
+    // ruta no se toca.
+    const limitAdmin = vi.fn(async () => [
+      { email: ADMIN_EMAIL, isPlatformAdmin: true, status: 'activo' },
+    ]);
+    const dbGuard = {
+      select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: limitAdmin }) }) })),
+    };
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger,
+        db: dbGuard as never,
+        platformAdminEmails: LISTA,
+      }),
+    );
     app.route(
       '/',
       mod.createMeConfirmarAccesoBoosterRoutes({
@@ -609,6 +625,7 @@ describe('POST /me/confirmar-acceso-booster — sesión e impersonación (SC4, S
     const res = await confirmar(app);
 
     expect(res.status).toBe(403);
+    expect(dbGuard.select).toHaveBeenCalledTimes(1);
     expect(d.select).not.toHaveBeenCalled();
   });
 
