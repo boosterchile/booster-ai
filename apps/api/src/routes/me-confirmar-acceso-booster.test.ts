@@ -94,6 +94,7 @@ function persona(overrides: Record<string, unknown> = {}) {
     email: CORREO,
     fullName: 'Ana Soto',
     isPlatformAdmin: false,
+    status: 'activo',
     ...overrides,
   };
 }
@@ -115,6 +116,11 @@ interface DbOpts {
   lookups?: unknown[][];
   /** Filas de `update().set().where().returning()`. Vacío = no encontró la fila. */
   filasActualizadas?: unknown[];
+  /**
+   * `'falla'`: la base no responde fuera de la transacción, como tras perder
+   * la conexión justo después del commit. Dentro de la transacción responde.
+   */
+  fueraDeLaTransaccion?: 'falla';
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -152,8 +158,19 @@ function makeDb(opts: DbOpts = {}) {
 
   const base = { select, update };
   const transaction = vi.fn(async (fn: (tx: typeof base) => Promise<unknown>) => fn(base));
+  const fuera =
+    opts.fueraDeLaTransaccion === 'falla'
+      ? {
+          select: vi.fn(() => {
+            throw new Error('la conexión se cerró');
+          }),
+          update: vi.fn(() => {
+            throw new Error('la conexión se cerró');
+          }),
+        }
+      : base;
   return {
-    db: { ...base, transaction } as never,
+    db: { ...fuera, transaction } as never,
     select,
     update,
     transaction,
@@ -343,6 +360,32 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
     expect(send.mock.calls[0]?.[0].text).toContain('el código que le entregó un admin de Booster.');
   });
 
+  it('el evento y el aviso salen aunque la base no responda después del commit (SC7)', async () => {
+    const d = makeDb({
+      lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]],
+      fueraDeLaTransaccion: 'falla',
+    });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger });
+
+    const res = await confirmar(app);
+
+    expect(res.status).toBe(200);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.acceso_otorgado',
+        actor_user_id: ADMIN_ID,
+        user_id: PERSONA_ID,
+        via: 'confirmacion',
+        avisos_enviados: 2,
+      }),
+      expect.any(String),
+    );
+    expect(send.mock.calls.map((c) => c[0].to)).toEqual(LISTA);
+    expect(send.mock.calls[0]?.[0].text).toContain(`el código que le entregó ${ADMIN_EMAIL}.`);
+  });
+
   it('una cuenta que ya estaba marcada consume la confirmación sin avisar de nuevo', async () => {
     const d = makeDb({ lookups: [[persona({ isPlatformAdmin: true })], [confirmacion()]] });
     const { sender, send } = makeSender();
@@ -439,6 +482,40 @@ describe('POST /me/confirmar-acceso-booster — rechazos con la misma respuesta 
     expect(await res.json()).toEqual(RECHAZO);
     expect(d.updates.filter((u) => u.tabla === users)).toEqual([]);
   });
+
+  it.each(['suspendido', 'eliminado', 'pendiente_verificacion'])(
+    'una cuenta en estado %s no confirma: la misma 400 y nada cambia (SC4, SC5)',
+    async (status) => {
+      const d = makeDb({ lookups: [[persona({ status })], [confirmacion()]] });
+      const { sender, send } = makeSender();
+      const logger = makeLogger();
+      const app = await buildApp({ db: d.db, sender, logger });
+
+      const res = await confirmar(app);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(d.updates).toEqual([]);
+      expect(send).not.toHaveBeenCalled();
+      // El código se verifica igual: la respuesta tarda lo mismo.
+      expect(pin.verificaciones).toHaveLength(1);
+      expect(observabilidad.contadores).toEqual([
+        {
+          nombre: 'personal_booster_confirmacion_total',
+          labels: { resultado: 'cuenta_no_activa' },
+        },
+      ]);
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: 'personal_booster.confirmacion_rechazada',
+          user_id: PERSONA_ID,
+          motivo: 'cuenta_no_activa',
+        }),
+        expect.any(String),
+      );
+      expect(textoDeLogs(logger)).not.toContain(CODIGO);
+    },
+  );
 
   it('una cuenta que ya no está en la base: la misma 400', async () => {
     const d = makeDb({ lookups: [[]] });

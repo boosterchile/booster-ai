@@ -1748,7 +1748,8 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso (SC4)', () => {
   });
 
   it('avisa a la lista de respaldo y deja el evento de auditoría (SC5)', async () => {
-    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()] });
+    // Sin una confirmación pendiente que borrar.
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()], filasBorradas: [] });
     const { sender, send } = makeSender();
     const logger = makeLogger();
     const app = await buildApp({ db: d.db, sender, logger, lista: [ADMIN_EMAIL] });
@@ -1764,11 +1765,52 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso (SC4)', () => {
         actor_user_id: ADMIN_ID,
         user_id: PERSONA_ID,
         codigo_invalidado: false,
+        confirmacion_invalidada: false,
         avisos_destinatarios: 1,
         avisos_enviados: 1,
       },
       expect.any(String),
     );
+  });
+
+  it('también borra la confirmación pendiente de la cuenta marcada (confirmar-acceso-booster SC10)', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()] });
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, logger, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(200);
+    expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(false);
+    expect(d.deletes).toHaveLength(1);
+    expect(esConfirmaciones(d.deletes[0]?.tabla)).toBe(true);
+    const borrado = sqlDe(d.deletes[0]?.predicado);
+    expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
+    expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
+    expect(borrado.params).toEqual([PERSONA_ID]);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.acceso_quitado',
+        user_id: PERSONA_ID,
+        confirmacion_invalidada: true,
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('un rechazo de la baja no borra la confirmación pendiente', async () => {
+    const d = makeDb({
+      listRows: [ADMIN_MARCADO, marcada({ email: 'Carlos.Rojas@BoosterChile.com' })],
+    });
+    const app = await buildApp({
+      db: d.db,
+      lista: [ADMIN_EMAIL, 'carlos.rojas@boosterchile.com'],
+    });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(409);
+    expect(d.deletes).toEqual([]);
   });
 
   it('counter y span con el resultado', async () => {
@@ -2177,14 +2219,80 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso — persona por con
     activacionVenceEn: null,
     status: 'activo',
   };
-  const POR_CONFIRMAR = [{ id: PERSONA_ID, email: 'carlos.rojas@boosterchile.com' }];
+  /** La cuenta sin marca, tal como la lee (y bloquea) la baja. */
+  const CUENTA_POR_CONFIRMAR = {
+    id: PERSONA_ID,
+    email: 'carlos.rojas@boosterchile.com',
+    fullName: 'Carlos Rojas',
+    firebaseUid: 'fb-carlos',
+    claveNumericaHash: 'hash',
+    activationPinHash: null,
+    activacionVenceEn: null,
+    status: 'activo',
+    isPlatformAdmin: false,
+  };
+  /** La cuenta y, después, su confirmación pendiente. */
+  const POR_CONFIRMAR = [[CUENTA_POR_CONFIRMAR], [{ id: CONFIRMACION_ID }]];
 
   function quitar(app: Hono) {
     return app.request(`/${PERSONA_ID}/quitar-acceso`, { method: 'POST' });
   }
 
+  it('bloquea la fila de la cuenta antes de mirar su confirmación, como la confirmación (§7)', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: POR_CONFIRMAR });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(200);
+    // Primero las cuentas marcadas, después la cuenta de la persona.
+    expect(d.locks).toEqual(['update', 'update']);
+    const cuenta = sqlDe(d.selectWheres[1]);
+    expect(cuenta.sql).toContain('"usuarios"."id" = $1');
+    expect(cuenta.params).toEqual([PERSONA_ID]);
+    const pendiente = sqlDe(d.selectWheres[2]);
+    expect(pendiente.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
+    expect(pendiente.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
+    expect(pendiente.params).toEqual([PERSONA_ID]);
+  });
+
+  it('si la persona confirmó mientras la baja esperaba la fila, la desmarca y avisa como a una cuenta marcada', async () => {
+    const d = makeDb({
+      listRows: [ADMIN_MARCADO],
+      lookups: [[{ ...CUENTA_POR_CONFIRMAR, isPlatformAdmin: true }]],
+      filasBorradas: [],
+    });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, user_id: PERSONA_ID });
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0]).toMatchObject({ isPlatformAdmin: false });
+    const predicado = sqlDe(d.updateWheres[0]);
+    expect(predicado.params).toEqual([PERSONA_ID, true]);
+    expect(avisos(send).map((m) => m.subject)).toEqual([
+      'Booster: acceso al panel quitado a Carlos Rojas',
+    ]);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.acceso_quitado',
+        actor_user_id: ADMIN_ID,
+        user_id: PERSONA_ID,
+      }),
+      expect.any(String),
+    );
+    expect(observabilidad.contadores).toContainEqual({
+      nombre: 'personal_booster_quitar_acceso_total',
+      labels: { resultado: 'quitado' },
+    });
+  });
+
   it('borra su confirmación pendiente y responde ok, sin aviso ni cambios en la cuenta', async () => {
-    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [POR_CONFIRMAR] });
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: POR_CONFIRMAR });
     const { sender, send } = makeSender();
     const logger = makeLogger();
     const app = await buildApp({ db: d.db, sender, logger, lista: [ADMIN_EMAIL] });
@@ -2215,7 +2323,7 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso — persona por con
   });
 
   it('con el correo en la lista de respaldo → 409 en_lista_respaldo, sin escrituras', async () => {
-    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [POR_CONFIRMAR] });
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: POR_CONFIRMAR });
     const app = await buildApp({
       db: d.db,
       lista: [ADMIN_EMAIL, 'Carlos.Rojas@boosterchile.com'],
@@ -2241,8 +2349,8 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso — persona por con
     expect(d.updates).toEqual([]);
   });
 
-  it('si la confirmación se consumió entre la lectura y el borrado → 404', async () => {
-    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [POR_CONFIRMAR], filasBorradas: [] });
+  it('si el borrado no encuentra la confirmación → 404, sin evento', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: POR_CONFIRMAR, filasBorradas: [] });
     const logger = makeLogger();
     const app = await buildApp({ db: d.db, logger, lista: [ADMIN_EMAIL] });
 

@@ -75,4 +75,18 @@ describe('impersonation-write-guard — confirmación del acceso al panel', () =
     expect(contexto).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(contexto);
   });
+
+  it("el mount y su userContext quedan antes de app.route('/me', meRouter)", () => {
+    // Un sub-mount de meRouter registrado después de app.route('/me', meRouter)
+    // compila y pasa los tests del router aislado, pero no existe en la app.
+    const montaje = SERVER_SOURCE.search(/meRouter\.route\(\s*'\/confirmar-acceso-booster'/);
+    const contexto = SERVER_SOURCE.indexOf(USE_CONTEXTO);
+    // La sentencia, no la mención en un comentario.
+    const me = SERVER_SOURCE.search(/^\s*app\.route\('\/me', meRouter\);/m);
+    expect(montaje).toBeGreaterThan(-1);
+    expect(contexto).toBeGreaterThan(-1);
+    expect(me).toBeGreaterThan(-1);
+    expect(contexto).toBeLessThan(me);
+    expect(montaje).toBeLessThan(me);
+  });
 });

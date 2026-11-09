@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import type { Db } from '../../src/db/client.js';
 import { pgErrorCode } from '../../src/db/pg-error.js';
 import * as schema from '../../src/db/schema.js';
 import type { FirebaseClaims } from '../../src/middleware/firebase-auth.js';
+import { hashActivationPin } from '../../src/services/activation-pin.js';
 import { hashClaveNumerica } from '../../src/services/clave-numerica.js';
 import type { EmailMessage, EmailSender } from '../../src/services/notifications/email-sender.js';
 import { rutAleatorio } from '../helpers/rut-aleatorio.js';
@@ -25,6 +29,8 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  *                                                     `/admin/*` en 200; aviso.
  *   7. Cinco códigos malos dejan la confirmación sin uso; un código vencido no
  *      sirve; quitar acceso de una persona por confirmar borra su código.
+ *   8. En paralelo (SC6, SC10): un código se consume una sola vez, los intentos
+ *      cuentan todos, y la baja y la re-emisión esperan la fila de la cuenta.
  *
  * La lista de respaldo tiene solo al admin; las personas entran por la marca.
  * `requirePlatformAdmin` y `/me` leen la lista de `config` al importar (por
@@ -76,6 +82,12 @@ function otroCodigo(codigo: string): string {
 
 describe('integration: la persona confirma desde su sesión el acceso al panel', () => {
   let handle: TestDbHandle;
+  /**
+   * Pool propio para las requests en paralelo: el de `createTestDb` tiene dos
+   * conexiones, y una queda tomada por la transacción que se deja en curso.
+   */
+  let poolConcurrente: pg.Pool;
+  let dbConcurrente: Db;
   let rutas: Awaited<ReturnType<typeof cargarRutas>>;
   let correo: ReturnType<typeof senderEnMemoria>;
   let adminUid = '';
@@ -166,6 +178,8 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
 
   beforeAll(async () => {
     handle = createTestDb();
+    poolConcurrente = new pg.Pool({ connectionString: handle.url, max: 10 });
+    dbConcurrente = drizzle(poolConcurrente, { schema });
     rutas = await cargarRutas();
     correo = senderEnMemoria();
     adminUid = `fb-admin-${randomUUID().slice(0, 8)}`;
@@ -184,11 +198,11 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
     empresaId = await crearEmpresa();
   });
   afterAll(async () => {
+    await poolConcurrente.end();
     await handle.pool.end();
   });
 
-  function app() {
-    const { db } = handle;
+  function app(db: Db = handle.db) {
     // Shim del idToken: el uid y la impersonación viajan en headers.
     const sesion: MiddlewareHandler = async (c, next) => {
       const uid = c.req.header('x-test-uid');
@@ -270,6 +284,116 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
     return app().request('/me/confirmar-acceso-booster', req('POST', { codigo }, uid, extra));
   }
 
+  /** La misma confirmación, por el pool de las requests en paralelo. */
+  function confirmarEnParalelo(uid: string, codigo: string) {
+    return app(dbConcurrente).request('/me/confirmar-acceso-booster', req('POST', { codigo }, uid));
+  }
+
+  function quitarAccesoEnParalelo(userId: string) {
+    return app(dbConcurrente).request(
+      `/admin/personal-booster/${userId}/quitar-acceso`,
+      req('POST', undefined, adminUid),
+    );
+  }
+
+  /** Espera a que alguna sesión de la base esté esperando un bloqueo. */
+  async function esperarBloqueo() {
+    const limite = Date.now() + 5_000;
+    for (;;) {
+      const r = await handle.pool.query<{ n: string }>(
+        "SELECT count(*)::text AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+      );
+      if (Number(r.rows[0]?.n ?? '0') > 0) {
+        return;
+      }
+      if (Date.now() > limite) {
+        throw new Error('ninguna request llegó a esperar un bloqueo');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
+  /**
+   * Deja en curso una transacción con los pasos dados (sin commit), lanza la
+   * request, espera a que quede esperando un bloqueo, comitea y devuelve la
+   * respuesta.
+   */
+  async function conTransaccionEnCurso(
+    pasos: (cliente: pg.PoolClient) => Promise<void>,
+    request: () => Promise<Response>,
+  ): Promise<Response> {
+    const cliente = await handle.pool.connect();
+    try {
+      await cliente.query('BEGIN');
+      await pasos(cliente);
+      const respuesta = request();
+      await esperarBloqueo();
+      await cliente.query('COMMIT');
+      return await respuesta;
+    } catch (err) {
+      await cliente.query('ROLLBACK');
+      throw err;
+    } finally {
+      cliente.release();
+    }
+  }
+
+  /** La persona confirma su código: bloquea su cuenta y su confirmación, consume y marca. */
+  async function confirmacionEnCurso(cliente: pg.PoolClient, userId: string) {
+    await cliente.query('SELECT id FROM usuarios WHERE id = $1 FOR UPDATE', [userId]);
+    await cliente.query(
+      'SELECT id FROM confirmaciones_acceso_booster WHERE usuario_id = $1 AND consumido_en IS NULL FOR UPDATE',
+      [userId],
+    );
+    await cliente.query(
+      'UPDATE confirmaciones_acceso_booster SET consumido_en = now() WHERE usuario_id = $1 AND consumido_en IS NULL',
+      [userId],
+    );
+    await cliente.query('UPDATE usuarios SET es_admin_plataforma = true WHERE id = $1', [userId]);
+  }
+
+  /**
+   * Un admin emite otro código: bloquea la cuenta, borra la pendiente e inserta
+   * la nueva. `emisorId` es quien lo emite (por defecto, el admin marcado).
+   */
+  async function reemisionEnCurso(
+    cliente: pg.PoolClient,
+    userId: string,
+    codigo: string,
+    emisorId: string = adminId,
+  ) {
+    await cliente.query('SELECT id FROM usuarios WHERE id = $1 FOR UPDATE', [userId]);
+    await cliente.query(
+      'DELETE FROM confirmaciones_acceso_booster WHERE usuario_id = $1 AND consumido_en IS NULL',
+      [userId],
+    );
+    await cliente.query(
+      "INSERT INTO confirmaciones_acceso_booster (usuario_id, codigo_hash, vence_en, emitido_por_usuario_id) VALUES ($1, $2, now() + interval '24 hours', $3)",
+      [userId, hashActivationPin(codigo), emisorId],
+    );
+  }
+
+  /**
+   * Un admin que entra solo por la lista de respaldo: su cuenta no está
+   * marcada, así que la baja no la bloquea junto con las cuentas marcadas.
+   */
+  async function adminSoloPorLaLista() {
+    const s = randomUUID().slice(0, 8);
+    const [u] = await handle.db
+      .insert(schema.users)
+      .values({
+        firebaseUid: `fb-lista-${s}`,
+        email: `lista-${s}@test.invalid`,
+        fullName: 'Admin por la lista',
+        status: 'activo',
+      })
+      .returning();
+    if (!u) {
+      throw new Error('fixture: admin por la lista');
+    }
+    return u.id;
+  }
+
   async function pendientes(userId: string) {
     return handle.db
       .select()
@@ -315,7 +439,7 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
     return json.personal;
   }
 
-  test('la migración 0076 creó la tabla y deja una sola confirmación pendiente por persona', async () => {
+  test('la migración de confirmaciones_acceso_booster creó la tabla y deja una sola pendiente por persona', async () => {
     const tabla = await handle.pool.query<{ regclass: string | null }>(
       "SELECT to_regclass('public.confirmaciones_acceso_booster')::text AS regclass",
     );
@@ -576,5 +700,121 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
       req('POST', undefined, adminUid),
     );
     expect(reemision.status).toBe(404);
+  });
+  describe('en paralelo contra Postgres (SC6, SC10)', () => {
+    test('varias confirmaciones con el código correcto: exactamente una marca la cuenta', async () => {
+      const p = await crearPersonaActiva('paralelo-bueno', 'membresia_activa');
+      const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut });
+      const bueno = r.body.codigo_activacion ?? '';
+      const avisosAntes = correo.enviados.filter((m) => m.text.includes(p.email)).length;
+
+      const respuestas = await Promise.all(
+        Array.from({ length: 5 }, () => confirmarEnParalelo(p.firebaseUid, bueno)),
+      );
+
+      const estados = respuestas.map((res) => res.status).sort();
+      expect(estados).toEqual([200, 400, 400, 400, 400]);
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(true);
+      const filas = await handle.db
+        .select()
+        .from(schema.confirmacionesAccesoBooster)
+        .where(eq(schema.confirmacionesAccesoBooster.usuarioId, p.id));
+      expect(filas).toHaveLength(1);
+      expect(filas[0]?.consumidoEn).toBeInstanceOf(Date);
+      const avisos = correo.enviados.filter((m) => m.text.includes(p.email)).length;
+      expect(avisos - avisosAntes).toBe(LISTA.length);
+    });
+
+    test('varios códigos incorrectos en paralelo dejan exactamente cinco intentos', async () => {
+      const p = await crearPersonaActiva('paralelo-malo', 'membresia_activa');
+      const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut });
+      const bueno = r.body.codigo_activacion ?? '';
+
+      const respuestas = await Promise.all(
+        Array.from({ length: 8 }, () => confirmarEnParalelo(p.firebaseUid, otroCodigo(bueno))),
+      );
+
+      expect(respuestas.map((res) => res.status)).toEqual(Array(8).fill(400));
+      expect((await pendientes(p.id))[0]?.intentosFallidos).toBe(5);
+      expect((await confirmar(p.firebaseUid, bueno)).status).toBe(400);
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+    });
+
+    test('el código anterior no marca la cuenta mientras se emite otro', async () => {
+      const p = await crearPersonaActiva('paralelo-reemision', 'membresia_activa');
+      const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut });
+      const viejo = r.body.codigo_activacion ?? '';
+      const nuevo = otroCodigo(viejo);
+
+      const res = await conTransaccionEnCurso(
+        (cliente) => reemisionEnCurso(cliente, p.id, nuevo),
+        () => confirmarEnParalelo(p.firebaseUid, viejo),
+      );
+
+      expect(res.status).toBe(400);
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+      const filas = await pendientes(p.id);
+      expect(filas).toHaveLength(1);
+      expect(filas[0]?.intentosFallidos).toBe(1);
+      expect((await confirmar(p.firebaseUid, nuevo)).status).toBe(200);
+    });
+
+    test('«Quitar acceso» mientras la persona confirma: la cuenta queda sin acceso y la baja responde ok', async () => {
+      const p = await crearPersonaActiva('paralelo-quitar-confirma', 'membresia_activa');
+      await alta({ email: p.email, fullName: p.fullName, rut: p.rut });
+
+      const res = await conTransaccionEnCurso(
+        (cliente) => confirmacionEnCurso(cliente, p.id),
+        () => quitarAccesoEnParalelo(p.id),
+      );
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, user_id: p.id });
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+      expect((await panel(p.firebaseUid)).status).toBe(403);
+      const aviso = correo.enviados.filter(
+        (m) => m.subject === `Booster: acceso al panel quitado a ${p.fullName}`,
+      );
+      expect(aviso).toHaveLength(LISTA.length);
+    });
+
+    test('«Quitar acceso» mientras se emite otro código: el código nuevo tampoco queda', async () => {
+      const p = await crearPersonaActiva('paralelo-quitar-reemite', 'membresia_activa');
+      const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut });
+      const nuevo = otroCodigo(r.body.codigo_activacion ?? '');
+      const emisor = await adminSoloPorLaLista();
+
+      const res = await conTransaccionEnCurso(
+        (cliente) => reemisionEnCurso(cliente, p.id, nuevo, emisor),
+        () => quitarAccesoEnParalelo(p.id),
+      );
+
+      expect(res.status).toBe(200);
+      expect(await pendientes(p.id)).toEqual([]);
+      expect((await confirmar(p.firebaseUid, nuevo)).status).toBe(400);
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+    });
+
+    test('quitar el acceso a una cuenta marcada también anula su código de confirmación', async () => {
+      const p = await crearPersonaActiva('marcada-con-codigo', 'membresia_activa');
+      const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut });
+      const bueno = r.body.codigo_activacion ?? '';
+      // La cuenta queda marcada por otro camino mientras su confirmación sigue pendiente.
+      await handle.db
+        .update(schema.users)
+        .set({ isPlatformAdmin: true })
+        .where(eq(schema.users.id, p.id));
+
+      const res = await app().request(
+        `/admin/personal-booster/${p.id}/quitar-acceso`,
+        req('POST', undefined, adminUid),
+      );
+
+      expect(res.status).toBe(200);
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+      expect(await pendientes(p.id)).toEqual([]);
+      expect((await confirmar(p.firebaseUid, bueno)).status).toBe(400);
+      expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+    });
   });
 });
