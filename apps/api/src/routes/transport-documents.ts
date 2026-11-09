@@ -240,7 +240,11 @@ export function createTransportDocumentsRoutes(opts: {
     if (!trip) {
       return { exists: false as const, authorized: false as const };
     }
-    if (trip.generadorCargaEmpresaId === empresaId) {
+    // documentos-conductor: el conductor empleado ve solo su viaje
+    // (`veSoloSuViaje`), también en una empresa que además es la generadora.
+    // `conductor_id` guarda un `usuarios.id`.
+    const esConductor = actor.role === 'conductor';
+    if (!esConductor && trip.generadorCargaEmpresaId === empresaId) {
       return { exists: true as const, authorized: true as const };
     }
     const asgRows = await opts.db
@@ -254,9 +258,6 @@ export function createTransportDocumentsRoutes(opts: {
       )
       .limit(1);
     const asg = asgRows[0];
-    // documentos-conductor: el conductor empleado ve solo su viaje
-    // (`veSoloSuViaje`). `conductor_id` guarda un `usuarios.id`.
-    const esConductor = actor.role === 'conductor';
     if (asg && asg.empresaId === empresaId && (!esConductor || asg.driverUserId === actor.userId)) {
       return { exists: true as const, authorized: true as const };
     }
