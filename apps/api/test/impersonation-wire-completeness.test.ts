@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { findMissingGuard } from '../scripts/check-impersonation-wire-completeness.js';
+import { collectMiddlewaresPerPath } from '../scripts/collect-middlewares-per-path.js';
 
 /**
  * Invariante de cobertura del impersonation-write-guard, corriendo en el job
@@ -45,5 +46,31 @@ describe('impersonation-write-guard wire completeness', () => {
       app.route('/trip-requests', createTripRequestsRoutes());
     `;
     expect(findMissingGuard(source)).toEqual([]);
+  });
+});
+
+// `.specs/confirmar-acceso-booster` SC12 (T5): la confirmación del acceso al
+// panel es una escritura que una sesión impersonada no puede hacer. El guard
+// de `/me/*` corre antes del userContext del path nuevo, así que no ve una
+// empresa activa y bloquea toda escritura impersonada.
+describe('impersonation-write-guard — confirmación del acceso al panel', () => {
+  const PATH = '/me/confirmar-acceso-booster';
+  const USE_GUARD = "app.use('/me/*', impersonationWriteGuardMiddleware)";
+  const USE_CONTEXTO = `app.use('${PATH}', userContextMiddlewareForMe)`;
+
+  it('el path tiene userContext y queda bajo /me/*, con firebaseAuth y el guard', () => {
+    const mapa = collectMiddlewaresPerPath(SERVER_SOURCE);
+    expect(mapa.get(PATH)).toEqual(['userContextMiddlewareForMe']);
+    expect(mapa.get('/me/*')).toEqual(
+      expect.arrayContaining(['firebaseAuthMiddleware', 'impersonationWriteGuardMiddleware']),
+    );
+  });
+
+  it('el guard de /me/* se registra antes que el userContext del path', () => {
+    const guard = SERVER_SOURCE.indexOf(USE_GUARD);
+    const contexto = SERVER_SOURCE.indexOf(USE_CONTEXTO);
+    expect(guard).toBeGreaterThan(-1);
+    expect(contexto).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(contexto);
   });
 });

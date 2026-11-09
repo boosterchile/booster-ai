@@ -3,6 +3,7 @@ import { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { confirmacionesAccesoBooster } from '../db/schema.js';
 import { createImpersonationWriteGuardMiddleware } from '../middleware/impersonation-write-guard.js';
 import { hashActivationPin, verifyActivationPin } from '../services/activation-pin.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -105,7 +106,14 @@ interface DbOpts {
    * UPDATE condicional no encontró la fila en el estado esperado.
    */
   filasActualizadas?: unknown[];
+  /**
+   * Filas que devuelve `delete().where().returning()` (confirmaciones
+   * pendientes borradas). Vacío = no había una pendiente.
+   */
+  filasBorradas?: unknown[];
 }
+
+const CONFIRMACION_ID = '3e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b';
 
 function makeDb(opts: DbOpts = {}) {
   const lookups = [...(opts.lookups ?? [])];
@@ -115,11 +123,30 @@ function makeDb(opts: DbOpts = {}) {
   const updateWheres: unknown[] = [];
 
   const locks: unknown[] = [];
+  /** Predicado de cada `select().from().where(...)`, en orden. */
+  const selectWheres: unknown[] = [];
+  /** Cada `leftJoin`/`innerJoin` del select: tabla y condición. */
+  const joins: Array<{ tabla: unknown; on: unknown }> = [];
+  /** Confirmaciones insertadas, en orden. */
+  const insertedConfirmaciones: Record<string, unknown>[] = [];
+  /** Cada `delete(tabla).where(predicado)`, en orden. */
+  const deletes: Array<{ tabla: unknown; predicado: unknown }> = [];
+  /** Orden de las escrituras sobre confirmaciones. */
+  const operaciones: string[] = [];
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
     const orderBy = vi.fn(() => chain);
+    const join = vi.fn((tabla: unknown, on: unknown) => {
+      joins.push({ tabla, on });
+      return chain;
+    });
     chain.from = vi.fn(() => chain);
-    chain.where = vi.fn(() => chain);
+    chain.leftJoin = join;
+    chain.innerJoin = join;
+    chain.where = vi.fn((predicado: unknown) => {
+      selectWheres.push(predicado);
+      return chain;
+    });
     chain.orderBy = orderBy;
     chain.for = vi.fn((strength: unknown) => {
       locks.push(strength);
@@ -135,9 +162,14 @@ function makeDb(opts: DbOpts = {}) {
   };
   const select = vi.fn(() => selectChain());
 
-  const insert = vi.fn(() => ({
+  const insert = vi.fn((tabla: unknown) => ({
     values: vi.fn((vals: Record<string, unknown>) => ({
       returning: vi.fn(async () => {
+        if (tabla === confirmacionesAccesoBooster) {
+          operaciones.push('insert');
+          insertedConfirmaciones.push(vals);
+          return [{ id: CONFIRMACION_ID }];
+        }
         if (opts.insertError) {
           throw opts.insertError;
         }
@@ -145,6 +177,16 @@ function makeDb(opts: DbOpts = {}) {
         return [{ id: NUEVO_ID }];
       }),
     })),
+  }));
+
+  const del = vi.fn((tabla: unknown) => ({
+    where: vi.fn((predicado: unknown) => {
+      operaciones.push('delete');
+      deletes.push({ tabla, predicado });
+      return Object.assign(Promise.resolve(undefined), {
+        returning: vi.fn(async () => opts.filasBorradas ?? [{ id: CONFIRMACION_ID }]),
+      });
+    }),
   }));
 
   const update = vi.fn(() => ({
@@ -163,7 +205,7 @@ function makeDb(opts: DbOpts = {}) {
     }),
   }));
 
-  const base = { select, insert, update };
+  const base = { select, insert, update, delete: del };
   return {
     db: {
       ...base,
@@ -172,11 +214,25 @@ function makeDb(opts: DbOpts = {}) {
     select,
     insert,
     update,
+    delete: del,
     insertedUsers,
+    insertedConfirmaciones,
+    deletes,
+    operaciones,
     updates,
     updateWheres,
+    selectWheres,
+    joins,
     locks,
   };
+}
+
+/** SQL y parámetros de un predicado Drizzle, para mirar qué filtra. */
+function sqlDe(predicado: unknown) {
+  if (!(predicado instanceof SQL)) {
+    throw new Error('se esperaba un predicado SQL');
+  }
+  return new PgDialect().sqlToQuery(predicado);
 }
 
 async function loadMod() {
@@ -1746,5 +1802,463 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso (SC4)', () => {
     expect((await quitar(sinSesion)).status).toBe(401);
     const otro = await buildApp({ db: makeDb().db, sesion: 'otra.persona@empresa.cl' });
     expect((await quitar(otro)).status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `.specs/confirmar-acceso-booster` — T2 (SC1–SC3, SC7, SC13) y T3 (SC8–SC10).
+// ---------------------------------------------------------------------------
+
+const VEINTICUATRO_HORAS_MS = 24 * 60 * 60 * 1000;
+const ASUNTO_AVISO_OTORGADO = 'Booster: acceso al panel otorgado';
+
+/** Cuenta que ya eligió su clave. */
+function activa(overrides: Record<string, unknown> = {}) {
+  return existente({ firebaseUid: 'fb-ana', claveNumericaHash: 'hash-clave', ...overrides });
+}
+
+/** Lo que devuelve la consulta de vínculos cuando la cuenta tiene uno. */
+const CON_VINCULO = [{ id: PERSONA_ID }];
+
+describe('POST /admin/personal-booster — cuenta activa con vínculos con una empresa (SC1)', () => {
+  it('no la marca: emite un código de confirmación de 24 horas, guardado solo como hash, y lo devuelve una vez', async () => {
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      ok: boolean;
+      user_id: string;
+      vinculo: string;
+      codigo_activacion: string | null;
+      expira_en: string | null;
+      en_lista: boolean;
+    };
+    expect(json).toMatchObject({
+      ok: true,
+      user_id: PERSONA_ID,
+      vinculo: 'cuenta_activa_por_confirmar',
+      en_lista: true,
+    });
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    cercaDe(json.expira_en, Date.now() + VEINTICUATRO_HORAS_MS);
+
+    // La cuenta no se toca: ni la marca ni el código de activación.
+    expect(d.updates).toEqual([]);
+    expect(d.insertedUsers).toEqual([]);
+
+    expect(d.insertedConfirmaciones).toHaveLength(1);
+    const fila = d.insertedConfirmaciones[0] as Record<string, unknown>;
+    expect(fila.usuarioId).toBe(PERSONA_ID);
+    expect(fila.emitidoPorUsuarioId).toBe(ADMIN_ID);
+    expect(fila.codigoHash).not.toBe(json.codigo_activacion);
+    expect(verifyActivationPin(json.codigo_activacion ?? '', String(fila.codigoHash))).toBe(true);
+    expect(fila.venceEn).toBeInstanceOf(Date);
+    expect((fila.venceEn as Date).toISOString()).toBe(json.expira_en);
+    expect(fila.intentosFallidos ?? 0).toBe(0);
+  });
+
+  it('emitir borra antes la confirmación pendiente de esa persona (una sola por persona, SC3)', async () => {
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(d.operaciones).toEqual(['delete', 'insert']);
+    expect(d.deletes).toHaveLength(1);
+    expect(d.deletes[0]?.tabla).toBe(confirmacionesAccesoBooster);
+    const borrado = sqlDe(d.deletes[0]?.predicado);
+    expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
+    expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
+    expect(borrado.params).toEqual([PERSONA_ID]);
+    // La fila de la cuenta queda bloqueada hasta el commit.
+    expect(d.locks).toEqual(['update']);
+  });
+
+  it('la consulta de vínculos mira membresías con empresa en cualquier estado y filas de conductores', async () => {
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const app = await buildApp({ db: d.db });
+
+    await app.request('/', postJson(BODY));
+
+    const consulta = sqlDe(d.selectWheres[1]);
+    expect(consulta.sql).toContain('"membresias"');
+    expect(consulta.sql).toContain('"membresias"."empresa_id" is not null');
+    expect(consulta.sql).toContain('"conductores"');
+    expect(consulta.sql).not.toContain('"membresias"."estado"');
+    expect(consulta.sql).not.toContain('"conductores"."eliminado_en"');
+    expect(consulta.params).toContain(PERSONA_ID);
+  });
+
+  it('el código de confirmación no sale por correo ni avisa a la lista: todavía no hay acceso', async () => {
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('auditoría, métrica y span con el vínculo, sin el código ni su hash', async () => {
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, logger });
+
+    const res = await app.request('/', postJson(BODY));
+    const json = (await res.json()) as { codigo_activacion: string };
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.alta',
+        actor_user_id: ADMIN_ID,
+        user_id: PERSONA_ID,
+        vinculo: 'cuenta_activa_por_confirmar',
+        marcada: false,
+        codigo_emitido: true,
+      }),
+      expect.any(String),
+    );
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'personal_booster.acceso_otorgado' }),
+      expect.any(String),
+    );
+    const fila = d.insertedConfirmaciones[0] as Record<string, unknown>;
+    const logs = textoDeLogs(logger);
+    expect(logs).not.toContain(json.codigo_activacion);
+    expect(logs).not.toContain(String(fila.codigoHash));
+
+    expect(observabilidad.contadores).toContainEqual({
+      nombre: 'personal_booster_alta_total',
+      labels: { resultado: 'registrada', en_lista: 'true', vinculo: 'cuenta_activa_por_confirmar' },
+    });
+    const span = observabilidad.spans.find((s) => s.nombre === 'personal_booster.alta');
+    expect(span?.atributos['personal_booster.vinculo']).toBe('cuenta_activa_por_confirmar');
+    expect(JSON.stringify(observabilidad)).not.toContain(json.codigo_activacion);
+  });
+});
+
+describe('POST /admin/personal-booster — las demás cuentas siguen como en #893 (SC2)', () => {
+  it('cuenta activa sin vínculos: el alta la marca y no emite confirmación', async () => {
+    const d = makeDb({ lookups: [[activa()], []] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { vinculo: string }).vinculo).toBe('cuenta_activa');
+    expect(d.updates).toHaveLength(1);
+    expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(true);
+    expect(d.insertedConfirmaciones).toEqual([]);
+    expect(d.deletes).toEqual([]);
+  });
+
+  it('cuenta activa ya marcada: cuenta_activa, sin consultar vínculos ni emitir confirmación', async () => {
+    const d = makeDb({ lookups: [[activa({ isPlatformAdmin: true })], CON_VINCULO] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { vinculo: string }).vinculo).toBe('cuenta_activa');
+    expect(d.selectWheres).toHaveLength(1);
+    expect(d.insertedConfirmaciones).toEqual([]);
+    expect(d.deletes).toEqual([]);
+  });
+
+  it('provisoria (sin clave): no consulta vínculos y recibe el código de activación de siempre', async () => {
+    const d = makeDb({ lookups: [[existente()], CON_VINCULO] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { vinculo: string }).vinculo).toBe('provisoria_sin_codigo');
+    expect(d.selectWheres).toHaveLength(1);
+    expect(d.insertedConfirmaciones).toEqual([]);
+    expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(true);
+  });
+});
+
+describe('POST /admin/personal-booster/:userId/codigo — persona por confirmar (SC8)', () => {
+  const PENDIENTE = [{ id: CONFIRMACION_ID }];
+
+  it('emite un código de confirmación nuevo, sin correo, y responde como el alta', async () => {
+    const d = makeDb({ lookups: [[activa()], PENDIENTE] });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger });
+
+    const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      ok: boolean;
+      user_id: string;
+      vinculo: string;
+      codigo_activacion: string;
+      expira_en: string;
+      en_lista: boolean;
+    };
+    expect(json).toMatchObject({
+      ok: true,
+      user_id: PERSONA_ID,
+      vinculo: 'cuenta_activa_por_confirmar',
+      en_lista: true,
+    });
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    cercaDe(json.expira_en, Date.now() + VEINTICUATRO_HORAS_MS);
+
+    expect(d.operaciones).toEqual(['delete', 'insert']);
+    const fila = d.insertedConfirmaciones[0] as Record<string, unknown>;
+    expect(fila.usuarioId).toBe(PERSONA_ID);
+    expect(fila.emitidoPorUsuarioId).toBe(ADMIN_ID);
+    expect(verifyActivationPin(json.codigo_activacion, String(fila.codigoHash))).toBe(true);
+    // Ni la marca ni el código de activación de la cuenta.
+    expect(d.updates).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    // La lectura de la cuenta bloquea su fila hasta el commit.
+    expect(d.locks[0]).toBe('update');
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.reemision_codigo',
+        actor_user_id: ADMIN_ID,
+        user_id: PERSONA_ID,
+        vinculo: 'cuenta_activa_por_confirmar',
+      }),
+      expect.any(String),
+    );
+    expect(textoDeLogs(logger)).not.toContain(json.codigo_activacion);
+    expect(observabilidad.contadores).toContainEqual({
+      nombre: 'personal_booster_reemision_codigo_total',
+      labels: { resultado: 'emitido', vinculo: 'cuenta_activa_por_confirmar' },
+    });
+  });
+
+  it('la búsqueda de la confirmación pendiente mira la persona y consumido_en NULL', async () => {
+    const d = makeDb({ lookups: [[activa()], PENDIENTE] });
+    const app = await buildApp({ db: d.db });
+
+    await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    const consulta = sqlDe(d.selectWheres[1]);
+    expect(consulta.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
+    expect(consulta.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
+    expect(consulta.params).toEqual([PERSONA_ID]);
+  });
+
+  it('sin marca y sin confirmación pendiente → 404 personal_not_found, sin escrituras', async () => {
+    const d = makeDb({ lookups: [[activa()], []] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('personal_not_found');
+    expect(d.deletes).toEqual([]);
+    expect(d.insertedConfirmaciones).toEqual([]);
+    expect(d.updates).toEqual([]);
+  });
+
+  it('el código de activación de siempre responde vinculo provisoria_sin_codigo', async () => {
+    const d = makeDb({ lookups: [[existente({ isPlatformAdmin: true })]] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request(`/${PERSONA_ID}/codigo`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { vinculo: string }).vinculo).toBe('provisoria_sin_codigo');
+    expect(d.insertedConfirmaciones).toEqual([]);
+  });
+});
+
+describe('GET /admin/personal-booster — persona por confirmar (SC9)', () => {
+  function filaPorConfirmar(overrides: Record<string, unknown> = {}) {
+    return {
+      id: PERSONA_ID,
+      email: CORREO,
+      fullName: 'Ana Soto',
+      rut: RUT,
+      firebaseUid: 'fb-ana',
+      claveNumericaHash: 'hash',
+      activationPinHash: null,
+      activacionVenceEn: null,
+      lastLoginAt: new Date('2026-11-01T12:00:00.000Z'),
+      isPlatformAdmin: false,
+      confirmacionVenceEn: new Date(Date.now() + 3 * 60 * 60 * 1000),
+      confirmacionIntentos: 0,
+      ...overrides,
+    };
+  }
+
+  it('aparece como pendiente_confirmacion con el vencimiento de su código', async () => {
+    const fila = filaPorConfirmar();
+    const d = makeDb({ listRows: [fila] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await app.request('/');
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { personal: Record<string, unknown>[] };
+    expect(json.personal).toContainEqual({
+      email: CORREO,
+      en_lista: false,
+      user_id: PERSONA_ID,
+      nombre: 'Ana Soto',
+      rut: RUT,
+      estado: 'pendiente_confirmacion',
+      expira_en: fila.confirmacionVenceEn.toISOString(),
+      ultimo_login_en: null,
+    });
+  });
+
+  it('sin intentos disponibles: expira_en null (hay que generar un código nuevo)', async () => {
+    const d = makeDb({ listRows: [filaPorConfirmar({ confirmacionIntentos: 5 })] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await app.request('/');
+
+    const json = (await res.json()) as { personal: Record<string, unknown>[] };
+    expect(json.personal.find((p) => p.email === CORREO)).toMatchObject({
+      estado: 'pendiente_confirmacion',
+      expira_en: null,
+    });
+  });
+
+  it('una cuenta marcada sigue con su estado aunque la consulta traiga una confirmación', async () => {
+    const d = makeDb({ listRows: [filaPorConfirmar({ isPlatformAdmin: true })] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await app.request('/');
+
+    const json = (await res.json()) as { personal: Record<string, unknown>[] };
+    expect(json.personal.find((p) => p.email === CORREO)).toMatchObject({
+      estado: 'activa',
+      expira_en: null,
+    });
+  });
+
+  it('la consulta suma a quien tiene una confirmación pendiente (join por consumido_en NULL)', async () => {
+    const d = makeDb({ listRows: [] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    await app.request('/');
+
+    expect(d.joins).toHaveLength(1);
+    expect(d.joins[0]?.tabla).toBe(confirmacionesAccesoBooster);
+    const on = sqlDe(d.joins[0]?.on);
+    expect(on.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = "usuarios"."id"');
+    expect(on.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
+    const where = sqlDe(d.selectWheres[0]);
+    expect(where.sql).toContain('"confirmaciones_acceso_booster"."id" is not null');
+  });
+});
+
+describe('POST /admin/personal-booster/:userId/quitar-acceso — persona por confirmar (SC10)', () => {
+  const ADMIN_MARCADO = {
+    id: ADMIN_ID,
+    email: ADMIN_EMAIL,
+    fullName: 'Felipe Vicencio',
+    firebaseUid: 'fb-felipe',
+    claveNumericaHash: 'hash',
+    activationPinHash: null,
+    activacionVenceEn: null,
+    status: 'activo',
+  };
+  const POR_CONFIRMAR = [{ id: PERSONA_ID, email: 'carlos.rojas@boosterchile.com' }];
+
+  function quitar(app: Hono) {
+    return app.request(`/${PERSONA_ID}/quitar-acceso`, { method: 'POST' });
+  }
+
+  it('borra su confirmación pendiente y responde ok, sin aviso ni cambios en la cuenta', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [POR_CONFIRMAR] });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, user_id: PERSONA_ID });
+    expect(d.deletes).toHaveLength(1);
+    expect(d.deletes[0]?.tabla).toBe(confirmacionesAccesoBooster);
+    const borrado = sqlDe(d.deletes[0]?.predicado);
+    expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
+    expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
+    expect(d.updates).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'personal_booster.confirmacion_invalidada',
+        actor_user_id: ADMIN_ID,
+        user_id: PERSONA_ID,
+      }),
+      expect.any(String),
+    );
+    expect(observabilidad.contadores).toContainEqual({
+      nombre: 'personal_booster_quitar_acceso_total',
+      labels: { resultado: 'confirmacion_invalidada' },
+    });
+  });
+
+  it('con el correo en la lista de respaldo → 409 en_lista_respaldo, sin escrituras', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [POR_CONFIRMAR] });
+    const app = await buildApp({
+      db: d.db,
+      lista: [ADMIN_EMAIL, 'Carlos.Rojas@boosterchile.com'],
+    });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('en_lista_respaldo');
+    expect(d.deletes).toEqual([]);
+    expect(d.updates).toEqual([]);
+  });
+
+  it('sin marca y sin confirmación pendiente → 404 personal_not_found, sin escrituras', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [[]] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('personal_not_found');
+    expect(d.deletes).toEqual([]);
+    expect(d.updates).toEqual([]);
+  });
+
+  it('si la confirmación se consumió entre la lectura y el borrado → 404', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [POR_CONFIRMAR], filasBorradas: [] });
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, logger, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(404);
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'personal_booster.confirmacion_invalidada' }),
+      expect.any(String),
+    );
+  });
+});
+
+describe('POST /admin/personal-booster — una cuenta por confirmar no avisa a la lista (SC7)', () => {
+  it('el aviso de acceso otorgado no sale en el alta por confirmar', async () => {
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender });
+
+    await app.request('/', postJson(BODY));
+
+    expect(send.mock.calls.filter((c) => c[0].subject.startsWith(ASUNTO_AVISO_OTORGADO))).toEqual(
+      [],
+    );
   });
 });
