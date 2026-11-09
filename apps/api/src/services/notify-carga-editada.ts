@@ -17,12 +17,20 @@ import { type AvisoCargaPushPayload, sendPushToUser } from './web-push.js';
  * BD sí, y el llamador lo loguea sin afectar la edición.
  */
 
-export type EventoCargaEditada = 'datos_libres';
+export type EventoCargaEditada = 'datos_libres' | 'cancelacion';
 
-const TEXTOS: Record<EventoCargaEditada, { title: string; body: (codigo: string) => string }> = {
+const TEXTOS: Record<
+  EventoCargaEditada,
+  { title: string; body: (codigo: string, motivo: string | null) => string }
+> = {
   datos_libres: {
     title: 'Cambiaron datos de un servicio',
     body: (codigo) => `Se actualizaron los datos de contacto o notas de ${codigo}.`,
+  },
+  cancelacion: {
+    title: 'Servicio cancelado',
+    body: (codigo, motivo) =>
+      `El generador canceló el servicio ${codigo}.${motivo ? ` Motivo: ${motivo}.` : ''} No te presentes a la recogida.`,
   },
 };
 
@@ -32,10 +40,12 @@ export async function notifyCargaEditada(
     tripId: string;
     asignacion: { id: string; empresaId: string; driverUserId: string | null };
     evento: EventoCargaEditada;
+    /** Motivo de la cancelación; lo ve la transportista (§12-P6). */
+    motivo?: string;
   },
 ): Promise<{ destinatarios: number; enviados: number }> {
   const { db, logger } = deps;
-  const { tripId, asignacion, evento } = opts;
+  const { tripId, asignacion, evento, motivo } = opts;
 
   // rls-allowlist: notificador server-side; el viaje ya lo validó el llamador.
   const [viaje] = await db
@@ -68,7 +78,7 @@ export async function notifyCargaEditada(
   const texto = TEXTOS[evento];
   const payload: AvisoCargaPushPayload = {
     title: texto.title,
-    body: texto.body(codigo),
+    body: texto.body(codigo, motivo ?? null),
     tag: `viaje:${tripId}:${evento}`,
     data: {
       tipo: 'aviso_carga',

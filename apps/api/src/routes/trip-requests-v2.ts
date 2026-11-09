@@ -17,7 +17,7 @@ import {
   esEditablePreMatch,
   esEstadoViaje,
 } from '@booster-ai/trip-state-machine';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, not, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -39,6 +39,7 @@ import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { issuesPublicos, zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { cancelarCarga } from '../services/cancelar-carga.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
@@ -557,7 +558,14 @@ export function createTripRequestsV2Routes(opts: {
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
       .leftJoin(assignments, eq(assignments.tripId, trips.id))
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
-      .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
+      .where(
+        and(
+          eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id),
+          // Las anuladas (cancelado sin asignación) salen del listado, también
+          // las históricas (editar-anular-cargas §8.7, §12-P10).
+          not(and(eq(trips.status, 'cancelado'), isNull(assignments.id)) ?? sql`false`),
+        ),
+      )
       .orderBy(desc(trips.createdAt));
 
     return c.json({
@@ -634,6 +642,7 @@ export function createTripRequestsV2Routes(opts: {
         delivered_at: assignments.deliveredAt,
         cancelled_at: assignments.cancelledAt,
         cancelled_by_actor: assignments.cancelledByActor,
+        cancellation_reason: assignments.cancellationReason,
         empresa_id: assignments.empresaId,
         empresa_legal_name: empresasTable.legalName,
         vehicle_id: assignments.vehicleId,
@@ -641,6 +650,8 @@ export function createTripRequestsV2Routes(opts: {
         vehicle_type: vehicles.vehicleType,
         driver_user_id: assignments.driverUserId,
         driver_name: usersTable.fullName,
+        driver_phone: usersTable.phone,
+        driver_whatsapp: usersTable.whatsappE164,
         // El token se acuña en el accept, sin mirar al destinatario. Si no
         // sale en este detalle, el generador no tiene enlace público cuando
         // el WhatsApp no tiene a quién escribir.
@@ -699,12 +710,59 @@ export function createTripRequestsV2Routes(opts: {
       etaMinutes = live.etaMinutes;
     }
 
+    // Anulada ≡ cancelado sin asignación (§8.8). Quién y cuándo salen del
+    // último evento `cancelado`; las históricas pueden no tenerlo.
+    let anulacion: { en: string; por_nombre: string | null; razon: string | null } | null = null;
+    if (trip.status === 'cancelado' && !assignmentRow) {
+      const [evento] = await opts.db
+        .select({
+          recordedAt: tripEvents.recordedAt,
+          payload: tripEvents.payload,
+          porNombre: usersTable.fullName,
+        })
+        .from(tripEvents)
+        .leftJoin(usersTable, eq(usersTable.id, tripEvents.recordedByUserId))
+        .where(and(eq(tripEvents.tripId, id), eq(tripEvents.eventType, 'cancelado')))
+        .orderBy(desc(tripEvents.recordedAt))
+        .limit(1);
+      const razon = evento ? motivoDelPayload(evento.payload) : null;
+      anulacion = {
+        en: (evento?.recordedAt ?? trip.updatedAt).toISOString(),
+        por_nombre: evento?.porNombre ?? null,
+        razon,
+      };
+    }
+    const cancelacion =
+      assignmentRow?.status === 'cancelado' && assignmentRow.cancelled_at
+        ? {
+            en: assignmentRow.cancelled_at.toISOString(),
+            razon: assignmentRow.cancellation_reason ?? null,
+          }
+        : null;
+
+    let assignmentOut: Record<string, unknown> | null = null;
+    if (assignmentRow) {
+      const { driver_phone, driver_whatsapp, ...resto } = assignmentRow;
+      // El teléfono del conductor solo mientras el viaje está activo (§12-P11).
+      const telefono = driver_phone ?? driver_whatsapp ?? null;
+      const viajeActivo = trip.status === 'asignado' || trip.status === 'en_proceso';
+      assignmentOut = {
+        ...resto,
+        ...(viajeActivo && telefono ? { conductor_telefono_e164: telefono } : {}),
+      };
+    }
+
     return c.json({
-      trip_request: { ...serializeTripDetail(trip, auth.userContext), comercial },
+      trip_request: {
+        ...serializeTripDetail(trip, auth.userContext),
+        comercial,
+        anulacion,
+        cancelacion,
+      },
       events,
       assignment: assignmentRow
         ? {
-            ...assignmentRow,
+            ...assignmentOut,
             // Siempre presente (uuid o null). Un destinatario vacío no lo omite.
             public_tracking_token: assignmentRow.public_tracking_token ?? null,
             ubicacion_actual: ubicacionActual,
@@ -1047,11 +1105,8 @@ export function createTripRequestsV2Routes(opts: {
   });
 
   // ---------------------------------------------------------------------
-  // PATCH /:id/cancelar — cancel pre-asignación.
-  //
-  // Solo permite cancelar si la tabla de transiciones lo autoriza (esAnulablePorGenerador). Una vez
-  // `asignado` o posterior, el shipper debe coordinar la cancelación con
-  // el transportista (fuera del scope de este endpoint).
+  // PATCH /:id/cancelar — anular antes del match o cancelar después
+  // (editar-anular-cargas §6.6). La lógica vive en services/cancelar-carga.ts.
   // ---------------------------------------------------------------------
   app.patch('/:id/cancelar', zValidator('json', cancelBodySchema), async (c) => {
     const auth = requireShipperAuth(c, { requireActive: true });
@@ -1063,111 +1118,77 @@ export function createTripRequestsV2Routes(opts: {
     if (sinCarga) {
       return sinCarga;
     }
-    const id = c.req.param('id');
+    const tripId = c.req.param('id');
     const body = c.req.valid('json');
-    const empresaId = auth.activeMembership.empresa.id;
-    const userId = auth.userContext.user.id;
-
-    // Transacción con lock de fila: serializa contra acceptOffer (que
-    // también toma FOR UPDATE sobre el trip). Sin esto, un accept
-    // concurrente podía quedar pisado por el cancel (o viceversa) y las
-    // ofertas pendientes quedaban aceptables post-cancelación
-    // (race de la auditoría 2026-06-09, riesgo alto #2).
-    const result = await opts.db.transaction(async (tx) => {
-      const tripRows = await tx
-        .select({ id: trips.id, status: trips.status, trackingCode: trips.trackingCode })
-        .from(trips)
-        .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
-        .for('update')
-        .limit(1);
-      const trip = tripRows[0];
-
-      if (!trip) {
-        return { kind: 'not_found' as const };
-      }
-
-      // Re-check post-lock: si un accept concurrente ganó la carrera,
-      // acá vemos 'asignado' y abortamos con 409.
-      if (!esEstadoViaje(trip.status) || !esAnulablePorGenerador(trip.status)) {
-        return { kind: 'not_cancellable' as const, currentStatus: trip.status };
-      }
-
-      const now = new Date();
-      const [updated] = await tx
-        .update(trips)
-        .set({ status: 'cancelado', updatedAt: now })
-        .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
-        .returning();
-
-      if (!updated) {
-        return { kind: 'not_found' as const };
-      }
-
-      // Invalidar ofertas pendientes del trip: sin esto quedaban
-      // aceptables hasta su TTL y podían resucitar el viaje cancelado.
-      const invalidated = await tx
-        .update(offers)
-        .set({ status: 'expirada', updatedAt: now })
-        .where(and(eq(offers.tripId, id), eq(offers.status, 'pendiente')))
-        .returning({ id: offers.id });
-
-      await tx.insert(tripEvents).values({
-        tripId: id,
-        eventType: 'cancelado',
-        source: 'web',
-        recordedByUserId: userId,
-        payload: {
-          actor: 'generador_carga',
-          previous_status: trip.status,
-          invalidated_offers: invalidated.length,
-          ...(body.reason ? { reason: body.reason } : {}),
-        },
-      });
-
-      return {
-        kind: 'ok' as const,
-        trip,
-        updated,
-        invalidatedCount: invalidated.length,
-      };
-    });
-
-    if (result.kind === 'not_found') {
-      return c.json({ error: 'trip_not_found' }, 404);
-    }
-    if (result.kind === 'not_cancellable') {
-      return c.json(
-        {
-          error: 'trip_not_cancellable',
-          code: 'trip_not_cancellable',
-          current_status: result.currentStatus,
-        },
-        409,
-      );
-    }
-
-    opts.logger.info(
-      {
-        tripId: id,
-        trackingCode: result.trip.trackingCode,
-        previousStatus: result.trip.status,
-        invalidatedOffers: result.invalidatedCount,
-        empresaId,
-        userId,
+    const resultado = await withBusinessSpan(
+      { name: 'cargas.cancelar', attributes: { 'booster.trip_id': tripId } },
+      async (span) => {
+        const r = await cancelarCarga(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            empresaId: auth.activeMembership.empresa.id,
+            userId: auth.userContext.user.id,
+            ...(body.reason ? { reason: body.reason } : {}),
+          },
+        );
+        const outcome = r.ok ? r.tipo : r.code;
+        setResultAttributes(span, { 'booster.outcome': outcome });
+        getBusinessCounter('carga_cancelada_total').add(1, { tipo: outcome });
+        return r;
       },
-      'trip cancelled by shipper',
     );
+    if (!resultado.ok) {
+      switch (resultado.code) {
+        case 'trip_not_found':
+          return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+        case 'trip_not_cancellable':
+          return c.json(
+            {
+              error: 'trip_not_cancellable',
+              code: 'trip_not_cancellable',
+              current_status: resultado.currentStatus,
+            },
+            409,
+          );
+        case 'reason_required':
+          return c.json({ error: 'reason_required', code: 'reason_required' }, 422);
+      }
+    }
 
-    return c.json({
-      trip_request: {
-        id: result.updated.id,
-        tracking_code: result.updated.trackingCode,
-        status: result.updated.status,
-      },
-    });
+    // Post-commit, fire-and-forget: la transportista y el conductor se enteran
+    // de la cancelación con su motivo (§8).
+    if (resultado.tipo === 'cancelacion') {
+      try {
+        await notifyCargaEditada(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            asignacion: resultado.asignacion,
+            evento: 'cancelacion',
+            motivo: resultado.motivo,
+          },
+        );
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId },
+          'fallo avisar la cancelación (la carga quedó cancelada)',
+        );
+      }
+    }
+    return c.json({ trip_request: { id: tripId, status: 'cancelado', tipo: resultado.tipo } });
   });
 
   return app;
+}
+
+/** El motivo guardado en el payload de un evento `cancelado`, si lo hay. */
+function motivoDelPayload(payload: unknown): string | null {
+  if (payload && typeof payload === 'object' && 'reason' in payload) {
+    const r = payload.reason;
+    return typeof r === 'string' && r.length > 0 ? r : null;
+  }
+  return null;
 }
 
 function serializeTripDetail(row: typeof trips.$inferSelect, userContext: unknown) {
