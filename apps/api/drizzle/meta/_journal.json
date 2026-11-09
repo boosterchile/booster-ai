@@ -512,6 +512,13 @@
       "when": 1780876800090,
       "tag": "0072_instrucciones_retiro",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1780876800100,
+      "tag": "0073_seguimiento_por_correo",
+      "breakpoints": true
     }
   ]
 }

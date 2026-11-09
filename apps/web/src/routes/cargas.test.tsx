@@ -216,6 +216,62 @@ describe('CargasNuevoRoute', () => {
   });
 });
 
+// seguimiento-por-correo: correo opcional del destinatario en el formulario.
+describe('CargasNuevoRoute — correo del destinatario', () => {
+  async function llenarCargaValida(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
+    await user.type(screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
+    const [origen, destino] = screen.getAllByLabelText(/Región/);
+    if (!origen || !destino) {
+      throw new Error('faltan los selectores de región');
+    }
+    await user.selectOptions(origen, 'XIII');
+    await user.selectOptions(destino, 'VIII');
+    await user.type(screen.getByLabelText(/Peso/), '8000');
+    const local = (fecha: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+    };
+    fireEvent.change(screen.getByLabelText(/Desde/), {
+      target: { value: local(new Date(Date.now() + 2 * 60 * 60 * 1000)) },
+    });
+    fireEvent.change(screen.getByLabelText(/Hasta/), {
+      target: { value: local(new Date(Date.now() + 6 * 60 * 60 * 1000)) },
+    });
+  }
+
+  it('manda el correo del destinatario junto al nombre', async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      trip_request: { id: '11111111-1111-4111-8111-111111111111' },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await llenarCargaValida(user);
+    await user.type(screen.getByLabelText(/Nombre del destinatario/), 'Bodega La Serena');
+    await user.type(screen.getByLabelText(/Correo del destinatario/), 'Recepcion@Cliente.CL');
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    const [, body] = post.mock.calls[0] as [string, { consignee?: unknown }];
+    // El API lo guarda en minúsculas (schema compartido); la web lo manda tal cual, sin espacios.
+    expect(body.consignee).toEqual({ name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' });
+  });
+
+  it('un correo inválido muestra el mensaje bajo el campo y no publica', async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await llenarCargaValida(user);
+    await user.type(screen.getByLabelText(/Correo del destinatario/), 'no-es-correo');
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(
+      await screen.findByText('Ingresa un correo válido, como nombre@empresa.cl'),
+    ).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
 describe('CargasDetalleRoute', () => {
   it('no onboarded → no renderiza', () => {
     const { container } = wrap(<CargasDetalleRoute />);
