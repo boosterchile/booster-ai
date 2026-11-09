@@ -13,6 +13,17 @@ import { ApiError, api } from '../lib/api-client.js';
  * elige después su propia clave, así que el código no es una contraseña.
  */
 
+// equipo-generador: cada test elige el tipo de empresa.
+const empresaFlags = { is_generador_carga: false, is_transportista: true };
+
+vi.mock('../components/Layout.js', () => ({
+  Layout: ({ children, title }: { children: ReactNode; title?: string }) => (
+    <main data-testid="layout" data-title={title}>
+      {children}
+    </main>
+  ),
+}));
+
 vi.mock('../components/ProtectedRoute.js', () => ({
   ProtectedRoute: ({
     children,
@@ -44,8 +55,7 @@ vi.mock('../components/ProtectedRoute.js', () => ({
               id: 'e',
               legal_name: 'Transporte Ejemplo',
               rut: '11.111.111-1',
-              is_generador_carga: false,
-              is_transportista: true,
+              ...empresaFlags,
               status: 'activa',
             },
           },
@@ -104,6 +114,42 @@ function stubClipboard() {
 beforeEach(() => {
   vi.clearAllMocks();
   stubClipboard();
+  empresaFlags.is_generador_carga = false;
+  empresaFlags.is_transportista = true;
+});
+
+describe('Equipo — shell y tipo de empresa (equipo-generador)', () => {
+  it('se muestra dentro del Layout con el título Equipo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+    const layout = await screen.findByTestId('layout');
+    expect(layout).toHaveAttribute('data-title', 'Equipo');
+    expect(layout).toHaveTextContent('Gabriel Barros');
+  });
+
+  it('generador puro: sin aviso de conductores ni permiso de ofertas', async () => {
+    empresaFlags.is_generador_carga = true;
+    empresaFlags.is_transportista = false;
+    vi.spyOn(api, 'get').mockResolvedValue({
+      miembros: [{ ...MIEMBROS[1], full_name: 'Paula Rojas', estado: 'activa' }],
+    });
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+    expect(await screen.findByText('Paula Rojas')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar persona/ }));
+    expect(screen.queryByText(/Los conductores se agregan/)).not.toBeInTheDocument();
+  });
+
+  it('transportista: el despachador conserva la casilla y el formulario el aviso', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      miembros: [{ ...MIEMBROS[1], full_name: 'Paula Rojas', estado: 'activa' }],
+    });
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+    expect(await screen.findByText('Paula Rojas')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar persona/ }));
+    expect(screen.getByText(/Los conductores se agregan/)).toBeInTheDocument();
+  });
 });
 
 describe('Equipo — listado', () => {
