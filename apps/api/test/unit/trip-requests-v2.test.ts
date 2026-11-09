@@ -108,6 +108,7 @@ interface UserContextOpts {
   isTransportista?: boolean;
   empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
+  role?: 'dueno' | 'admin' | 'despachador' | 'visualizador';
 }
 
 function buildUserContext(opts: UserContextOpts = {}): {
@@ -127,7 +128,7 @@ function buildUserContext(opts: UserContextOpts = {}): {
     isTransportista: opts.isTransportista ?? false,
     status: opts.empresaStatus ?? 'activa',
   };
-  const membership = { role: 'dueno' as const };
+  const membership = { role: opts.role ?? ('dueno' as const) };
   return {
     user: { id: opts.userId ?? 'user-1' },
     memberships: [{ membership, empresa }],
@@ -1001,9 +1002,10 @@ describe('GET /trip-requests-v2/:id', () => {
       notes: 'Andén 4',
       reference: 'PO-1',
       acciones_permitidas: {
-        editar_todo: false,
-        datos_libres: true,
+        editar: false,
+        editar_datos_libres: true,
         solicitar_cambio: true,
+        retirar_cambio: false,
         anular: false,
         cancelar: true,
       },
@@ -1011,6 +1013,48 @@ describe('GET /trip-requests-v2/:id', () => {
     expect(body.assignment?.vehicle_plate).toBe('AB-CD-12');
     expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
     expect(body.metrics).toBeNull();
+  });
+
+  // editar-anular-cargas §6-8: las acciones combinan el estado con las
+  // capacidades del rol, para que la web no ofrezca lo que el API rechaza.
+  it.each([
+    ['dueno', true],
+    ['visualizador', false],
+  ] as const)('%s en esperando_match → editar y anular = %s', async (role, puede) => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [
+          [
+            {
+              id: 'trip-1',
+              trackingCode: 'BOO-AAA111',
+              status: 'esperando_match',
+              originAddressRaw: 'origen',
+              destinationAddressRaw: 'destino',
+              cargoType: 'carga_seca',
+              cargoWeightKg: 1500,
+              createdAt: new Date('2026-05-02T15:00:00Z'),
+              updatedAt: new Date('2026-05-02T15:00:00Z'),
+            },
+          ],
+          [],
+          [],
+        ],
+        orderByRows: [[]],
+      }),
+      userContext: buildUserContext({ role }),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { acciones_permitidas: unknown } };
+    expect(body.trip_request.acciones_permitidas).toEqual({
+      editar: puede,
+      editar_datos_libres: puede,
+      solicitar_cambio: false,
+      retirar_cambio: false,
+      anular: puede,
+      cancelar: false,
+    });
   });
 
   // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----

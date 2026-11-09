@@ -5,6 +5,8 @@ import {
   abrirDisputaSchema,
   datosLibresInputSchema,
   errorOpcion,
+  puedeCancelarCarga,
+  puedePublicarCarga,
   tripRequestCreateInputSchema,
 } from '@booster-ai/shared-schemas';
 import {
@@ -19,7 +21,7 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { denegarPublicarCarga } from '../auth/capacidades.js';
+import { ctxDeUserContext, denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
@@ -698,7 +700,7 @@ export function createTripRequestsV2Routes(opts: {
     }
 
     return c.json({
-      trip_request: { ...serializeTripDetail(trip), comercial },
+      trip_request: { ...serializeTripDetail(trip, auth.userContext), comercial },
       events,
       assignment: assignmentRow
         ? {
@@ -1168,7 +1170,7 @@ export function createTripRequestsV2Routes(opts: {
   return app;
 }
 
-function serializeTripDetail(row: typeof trips.$inferSelect) {
+function serializeTripDetail(row: typeof trips.$inferSelect, userContext: unknown) {
   return {
     id: row.id,
     tracking_code: row.trackingCode,
@@ -1195,31 +1197,30 @@ function serializeTripDetail(row: typeof trips.$inferSelect) {
     },
     notes: row.notes,
     reference: row.reference,
-    acciones_permitidas: accionesPermitidas(row.status),
+    acciones_permitidas: accionesPermitidas(row.status, userContext),
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
 }
 
 /**
- * Qué puede hacer el generador con la carga en su estado actual. Sale de los
- * guards de la máquina de estados, para que la web no repita la regla.
+ * Qué puede hacer quien mira la carga, en su estado actual (spec
+ * editar-anular-cargas §6-8). Combina los guards de la máquina de estados con
+ * las mismas capacidades que exigen las rutas, para que la web no ofrezca una
+ * acción que el API va a rechazar. `retirar_cambio` depende de que exista una
+ * solicitud pendiente; las solicitudes llegan en un PR posterior (§11, PR7).
  */
-function accionesPermitidas(estado: string) {
-  if (!esEstadoViaje(estado)) {
-    return {
-      editar_todo: false,
-      datos_libres: false,
-      solicitar_cambio: false,
-      anular: false,
-      cancelar: false,
-    };
-  }
+function accionesPermitidas(estado: string, userContext: unknown) {
+  const ctx = ctxDeUserContext(userContext as Parameters<typeof ctxDeUserContext>[0]);
+  const editar = ctx !== null && puedePublicarCarga(ctx);
+  const cancelar = ctx !== null && puedeCancelarCarga(ctx);
+  const valido = esEstadoViaje(estado);
   return {
-    editar_todo: esEditablePreMatch(estado),
-    datos_libres: aceptaDatosLibres(estado),
-    solicitar_cambio: aceptaSolicitudCambio(estado),
-    anular: esAnulablePorGenerador(estado),
-    cancelar: esCancelablePostMatch(estado),
+    editar: editar && valido && esEditablePreMatch(estado),
+    editar_datos_libres: editar && valido && aceptaDatosLibres(estado),
+    solicitar_cambio: editar && valido && aceptaSolicitudCambio(estado),
+    retirar_cambio: false,
+    anular: cancelar && valido && esAnulablePorGenerador(estado),
+    cancelar: cancelar && valido && esCancelablePostMatch(estado),
   };
 }
