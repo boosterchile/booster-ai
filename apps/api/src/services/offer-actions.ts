@@ -180,9 +180,30 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
         throw new TripNotAcceptableError(offer.tripId, trip.status);
       }
 
+      // 1c. Revalidar la oferta DESPUÉS del lock del viaje (editar-anular-cargas
+      // PR1). La lectura del paso 1 es anterior al lock: entre medio otra tx
+      // pudo invalidarla (edición que vuelve a ofertar, anulación). Se relee
+      // con su propio lock y se vuelve a exigir pendiente y vigente.
+      const ofertaBloqueada = (
+        await tx
+          .select({ status: offers.status, expiresAt: offers.expiresAt })
+          .from(offers)
+          .where(and(eq(offers.id, offerId), eq(offers.empresaId, empresaId)))
+          .for('update')
+          .limit(1)
+      )[0];
+      if (!ofertaBloqueada || ofertaBloqueada.status !== 'pendiente') {
+        throw new OfferNotPendingError(offerId, ofertaBloqueada?.status ?? 'missing');
+      }
+      if (ofertaBloqueada.expiresAt.getTime() < Date.now()) {
+        throw new OfferExpiredError(offerId);
+      }
+
       const now = new Date();
 
-      // 2. Marcar offer aceptada.
+      // 2. Marcar offer aceptada, con CAS sobre `pendiente`: el UPDATE solo
+      // aplica si la oferta sigue pendiente, aunque algo se cuele entre la
+      // relectura y este punto.
       const [acceptedOffer] = await tx
         .update(offers)
         .set({
@@ -191,10 +212,10 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
           responseChannel: 'web',
           updatedAt: now,
         })
-        .where(eq(offers.id, offerId))
+        .where(and(eq(offers.id, offerId), eq(offers.status, 'pendiente')))
         .returning();
       if (!acceptedOffer) {
-        throw new Error('Update offer returned no row');
+        throw new OfferNotPendingError(offerId, 'cambiada');
       }
 
       // 3. Crear assignment. UNIQUE (viaje_id) protege contra race.
