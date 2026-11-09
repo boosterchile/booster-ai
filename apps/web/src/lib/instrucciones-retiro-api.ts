@@ -15,6 +15,8 @@ const instruccionesSchema = z.object({
   lugar: z.string().nullable(),
   nota: z.string().nullable(),
   archivo: z.object({ mime: z.enum(INSTRUCCIONES_MIME_TYPES), url: z.string().url() }).nullable(),
+  /** El bucket borra el archivo a los 90 días: queda la fila sin archivo que mostrar. */
+  archivo_vencido: z.boolean(),
   actualizado_en: z.string(),
 });
 
@@ -23,6 +25,18 @@ const respuestaSchema = z.object({ instrucciones: instruccionesSchema });
 export type InstruccionesRetiro = z.infer<typeof instruccionesSchema>;
 
 const ruta = (tripId: string) => `/viajes/${tripId}/instrucciones-retiro`;
+
+/**
+ * Opciones de la query: la URL firmada del archivo dura 5 minutos, así que se
+ * pide de nuevo cada 4 y al volver a la pantalla. Así el enlace que se toca en
+ * el punto de retiro no está vencido aunque la pantalla siga abierta.
+ */
+export const instruccionesRetiroQueryOptions = (tripId: string) => ({
+  queryKey: ['instrucciones-retiro', tripId] as const,
+  queryFn: () => getInstruccionesRetiro(tripId),
+  refetchInterval: 4 * 60 * 1000,
+  refetchOnWindowFocus: 'always' as const,
+});
 
 /** `null` si el viaje todavía no tiene instrucciones (404 `sin_instrucciones`). */
 export async function getInstruccionesRetiro(tripId: string): Promise<InstruccionesRetiro | null> {

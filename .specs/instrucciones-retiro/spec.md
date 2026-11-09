@@ -43,7 +43,7 @@ Tabla nueva `instrucciones_retiro`, una fila por viaje (la vigente). Migración 
 - `PUT /viajes/:id/instrucciones-retiro`
   - Multipart: `file` opcional (PDF, JPEG o PNG, máx. 15 MB, con validación de magic bytes), `lugar` opcional, `nota` opcional.
   - Solo el generador dueño del viaje con rol de gestión (`puedePublicarCarga`). Visualizador → 403 `read_only`.
-  - Sin archivo nuevo, conserva el archivo anterior.
+  - Sin archivo nuevo, conserva el archivo vigente. El upsert no reescribe sus columnas, para no pisar un QR que otro usuario subió en paralelo.
   - Si quedan sin archivo y sin nota → 400 `instrucciones_vacias`.
   - Respuesta 200 con el detalle.
 - `GET /viajes/:id/instrucciones-retiro`
@@ -51,13 +51,15 @@ Tabla nueva `instrucciones_retiro`, una fila por viaje (la vigente). Migración 
     - el generador dueño;
     - la transportista con asignación vigente;
     - el conductor solo si la asignación es suya (misma regla que `documentos-conductor`).
-  - 200 con `{ lugar, nota, archivo: { mime, url } | null, actualizado_en }`. La URL está firmada y dura 5 minutos.
+  - 200 con `{ instrucciones: { lugar, nota, archivo: { mime, url } | null, archivo_vencido, actualizado_en } }`. Es la misma forma que devuelve el PUT, y la URL está firmada y dura 5 minutos.
+  - Antes de firmar, se comprueba que el objeto exista. Si el bucket ya lo borró (ciclo de vida de 90 días), la respuesta trae `archivo: null` y `archivo_vencido: true`, para que el generador lo vuelva a subir.
   - 404 `sin_instrucciones` si no hay.
 - Los tipos permitidos, la validación de magic bytes y la autorización sobre el viaje se comparten con `transport-documents.ts`, no se duplican.
 
 ## 5. Web
 
 - **Generador**, en el detalle de la carga: bloque «Instrucciones de retiro» con lugar, nota y archivo, más un botón para cargarlas o reemplazarlas.
+- La consulta se repite cada 4 minutos y al volver a la pantalla. Así la URL firmada no vence con la pantalla abierta.
 - **Conductor**, en la tarjeta del viaje mientras está por recoger:
   - «Instrucciones de retiro» con el lugar y la nota;
   - el QR como imagen grande para escanear, o un botón «Ver» si es PDF;

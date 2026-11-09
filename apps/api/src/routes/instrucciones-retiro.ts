@@ -122,25 +122,36 @@ export function createPickupInstructionsRoutes(opts: {
 
   async function serializar(c: Context, fila: FilaInstrucciones) {
     let archivo: { mime: string; url: string } | null = null;
+    // El bucket borra los objetos a los 90 días (lifecycle de uploads_raw). Si
+    // el archivo ya no está, se avisa en vez de firmar una URL que da 404.
+    let archivoVencido = false;
     if (fila.filePath && fila.fileMime) {
       if (!opts.bucket) {
         return c.json({ error: 'storage_unavailable', code: 'storage_unavailable' }, 503);
       }
-      const [url] = await getStorage()
-        .bucket(opts.bucket)
-        .file(fila.filePath)
-        .getSignedUrl({
+      const objeto = getStorage().bucket(opts.bucket).file(fila.filePath);
+      const [existe] = await objeto.exists();
+      if (existe) {
+        const [url] = await objeto.getSignedUrl({
           version: 'v4',
           action: 'read',
           expires: Date.now() + SIGNED_URL_TTL_SECONDS * 1000,
         });
-      archivo = { mime: fila.fileMime, url };
+        archivo = { mime: fila.fileMime, url };
+      } else {
+        archivoVencido = true;
+        opts.logger.warn(
+          { filePath: fila.filePath },
+          'instrucciones-retiro: el archivo ya no está en el bucket (ciclo de vida)',
+        );
+      }
     }
     return c.json({
       instrucciones: {
         lugar: fila.place,
         nota: fila.note,
         archivo,
+        archivo_vencido: archivoVencido,
         actualizado_en: fila.updatedAt.toISOString(),
       },
     });
@@ -189,9 +200,13 @@ export function createPickupInstructionsRoutes(opts: {
       return c.json({ error: 'invalid_body', code: 'invalid_body', max_length: MAX_TEXTO }, 400);
     }
 
+    // `anterior` solo sirve para validar que quede archivo o nota. El archivo
+    // vigente no se reescribe desde esta lectura: sin archivo nuevo, el upsert
+    // deja las columnas del archivo como están en la BD (evita pisar un QR que
+    // otro usuario subió entre esta lectura y el upsert).
     const anterior = await leerFila(tripId);
-    let filePath = anterior?.filePath ?? null;
-    let fileMime = anterior?.fileMime ?? null;
+    let filePath: string | null = null;
+    let fileMime: string | null = null;
     const file = formData.get('file');
     let archivoNuevo: {
       buffer: Buffer;
@@ -217,14 +232,17 @@ export function createPickupInstructionsRoutes(opts: {
     }
 
     const { lugar, nota } = campos.data;
-    if (!filePath && !nota) {
+    if (!filePath && !anterior?.filePath && !nota) {
       return c.json({ error: 'instrucciones_vacias', code: 'instrucciones_vacias' }, 400);
     }
 
     return await withBusinessSpan(
       {
         name: 'retiro.instrucciones_guardadas',
-        attributes: { 'booster.trip_id': tripId, 'booster.retiro.con_archivo': Boolean(filePath) },
+        attributes: {
+          'booster.trip_id': tripId,
+          'booster.retiro.archivo_nuevo': Boolean(filePath),
+        },
       },
       async (span) => {
         if (archivoNuevo && filePath && opts.bucket) {
@@ -257,8 +275,8 @@ export function createPickupInstructionsRoutes(opts: {
           .onConflictDoUpdate({
             target: pickupInstructions.viajeId,
             set: {
-              filePath,
-              fileMime,
+              // Sin archivo nuevo, las columnas del archivo no se tocan.
+              ...(archivoNuevo ? { filePath, fileMime } : {}),
               place: lugar,
               note: nota,
               uploadedBy: valores.uploadedBy,
@@ -279,7 +297,12 @@ export function createPickupInstructionsRoutes(opts: {
         }
         setResultAttributes(span, { 'booster.retiro.outcome': 'guardadas' });
         opts.logger.info(
-          { tripId, conArchivo: Boolean(filePath), reemplazo: Boolean(anterior) },
+          {
+            tripId,
+            archivoNuevo: Boolean(archivoNuevo),
+            conArchivo: Boolean(fila.filePath),
+            reemplazo: Boolean(anterior),
+          },
           'instrucciones de retiro guardadas',
         );
         return serializar(c, fila);

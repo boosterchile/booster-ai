@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { MapPin } from 'lucide-react';
-import { getInstruccionesRetiro } from '../../lib/instrucciones-retiro-api.js';
+import { instruccionesRetiroQueryOptions } from '../../lib/instrucciones-retiro-api.js';
 
 /**
  * Instrucciones de retiro en la pantalla del conductor, mientras el viaje está
@@ -8,10 +8,7 @@ import { getInstruccionesRetiro } from '../../lib/instrucciones-retiro-api.js';
  * Si el generador no cargó nada, no se muestra.
  */
 export function InstruccionesRetiroConductor({ tripId }: { tripId: string }) {
-  const consulta = useQuery({
-    queryKey: ['instrucciones-retiro', tripId],
-    queryFn: () => getInstruccionesRetiro(tripId),
-  });
+  const consulta = useQuery(instruccionesRetiroQueryOptions(tripId));
 
   if (consulta.isError) {
     return (
@@ -30,7 +27,7 @@ export function InstruccionesRetiroConductor({ tripId }: { tripId: string }) {
   if (!consulta.isSuccess || !consulta.data) {
     return null;
   }
-  const { lugar, nota, archivo } = consulta.data;
+  const { lugar, nota, archivo, archivo_vencido: archivoVencido } = consulta.data;
   return (
     <section
       aria-label="Instrucciones de retiro"
@@ -50,6 +47,11 @@ export function InstruccionesRetiroConductor({ tripId }: { tripId: string }) {
           alt="QR o comprobante para mostrar en el lugar de retiro"
           className="mx-auto w-full max-w-xs rounded-md border border-neutral-200 bg-white"
         />
+      )}
+      {archivoVencido && (
+        <p className="text-neutral-700 text-sm">
+          El QR o comprobante ya no está disponible. Pídele al generador que lo vuelva a cargar.
+        </p>
       )}
       {archivo && archivo.mime === 'application/pdf' && (
         <a

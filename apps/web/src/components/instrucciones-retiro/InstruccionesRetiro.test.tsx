@@ -19,6 +19,12 @@ vi.mock('../../lib/instrucciones-retiro-api.js', async (importOriginal) => {
   return {
     ...real,
     getInstruccionesRetiro: (tripId: string) => getMock(tripId),
+    // Las opciones reales llaman a la función interna del módulo: se apunta
+    // su queryFn al mock, conservando key e intervalos.
+    instruccionesRetiroQueryOptions: (tripId: string) => ({
+      ...real.instruccionesRetiroQueryOptions(tripId),
+      queryFn: () => getMock(tripId),
+    }),
     guardarInstruccionesRetiro: (
       tripId: string,
       campos: { file: File | null; lugar: string; nota: string },
@@ -38,8 +44,11 @@ const CON_QR: InstruccionesRetiro = {
   lugar: 'Bodega Sur, Quilicura',
   nota: 'Andén 4, preguntar por Juan',
   archivo: { mime: 'image/png', url: 'https://signed.example/qr.png' },
+  archivo_vencido: false,
   actualizado_en: '2026-11-09T15:00:00Z',
 };
+
+const VENCIDO: InstruccionesRetiro = { ...CON_QR, archivo: null, archivo_vencido: true };
 
 beforeEach(() => {
   getMock.mockReset();
@@ -63,6 +72,40 @@ describe('InstruccionesRetiroPanel (generador)', () => {
       'href',
       'https://signed.example/qr.png',
     );
+  });
+
+  it('archivo vencido: lo explica y pide volver a subirlo', async () => {
+    getMock.mockResolvedValue(VENCIDO);
+    render(<InstruccionesRetiroPanel tripId="t-1" canWrite />, { wrapper });
+    expect(await screen.findByText(/ya no está disponible/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Ver QR/ })).not.toBeInTheDocument();
+  });
+
+  it('sin permiso y sin instrucciones no invita a cargarlas', async () => {
+    getMock.mockResolvedValue(null);
+    render(<InstruccionesRetiroPanel tripId="t-1" canWrite={false} />, { wrapper });
+    expect(await screen.findByText('Sin instrucciones de retiro.')).toBeInTheDocument();
+    expect(screen.queryByText(/cárgalo aquí/)).not.toBeInTheDocument();
+  });
+
+  it('cancelar la edición vuelve al resumen sin guardar', async () => {
+    getMock.mockResolvedValue(CON_QR);
+    render(<InstruccionesRetiroPanel tripId="t-1" canWrite />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Reemplazar' }));
+    expect(screen.getByLabelText('Lugar de retiro')).toHaveValue('Bodega Sur, Quilicura');
+    expect(screen.getByText(/se mantiene el actual/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByRole('link', { name: /Ver QR/ })).toBeInTheDocument();
+    expect(guardarMock).not.toHaveBeenCalled();
+  });
+
+  it('si la consulta falla, avisa y deja reintentar', async () => {
+    getMock.mockRejectedValueOnce(new ApiError(500, undefined, null));
+    getMock.mockResolvedValueOnce(CON_QR);
+    render(<InstruccionesRetiroPanel tripId="t-1" canWrite />, { wrapper });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No pudimos cargar/);
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Bodega Sur, Quilicura')).toBeInTheDocument();
   });
 
   it('sin permiso de publicar no ofrece cargar ni reemplazar', async () => {
@@ -150,6 +193,22 @@ describe('InstruccionesRetiroConductor', () => {
       'https://signed.example/c.pdf',
     );
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('archivo vencido: le pide al conductor que lo solicite al generador', async () => {
+    getMock.mockResolvedValue(VENCIDO);
+    render(<InstruccionesRetiroConductor tripId="t-1" />, { wrapper });
+    expect(await screen.findByText(/Pídele al generador/)).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('si la consulta falla, avisa y deja reintentar', async () => {
+    getMock.mockRejectedValueOnce(new ApiError(500, undefined, null));
+    getMock.mockResolvedValueOnce(CON_QR);
+    render(<InstruccionesRetiroConductor tripId="t-1" />, { wrapper });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No pudimos cargar/);
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByRole('img', { name: /QR o comprobante/ })).toBeInTheDocument();
   });
 
   it('sin instrucciones no muestra nada', async () => {

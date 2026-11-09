@@ -11,7 +11,12 @@ beforeAll(() => {
 // GCS: se valida el wiring HTTP (auth, multipart, códigos), no la nube real.
 const saveMock = vi.fn(async () => undefined);
 const getSignedUrlMock = vi.fn(async () => ['https://signed.example/qr?sig=abc']);
-const fileMock = vi.fn(() => ({ save: saveMock, getSignedUrl: getSignedUrlMock }));
+const existsMock = vi.fn(async () => [true]);
+const fileMock = vi.fn(() => ({
+  save: saveMock,
+  getSignedUrl: getSignedUrlMock,
+  exists: existsMock,
+}));
 const bucketMock = vi.fn(() => ({ file: fileMock }));
 vi.mock('@google-cloud/storage', () => ({
   Storage: class {
@@ -84,24 +89,42 @@ function makeDb(s: Escenario) {
     chain.limit = vi.fn(async () => rows());
     return chain;
   });
+  // Emula el upsert real: sin fila, inserta `values`; con fila (conflicto en
+  // viaje_id), aplica solo las columnas de `set` sobre la fila vigente.
   const insert = vi.fn(() => ({
     values: vi.fn((v: Record<string, unknown>) => ({
       onConflictDoUpdate: vi.fn((cfg: { set: Record<string, unknown> }) => ({
         returning: vi.fn(async () => {
           upsertSpy(v, cfg.set);
-          fila = {
-            filePath: (v.filePath as string | null) ?? null,
-            fileMime: (v.fileMime as string | null) ?? null,
-            place: (v.place as string | null) ?? null,
-            note: (v.note as string | null) ?? null,
-            updatedAt: new Date('2026-11-09T15:00:00Z'),
-          };
+          const updatedAt = new Date('2026-11-09T15:00:00Z');
+          if (fila) {
+            const set = cfg.set;
+            fila = {
+              filePath: 'filePath' in set ? (set.filePath as string | null) : fila.filePath,
+              fileMime: 'fileMime' in set ? (set.fileMime as string | null) : fila.fileMime,
+              place: 'place' in set ? (set.place as string | null) : fila.place,
+              note: 'note' in set ? (set.note as string | null) : fila.note,
+              updatedAt,
+            };
+          } else {
+            fila = {
+              filePath: (v.filePath as string | null) ?? null,
+              fileMime: (v.fileMime as string | null) ?? null,
+              place: (v.place as string | null) ?? null,
+              note: (v.note as string | null) ?? null,
+              updatedAt,
+            };
+          }
           return [fila];
         }),
       })),
     })),
   }));
   return { select, insert } as never;
+}
+
+function insertCount(db: unknown): number {
+  return (db as { insert: { mock: { calls: unknown[] } } }).insert.mock.calls.length;
 }
 
 function buildApp(
@@ -157,9 +180,13 @@ function form(campos: { file?: File; lugar?: string; nota?: string }): FormData 
 const png = () => new File([PNG], 'qr.png', { type: 'image/png' });
 
 beforeEach(() => {
-  saveMock.mockClear();
+  saveMock.mockReset();
+  saveMock.mockResolvedValue(undefined);
   getSignedUrlMock.mockClear();
+  existsMock.mockReset();
+  existsMock.mockResolvedValue([true]);
   upsertSpy.mockClear();
+  fileMock.mockClear();
 });
 
 describe('PUT /viajes/:id/instrucciones-retiro', () => {
@@ -182,26 +209,85 @@ describe('PUT /viajes/:id/instrucciones-retiro', () => {
     expect(saveMock).toHaveBeenCalledTimes(1);
   });
 
-  it('sin archivo nuevo conserva el anterior y cambia la nota', async () => {
-    const db = makeDb({
-      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
-      fila: {
-        filePath: 'instrucciones-retiro/t/viejo.png',
-        fileMime: 'image/png',
-        place: null,
-        note: 'antes',
-        updatedAt: new Date(),
-      },
-    });
+  const VIEJO: Fila = {
+    filePath: 'instrucciones-retiro/t/viejo.png',
+    fileMime: 'image/png',
+    place: 'Bodega Norte',
+    note: 'antes',
+    updatedAt: new Date('2026-11-08T10:00:00Z'),
+  };
+
+  it('sin archivo nuevo no toca las columnas del archivo y cambia la nota', async () => {
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP }, fila: VIEJO });
     const res = await buildApp(db, { empresaId: SHIPPER_EMP }).request(ruta, {
       method: 'PUT',
       body: form({ nota: 'después' }),
     });
     expect(res.status).toBe(200);
     expect(saveMock).not.toHaveBeenCalled();
-    const [valores] = upsertSpy.mock.calls.at(0) as [Record<string, unknown>];
-    expect(valores.filePath).toBe('instrucciones-retiro/t/viejo.png');
-    expect(valores.note).toBe('después');
+    // El set del conflicto no incluye el archivo: la BD conserva el vigente
+    // aunque otro PUT lo haya cambiado entre la lectura y el upsert.
+    const [, set] = upsertSpy.mock.calls.at(0) as [unknown, Record<string, unknown>];
+    expect(set).not.toHaveProperty('filePath');
+    expect(set).not.toHaveProperty('fileMime');
+    expect(set.note).toBe('después');
+    const json = (await res.json()) as {
+      instrucciones: { nota: string; archivo: { mime: string } | null };
+    };
+    expect(json.instrucciones.nota).toBe('después');
+    expect(json.instrucciones.archivo?.mime).toBe('image/png');
+  });
+
+  it('reemplazar el archivo deja una sola fila con el nuevo (SC2)', async () => {
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP }, fila: VIEJO });
+    const jpeg = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00])], 'qr.jpg', {
+      type: 'image/jpeg',
+    });
+    const res = await buildApp(db, { empresaId: SHIPPER_EMP }).request(ruta, {
+      method: 'PUT',
+      body: form({ file: jpeg, nota: 'nuevo andén' }),
+    });
+    expect(res.status).toBe(200);
+    const [, set] = upsertSpy.mock.calls.at(0) as [unknown, Record<string, string>];
+    expect(set.filePath).toMatch(new RegExp(`^instrucciones-retiro/${TRIP_ID}/[0-9a-f-]+\\.jpg$`));
+    expect(set.filePath).not.toBe(VIEJO.filePath);
+    expect(set.fileMime).toBe('image/jpeg');
+    expect(insertCount(db)).toBe(1);
+    const json = (await res.json()) as { instrucciones: { archivo: { mime: string } } };
+    expect(json.instrucciones.archivo.mime).toBe('image/jpeg');
+  });
+
+  it('si GCS falla al guardar → 500 upload_failed, sin tocar la BD', async () => {
+    saveMock.mockRejectedValueOnce(new Error('gcs down'));
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP } });
+    const res = await buildApp(db, { empresaId: SHIPPER_EMP }).request(ruta, {
+      method: 'PUT',
+      body: form({ file: png() }),
+    });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe('upload_failed');
+    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it('texto de más de 500 caracteres → 400 invalid_body', async () => {
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP } });
+    const res = await buildApp(db, { empresaId: SHIPPER_EMP }).request(ruta, {
+      method: 'PUT',
+      body: form({ nota: 'x'.repeat(501) }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe('invalid_body');
+  });
+
+  it('cuerpo que no es multipart → 400 multipart_required', async () => {
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP } });
+    const res = await buildApp(db, { empresaId: SHIPPER_EMP }).request(ruta, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nota: 'x' }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe('multipart_required');
   });
 
   it('sin archivo ni nota → 400 instrucciones_vacias', async () => {
@@ -328,6 +414,26 @@ describe('GET /viajes/:id/instrucciones-retiro', () => {
     const res = await buildApp(sin, { empresaId: SHIPPER_EMP }).request(ruta);
     expect(res.status).toBe(404);
     expect(((await res.json()) as { code: string }).code).toBe('sin_instrucciones');
+  });
+
+  it('archivo borrado por el ciclo de vida → archivo null y archivo_vencido', async () => {
+    existsMock.mockResolvedValueOnce([false]);
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP }, fila });
+    const res = await buildApp(db, { empresaId: SHIPPER_EMP }).request(ruta);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      instrucciones: { archivo: unknown; archivo_vencido: boolean; nota: string };
+    };
+    expect(json.instrucciones.archivo).toBeNull();
+    expect(json.instrucciones.archivo_vencido).toBe(true);
+    expect(json.instrucciones.nota).toBe('Andén 4');
+    expect(getSignedUrlMock).not.toHaveBeenCalled();
+  });
+
+  it('con archivo y sin bucket configurado → 503 storage_unavailable', async () => {
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP }, fila });
+    const res = await buildApp(db, { empresaId: SHIPPER_EMP }, false).request(ruta);
+    expect(res.status).toBe(503);
   });
 
   it('solo nota: archivo null y no firma nada', async () => {

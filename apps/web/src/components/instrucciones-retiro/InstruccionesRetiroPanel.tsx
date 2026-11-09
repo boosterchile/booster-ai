@@ -4,12 +4,10 @@ import { type FormEvent, useState } from 'react';
 import {
   type InstruccionesRetiro,
   esArchivoPermitido,
-  getInstruccionesRetiro,
   guardarInstruccionesRetiro,
+  instruccionesRetiroQueryOptions,
   mensajeErrorInstrucciones,
 } from '../../lib/instrucciones-retiro-api.js';
-
-export const instruccionesRetiroKey = (tripId: string) => ['instrucciones-retiro', tripId] as const;
 
 /**
  * Instrucciones de retiro en el detalle de la carga del generador: el QR o
@@ -23,10 +21,7 @@ export function InstruccionesRetiroPanel({
   tripId: string;
   canWrite: boolean;
 }) {
-  const consulta = useQuery({
-    queryKey: instruccionesRetiroKey(tripId),
-    queryFn: () => getInstruccionesRetiro(tripId),
-  });
+  const consulta = useQuery(instruccionesRetiroQueryOptions(tripId));
   const [editando, setEditando] = useState(false);
 
   return (
@@ -67,7 +62,9 @@ export function InstruccionesRetiroPanel({
           </button>
         </div>
       )}
-      {consulta.isSuccess && !editando && <Resumen instrucciones={consulta.data} />}
+      {consulta.isSuccess && !editando && (
+        <Resumen instrucciones={consulta.data} canWrite={canWrite} />
+      )}
       {consulta.isSuccess && editando && (
         <Formulario
           tripId={tripId}
@@ -80,23 +77,31 @@ export function InstruccionesRetiroPanel({
   );
 }
 
-function Resumen({ instrucciones }: { instrucciones: InstruccionesRetiro | null }) {
+function Resumen({
+  instrucciones,
+  canWrite,
+}: {
+  instrucciones: InstruccionesRetiro | null;
+  canWrite: boolean;
+}) {
   if (!instrucciones) {
     return (
       <p className="mt-3 text-neutral-600 text-sm">
-        Sin instrucciones. Si el retiro es en otro lugar o te entregaron un QR, cárgalo aquí.
+        {canWrite
+          ? 'Sin instrucciones. Si el retiro es en otro lugar o te entregaron un QR, cárgalo aquí.'
+          : 'Sin instrucciones de retiro.'}
       </p>
     );
   }
   return (
     <dl className="mt-3 space-y-2 text-sm">
       {instrucciones.lugar && (
-        <div className="flex gap-2">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
-          <div>
-            <dt className="sr-only">Lugar de retiro</dt>
-            <dd className="text-neutral-900">{instrucciones.lugar}</dd>
-          </div>
+        <div>
+          <dt className="sr-only">Lugar de retiro</dt>
+          <dd className="flex gap-2 text-neutral-900">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
+            {instrucciones.lugar}
+          </dd>
         </div>
       )}
       {instrucciones.nota && (
@@ -105,18 +110,26 @@ function Resumen({ instrucciones }: { instrucciones: InstruccionesRetiro | null 
           <dd className="text-neutral-700">{instrucciones.nota}</dd>
         </div>
       )}
-      {instrucciones.archivo && (
-        <div className="flex gap-2">
-          <QrCode className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
-          <dd>
-            <a
-              href={instrucciones.archivo.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-primary-700 underline"
-            >
-              Ver QR o comprobante
-            </a>
+      {(instrucciones.archivo || instrucciones.archivo_vencido) && (
+        <div>
+          <dt className="sr-only">QR o comprobante</dt>
+          <dd className="flex gap-2">
+            <QrCode className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
+            {instrucciones.archivo ? (
+              <a
+                href={instrucciones.archivo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary-700 underline"
+              >
+                Ver QR o comprobante
+              </a>
+            ) : (
+              <span className="text-neutral-700">
+                El archivo ya no está disponible (se guarda 90 días). Vuelve a subirlo si el retiro
+                sigue pendiente.
+              </span>
+            )}
           </dd>
         </div>
       )}
@@ -144,7 +157,7 @@ function Formulario({
   const guardar = useMutation({
     mutationFn: () => guardarInstruccionesRetiro(tripId, { file, lugar, nota }),
     onSuccess: (data) => {
-      queryClient.setQueryData(instruccionesRetiroKey(tripId), data);
+      queryClient.setQueryData(instruccionesRetiroQueryOptions(tripId).queryKey, data);
       onListo();
     },
     onError: (err) => setError(mensajeErrorInstrucciones(err)),
