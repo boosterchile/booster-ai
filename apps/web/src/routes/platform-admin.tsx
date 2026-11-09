@@ -58,7 +58,7 @@ const ACCESOS: ReadonlyArray<{
   {
     to: '/app/platform-admin/empresas',
     title: 'Empresas',
-    desc: 'Crea una empresa, actívala e invita a quien la va a operar.',
+    desc: 'Crea una empresa, que queda activa, e invita a quien la va a operar.',
     testId: 'empresas-link',
   },
   {
