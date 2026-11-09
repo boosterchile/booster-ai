@@ -35,7 +35,13 @@ import { and, eq, inArray } from 'drizzle-orm';
 // recibe la función como opt parameter (`opts.config: Partial<EmitirCertificadoConfig>`).
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { assignments, transportDocuments, tripEvents, trips } from '../db/schema.js';
+import {
+  assignments,
+  transportDocuments,
+  tripChangeRequests,
+  tripEvents,
+  trips,
+} from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { actualizarFactorMatchingViaje } from './actualizar-factor-matching.js';
 import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
@@ -76,7 +82,9 @@ export type ConfirmarEntregaResult =
         | 'invalid_status'
         | 'documento_requerido';
       currentStatus?: string;
-    };
+    }
+  /** editar-anular-cargas §6.13: entrega directa con un cambio sin responder. */
+  | { ok: false; code: 'cambio_pendiente'; solicitudId: string };
 
 /**
  * Política de cierre flexible documental (ADR-070, frente F4-4a). Inyectada
@@ -193,6 +201,22 @@ export async function confirmarEntregaViaje(opts: {
     // assignment row borrado por algún proceso externo.
     if (!assignment) {
       return { ok: false as const, code: 'no_assignment' as const };
+    }
+
+    // (6.2) Entrega directa desde `asignado` con un cambio de carga sin
+    // responder: se bloquea igual que la recogida (editar-anular-cargas §6.13).
+    if (trip.status === 'asignado') {
+      // rls-allowlist: solicitud del viaje bloqueado y validado arriba contra el actor.
+      const [pendiente] = await tx
+        .select({ id: tripChangeRequests.id })
+        .from(tripChangeRequests)
+        .where(
+          and(eq(tripChangeRequests.tripId, tripId), eq(tripChangeRequests.status, 'pendiente')),
+        )
+        .limit(1);
+      if (pendiente) {
+        return { ok: false as const, code: 'cambio_pendiente' as const, solicitudId: pendiente.id };
+      }
     }
 
     // (6.5) Cierre flexible documental (ADR-070, F4-4a). Precondición de
