@@ -126,6 +126,8 @@ const ASSIGNMENT_DETAIL_ROW = {
   pickedUpAt: null,
   deliveredAt: null,
   cancelledAt: null,
+  cancelledByActor: null,
+  cancellationReason: null,
   empresaIdAssign: CARRIER_EMP,
   empresaLegalName: 'Carrier SpA',
   vehicleId: 'veh-uuid',
@@ -266,6 +268,35 @@ describe('GET /assignments/:id', () => {
       headers: { 'x-test-userctx': VALID_CTX },
     });
     expect(res.status).toBe(403);
+  });
+
+  it('cancelado por el generador: expone fecha, autor y motivo (editar-anular-cargas §9)', async () => {
+    const db = makeDb({
+      selects: [
+        [
+          {
+            ...ASSIGNMENT_DETAIL_ROW,
+            vehicleId: null,
+            assignmentStatus: 'cancelado',
+            tripStatus: 'cancelado',
+            cancelledAt: new Date('2026-11-09T16:00:00Z'),
+            cancelledByActor: 'generador_carga',
+            cancellationReason: 'El cliente postergó el pedido',
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}`, {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignment: Record<string, unknown> };
+    expect(body.assignment).toMatchObject({
+      cancelled_at: '2026-11-09T16:00:00.000Z',
+      cancelled_by_actor: 'generador_carga',
+      cancellation_reason: 'El cliente postergó el pedido',
+    });
   });
 
   it('happy path: retorna trip_request + assignment + ubicacion_actual null si no hay vehículo', async () => {

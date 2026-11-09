@@ -315,6 +315,8 @@ export function createAssignmentsRoutes(opts: {
         pickedUpAt: assignments.pickedUpAt,
         deliveredAt: assignments.deliveredAt,
         cancelledAt: assignments.cancelledAt,
+        cancelledByActor: assignments.cancelledByActor,
+        cancellationReason: assignments.cancellationReason,
         empresaIdAssign: assignments.empresaId,
         empresaLegalName: empresasTable.legalName,
         vehicleId: assignments.vehicleId,
@@ -435,6 +437,9 @@ export function createAssignmentsRoutes(opts: {
         picked_up_at: row.pickedUpAt?.toISOString() ?? null,
         delivered_at: row.deliveredAt?.toISOString() ?? null,
         cancelled_at: row.cancelledAt?.toISOString() ?? null,
+        // Quién canceló y por qué: el banner de la transportista (editar-anular-cargas §9).
+        cancelled_by_actor: row.cancelledByActor ?? null,
+        cancellation_reason: row.cancellationReason ?? null,
         empresa_id: row.empresaIdAssign,
         empresa_legal_name: row.empresaLegalName,
         vehicle_id: row.vehicleId,
