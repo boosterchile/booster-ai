@@ -49,6 +49,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `documentosConductor` | `documentos_conductor` | Se filtra por `conductorId` de un conductor validado contra la empresa activa. |
 | `greenDrivingEvents` | `eventos_conduccion_verde` | Se filtra por `vehicleId` / IMEI de un vehículo validado, como la telemetría. |
 | `transportDocuments` | `documentos_transporte` | Se filtra por `viajeId` de un viaje validado contra el generador o el transportista (ADR-070). |
+| `pickupInstructions` | `instrucciones_retiro` | Se filtra por `viajeId` de un viaje validado contra el generador o el transportista con `autorizarSobreViaje` (spec `instrucciones-retiro`); el conductor solo con la asignación a su nombre. |
 | `facturasBoosterClp` | `facturas_booster_clp` | Tiene columna de tenant con otro nombre (`empresaDestinoId`). Las queries filtran por ella con el `empresaId` de la membresía. |
 | `configuracionSitio` | `configuracion_sitio` | Configuración global del sitio público; la edita solo platform-admin. |
 | `bitacoraBackfillDistancia` | `bitacora_backfill_distancia` | Bitácora del job admin de backfill de distancia, por `tripId`. |

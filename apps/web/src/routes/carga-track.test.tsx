@@ -10,6 +10,18 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
 let providedContext: Ctx = { kind: 'unmanaged' };
 
+// El panel de instrucciones de retiro tiene sus propios tests
+// (components/instrucciones-retiro); acá solo importa que se monte.
+vi.mock('../components/instrucciones-retiro/InstruccionesRetiroPanel.js', () => ({
+  InstruccionesRetiroPanel: ({ tripId, canWrite }: { tripId: string; canWrite: boolean }) => (
+    <div
+      data-testid="instrucciones-retiro-panel"
+      data-trip-id={tripId}
+      data-can-write={String(canWrite)}
+    />
+  ),
+}));
+
 vi.mock('../components/ProtectedRoute.js', () => ({
   ProtectedRoute: ({ children }: { children: (ctx: Ctx) => ReactNode }) => (
     <>{children(providedContext)}</>
@@ -166,6 +178,29 @@ describe('CargaTrackRoute', () => {
       expect(lt).toHaveAttribute('data-has-pos', 'true');
       expect(lt).toHaveAttribute('data-title', expect.stringContaining('ABCD12'));
     });
+  });
+
+  // instrucciones-retiro: el panel se monta con el permiso de publicar cargas.
+  it.each([
+    ['dueno', 'true'],
+    ['visualizador', 'false'],
+  ] as const)('%s → panel de instrucciones de retiro (canWrite=%s)', async (role, canWrite) => {
+    providedContext = { kind: 'onboarded', me: makeMe(role) };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'ofertas_enviadas',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: null,
+    });
+    renderRoute();
+    const panel = await screen.findByTestId('instrucciones-retiro-panel');
+    expect(panel).toHaveAttribute('data-trip-id', 'trip-1');
+    expect(panel).toHaveAttribute('data-can-write', canWrite);
   });
 
   // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----

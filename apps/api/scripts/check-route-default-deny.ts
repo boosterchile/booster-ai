@@ -114,6 +114,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // app.use('/documents/*', …); la autorización por tenant (shipper-owner |
   // carrier-assigned) la resuelve cada handler.
   transportDocsRouter: { category: 'ENFORCED', rationale: '' },
+  // Instrucciones de retiro: firebaseAuth + userContext preceden el mount vía
+  // app.use('/viajes/*', …); la autorización por viaje la resuelve el handler
+  // con autorizarSobreViaje (generador dueño | transportista asignada |
+  // conductor de la asignación).
+  pickupInstructionsRouter: { category: 'ENFORCED', rationale: '' },
 
   // --- GATED-CLOSED (bare firebaseAuth, gate in-handler) ---
   meRouter: {

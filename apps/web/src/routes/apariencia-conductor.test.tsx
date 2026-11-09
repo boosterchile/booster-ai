@@ -51,6 +51,8 @@ describe('AparienciaConductorRoute — preview pública de la tarjeta del conduc
     expect(screen.getByTestId('navegar-origen')).toBeInTheDocument();
     expect(screen.getByTestId('posicion-camion')).toBeInTheDocument();
     expect(screen.queryByTestId('navegar-destino')).toBeNull();
+    // Sin sesión no se consultan las instrucciones de retiro.
+    expect(screen.queryByRole('region', { name: 'Instrucciones de retiro' })).toBeNull();
   });
 
   it('?fase=en_ruta&teltonika=0 (el router lo parsea como número) → entrega principal y aviso de posición', () => {
