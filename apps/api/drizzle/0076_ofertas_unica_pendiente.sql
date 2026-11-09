@@ -1,4 +1,4 @@
--- Migration 0075 — unicidad de ofertas solo para las pendientes.
+-- Migration 0076 — unicidad de ofertas solo para las pendientes.
 --
 -- editar-anular-cargas M2. CONTRACT aprobado por el PO el 2026-11-09 (§12-P1).
 -- Tras una edición material antes del match, las ofertas pendientes pasan a

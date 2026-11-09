@@ -5,13 +5,13 @@ import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
- * editar-anular-cargas M2 (migración 0075, contract aprobado por el PO §12-P1).
+ * editar-anular-cargas M2 (migración 0076, contract aprobado por el PO §12-P1).
  *
  * La unicidad (viaje, empresa) de `ofertas` aplica solo a las pendientes: tras
  * una edición material las ofertas viejas quedan `expirada` y el re-matching
  * puede volver a ofertar a la misma transportista sin abortar la tx.
  */
-describe('integration: unicidad de ofertas solo para pendientes (migración 0075)', () => {
+describe('integration: unicidad de ofertas solo para pendientes (migración 0076)', () => {
   let handle: TestDbHandle;
   let tripId: string;
   let empresaId: string;

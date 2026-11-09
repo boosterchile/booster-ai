@@ -122,6 +122,49 @@ const lugarSchema = z
     }
   });
 
+/** editar-anular-cargas §12-P4 — topes de los datos libres de la carga. */
+export const NOTAS_MAX = 1000;
+export const REFERENCIA_MAX = 100;
+
+/** Texto opcional al crear: sin espacios; vacío cuenta como ausente. */
+function textoOpcionalCreacion(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max, `Hasta ${max} caracteres`)
+    .optional()
+    .transform((v) => (v ? v : undefined));
+}
+
+/**
+ * Datos opcionales del destinatario. Se reutiliza en la edición de datos
+ * libres (`cambio-carga`).
+ */
+export const consigneeSchema = z.object({
+  /** Nombre legible del destinatario. Para mostrar en saludo del template. */
+  name: z.string().trim().min(1).max(100).optional(),
+  /**
+   * Phone E.164 (con +). Validamos formato pero NO carrier-side —
+   * Twilio rechazará al envío si el número no tiene WhatsApp.
+   */
+  phone_e164: z
+    .string()
+    .regex(/^\+\d{8,15}$/, 'Debe estar en formato E.164 (+56912345678)')
+    .optional(),
+  /**
+   * seguimiento-por-correo — correo opcional. Si está, el link de
+   * tracking también le llega por correo al asignar. Se guarda sin
+   * espacios y en minúsculas.
+   */
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email('Ingresa un correo válido, como nombre@empresa.cl')
+    .max(254)
+    .optional(),
+});
+
 export const tripRequestCreateInputSchema = z
   .object({
     /** Origen — donde se recoge la carga. */
@@ -174,32 +217,11 @@ export const tripRequestCreateInputSchema = z
      * solo quien quiere la experiencia "Uber-like" para su recipient
      * llena estos campos.
      */
-    consignee: z
-      .object({
-        /** Nombre legible del destinatario. Para mostrar en saludo del template. */
-        name: z.string().trim().min(1).max(100).optional(),
-        /**
-         * Phone E.164 (con +). Validamos formato pero NO carrier-side —
-         * Twilio rechazará al envío si el número no tiene WhatsApp.
-         */
-        phone_e164: z
-          .string()
-          .regex(/^\+\d{8,15}$/, 'Debe estar en formato E.164 (+56912345678)')
-          .optional(),
-        /**
-         * seguimiento-por-correo — correo opcional. Si está, el link de
-         * tracking también le llega por correo al asignar. Se guarda sin
-         * espacios y en minúsculas.
-         */
-        email: z
-          .string()
-          .trim()
-          .toLowerCase()
-          .email('Ingresa un correo válido, como nombre@empresa.cl')
-          .max(254)
-          .optional(),
-      })
-      .optional(),
+    consignee: consigneeSchema.optional(),
+    /** editar-anular-cargas §12-P4 — notas para el transportista y el conductor. */
+    notes: textoOpcionalCreacion(NOTAS_MAX),
+    /** editar-anular-cargas §12-P4 — referencia del generador (p. ej. su número de pedido). */
+    reference: textoOpcionalCreacion(REFERENCIA_MAX),
   })
   .superRefine((data, ctx) => {
     const startMs = Date.parse(data.pickup_window.start_at);
