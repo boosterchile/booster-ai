@@ -344,7 +344,7 @@ export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
    */
   'incidente_reportado',
   /**
-   * editar-anular-cargas (0074). Payloads validados con Zod en
+   * editar-anular-cargas (0075). Payloads validados con Zod en
    * shared-schemas (cambio-carga): edición de datos de la carga, solicitud
    * de cambio después del match y su respuesta.
    */
@@ -715,6 +715,14 @@ export const users = pgTable(
      * y puede rotarse desde `/perfil/seguridad`.
      */
     claveNumericaHash: text('clave_numerica_hash'),
+    /**
+     * Hasta cuándo vale el código de activación de una cuenta del personal de
+     * Booster (`.specs/alta-personal-booster`, migración 0074). Ese código no
+     * viene de una invitación a empresa, así que `/auth/activar` no tiene un
+     * `invitado_en` del que sacar el plazo de 7 días. Se borra al activar.
+     * NULL para el resto de las cuentas.
+     */
+    activacionVenceEn: timestamp('activacion_vence_en', { withTimezone: true }),
     /**
      * ADR-035 — Hash scrypt del OTP de recovery enviado por WhatsApp
      * cuando el usuario olvidó su clave numérica. Single-use; expira en
@@ -1401,7 +1409,7 @@ export const trips = pgTable(
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
     // seguimiento-por-correo (0073): correo opcional del destinatario.
     consigneeEmail: varchar('destinatario_email', { length: 254 }),
-    // editar-anular-cargas (0074): datos libres de la carga (§12-P4).
+    // editar-anular-cargas (0075): datos libres de la carga (§12-P4).
     notes: text('notas'),
     reference: varchar('referencia', { length: 100 }),
     /**

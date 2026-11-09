@@ -82,3 +82,5 @@ export * from './domain/safety-event.js';
 export * from './domain/transport-document.js';
 // ADR-080 — pago del viaje bajo mandato de cobro.
 export * from './domain/pago-viaje.js';
+// Alta del personal de Booster desde el panel (.specs/alta-personal-booster).
+export * from './domain/personal-booster.js';

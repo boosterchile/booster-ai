@@ -94,6 +94,21 @@ export function cuentaYaActivada(persona: {
   return clasificarVinculoPersona({ ...persona, activationPinHash: null }) === 'cuenta_activa';
 }
 
+/**
+ * Código del panel del personal de Booster (`.specs/alta-personal-booster`).
+ *
+ * `activacion_vence_en` no nulo significa que el `activacion_pin_hash` actual
+ * lo emitió el panel (alta o re-emisión). Cualquier otro emisor que reescribe
+ * el hash de una cuenta existente deja `activacion_vence_en` en NULL en el
+ * mismo UPDATE. Vigente: el vencimiento existe y no pasó.
+ */
+export function codigoPersonalVigente(venceEn: Date | string | null, ahora = Date.now()): boolean {
+  if (venceEn === null) {
+    return false;
+  }
+  return new Date(venceEn).getTime() >= ahora;
+}
+
 export function invitacionesVigentes<T extends { invitedAt: Date | string }>(
   rows: readonly T[],
   now = Date.now(),

@@ -144,6 +144,25 @@ describe('AsignacionDetalleRoute', () => {
     };
   }
 
+  // editar-anular-cargas §12-P4: la transportista ve contacto, notas y referencia.
+  it('muestra el contacto del destinatario y las notas del generador', async () => {
+    const base = assignmentActivo('user-conductor');
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      ...base,
+      trip_request: {
+        ...base.trip_request,
+        consignee: { name: 'Bodega La Serena', phone_e164: '+56911111111' },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+      },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true, { userId: 'user-admin' }) };
+    renderRoute();
+    expect(await screen.findByText('Recibe: Bodega La Serena')).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+    expect(screen.getByText('Referencia: PO-1')).toBeInTheDocument();
+  });
+
   it('el administrador que no conduce el viaje no ve entrega ni incidente', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce(assignmentActivo('user-conductor'));
     providedContext = { kind: 'onboarded', me: makeMe(true, { userId: 'user-admin' }) };

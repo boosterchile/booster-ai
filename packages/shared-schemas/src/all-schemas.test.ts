@@ -449,7 +449,7 @@ describe('tripEvent — whitelist guardrail (Sprint S1a T1.2)', () => {
     'ruta_desviada',
     'disputa_abierta',
     'incidente_reportado',
-    // editar-anular-cargas (migración 0074).
+    // editar-anular-cargas (migración 0075).
     'carga_editada',
     'cambio_solicitado',
     'cambio_respondido',

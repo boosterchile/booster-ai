@@ -1,3 +1,4 @@
+import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 /**
  * /app/asignaciones/:id — pantalla carrier-side de un assignment activo.
  *
@@ -42,6 +43,10 @@ interface AssignmentDetail {
     cargo_type: string;
     cargo_weight_kg: number;
     shipper_legal_name: string | null;
+    /** editar-anular-cargas §12-P4 — datos libres que fija el generador. */
+    consignee?: { name: string | null; phone_e164: string | null } | null;
+    notes?: string | null;
+    reference?: string | null;
   };
   assignment: {
     id: string;
@@ -209,6 +214,15 @@ function AsignacionDetallePage({
 
       {mostrarEjecucion && (
         <div data-testid="asignacion-ejecucion" className="flex min-h-0 flex-1 flex-col">
+          {/* editar-anular-cargas §12-P4: contacto, notas y referencia del generador. */}
+          {!isClosed && tripQ.data && (
+            <DatosLibresViaje
+              consignee={tripQ.data.trip_request.consignee ?? null}
+              notes={tripQ.data.trip_request.notes ?? null}
+              reference={tripQ.data.trip_request.reference ?? null}
+            />
+          )}
+
           {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
           Collapsed por default; el driver expande on-tap para ver la
           polyline de Routes API sobre el mapa. Cierra el loop
