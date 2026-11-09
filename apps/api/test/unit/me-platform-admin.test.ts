@@ -385,4 +385,23 @@ describe('GET /me — platform admin auto-provisioning', () => {
     expect(body.needs_onboarding).toBe(true);
     expect(insertCalls).toHaveLength(0);
   });
+
+  // `.specs/bordes-autenticacion` SC2: el primer admin se crea con un correo verificado.
+  it('correo de la lista sin verificar por el proveedor → needs_onboarding, sin crear la cuenta', async () => {
+    const { db, insertCalls } = makeDbStub({ userByFirebaseUid: null, userByEmail: null });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'fb-admin',
+          email: 'admin@boosterchile.com',
+          emailVerified: false,
+        }),
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { needs_onboarding: boolean };
+    expect(body.needs_onboarding).toBe(true);
+    expect(insertCalls).toHaveLength(0);
+  });
 });

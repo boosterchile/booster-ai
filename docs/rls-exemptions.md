@@ -27,6 +27,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `tripEvents` | `eventos_viaje` | Se inserta y lee dentro de la transacción de un viaje ya validado contra el tenant. |
 | `tripMetrics` | `metricas_viaje` | Se filtra por `trip_id`, ya validado contra el tenant. |
 | `certificadosViaje` | `certificados_viaje` | Versiones del certificado de un viaje (HC-001 p3a). Igual que `tripMetrics`: se filtra por `trip_id`, ya validado contra el tenant; /verify es público por diseño (código de seguimiento). |
+| `tripChangeRequests` | `solicitudes_cambio_viaje` | Solicitudes de cambio de una carga asignada (editar-anular-cargas M3). Se leen y escriben bajo el lock de un viaje ya validado contra la empresa generadora, o por una asignación validada contra la transportista. |
 | `chatMessages` | `mensajes_chat` | Se filtra por `assignment_id`, validado en `resolveChatAccess`. |
 | `pushSubscriptions` | `push_subscriptions` | Se filtra por `userId`. |
 | `telemetryPoints` | `telemetria_puntos` | Se filtra por `vehicleId` o IMEI de un vehículo ya validado contra el tenant. |

@@ -199,9 +199,10 @@ describe('POST /auth/driver-activate', () => {
       body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(410);
-    const body = (await res.json()) as { code: string; synthetic_email: string };
+    const body = (await res.json()) as { code: string; synthetic_email?: string };
     expect(body.code).toBe('already_activated');
-    expect(body.synthetic_email).toContain('@boosterchile.invalid');
+    // `.specs/bordes-autenticacion` SC1: sin datos de la cuenta.
+    expect(body.synthetic_email).toBeUndefined();
   });
 
   it('PIN incorrecto → invalid_credentials (no distingue de RUT inexistente)', async () => {
@@ -705,5 +706,77 @@ describe('POST /auth/driver-activate — estado de la cuenta (acceso-panel-plata
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual(RECHAZO);
     expect(firebase.createCustomToken).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `.specs/bordes-autenticacion` SC1 y SC3 — la activación del conductor no
+ * devuelve datos de contacto y su código se usa una sola vez.
+ */
+describe('POST /auth/driver-activate — bordes (bordes-autenticacion)', () => {
+  function activar(app: Hono) {
+    return app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
+    });
+  }
+
+  it('SC1: el 410 de una cuenta ya activada no trae datos de la cuenta', async () => {
+    const stub = makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'real-firebase-uid',
+        email: 'persona.real@empresa.cl',
+        rut: VALID_RUT,
+        activationPinHash: null,
+        claveNumericaHash: 'hash',
+        isPlatformAdmin: false,
+        activacionVenceEn: null,
+        status: 'activo',
+      },
+    });
+    const app = await buildApp({ db: stub.db, firebaseAuth: makeFirebaseStub({}) });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(410);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ error: 'already_activated', code: 'already_activated' });
+    expect(JSON.stringify(body)).not.toContain('persona.real@empresa.cl');
+  });
+
+  it('SC3: el UPDATE exige el código verificado y la cuenta sin clave', async () => {
+    const hash = hashActivationPin('123456');
+    const stub = makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'conductor.real@gmail.com',
+        rut: VALID_RUT,
+        activationPinHash: hash,
+        claveNumericaHash: null,
+        isPlatformAdmin: false,
+        activacionVenceEn: null,
+        status: 'pendiente_verificacion',
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+    });
+    const app = await buildApp({
+      db: stub.db,
+      firebaseAuth: makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' }),
+    });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+    const predicado = stub.updateWheres[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('driver-activate no pasó un predicado SQL al UPDATE');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toContain('"usuarios"."activacion_pin_hash" = ');
+    expect(consulta.sql).toContain('"usuarios"."clave_numerica_hash" is null');
+    expect(consulta.params).toContain(hash);
   });
 });

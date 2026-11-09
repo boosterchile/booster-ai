@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { correoEnListaRespaldo, tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
@@ -12,6 +12,7 @@ import {
   empresas,
   memberships,
   organizacionesStakeholder,
+  tripChangeRequests,
   trips,
   users,
   vehicles,
@@ -94,9 +95,11 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // y no hay cuenta, se crea marcada y activa para que `/me` devuelva
     // `needs_onboarding=false` y no quede en el flujo de /onboarding. Es solo
     // para la lista de respaldo: el resto del personal se da de alta en el
-    // panel y activa en /activar.
+    // panel y activa en /activar. Exige que el proveedor haya verificado el
+    // correo (`.specs/bordes-autenticacion` SC2), igual que el account linking
+    // de arriba.
     // ---------------------------------------------------------------------
-    if (!user && claims.email) {
+    if (!user && claims.email && claims.emailVerified) {
       if (correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
         const fullName = claims.name?.trim() ?? claims.email.split('@')[0] ?? 'Platform Admin';
         const inserted = await opts.db
@@ -356,6 +359,14 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         consigneeWhatsappE164: trips.consigneeWhatsappE164,
         notes: trips.notes,
         reference: trips.reference,
+        // editar-anular-cargas §12-P7: el conductor solo sabe que hay un cambio
+        // pendiente, nunca los datos propuestos.
+        cambioPendienteEn: sql<Date | string | null>`(
+          select ${tripChangeRequests.createdAt} from ${tripChangeRequests}
+          where ${tripChangeRequests.tripId} = ${trips.id}
+            and ${tripChangeRequests.status} = 'pendiente'
+          limit 1
+        )`,
         vehicleId: assignments.vehicleId,
         vehiclePlate: vehicles.plate,
         vehicleTeltonikaImei: vehicles.teltonikaImei,
@@ -423,6 +434,9 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
           notes: r.notes,
           reference: r.reference,
+          cambio_pendiente: r.cambioPendienteEn
+            ? { existe: true, creado_en: safeIso(r.cambioPendienteEn) }
+            : null,
         },
       })),
     });

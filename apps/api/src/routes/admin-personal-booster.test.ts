@@ -8,6 +8,23 @@ import { hashActivationPin, verifyActivationPin } from '../services/activation-p
 import type { EmailSender } from '../services/notifications/email-sender.js';
 
 /**
+ * BD mínima para el guard de impersonación: quien impersona sigue con acceso
+ * al panel (`.specs/bordes-autenticacion` SC4).
+ */
+const IMPERSONADOR_ID = '0b5f6e2a-4c1d-4e8f-9a3b-7c6d5e4f3a2b';
+const dbDelImpersonador = {
+  select: () => ({
+    from: () => ({
+      where: () => ({
+        limit: async () => [
+          { email: 'dev@boosterchile.com', isPlatformAdmin: true, status: 'activo' },
+        ],
+      }),
+    }),
+  }),
+} as never;
+
+/**
  * `.specs/alta-personal-booster/spec.md` — T3 (SC2–SC5), T4 (SC8) y T5 (SC9).
  *
  * El platform-admin da de alta desde el panel a otra persona de Booster. La
@@ -1086,12 +1103,19 @@ describe('admin-personal-booster — impersonación (SC8)', () => {
           emailVerified: false,
           name: undefined,
           picture: undefined,
-          custom: { impersonated_by: 'admin-uuid-1' },
+          custom: { impersonated_by: IMPERSONADOR_ID },
         } as never,
       );
       await next();
     });
-    app.use('*', createImpersonationWriteGuardMiddleware({ logger }));
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger,
+        db: dbDelImpersonador,
+        platformAdminEmails: [],
+      }),
+    );
     app.route(
       '/',
       mod.createAdminPersonalBoosterRoutes({

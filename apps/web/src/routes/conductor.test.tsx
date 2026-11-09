@@ -334,6 +334,28 @@ describe('ConductorDashboardRoute', () => {
     );
   });
 
+  // editar-anular-cargas §12-P4: contacto, notas y referencia del generador.
+  it('muestra el contacto del destinatario y las notas del viaje', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            consignee: { name: 'Bodega La Serena', phone_e164: '+56911111111' },
+            notes: 'Andén 4',
+            reference: 'PO-1',
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText('Recibe: Bodega La Serena')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Llamar \+56911111111/ })).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+  });
+
   it('sin ventana no inventa hora', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({

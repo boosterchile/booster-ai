@@ -3,7 +3,7 @@
 - Author: Felipe Vicencio (PO) + agente
 - Date: 2026-11-09
 - Status: Propuesta. La decisión de §10 va con el visto del PO en el PR.
-- Linked: `.specs/acceso-panel-plataforma/spec.md` (#893, base de esta rama: el panel otorga y quita el acceso), `.specs/alta-personal-booster/spec.md` (panel del personal), ADR-028 (el «Admin Booster» es la cuenta con `usuarios.es_admin_plataforma = true`), ADR-035 (RUT + clave numérica)
+- Linked: `.specs/acceso-panel-plataforma/spec.md` (#893: el panel otorga y quita el acceso), `.specs/bordes-autenticacion/spec.md` (#895, base de esta rama), `.specs/alta-personal-booster/spec.md` (panel del personal), ADR-028 (el «Admin Booster» es la cuenta con `usuarios.es_admin_plataforma = true`), ADR-035 (RUT + clave numérica)
 
 ---
 
@@ -109,4 +109,4 @@ Con #893 el alta marca de inmediato toda cuenta que registra, también una cuent
 - 2026-11-09 — Revisión previa al PR: la confirmación exige una cuenta `activo`, y el correo de quien emitió el código se lee dentro de la transacción de la confirmación, para que el evento y el aviso salgan siempre que la cuenta quede marcada.
 - 2026-11-09 — Revisión previa al PR: el código de confirmación se muestra sin «Copiar código», porque se entrega en persona.
 - 2026-11-09 — Mientras la confirmación está pendiente, los datos de contacto de la cuenta los sigue gestionando su empresa. Si la confirmación debe recordar el correo con que se emitió queda para el visto del PO.
-- 2026-11-09 — Número de la migración: en esta rama es el siguiente libre (0076). Su `when` ya es posterior al de las migraciones que trae la base actualizada; al apilar sobre ella se renombra al siguiente número libre (0078) sin tocar su contenido.
+- 2026-11-09 — Base y número de la migración: la rama se apila sobre #895 (que a su vez va sobre #893) y la migración queda como `0078_confirmaciones_acceso_booster`, el siguiente número libre sobre esa base y sobre `main`, con su `when` posterior al de la 0077. El contenido no cambió al renumerarla.

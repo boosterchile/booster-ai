@@ -1,3 +1,4 @@
+import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 /**
  * /app/asignaciones/:id — pantalla carrier-side de un assignment activo.
  *
@@ -42,6 +43,10 @@ interface AssignmentDetail {
     cargo_type: string;
     cargo_weight_kg: number;
     shipper_legal_name: string | null;
+    /** editar-anular-cargas §12-P4 — datos libres que fija el generador. */
+    consignee?: { name: string | null; phone_e164: string | null } | null;
+    notes?: string | null;
+    reference?: string | null;
   };
   assignment: {
     id: string;
@@ -54,6 +59,9 @@ interface AssignmentDetail {
     vehicle_type: string | null;
     driver_user_id: string | null;
     driver_name: string | null;
+    cancelled_at?: string | null;
+    cancelled_by_actor?: string | null;
+    cancellation_reason?: string | null;
   };
 }
 
@@ -174,7 +182,25 @@ function AsignacionDetallePage({
           driver_user_id=NULL y no había forma de setearlo después.
           Sin conductor asignado, el endpoint /assignments/:id/driver-position
           rechaza con 403 y el conductor no puede reportar GPS. */}
-      {assignment && puedeAsignar && (
+      {assignment?.status === 'cancelado' &&
+        assignment.cancelled_by_actor === 'generador_carga' &&
+        assignment.cancelled_at && (
+          <output
+            data-testid="cancelado-por-generador"
+            className="block border-danger-200 border-b bg-danger-50 px-4 py-3 text-danger-900 text-sm"
+          >
+            Cancelado por el generador el{' '}
+            {new Date(assignment.cancelled_at).toLocaleString('es-CL', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+              timeZone: 'America/Santiago',
+            })}
+            {assignment.cancellation_reason ? `: ${assignment.cancellation_reason}` : ''}
+          </output>
+        )}
+
+      {/* Una asignación cancelada ya no se reasigna (editar-anular-cargas §9). */}
+      {assignment && puedeAsignar && assignment.status !== 'cancelado' && (
         <DriverAssignmentCard
           assignmentId={assignmentId}
           currentDriverName={assignment.driver_name}
@@ -188,6 +214,15 @@ function AsignacionDetallePage({
 
       {mostrarEjecucion && (
         <div data-testid="asignacion-ejecucion" className="flex min-h-0 flex-1 flex-col">
+          {/* editar-anular-cargas §12-P4: contacto, notas y referencia del generador. */}
+          {!isClosed && tripQ.data && (
+            <DatosLibresViaje
+              consignee={tripQ.data.trip_request.consignee ?? null}
+              notes={tripQ.data.trip_request.notes ?? null}
+              reference={tripQ.data.trip_request.reference ?? null}
+            />
+          )}
+
           {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
           Collapsed por default; el driver expande on-tap para ver la
           polyline de Routes API sobre el mapa. Cierra el loop
@@ -236,8 +271,11 @@ function AsignacionDetallePage({
             </div>
           )}
 
-          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment. */}
-          {trip?.id && <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />}
+          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment.
+              Un servicio cancelado ya no recibe documentos (editar-anular-cargas §9). */}
+          {trip?.id && assignment?.status !== 'cancelado' && (
+            <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />
+          )}
 
           {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
           <div className="flex-1 overflow-hidden">

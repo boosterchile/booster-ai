@@ -398,7 +398,11 @@ export function createServer(opts: CreateServerOptions): Hono {
     // userContext (autoriza solo empresas de prueba). En grupos sin userContext
     // (/me raíz, /empresas onboarding) fail-closea toda mutación impersonada.
     // Cobertura: check-impersonation-wire-completeness.ts.
-    const impersonationWriteGuardMiddleware = createImpersonationWriteGuardMiddleware({ logger });
+    const impersonationWriteGuardMiddleware = createImpersonationWriteGuardMiddleware({
+      logger,
+      db: opts.db,
+      platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+    });
     app.use('/me', firebaseAuthMiddleware);
     app.use('/me/*', firebaseAuthMiddleware);
     // /me raíz + sub-paths: sin userContext acá → el guard fail-closea las

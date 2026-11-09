@@ -6,6 +6,23 @@ import { createImpersonationWriteGuardMiddleware } from '../middleware/impersona
 import type { EmailSender } from '../services/notifications/email-sender.js';
 
 /**
+ * BD mínima para el guard de impersonación: quien impersona sigue con acceso
+ * al panel (`.specs/bordes-autenticacion` SC4).
+ */
+const IMPERSONADOR_ID = '0b5f6e2a-4c1d-4e8f-9a3b-7c6d5e4f3a2b';
+const dbDelImpersonador = {
+  select: () => ({
+    from: () => ({
+      where: () => ({
+        limit: async () => [
+          { email: 'dev@boosterchile.com', isPlatformAdmin: true, status: 'activo' },
+        ],
+      }),
+    }),
+  }),
+} as never;
+
+/**
  * Fase 3.5 (onboarding-flow-redesign) — `POST /admin/empresas/:id/miembros`.
  *
  * Cierra el hueco que dejaba el onboarding: solo sabe crear empresa + dueño de
@@ -390,6 +407,24 @@ describe('GET /admin/empresas', () => {
 });
 
 describe('POST /admin/empresas/:id/miembros', () => {
+  // `.specs/bordes-autenticacion` SC5.
+  it('persona nueva con un correo de la lista de respaldo → 409 email_already_registered, sin escribir', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...BODY, email: 'Dev@BoosterChile.com' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(d.insertedUsers).toHaveLength(0);
+  });
+
   it('crea la persona pendiente y devuelve un código de activación, no un reset', async () => {
     const mod = await loadMod();
     const d = makeDb();
@@ -1085,11 +1120,18 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
         emailVerified: false,
         name: undefined,
         picture: undefined,
-        custom: { impersonated_by: 'admin-uuid-1' },
+        custom: { impersonated_by: IMPERSONADOR_ID },
       });
       await next();
     });
-    app.use('*', createImpersonationWriteGuardMiddleware({ logger: noopLogger }));
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger: noopLogger,
+        db: dbDelImpersonador,
+        platformAdminEmails: [],
+      }),
+    );
     app.route('/', routes);
 
     const updateSpy = (d.db as unknown as { update: ReturnType<typeof vi.fn> }).update;
@@ -1497,11 +1539,18 @@ describe('POST /admin/empresas/:id/activar-generador-carga', () => {
         emailVerified: false,
         name: undefined,
         picture: undefined,
-        custom: { impersonated_by: 'admin-uuid-1' },
+        custom: { impersonated_by: IMPERSONADOR_ID },
       });
       await next();
     });
-    app.use('*', createImpersonationWriteGuardMiddleware({ logger: noopLogger }));
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger: noopLogger,
+        db: dbDelImpersonador,
+        platformAdminEmails: [],
+      }),
+    );
     app.route('/', routes);
 
     const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
