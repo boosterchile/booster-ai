@@ -33,6 +33,13 @@ Con #893 el alta marca de inmediato toda cuenta que registra, también una cuent
 - [ ] SC14 — **Persistencia.** Migración aditiva `0076_confirmaciones_acceso_booster` (tabla nueva, índice único parcial, sin backfill). No se reutilizan `activacion_pin_hash` ni `activacion_vence_en`, que siguen siendo el código de activación del panel.
 - [ ] SC15 — Tests de §8 con el rojo exhibido antes de implementar (auth es dominio crítico). Integración contra Postgres real de la cadena: cuenta activa en una empresa → alta → `403` en `/admin/*` → confirma con el código desde su sesión → `/me` con `is_platform_admin: true` y una ruta `/admin/*` en `200`; cinco códigos malos dejan la confirmación sin uso; un código vencido no sirve; la migración aplica sobre todas las de main. `pnpm run ci` corrido en el momento.
 
+### Web
+
+- [ ] SC16 — **Código de confirmación en el panel.** Cuando el alta o «Generar código nuevo» responde `vinculo: 'cuenta_activa_por_confirmar'`, el panel «Personal de Booster» muestra el código una sola vez con el texto «Esta persona ya tiene cuenta en una empresa. Entrégale este código en persona: lo ingresa con su sesión iniciada en Confirmar acceso de Booster. No lo envíes por correo ni por chat.», el vencimiento y la dirección absoluta de `/app/confirmar-acceso-booster`. No muestra la dirección de `/activar` ni el aviso del correo. La re-emisión lee el campo `vinculo` de su respuesta; sin `vinculo` es el código de activación de siempre.
+- [ ] SC17 — **Persona por confirmar en la lista.** El estado `pendiente_confirmacion` se lee «Pendiente de confirmar», con el vencimiento del código, la marca de vencido o, sin `expira_en`, que el código ya no sirve. Su fila ofrece «Generar código nuevo». «Quitar acceso» en esa fila dice que el código deja de servir y que la persona no tenía acceso, sin anunciar un aviso a la lista de respaldo (SC10).
+- [ ] SC18 — **Pantalla `/app/confirmar-acceso-booster`.** Autenticada, dentro del Layout de la app y registrada en el router. Un campo de 6 dígitos y el botón «Confirmar acceso», con `confirmarAccesoBoosterSchema` antes de llamar al API. Todo `400` se lee «El código no es válido o venció. Pide uno nuevo al equipo de Booster.»; la impersonación (`403 forbidden_impersonation_write`), la sesión vencida (`401`) y los demás errores tienen su propio texto. Al confirmar, refresca `/me` y lleva a `/app/platform-admin`. Si la cuenta ya tiene acceso al panel, lo dice y no muestra el formulario. Con una membresía de conductor la ruta se muestra igual: `ProtectedRoute` no la redirige a `/app/conductor`. El código no va a logs.
+- [ ] SC19 — Tests de componente de SC16–SC18 con el rojo exhibido antes de implementar, coverage ≥ 80 % en lo nuevo de la web y `pnpm run ci` corrido en el momento.
+
 ## 4. Contratos
 
 - **Nuevo** `POST /me/confirmar-acceso-booster`, body `confirmarAccesoBoosterSchema` = `{ codigo: string }` de 6 dígitos.
@@ -49,7 +56,7 @@ Con #893 el alta marca de inmediato toda cuenta que registra, también una cuent
 
 ## 5. Out of scope
 
-- La web: el formulario donde la persona ingresa el código y los textos del panel para el código de confirmación. Esta rama solo ajusta lo que el typecheck exige por el estado nuevo.
+- Un enlace a «Confirmar acceso de Booster» en el menú: `GET /me` no dice si hay una confirmación pendiente, así que el enlace le aparecería a todo usuario. La persona llega por la dirección que le entrega el admin.
 - Que `GET /me` diga si la cuenta tiene una confirmación pendiente.
 - Avisar a la persona o a la empresa por correo o WhatsApp.
 - Revocar sesiones Firebase.
@@ -69,6 +76,7 @@ Con #893 el alta marca de inmediato toda cuenta que registra, también una cuent
 - `aviso-acceso-panel-email.ts`: la acción `confirmado` para el aviso de SC7.
 - `server.ts`: `app.use('/me/confirmar-acceso-booster', userContextMiddlewareForMe)` y `meRouter.route('/confirmar-acceso-booster', …)`.
 - Orden de bloqueo: primero la fila de `usuarios`, después la de la confirmación, en el alta, la re-emisión y la confirmación.
+- Web: `apps/web/src/lib/confirmar-acceso-booster-url.ts` (ruta y dirección absoluta), `apps/web/src/routes/confirmar-acceso-booster.tsx` (la pantalla, registrada en `router.tsx`), `PersonalBooster.tsx` (panel del código de confirmación, fila por confirmar) y `ProtectedRoute.tsx` (la ruta nueva no redirige al conductor).
 
 ## 8. Test list
 
@@ -79,6 +87,8 @@ Con #893 el alta marca de inmediato toda cuenta que registra, también una cuent
 - T5 (SC12) — harness default-deny (montada y `ENFORCED`) e impersonation wire (guard antes del userContext en el path nuevo).
 - T6 (SC7) — `aviso-acceso-panel-email.test.ts`: la acción `confirmado` nombra a quien entregó el código y no lleva código.
 - T7 (SC15) — integración `confirmar-acceso-booster-cadena.integration.test.ts`: la cadena de SC15 contra Postgres, más la re-emisión que invalida el código anterior y la baja de una persona por confirmar. `alta-personal-booster-cadena` sigue verde.
+- T8 (SC16, SC17, rojo) — `PersonalBooster.test.tsx`: alta y re-emisión `cuenta_activa_por_confirmar` con el texto, el vencimiento y la dirección de la pantalla, sin `/activar` ni aviso de correo; la fila `pendiente_confirmacion` con su estado, vencimiento, vencido y sin intentos; «Generar código nuevo» en esa fila; «Quitar acceso» de una persona por confirmar.
+- T9 (SC18, rojo) — `confirmar-acceso-booster.test.tsx`: Layout y formulario; validación local sin POST; POST con el código, refresco de `/me` y navegación al panel; `400` con el mensaje único; impersonación, `401`, otros errores y respuesta con formato inesperado; cuenta que ya tiene acceso. `ProtectedRoute.test.tsx`: el conductor en la ruta nueva no se redirige. `router.test.tsx`: la ruta está registrada. `confirmar-acceso-booster-url.test.ts`: la dirección absoluta.
 
 ## 9. Rollout
 
@@ -92,3 +102,6 @@ Con #893 el alta marca de inmediato toda cuenta que registra, también una cuent
 - 2026-11-09 — Cuentan como vínculo las membresías en una empresa en cualquier estado y también las filas de `conductores`: el alta de un conductor crea la cuenta sin membresía, y la membresía de conductor se crea al activar. Las membresías en organizaciones stakeholder no cuentan: solo las crea el platform-admin.
 - 2026-11-09 — Invalidar una confirmación pendiente es borrar su fila: la tabla guarda el código vivo y las confirmaciones consumidas, y la auditoría sigue en el log estructurado `personal_booster.*`.
 - 2026-11-09 — El rechazo del endpoint nuevo es `400 codigo_invalido` y no `401`: la sesión es válida y lo que no sirve es el dato. Mismo criterio que `POST /me/clave-numerica`, que no responde `401` ante una clave anterior incorrecta.
+- 2026-11-09 — La web entra en esta rama (SC16–SC19) para salir junto con el API: con el API solo, el panel mostraría el código de confirmación como un código de activación, con `/activar` y el aviso del correo.
+- 2026-11-09 — Sin enlace en el menú: `GET /me` no informa la confirmación pendiente y el enlace le aparecería a todo usuario. Basta la dirección absoluta que muestra el panel.
+- 2026-11-09 — `ProtectedRoute` deja pasar `/app/confirmar-acceso-booster` con una membresía de conductor, que hoy redirige todo `/app/*` a `/app/conductor`: una fila en `conductores` cuenta como vínculo (SC1), así que quien confirma puede ser conductor.
