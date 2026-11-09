@@ -3,13 +3,21 @@ import type { Logger } from '@booster-ai/logger';
 import { transportDocumentManualEntryInputSchema } from '@booster-ai/shared-schemas';
 import { PubSub } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
-import { assignments, transportDocuments, trips } from '../db/schema.js';
+import { transportDocuments } from '../db/schema.js';
+import {
+  type AllowedMime,
+  MAX_DOCUMENT_BYTES,
+  detectMagicByteMime,
+  extForMime,
+  validarArchivoSubido,
+} from '../lib/archivo-subido.js';
 import { zValidator } from '../lib/validation.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { autorizarSobreViaje } from '../services/autorizar-sobre-viaje.js';
 import { calcularRetentionUntil } from '../services/calcular-retention-until.js';
 
 /**
@@ -36,76 +44,13 @@ import { calcularRetentionUntil } from '../services/calcular-retention-until.js'
  * publish se omite (el consumer llega en 4b) sin romper el flujo.
  */
 
-const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
-type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
-export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 const SIGNED_URL_TTL_SECONDS = 300; // 5 min
 
-/**
- * Estados de assignment (`estado_asignacion`) que mantienen vigente el vínculo
- * transportista↔viaje para autorizar acceso documental. Excluye `cancelado`:
- * un assignment cancelado NO debe seguir autorizando al transportista a
- * subir/ver/corregir documentos de la orden (review F4-4a finding 2). Si el
- * transportista vuelve a quedar asignado, será una fila nueva con estado
- * vigente (la tabla tiene UNIQUE por viaje_id, así que a lo más una vigente).
- */
-const ASSIGNMENT_ESTADOS_VIGENTES = ['asignado', 'recogido', 'entregado'] as const;
-
-function extForMime(mime: AllowedMime): string {
-  switch (mime) {
-    case 'application/pdf':
-      return 'pdf';
-    case 'image/jpeg':
-      return 'jpg';
-    case 'image/png':
-      return 'png';
-  }
-}
+/** Re-export: los tests y server.ts los importan desde esta ruta. */
+export { detectMagicByteMime, MAX_DOCUMENT_BYTES };
 
 function sourceForMime(mime: AllowedMime): 'pdf_upload' | 'photo_upload' {
   return mime === 'application/pdf' ? 'pdf_upload' : 'photo_upload';
-}
-
-/**
- * Magic bytes (file signatures) de cada MIME permitido. Defensa en profundidad
- * (review F4-4a finding 3): `file.type` lo controla el cliente y puede mentir
- * (ej. renombrar un `.exe` a `.pdf` y declarar `application/pdf`). Validamos el
- * CONTENIDO real del buffer antes de archivarlo en GCS.
- *
- *   - PDF  → 25 50 44 46            ("%PDF")
- *   - JPEG → FF D8 FF
- *   - PNG  → 89 50 4E 47 0D 0A 1A 0A
- */
-const MAGIC_BYTES: Record<AllowedMime, readonly number[]> = {
-  'application/pdf': [0x25, 0x50, 0x44, 0x46],
-  'image/jpeg': [0xff, 0xd8, 0xff],
-  'image/png': [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
-};
-
-/**
- * Detecta el MIME real de un buffer por sus magic bytes. Función pura: devuelve
- * el `AllowedMime` cuyo prefijo de firma coincide con el inicio del buffer, o
- * `null` si no coincide con ninguno permitido. No depende de la extensión ni
- * del `file.type` declarado.
- */
-export function detectMagicByteMime(buffer: Uint8Array): AllowedMime | null {
-  for (const mime of ALLOWED_MIME_TYPES) {
-    const signature = MAGIC_BYTES[mime];
-    if (buffer.length < signature.length) {
-      continue;
-    }
-    let matches = true;
-    for (let i = 0; i < signature.length; i++) {
-      if (buffer[i] !== signature[i]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) {
-      return mime;
-    }
-  }
-  return null;
 }
 
 let cachedStorage: Storage | null = null;
@@ -221,47 +166,13 @@ export function createTransportDocumentsRoutes(opts: {
     return auth;
   }
 
-  /**
-   * Verifica que `empresaId` está autorizada sobre el viaje `tripId`: dueña
-   * generadora de carga del viaje, O transportista del assignment. Devuelve
-   * `{ authorized, exists }`.
-   */
-  async function authorizeOverTrip(
+  /** Autorización sobre el viaje; ver `services/autorizar-sobre-viaje.ts`. */
+  function authorizeOverTrip(
     tripId: string,
     empresaId: string,
     actor: { role: string; userId: string },
   ) {
-    const tripRows = await opts.db
-      .select({ id: trips.id, generadorCargaEmpresaId: trips.generadorCargaEmpresaId })
-      .from(trips)
-      .where(eq(trips.id, tripId))
-      .limit(1);
-    const trip = tripRows[0];
-    if (!trip) {
-      return { exists: false as const, authorized: false as const };
-    }
-    // documentos-conductor: el conductor empleado ve solo su viaje
-    // (`veSoloSuViaje`), también en una empresa que además es la generadora.
-    // `conductor_id` guarda un `usuarios.id`.
-    const esConductor = actor.role === 'conductor';
-    if (!esConductor && trip.generadorCargaEmpresaId === empresaId) {
-      return { exists: true as const, authorized: true as const };
-    }
-    const asgRows = await opts.db
-      .select({ empresaId: assignments.empresaId, driverUserId: assignments.driverUserId })
-      .from(assignments)
-      .where(
-        and(
-          eq(assignments.tripId, tripId),
-          inArray(assignments.status, ASSIGNMENT_ESTADOS_VIGENTES),
-        ),
-      )
-      .limit(1);
-    const asg = asgRows[0];
-    if (asg && asg.empresaId === empresaId && (!esConductor || asg.driverUserId === actor.userId)) {
-      return { exists: true as const, authorized: true as const };
-    }
-    return { exists: true as const, authorized: false as const };
+    return autorizarSobreViaje(opts.db, tripId, empresaId, actor);
   }
 
   // ---------------------------------------------------------------------
@@ -298,38 +209,19 @@ export function createTransportDocumentsRoutes(opts: {
     if (!(file instanceof File)) {
       return c.json({ error: 'file_missing', code: 'file_missing' }, 400);
     }
-    const mime = file.type;
-    if (!ALLOWED_MIME_TYPES.includes(mime as AllowedMime)) {
-      return c.json(
-        { error: 'mime_not_allowed', code: 'mime_not_allowed', allowed: ALLOWED_MIME_TYPES },
-        400,
-      );
+    // Tipo, tamaño y magic bytes (review F4-4a finding 3): se rechaza ANTES
+    // de archivar en GCS. Ver `lib/archivo-subido.ts`.
+    const validado = await validarArchivoSubido(file);
+    if (!validado.ok) {
+      if (validado.body.code === 'mime_mismatch') {
+        opts.logger.warn(
+          { tripId, declaredMime: file.type, detectedMime: validado.detectedMime ?? null },
+          'transport-document mime_mismatch — magic bytes no coinciden con el tipo declarado',
+        );
+      }
+      return c.json(validado.body, validado.status);
     }
-    if (file.size > MAX_DOCUMENT_BYTES) {
-      return c.json(
-        { error: 'file_too_large', code: 'file_too_large', max_bytes: MAX_DOCUMENT_BYTES },
-        413,
-      );
-    }
-
-    const allowedMime = mime as AllowedMime;
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    // Defensa en profundidad (review F4-4a finding 3): validar magic bytes del
-    // contenido, no solo `file.type` (que controla el cliente). Si el contenido
-    // real no coincide con el MIME declarado (o no es ningún tipo permitido),
-    // rechazamos ANTES de archivar en GCS.
-    const detectedMime = detectMagicByteMime(buffer);
-    if (detectedMime !== allowedMime) {
-      opts.logger.warn(
-        { tripId, declaredMime: allowedMime, detectedMime },
-        'transport-document mime_mismatch — magic bytes no coinciden con el tipo declarado',
-      );
-      return c.json(
-        { error: 'mime_mismatch', code: 'mime_mismatch', allowed: ALLOWED_MIME_TYPES },
-        400,
-      );
-    }
+    const { buffer, mime: allowedMime } = validado;
 
     const objectName = `transport-documents/${tripId}/${randomUUID()}.${extForMime(allowedMime)}`;
 

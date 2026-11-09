@@ -25,6 +25,14 @@ type ProtectedContext =
 
 let providedContext: ProtectedContext = { kind: 'unmanaged' };
 
+// Las instrucciones de retiro tienen sus propios tests
+// (components/instrucciones-retiro); acá solo importa que la tarjeta las monte.
+vi.mock('../components/instrucciones-retiro/InstruccionesRetiroConductor.js', () => ({
+  InstruccionesRetiroConductor: ({ tripId }: { tripId: string }) => (
+    <div data-testid="instrucciones-retiro-conductor" data-trip-id={tripId} />
+  ),
+}));
+
 vi.mock('../components/ProtectedRoute.js', () => ({
   ProtectedRoute: ({ children }: { children: (ctx: ProtectedContext) => ReactNode }) => (
     <>{children(providedContext)}</>
@@ -319,6 +327,11 @@ describe('ConductorDashboardRoute', () => {
     expect(screen.getByText(/Av\. Pajaritos 1234, Maipú/)).toBeInTheDocument();
     expect(screen.getByText(/Av\. Brasil 2345, Valparaíso/)).toBeInTheDocument();
     expect(screen.getByText('DEMO01')).toBeInTheDocument();
+    // instrucciones-retiro: por recoger, la tarjeta monta las instrucciones del viaje.
+    expect(screen.getByTestId('instrucciones-retiro-conductor')).toHaveAttribute(
+      'data-trip-id',
+      sampleAssignment.trip.id,
+    );
   });
 
   it('sin ventana no inventa hora', async () => {

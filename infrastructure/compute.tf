@@ -146,6 +146,10 @@ module "service_api" {
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # Instrucciones de retiro: sin retención y borrado a los 90 días (decisión
+    # del PO, spec instrucciones-retiro). La SA de runtime ya escribe por
+    # roles/storage.objectUser del proyecto (iam.tf).
+    INSTRUCCIONES_RETIRO_BUCKET = google_storage_bucket.uploads_raw.name
     # T10-21 — ranking de matching en matching-engine. Flags en `false` por
     # default: este apply no llama al servicio. MATCHING_ENGINE_URL es el
     # *.run.app. La zona privada lo resuelve a 199.36.153.8/30, un rango

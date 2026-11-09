@@ -23,6 +23,7 @@ import { partesCuando } from '../components/inicio/cuando.js';
 import { INICIO_LICENCIA_CONDUCTOR_ACTIVA } from '../components/inicio/flags.js';
 import { IncidentePanel } from '../components/inicio/incidente-panel.js';
 import { TripHeroCard } from '../components/inicio/trip-hero-card.js';
+import { InstruccionesRetiroConductor } from '../components/instrucciones-retiro/InstruccionesRetiroConductor.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
@@ -643,12 +644,15 @@ export function AssignmentCard({
   assignment,
   geoPermission,
   sugerenciasRuta = true,
+  instruccionesRetiro = true,
   destacado = false,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
   /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
   sugerenciasRuta?: boolean;
+  /** instrucciones-retiro: false en la preview pública, que no tiene sesión ni viaje real. */
+  instruccionesRetiro?: boolean;
   destacado?: boolean;
 }) {
   const reporter = useDriverPositionReporter();
@@ -907,6 +911,7 @@ export function AssignmentCard({
       <div className="mt-4 space-y-2 border-neutral-100 border-t pt-4">
         {fase === 'por_recoger' && (
           <>
+            {instruccionesRetiro && <InstruccionesRetiroConductor tripId={a.trip.id} />}
             {recogida.sugerida && (
               // El geofence solo sugiere: <output> anuncia la llegada al punto
               // de recogida sin disparar nada. El tap sigue siendo del conductor.

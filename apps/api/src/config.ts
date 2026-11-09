@@ -175,6 +175,17 @@ export const apiEnvSchema = commonEnvSchema
     TRANSPORT_DOCUMENTS_BUCKET: z.string().min(1).optional(),
 
     /**
+     * Instrucciones de retiro (spec instrucciones-retiro).
+     *
+     * INSTRUCCIONES_RETIRO_BUCKET: bucket GCS del QR o comprobante del lugar
+     *   de retiro, bajo `instrucciones-retiro/{viajeId}/{uuid}.{ext}`. Usa
+     *   `uploads_raw` (storage.tf: sin retención, borra a los 90 días), no el
+     *   bucket `documents`: el PO decidió que no se retiene 6 años. Optional:
+     *   si está ausente, subir o leer un archivo responde 503.
+     */
+    INSTRUCCIONES_RETIRO_BUCKET: z.string().min(1).optional(),
+
+    /**
      * Pub/Sub topic name del evento `document.uploaded` (creado en
      * messaging.tf). El endpoint de subida publica acá tras persistir la fila
      * `pendiente`; el worker TED (sub-fase 4b) lo consume. Optional: si está

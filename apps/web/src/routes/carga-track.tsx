@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
+import { InstruccionesRetiroPanel } from '../components/instrucciones-retiro/InstruccionesRetiroPanel.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { useRefetchWhenVisible } from '../hooks/use-refetch-when-visible.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import {
   LIVE_TRACKING_FETCH,
   LIVE_TRACKING_QUERY,
@@ -71,13 +73,21 @@ export function CargaTrackRoute() {
           return null;
         }
         const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
-        return <CargaTrackPage canWriteDocs={canWriteDocs} />;
+        // instrucciones-retiro: las carga quien puede publicar cargas.
+        const canWriteRetiro = flagsDe(ctx.me).publicarCarga;
+        return <CargaTrackPage canWriteDocs={canWriteDocs} canWriteRetiro={canWriteRetiro} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
+function CargaTrackPage({
+  canWriteDocs,
+  canWriteRetiro,
+}: {
+  canWriteDocs: boolean;
+  canWriteRetiro: boolean;
+}) {
   const { id } = useParams({ strict: false }) as { id: string };
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -162,6 +172,7 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
               </div>
             )}
             {shareUrl && <PublicTrackingShare url={shareUrl} />}
+            <InstruccionesRetiroPanel tripId={id} canWrite={canWriteRetiro} />
             <TransportDocumentsPanel tripId={id} canWrite={canWriteDocs} compact />
           </div>
         }
