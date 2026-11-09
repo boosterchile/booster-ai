@@ -285,7 +285,7 @@ describe('acceptOffer', () => {
       notifyEmailMock.mockRejectedValueOnce(falla);
     }
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
       inserts: [
         [{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1', agreedPriceClp: 250000 }],
