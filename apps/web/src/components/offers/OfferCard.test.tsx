@@ -53,7 +53,7 @@ function renderCard(offer: OfferPayload = makeOffer()) {
   const Wrapper = makeWrapper();
   return render(
     <Wrapper>
-      <OfferCard offer={offer} />
+      <OfferCard offer={offer} puedeDecidir />
     </Wrapper>,
   );
 }
@@ -66,6 +66,17 @@ afterEach(() => {
 });
 
 describe('OfferCard — render base', () => {
+  it('sin permiso no muestra Aceptar ni Rechazar', () => {
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <OfferCard offer={makeOffer()} puedeDecidir={false} />
+      </Wrapper>,
+    );
+    expect(screen.queryByRole('button', { name: /Aceptar oferta/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rechazar/ })).not.toBeInTheDocument();
+  });
+
   it('muestra tracking code, regiones, precio y carga', () => {
     renderCard();
     expect(screen.getByText('BST-001')).toBeInTheDocument();

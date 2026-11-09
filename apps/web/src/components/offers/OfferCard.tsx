@@ -77,9 +77,11 @@ function timeRemaining(iso: string): { label: string; urgent: boolean } {
 
 export interface OfferCardProps {
   offer: OfferPayload;
+  /** CHEQUEOS_REEMPLAZADOS ofertas-botones: antes los botones salían sin rol. */
+  puedeDecidir: boolean;
 }
 
-export function OfferCard({ offer }: OfferCardProps) {
+export function OfferCard({ offer, puedeDecidir }: OfferCardProps) {
   const navigate = useNavigate();
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -263,7 +265,7 @@ export function OfferCard({ offer }: OfferCardProps) {
             </button>
           </div>
         </form>
-      ) : (
+      ) : puedeDecidir ? (
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
             type="button"
@@ -284,7 +286,7 @@ export function OfferCard({ offer }: OfferCardProps) {
             {acceptMutation.isPending ? 'Aceptando…' : 'Aceptar oferta'}
           </button>
         </div>
-      )}
+      ) : null}
     </article>
   );
 }

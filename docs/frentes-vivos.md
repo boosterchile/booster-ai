@@ -6,6 +6,7 @@
 **Actualización 2026-09-13** (`main` @ `7e99dc0`): Slot 3 cerrado y reemplazado por «Conductor operativo» (decisión D2 del PO); Slot 1 con F1 cerrado. El conteo del Slot 2 no se re-verificó en esta pasada.
 **Actualización 2026-09-23** (`main` @ `550b742`): por pedido del PO entra, fuera de slot, «Alta de empresas desde el panel de administración». Los tres slots no cambian.
 **Actualización 2026-10-07** (`main` @ `0008fa6`): el objetivo vuelve a ser TRL 10 ([ADR-082](adr/082-objetivo-trl10-supersede-precomercial.md)). Este documento pasa a ordenar el programa por fases; los tres slots son los frentes de la fase A.
+**Actualización 2026-10-29** (`main` @ `1b10cfa3`, prod en `18ce8e22`): se re-verificó el estado de cada slot contra prod. Las cifras y sus fuentes están en `docs/handoff/CURRENT.md`. T10-06 se cumple. Ningún slot se declara cerrado y no se registra ninguna excepción: el trabajo mergeado sin registro se lista como pendiente de decisión del PO (ver «Código en main después del 2026-10-10»).
 
 ---
 
@@ -15,13 +16,13 @@
 
 | Fase | Termina cuando | Estado |
 |---|---|---|
-| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa** |
-| Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A |
-| Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B |
-| Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C |
+| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa.** Al 2026-10-29 se cumple T10-06; T10-01 a T10-05 no; T10-07 espera la decisión del PO |
+| Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A. Tiene código adelantado sin declarar |
+| Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B. Tiene código adelantado sin declarar |
+| Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Tiene código adelantado sin declarar |
 | Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo |
 
-**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot.
+**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO. #837 (mergeado el 10-29) migra a zod 4; si alcanza se verá en la semanal del 2026-11-02.
 
 **Gestiones de la fase E que arrancan ya** (acción del PO, no ocupan slot): enviar los RFP de `docs/compliance/glec-rfp.md` y `docs/audits/security-rfp.md`, contratar la revisión legal (la Ley 21.719 rige desde 2026-12-01) y buscar el primer cliente con contrato.
 
@@ -43,7 +44,7 @@ Las excepciones que no ocupan slot están en `CLAUDE.md`: incidente en producci�
 
 ## Slot 1 — Huella de carbono punta a punta
 
-**Por qué es el primero:** es el corazón del producto y su atributo comercial. Todo el trabajo de telemetría existe para alimentarlo. Está bloqueado por cuatro tareas, tres de ellas pequeñas.
+**Por qué es el primero:** es el corazón del producto y su atributo comercial. Todo el trabajo de telemetría existe para alimentarlo.
 
 **Terminado cuando:** dos viajes reales en producción —uno con vehículo FMC150 y otro sin él— cierran con `carbonEmissionsKgco2eActual` poblado, o con degradación explícita registrada (`*Actual = null` + métrica data-quality + certificación degradada). Nunca `0`, nunca fallo silencioso.
 
@@ -66,18 +67,17 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 
 **Estado de F1+F2:** la fuente es `.specs/medicion-huella-segmento/plan.md` (checkboxes). No se duplica aquí.
 
-**Avance 2026-09-13:** T1–T10 y la migración 0055 (`movil_gps` coherente en enum de BD, shared-schemas, carbon-calculator y certificate-generator, ADR-077) están en `main` (#658–#664, #672, #663). La compuerta F1 está cerrada; lo siguiente es T11. El criterio de término exige además cerrar entregas reales en producción, que hoy dependen del gate documental (ver Slot 3, paso 1). El código posterior a esta fecha está en la sección «Código en main después del 2026-09-13»; ese corte no se reescribe aquí.
+**Código:** el plan de F1+F2 está completo: 50 tareas `[x]` y ninguna pendiente en `.specs/medicion-huella-segmento/plan.md`. A eso se suman en `main` la métrica data-quality del cierre (#747) y la lectura del combustible por CAN (#749).
 
-**Orden de ejecución** (respeta la compuerta dura: F1 completo antes de F2):
+**Estado 2026-10-29 (prod, solo lectura):** el criterio no se cumple.
 
-1. **T3** — función pura, sin dependencias de DB, siete casos de test. Es la que decide si un viaje mide huella; sin ella nada del resto se activa.
-2. **T5** — guard derivado de la tabla de transiciones. T6 y T7 se construyeron saltándose esta dependencia; cerrarla es alinear el handler con la máquina de estados.
-3. **T2** → **T4** → **T8** — cadena del geofence: columnas, geocodificación del origen vía Routes API, detector por haversine. T4 debe degradar sin bloquear la creación del viaje.
-4. **T9** — completar el disparo híbrido (sugerencia por geofence + tap).
-5. **F1 cerrado.** Recién entonces **T10**, el enrutamiento de fuente de posición: con Teltonika → `telemetria_puntos`; sin Teltonika → `posiciones_movil_conductor`. Sin merge de streams.
-6. **T11–13** — cobertura anclada al pickup real, umbral binario ~80%, degradación por peso ausente.
+- **Viaje con FMC150.** BKAXIK (09-14) tiene emisiones reales y certificado, y es el único viaje entregado de un generador que no es de prueba. KY7G69 (10-20) también, pero su generador es de prueba.
+- **Viaje sin FMC150.** Solo están los 4 del 09-21 (KXSV65). Tienen `*Actual = null`, pero son anteriores a la métrica data-quality y de un generador de prueba.
+- **HC7DJX (10-20).** Tiene Teltonika, pero cayó a `maps_directions` con cobertura 0. La regla de igualdad exacta del hueco detenido la desvía a Routes (`calcular-distancia-real.ts:167-169`).
+- **T10-05.** Los 7 certificados son `secundario_modeled`. Ningún vehículo tiene `fuente_combustible_can='83'`, que es la única configuración con la que la huella lee el CAN.
+- **Para decidir (PO):** si cuentan los viajes de un generador de prueba, y la enmienda de la regla del hueco detenido en `.specs/distancia-real-hibrida/spec.md`, que #836 (abierto el 10-29) propone con una tolerancia de 25 m.
 
-**Decisión de certificación por fuente:** resuelta en ADR-077. `movil_gps` es fuente de ruta de primera clase; solo CAN + Teltonika ≥95% da `primario_verificable`; la posición del móvil nunca da primario. Requiere migración expand-only del enum `fuente_dato_ruta` antes de T11.
+**Decisión de certificación por fuente:** resuelta en ADR-077. `movil_gps` es fuente de ruta de primera clase; solo CAN + Teltonika ≥95% da `primario_verificable`; la posición del móvil nunca da primario. La migración expand-only del enum `fuente_dato_ruta` (0055) está en `main` y en prod.
 
 ---
 
@@ -87,27 +87,14 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 
 **Terminado cuando:** `grep -rl 'es_demo\|isDemo\|DEMO_\|demo\.boosterchile'` sobre `apps/`, `packages/` e `infrastructure/` devuelve cero archivos, y `demo.boosterchile.com` no tiene registro DNS ni recurso en Terraform.
 
-**Estado verificado:** 40 archivos (ya excluida la superficie de impersonación, desacoplada por ADR-053).
+**Estado 2026-10-29:** el criterio no se cumple. El grep, sin las migraciones históricas de `apps/api/drizzle/`, da **8 archivos** (11 con ellas). El retiro del api, la web, CI y Terraform entró con #745 (2026-10-10), y los archivos del núcleo anterior ya no existen (`is-demo-enforcement.ts`, `demo-expires.ts`, `cuentas-demo.ts`, `DemoBanner.tsx`, `use-is-demo.ts`, entre otros). Quedan:
 
-Núcleo — lo que hay que desmontar primero porque es lo que contamina:
+- `apps/api/src/db/schema.ts` (columna `es_demo` y tabla `cuentas_demo`, que siguen en prod);
+- `apps/api/src/services/cobrar-suscripciones-uf.ts` y `apps/api/src/services/observatorio/viajes-entregados.ts` (filtros `isDemo` de #772 y #775);
+- 4 tests: `impersonation-write-guard.test.ts`, y en `apps/api/test/integration/` `impersonate-targets-flag`, `observatorio-viajes` y `suscripciones-uf`;
+- `infrastructure/removed-demo.tf`.
 
-- `apps/api/src/middleware/is-demo-enforcement.ts` (+ test)
-- `apps/api/src/middleware/demo-expires.ts` (+ test)
-- `apps/api/src/middleware/firebase-auth.ts`
-- `apps/api/src/services/cuentas-demo.ts`
-- `apps/api/src/services/harden-demo-accounts.ts` (+ test)
-- `apps/api/src/services/sse-ticket.ts` (+ test)
-- `apps/api/src/{server,config}.ts`, `apps/api/src/db/schema.ts`
-- `apps/api/src/routes/{feature-flags,admin-signup-requests,chat}.ts`
-
-Verificación en CI — ya existen dos scripts que se pueden invertir de "verifica el cableado demo" a "verifica que no queda demo":
-
-- `apps/api/scripts/check-is-demo-wire-completeness.ts`
-- `apps/api/scripts/check-route-default-deny.ts`
-
-Frontend: `ProtectedRoute.tsx`, `DemoBanner.tsx`, `hooks/use-is-demo.ts`, rutas `index`, `login`, `maintenance`, `platform-admin-site-settings`.
-Terraform: `variables.tf`, `compute.tf`, `networking.tf`, `security-hotfixes-2026-05-14.tf`, `identity-platform.tf`.
-Contratos: `packages/shared-schemas/src/site-settings.ts`.
+`demo.boosterchile.com` sigue resolviendo (A `34.36.187.195`) y responde HTTPS 200. #748 (migración contract que retira `es_demo` y `cuentas_demo`) está en draft y en conflicto desde el 10-12. Necesita sus precondiciones, la lista de ADR-076 §3, el visto del PO y renumerarse a 0065.
 
 **Fuera de alcance:** cualquier reintroducción de un modo demo. La necesidad legítima que cubría —operar como una empresa de prueba— queda resuelta por impersonación sobre `empresas.es_usuario_prueba` (migración `0050`), que usa el flujo real y no requiere código dedicado.
 
@@ -132,14 +119,20 @@ ORDER BY a.entregado_en DESC LIMIT 5;
 
 Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO no tocó a mano.
 
-**Orden de ejecución.** El código de los seis pasos está en `main`. Sigue abierto el criterio de término: un viaje real cerrado sin el PO, y el E2E verde en CI.
+**Orden de ejecución.** El código de los seis pasos está en `main` y en prod (`18ce8e22`). Sigue abierto el criterio de término: un viaje real cerrado sin el PO.
 
-1. **D1a** — en `main` (#674). El gate documental no aplica sin fecha de corte.
-2. **Subida del documento de transporte** — el panel está en la asignación (`TransportDocumentsPanel`, `POST /transport-orders/:id/documents`). Falta comprobar el corte `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` sobre una cohorte real.
-3. **GPS del móvil** — en `main` (#686), con arreglos posteriores de cola y Wake Lock (#696, #701, #703).
-4. **Lo que el conductor ve** — ruta sugerida y resultado al terminar, en `main` (#687).
-5. **Higiene** — gate por rol, confirmación inline y sin voz, en `main` (#688).
-6. **`connectAuthEmulator`** — en `apps/web/src/lib/firebase.ts`. El E2E del flujo está en el repo (`3a02622`); su verde en CI no se re-verificó en esta pasada.
+1. **D1a**: en `main` (#674). El gate documental no aplica sin fecha de corte.
+2. **Subida del documento de transporte**: el panel está en la asignación (`TransportDocumentsPanel`, `POST /transport-orders/:id/documents`). Al 2026-10-29, `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` no está en el env del api y `documentos_transporte` tiene 0 filas.
+3. **GPS del móvil**: en `main` (#686), con arreglos posteriores de cola y Wake Lock (#696, #701, #703).
+4. **Lo que el conductor ve**: ruta sugerida y resultado al terminar, en `main` (#687).
+5. **Higiene**: gate por rol, confirmación inline y sin voz, en `main` (#688).
+6. **E2E**: `apps/web/e2e-conductor/flujo-conductor.spec.ts` (#744) recorre activar → recogida → posición → entrega → certificado → login con su clave. Corre en cada PR que toca `apps/web/**` o `apps/api/src/**`. La última corrida verde de Playwright en un PR es `39449311411` (2026-10-20); en #826 está en rojo (`39683047395`). El E2E nocturno contra prod está verde del 10-26 al 10-29.
+
+**Estado 2026-10-29 (prod, solo lectura):** el criterio no se cumple.
+
+- **T10-02.** Los 7 viajes entregados desde el 09-21 son de un generador de prueba, y desde el 2026-10-20 13:13Z no se creó ningún viaje.
+- **T10-04.** El api monta `CONTENT_SID_ACTIVACION_CONDUCTOR` y `RESEND_API_KEY`. Hubo 4 envíos de activación por WhatsApp (10-19 y 10-20) y 2 por correo (10-20; los 2 del 10-19 no salieron porque faltaba la clave). Aun así, ningún conductor nuevo se activó: el alta de octubre sigue pendiente y los 2 conductores activados son de antes de octubre.
+- **Para decidir (PO):** si cuentan los viajes de un generador de prueba, y cómo conseguir un viaje con cuentas que no opere el PO.
 
 **Fuera de alcance (no se hace bajo este frente):** la capa en tiempo real del eco-routing (ADR-012). El eco-routing de la asignación —ruta sugerida, polyline y mapa— es característica esencial y ya está en el producto. También quedan fuera los certificados PDF más allá de la línea de método que exige ADR-077, y el onboarding de empresas.
 
@@ -149,7 +142,7 @@ Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO 
 
 **Por qué:** pedido explícito del PO el 2026-09-23. Hoy una empresa solo nace si el cliente llena el formulario de alta por enlace; el admin no puede crearla aunque tenga todos sus datos.
 
-**Cómo entra:** no ocupa ninguno de los tres slots. Es un pedido del PO en el mensaje, excepción que el PR #720 lleva al contrato (`CLAUDE.md`). Mientras #720 no esté en `main`, queda como excepción a la regla 1, declarada por el PO. Como cualquier frente, sale de esta lista solo cumpliendo su criterio (regla 3).
+**Cómo entra:** no ocupa ninguno de los tres slots. Es un pedido del PO en el mensaje, una excepción que el contrato recoge desde #720 (en `main` desde el 2026-09-27; `CLAUDE.md`, «lo que el PO pida en el mensaje»). Como cualquier frente, sale de esta lista solo cumpliendo su criterio (regla 3).
 
 **Terminado cuando:** se cumplen las dos condiciones:
 
@@ -169,13 +162,15 @@ WHERE m.invitado_por_id IS NOT NULL
 ORDER BY e.creado_en DESC LIMIT 5;
 ```
 
-Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. **Verificado 2026-10-06 (prod, solo lectura): 1 fila, `Sociedad de Transportes TransJavier Limitada` (2026-09-27), dueño `pendiente_invitacion`, sin clave y sin login → la condición 1 todavía no se cumple.** `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
+Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. **Verificado 2026-10-06 (prod, solo lectura): 1 fila, `Sociedad de Transportes TransJavier Limitada` (2026-09-27), dueño `pendiente_invitacion`, sin clave y sin login → la condición 1 todavía no se cumple.** `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas. **Re-verificado 2026-10-29: 1 empresa creada por el admin y 0 filas que cumplan. La condición 1 sigue sin cumplirse.**
 
-**Orden de ejecución:**
+**Orden de ejecución.** Los tres pasos están en `main`:
 
-1. **Ajuste pendiente del flujo de activación de cuentas**, que se lleva aparte. Va primero porque este frente reusa ese flujo.
-2. **API**: `POST /admin/empresas` y la re-emisión del código del dueño.
-3. **Web**: sección «Crear empresa» en el panel y «Generar código nuevo» en «Activar empresa».
+1. **Ajuste previo del flujo de activación de cuentas**: en `main` desde #739 (2026-10-06).
+2. **API**: `POST /admin/empresas` y la re-emisión del código del dueño, en `154c1a3` (#724) y #737.
+3. **Web**: sección «Crear empresa» en el panel y «Generar código nuevo» en «Activar empresa», en #724 y #737.
+
+Falta el criterio de término en prod: un dueño creado por el admin que active su cuenta y vuelva a entrar con su clave.
 
 **Spec:** `.specs/alta-desde-panel-admin/spec.md`. Enmienda §8 (alternativa C) de `.specs/onboarding-flow-redesign/`.
 
@@ -213,6 +208,34 @@ Verificado por los mensajes de commit hasta `4c72aec` (#719, 2026-09-23). No re-
 - **Slot 3.** Gate documental sin fecha de corte (#674), GPS resiliente (#686), ruta y resultado (#687), higiene (#688), E2E con emulador de Auth (`3a02622`) y gestor documental (`34f000a`). El viaje cerrado en producción sin el PO no se comprobó.
 - **Fuera de esos criterios:** hub de vehículos (#714–#719) e historial de trayectos con combustible (#705–#713).
 
+## Código en main después del 2026-10-10 (sin registro; pendiente de decisión del PO)
+
+Desde el 2026-10-07 se mergearon 77 PRs (`gh pr list --state merged --search "merged:>=2026-10-07"`, 2026-10-29). Este documento no registra la mayoría. Aquí se listan para que el PO decida cuáles se declaran como adelanto o excepción. **No se registra ninguno por cuenta propia.**
+
+- **Merge TRL 10 del 2026-10-10: 38 PRs** (#742–#780, menos #748).
+  - Fase A: #743, #744, #745, #746, #747 y #749.
+  - Programa y CI: #742 (ADR-082) y #776.
+  - **Los otros 30 adelantan criterios de las fases B–E** y no se declararon aquí, como exige la regla del programa: #750–#775 y #777–#780.
+- **Después del 10-10, o fuera del merge: 39 PRs.**
+
+  | Tema | PRs |
+  |---|---|
+  | Gobierno y handoff | #781, #783, #827, #831, #832, #834 y #835 |
+  | Inicio del transportista | #792 |
+  | Conductores | #793, #806, #807, #808 y #810 |
+  | Cargas y asignaciones | #794 y #811 |
+  | Web | #812, #813 y #814 |
+  | Trayectos | #727 y #796 |
+  | Vehículos | #782 |
+  | Deploy y canary | #785, #786, #789, #798, #805, #809 y #815 |
+  | Infra y costos | #790, #791, #797, #821, #822, #830 y #833 |
+  | document-service push (ADR-085) | #823 y #829 |
+  | CI | #824 |
+  | Servicios | #788 |
+
+- **Abiertos fuera de slot**: 12 PRs de `fueradelabox`, entre ellos inicio por rol (#800–#804) y capacidades (#816–#819).
+- **PRs propios abiertos**: `boosterchile` tiene 6 (#836, #828, #826, #820, #748 y #726) más este, y el tope es 3.
+
 ## Congelados
 
 No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición explícita de descongelamiento.
@@ -223,9 +246,9 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 **Certificados PDF.** Criterio a escribir cuando descongele, con esta forma: el PDF de \<tipo\> con \<campos\> se genera y valida contra el formato exigido por \<quién lo recibe\>.
 
-**Infraestructura y observabilidad.** Desde 2026-10-07 su criterio es la fase C del programa TRL 10 (T10-15 a T10-20). Espera a que cierre la fase B.
+**Infraestructura y observabilidad.** Desde 2026-10-07 su criterio es la fase C del programa TRL 10 (T10-15 a T10-20). Espera a que cierre la fase B. El código de varios de esos criterios ya está en `main` desde el 10-10 (#754–#758 y #779), sin declararse como adelanto (ver «Código en main después del 2026-10-10»).
 
-**Carta de Porte electrónica (Ley 18.290).** Booster no la emite: desde ADR-070 solo recibe y archiva los documentos de transporte de terceros. El stub `packages/carta-porte-generator` se eliminó el 2026-10-07 (T10-09, decisión del PO) para no dejar código que aparente una capacidad inexistente. Descongela con un ADR que defina quién la emite y una spec con este criterio: la Carta de Porte de un viaje se genera con \<campos legales\>, firmada, y se valida contra \<quien la fiscaliza\>.
+**Carta de Porte electrónica (Ley 18.290).** Booster no la emite: desde ADR-070 solo recibe y archiva los documentos de transporte de terceros. El stub `packages/carta-porte-generator` se eliminó en #750 (decisión del PO del 2026-10-07, merge el 2026-10-10, T10-09) para no dejar código que aparente una capacidad inexistente. Descongela con un ADR que defina quién la emite y una spec con este criterio: la Carta de Porte de un viaje se genera con \<campos legales\>, firmada, y se valida contra \<quien la fiscaliza\>.
 
 **Despacho / conductor.** Descongelado el 2026-09-13: es el Slot 3 («Conductor operativo de punta a punta»), con ese mismo criterio.
 
@@ -239,4 +262,4 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 ## Deuda de documentación (no es frente; se corrige al pasar)
 
-`README.md` se alineó el 2026-09-23 con el árbol real: FMC150, sin emisión de DTE, sin `dte-provider` ni `ai-provider`, ADR hasta 080, y sin plugins. Los ADR históricos no se reescriben; una etiqueta `Accepted` o `Proposed` no certifica vigencia (ADR-076).
+`README.md` se alineó el 2026-09-23 con el árbol real: FMC150, sin emisión de DTE, sin `dte-provider` ni `ai-provider`, ADR hasta 080, y sin plugins. Al 2026-10-29 vuelve a estar atrasado: dice «del 001 al 080» (líneas 33 y 86) y en `docs/adr/` ya están 081–083, 085 y 086. Los ADR históricos no se reescriben; una etiqueta `Accepted` o `Proposed` no certifica vigencia (ADR-076).

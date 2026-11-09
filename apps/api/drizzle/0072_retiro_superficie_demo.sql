@@ -1,4 +1,4 @@
--- Migration 0063 — retiro de la superficie demo (fase contract).
+-- Migration 0072 — retiro de la superficie demo (fase contract).
 --
 -- contract-phase: T10-03 PR 1 (#745, retiro de la maquinaria demo)
 --
@@ -18,10 +18,10 @@
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "empresas" WHERE "es_demo") THEN
-    RAISE EXCEPTION '0063: hay empresas con es_demo = true; retirarlas antes del DROP';
+    RAISE EXCEPTION '0072: hay empresas con es_demo = true; retirarlas antes del DROP';
   END IF;
   IF EXISTS (SELECT 1 FROM "cuentas_demo" WHERE "deshabilitado_en" IS NULL) THEN
-    RAISE EXCEPTION '0063: hay cuentas_demo activas (deshabilitado_en IS NULL); deshabilitarlas antes del DROP';
+    RAISE EXCEPTION '0072: hay cuentas_demo activas (deshabilitado_en IS NULL); deshabilitarlas antes del DROP';
   END IF;
 END $$;
 --> statement-breakpoint

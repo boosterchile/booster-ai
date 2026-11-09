@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { textoEs } from './mensajes.js';
 
 /**
  * Coordenadas WGS84 con validación de rango.
@@ -22,12 +23,12 @@ export type Position = z.infer<typeof positionSchema>;
  * Dirección postal. Incluye opcional geocode (lat/lng).
  */
 export const addressSchema = z.object({
-  street: z.string().min(1),
+  street: textoEs(1),
   number: z.string().optional(),
   apartment: z.string().optional(),
-  commune: z.string().min(1),
-  city: z.string().min(1),
-  region: z.string().min(1),
+  commune: textoEs(1),
+  city: textoEs(1),
+  region: textoEs(1),
   country: z.string().default('CL'),
   postalCode: z.string().optional(),
   geocode: positionSchema.optional(),

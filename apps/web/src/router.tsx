@@ -580,6 +580,43 @@ const aparienciaImpersonacionRoute = createRoute({
   ),
 });
 
+// Preview público del inicio transportista (fase 1). Sin auth ni API.
+const aparienciaInicioRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio.js'),
+    'AparienciaInicioRoute',
+  ),
+});
+
+const aparienciaInicioGeneradorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-generador',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-generador.js'),
+    'AparienciaInicioGeneradorRoute',
+  ),
+});
+
+const aparienciaInicioConductorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-conductor',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-conductor.js'),
+    'AparienciaInicioConductorRoute',
+  ),
+});
+
+const aparienciaInicioMixtaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-mixta',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-mixta.js'),
+    'AparienciaInicioMixtaRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -644,6 +681,10 @@ const routeTree = rootRoute.addChildren([
   aparienciaShellRoute,
   aparienciaConductorRoute,
   aparienciaImpersonacionRoute,
+  aparienciaInicioRoute,
+  aparienciaInicioGeneradorRoute,
+  aparienciaInicioMixtaRoute,
+  aparienciaInicioConductorRoute,
 ]);
 
 export const router = createRouter({

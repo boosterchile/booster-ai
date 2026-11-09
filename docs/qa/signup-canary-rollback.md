@@ -23,12 +23,16 @@ Si la decisión es **NO** correr canary (e.g., hotfix urgente, deploy-trivial si
 |---|---|---|
 | `deploy-canary` | ~30-60s | `gcloud run services update --image=... --no-traffic` y luego `gcloud run services update-traffic --update-tags=canary-signup-<sha>=<revisión>`. La nueva revision queda registrada pero recibe 0% del traffic. El tag va aparte para que Cloud Run nombre la revisión y Terraform no vea drift (T10-06). |
 | `route-canary` | ~5-10s | `gcloud run services update-traffic --to-tags=canary-signup-<sha>=1`. 1% del traffic empieza a ir al canary; 99% sigue en la revision anterior. |
-| `canary-sleep` | **30 min exactos** | `sleep 1800`. Synthetic monitor `signup_probe` corre cada 60s (= 30 probes) durante esta ventana. |
-| `canary-verify` | ~10-30s | Query Cloud Monitoring API para validar error_rate < 1% AND p95_latency < 500ms sobre el canary tag. Exit 1 si fail. |
+| `canary-sleep` | **30 min** (tope del step 2100 s) | Observa el canary al 1 % y, en esa ventana, manda GET de solo lectura al URL del tag: `_CANARY_MIN_REQUESTS` (30) más cinco. Rutas: `/health` y `/health/signup-flow`. El tiempo que no use la sonda se espera, para completar los 30 min. `signup_probe` sigue cada 60s. La ventana no se acorta: el piso de 30 se observa en esos 30 min. |
+| `canary-verify` | tope 480 s | Lee el resultado de la sonda y Cloud Monitoring (reintenta si la ingesta todavía no muestra el piso). Evalúa error_rate < 1 % y p95 < 500 ms **cuando la muestra llega a 30** (Monitoring, o `respuestas_app` si la sonda llegó y Monitoring se quedó corto). Exit distinto de 0 si no hay URL del tag, si el piso es 0, si la muestra no llega al piso, si la sonda vio 5xx o errores de conexión, si fallaron el camino directo y el Job, o si los SLO fallan. Sin muestra, además revierte el tag (3 intentos, backoff 2 s y 4 s, cada `gcloud` a 30 s). |
 | `deploy-api` | ~10-30s | `gcloud run services update-traffic --to-latest`. El canary tag y la revision-pre-canary quedan sin traffic. |
 | `smoke-tests` + `watch-deploy` | ~1-2 min | Steps existing (lines ~270+). |
 
-**Total wall-clock**: ~32-35 min por deploy api. Sin canary era ~3-5 min. **Trade-off documentado en spec §3 SC-1.2.3** y aceptado por PO 2026-05-25.
+**Tope del build**: 5400 s (90 min), en `cloudbuild.production.yaml`. El release de #793 (Cloud Build `c11b1702`) murió por TIMEOUT a los 3600 s dentro de `canary-sleep`: el tramo hasta `route-canary` se fue a unos 30 min y `canary-verify` no arrancó. El presupuesto vigente reserva 2100 s para ese tramo (observado ~1800 s), 2100 s para `canary-sleep` (ventana 1800 + 300), 480 s para `canary-verify` y 240 s para `deploy-api` + `gke-deploy` + smoke. Suma 4920 s, margen 480 s. La ventana de 30 min se mantiene: cabe bajo 5400 s. El ~660 s de `aca4641f` (2026-06-16) ya no describe el tramo previo.
+
+El job `deploy-production` de `.github/workflows/release.yml` espera hasta 30 min a CI Success y después corre `gcloud builds submit` sin `--async`, así que el runner sigue abierto mientras dura el build. Su `timeout-minutes` es 130 (30 de esa espera + 90 del tope de Cloud Build + 10 de auth, gcloud y el smoke de 3 intentos). Con 75 min el run se cancela, el build sigue huérfano en Cloud Build y el smoke final no corre.
+
+**Trade-off documentado en spec §3 SC-1.2.3** y aceptado por PO 2026-05-25. El tope de 5400 s y el `timeout-minutes` del job los firma el PO: `cloudbuild.production.yaml` y `release.yml` son archivos protegidos.
 
 ## 3. Decision criteria — promover o rollback
 
@@ -38,17 +42,44 @@ Cloud Build promueve **automáticamente** vía step `deploy-api` cuando:
 
 - `canary-verify` exit 0.
 - Alert policy `signup_probe_failure` NO disparó durante el `canary-sleep` window.
-- Muestra bajo `_CANARY_MIN_REQUESTS` (30) también es exit 0: WARN y promover, sin evaluar p95. El canario al 1 % no junta 30 requests con el tráfico actual. Un error rate o un p95 fuera de umbral solo abortan cuando la muestra alcanza el piso.
+- La muestra llegó a `_CANARY_MIN_REQUESTS` (30) —por Monitoring, o por `respuestas_app` si la sonda llegó a la app y Monitoring dio menos— y error_rate < 1 % y p95 < 500 ms. El piso no se baja. El p95 queda dominado por `/health` (§3.1.1).
+- Sin URL del tag, con `_CANARY_MIN_REQUESTS=0`, o con Monitoring y la sonda bajo el piso, **no** se promueve: exit distinto de 0 y se revierte el tag (§3.2).
 
 No requiere human intervention. El human-on-call recibe el job-success notification 30+ min después del push.
 
-### 3.2. Rollback automático (canary-verify fail)
+### 3.1.1. Sonda de solo lectura (cómo se junta el piso)
 
-Cloud Build aborta el job cuando:
+`canary-sleep` resuelve el URL del tag `canary-signup-<sha>` (`status.traffic[].url`, o lo compone con el host del servicio) y manda **35 GET** (el piso 30 más cinco), alternando:
 
-- `canary-verify` exit 1 (la muestra alcanza el piso y error_rate o p95_latency exceden thresholds).
-- El step `deploy-api` NO ejecuta — la revision anterior sigue con 99% del traffic.
-- El canary tag `canary-signup-<sha>` queda con 1% — **drift implícito**: el traffic split no vuelve a 100%/0% automáticamente. Human-on-call DEBE ejecutar manualmente:
+- `GET /health`
+- `GET /health/signup-flow`
+
+Las dos son liveness público: sin body, sin `Authorization`, sin base de datos y sin datos de usuarios. No se llama `/ready` (hace `SELECT 1`; un 503 o la latencia de la DB tumbarían el umbral). No hay POST, PUT, PATCH ni DELETE, y no se siguen redirects. El `User-Agent` es `booster-canary-probe`.
+
+El ingress del api es `INTERNAL_LOAD_BALANCER`, así que un GET al `*.run.app` desde el worker de Cloud Build vuelve el HTML 404 del frontend de Google y **no** cuenta en `request_count`. Ese 404 es ingress. Un **5xx** de `*.run.app` no lo es: Cloud Run responde 503 en HTML cuando la revisión no atiende, y eso cuenta como llegada a la app. Si la primera respuesta no es de la aplicación (404 de ingress o error de transporte), la misma sonda corre en un Job efímero (`canary-probe-<sha>`, namespace `default`) del cluster `booster-ai-telemetry`. El pod está en la subnet `booster-ai-private` (Private Google Access) y fija el host del tag en `199.36.153.8` (`private.googleapis.com`). El DNS público de `*.run.app` sale por Cloud NAT y Cloud Run lo vuelve a ver como internet: el mismo 404.
+
+**Camino directo (Ops, 2026-10-19).** El GET directo da 404 de ingress y no se corrige en el step. El worker de `booster-production-pool` tiene IP externa (`no_external_ip = false` en `infrastructure/cloudbuild.tf`, porque el pool necesita salir a internet para bajar imágenes base) y vive en el rango de peering `booster-cloudbuild-pool-range` (`VPC_PEERING` /24 de servicenetworking), no en la subnet `booster-ai-private`. Private Google Access es un flag de esa subnet: el producer del peering no lo hereda. Apuntar `/etc/hosts` del step a `199.36.153.8` no enruta el VIP privado; el GET dejaría de fallar rápido y pasaría a colgar. Poner `no_external_ip = true`, o mover el pool a una subnet con Private Google Access, es Terraform y no entra en este cambio. No hay un load balancer interno del tag al que el worker pueda pegarle: el NEG de `api.boosterchile.com` es el LB público del servicio entero, no de la revisión del tag. El Job es el camino que llega. El 404 directo es un solo GET y el step sale con código 2; no es lo que consumió la hora en `c11b1702`. El Job usa la imagen del api ya publicada, **fijada por digest** (`api@sha256:…`), con `command: node -e …` — no arranca el servidor ni corre migraciones — y no monta el token de la cuenta de servicio. Los logs se leen en cuanto el Job queda `Complete` o `Failed`, o en cuanto `kubectl get` responde NotFound. El borrado es posterior a esa lectura, también si el Job falló o el sondeo hizo timeout. `ttlSecondsAfterFinished` es 1800 s para que un wait largo no borre el objeto antes. Si el Job ya no existe al leer, `canary-verify` sale distinto de 0: no se promueve sin muestra. El pod del Job anota `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` para que un ScaleDown no lo borre antes de escribir el `resumen` (`backoffLimit: 0` no reintenta). Si aun así no hay `resumen`, el conteo por línea solo se usa cuando el Job quedó Complete, cubre el piso y no hay 404. Un Job Failed o pendiente, o 200 mezclados con 404, no promueve. Un 5xx sigue siendo fallo.
+
+La sonda escribe `/workspace/canary-probe.json` con las respuestas de la app, los 5xx y los timeouts o errores de conexión. `canary-verify` lee ese archivo **antes** de Monitoring:
+
+- Llegó a la app y hay al menos un 5xx, o un timeout, o un error de conexión → exit distinto de 0. No promueve. Ese rollback de SLO lo hace el humano (§3.2).
+- Había URL del tag y fallaron el camino directo y el Job → exit distinto de 0. No promueve.
+- El Job desapareció antes de poder leer los logs → exit distinto de 0. No promueve. El mensaje nombra `ttlSecondsAfterFinished`.
+- No había URL del tag (el archivo no existe, o `tenia_url` es falso), o no hay revisión con ese tag → exit distinto de 0. No promueve. Si el tag estaba ruteado, se revierte.
+- `_CANARY_MIN_REQUESTS=0` se trata como sin muestra: exit distinto de 0 y se revierte el tag. No se evalúa el p95. El piso del pipeline sigue en 30.
+- La sonda llegó, Monitoring quedó bajo 30 y `respuestas_app` llega al piso → ese conteo es el piso. El p95 es el de las latencias de la sonda, no el de Monitoring (con pocos requests de Monitoring ese p95 es el cold start). Si la sonda no trae p95, exit distinto de 0 y no se promueve. Un p95 ≥ 500 ms no promueve (rollback humano). Si `respuestas_app` tampoco llega al piso → exit distinto de 0 y se revierte el tag. Ya no hay WARN que promueva. La decisión de 2026-09-28 queda superada por el PO el 2026-10-19.
+
+Los requests se espacian para caber en la ventana y dejar ~3 min de margen antes de `canary-verify`, que relee Monitoring hasta 3 veces, con 20 s entre lecturas, si la muestra todavía no aparece.
+
+El p95 de esa ventana queda **dominado por `/health`** (y por `/health/signup-flow`): son la mayoría de los requests y responden sin base de datos. El umbral de 500 ms mira esa latencia cuando el piso está cubierto. No se baja el piso: `_CANARY_MIN_REQUESTS=0` falla como sin muestra, sin mirar el p95. El cold start del 2026-08-16 (n=6, 1408 ms, 0 errores) ya no promueve: sin `respuestas_app` que cubra el piso, es falla y se revierte el tag.
+
+### 3.2. Rollback (canary-verify fail)
+
+Cloud Build aborta el job cuando `canary-verify` sale distinto de 0. El step `deploy-api` no corre.
+
+**Sin muestra** (no hay URL del tag, el piso está en 0, o ni Monitoring ni `respuestas_app` llegan al piso): el mismo step, antes de salir, manda el 100 % a la revisión que no lleva el tag y ejecuta `--remove-tags=canary-signup-<sha>`. Si el estable viene como `latestRevision` sin nombre, usa `latestReadyRevisionName` (y si esa es el canary, `latestCreatedRevisionName`). Describe y `update-traffic` se reintentan 3 veces, con espera de 2 s y 4 s, y cada `gcloud` va con `timeout -k 5 30`. Si tras eso no hay revisión estable o el `gcloud` falla, el log dice `ALERTA revertir el tag falló` y el step sale distinto de 0: el 1 % puede quedar y no se promueve. Ahí el humano usa el comando de abajo.
+
+**SLO** (5xx o errores de conexión de la sonda, error_rate ≥ 1 %, p95 ≥ 500 ms, Job perdido o ambos caminos fallidos): no se promueve y **no** se revierte el tag solo. El canary queda al 1 %. Human-on-call ejecuta:
 
 ```bash
 gcloud run services update-traffic booster-ai-api \

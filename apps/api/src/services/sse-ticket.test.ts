@@ -23,7 +23,7 @@ function makeRedis() {
 }
 
 const UID = 'firebase-uid-123';
-const ASSIGNMENT = 'a1111111-2222-3333-4444-555555555555';
+const ASSIGNMENT = 'a1111111-2222-4333-8444-555555555555';
 
 describe('sse-ticket', () => {
   it('mint crea un ticket hex ≥128 bits y lo guarda con TTL', async () => {

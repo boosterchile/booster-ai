@@ -16,6 +16,8 @@ Cada servicio tiene su sección. Las secciones de `notification-service` y `matc
 - en la subscription `document-uploaded-processor-sub`, con retención de 7 días y DLQ tras 5 nacks;
 - en la tabla, como `pendiente` o `fallido`, que el claim condicional vuelve a tomar.
 
+> **Modo push (ADR-085, `document_service_push = true`)**: los textos de log de D1 y D2 no cambian. D4 se cumple solo: en push todo el trabajo entra por HTTP, así que una revisión sin tráfico no recibe mensajes. Si la revisión sana es anterior a ADR-085 no tiene el endpoint push: antes del `update-traffic`, apagar el flag y aplicar (rollback del modo en `service-document-service.md`).
+
 ### Criterios de éxito
 
 | # | Criterio | Cómo se mide |

@@ -1,7 +1,14 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Gauge, History, Navigation, Route as RouteIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  Gauge,
+  History,
+  Loader2,
+  Navigation,
+  Route as RouteIcon,
+} from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { ApiError, api } from '../lib/api-client.js';
@@ -13,6 +20,7 @@ import {
 import { ageSeconds, formatAge } from '../lib/freshness.js';
 import { TrazaMapPreview } from './map/TrazaMapPreview.js';
 import { VehicleMap } from './map/VehicleMap.js';
+import { tarjetaGpsHub } from './tarjeta-gps-hub.js';
 
 const VENTANA_MS = 30 * 24 * 60 * 60 * 1000;
 const MAPA_ALTO_ESCRITORIO = 200;
@@ -49,6 +57,7 @@ const resumenSchema = z.object({
   km_recientes: z.number(),
   litros_recientes: z.number().nullable(),
   km_por_litro: z.number().nullable(),
+  motivo_km_por_litro: z.string().nullable().optional(),
   cta_sensor: z.boolean(),
   cta_capacidad_estanque: z.boolean().optional(),
   alertas_total: z.number().int(),
@@ -155,6 +164,13 @@ export function VehiculoHub({
   }
 
   const estado = estadoTeltonika(teltonikaImei, ubicacionQ.data ?? null, ubicacionQ.isError);
+  const tarjetaGps = tarjetaGpsHub({
+    conImei,
+    pendiente: ubicacionQ.isPending,
+    fetching: ubicacionQ.isFetching,
+    error: ubicacionQ.isError,
+    hayCuerpo: ubicacionQ.data != null,
+  });
 
   return (
     <section data-testid="hub-vehiculo" className="mb-6 min-w-0">
@@ -229,7 +245,8 @@ export function VehiculoHub({
           cargando={conImei && resumenQ.isLoading}
           error={conImei && resumenQ.isError}
           ubicacion={ubicacionQ.data ?? null}
-          ubicacionError={conImei && ubicacionQ.isError}
+          ubicacionCargando={tarjetaGps === 'cargando'}
+          ubicacionError={tarjetaGps === 'error'}
           alturaMapa={alturaMapa}
           onAbrirConfig={onAbrirConfig}
           onReintentar={reintentar}
@@ -268,6 +285,7 @@ function Operacion({
   cargando,
   error,
   ubicacion,
+  ubicacionCargando,
   ubicacionError,
   alturaMapa,
   onAbrirConfig,
@@ -281,6 +299,7 @@ function Operacion({
   cargando: boolean;
   error: boolean;
   ubicacion: UbicacionHub | null;
+  ubicacionCargando: boolean;
   ubicacionError: boolean;
   alturaMapa: number;
   onAbrirConfig: () => void;
@@ -328,6 +347,7 @@ function Operacion({
           puedeConfigurar={puedeConfigurar}
           ultimo={resumen?.ultimo_trayecto ?? null}
           ubicacion={ubicacion}
+          ubicacionCargando={ubicacionCargando}
           ubicacionError={ubicacionError}
           altura={alturaMapa}
           onAbrirConfig={onAbrirConfig}
@@ -435,6 +455,11 @@ function TarjetaConsumo({
           <p className="font-semibold text-neutral-900">
             {resumen.km_por_litro != null ? `${fmtNum(resumen.km_por_litro, 2)} km/L` : '—'}
           </p>
+          {resumen.km_por_litro != null ? (
+            <p className="mt-1 text-neutral-600 text-xs">
+              Suma de los km y los litros de la ventana.
+            </p>
+          ) : null}
           <p className="mt-1 text-neutral-700 text-sm">
             {fmtKm(resumen.km_recientes)} en los últimos trayectos
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}
@@ -453,9 +478,14 @@ function TarjetaConsumo({
               Completa la capacidad del estanque
             </button>
           ) : null}
-          {resumen.km_por_litro == null && !resumen.cta_sensor ? (
+          {resumen.km_por_litro == null && resumen.motivo_km_por_litro ? (
+            <p className="mt-2 text-neutral-600 text-xs">{resumen.motivo_km_por_litro}</p>
+          ) : null}
+          {resumen.km_por_litro == null && !resumen.motivo_km_por_litro && !resumen.cta_sensor ? (
             <p className="mt-2 text-neutral-600 text-xs">
-              Estos trayectos no traen un km/L confiable.
+              {resumen.litros_recientes != null
+                ? 'dato no confiable'
+                : 'Estos trayectos no traen un km/L confiable.'}
             </p>
           ) : null}
         </div>
@@ -579,6 +609,7 @@ function MapaPreview({
   puedeConfigurar,
   ultimo,
   ubicacion,
+  ubicacionCargando,
   ubicacionError,
   altura,
   onAbrirConfig,
@@ -590,6 +621,7 @@ function MapaPreview({
   puedeConfigurar: boolean;
   ultimo: TrayectoHub | null;
   ubicacion: UbicacionHub | null;
+  ubicacionCargando: boolean;
   ubicacionError: boolean;
   altura: number;
   onAbrirConfig: () => void;
@@ -632,7 +664,35 @@ function MapaPreview({
             height={altura}
           />
         ) : null}
-        {!hayTraza && !hayPunto ? (
+        {!hayTraza && !hayPunto && ubicacionCargando ? (
+          <output
+            className="block rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
+            style={{ minHeight: altura }}
+            data-testid="hub-mapa-cargando"
+            aria-busy="true"
+          >
+            <span className="inline-flex items-center gap-2 font-medium text-neutral-900 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Cargando posición…
+            </span>
+            <span className="mt-3 block h-24 animate-pulse rounded bg-neutral-200" aria-hidden />
+          </output>
+        ) : null}
+        {!hayTraza && !hayPunto && !ubicacionCargando && ubicacionError ? (
+          <div
+            className="rounded-md border border-danger-200 border-dashed bg-danger-50 p-4"
+            style={{ minHeight: altura }}
+            data-testid="hub-mapa-error"
+            role="alert"
+          >
+            <p className="font-medium text-neutral-900 text-sm">No pudimos cargar la posición.</p>
+            <p className="mt-1 text-neutral-700 text-sm">Reintenta en un momento.</p>
+            <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+        {!hayTraza && !hayPunto && !ubicacionCargando && !ubicacionError ? (
           <div
             className="rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
             style={{ minHeight: altura }}
@@ -643,17 +703,12 @@ function MapaPreview({
                 ? 'Cuando el dispositivo reporte una coordenada, la ves aquí.'
                 : 'Asocia un dispositivo para ver la posición.'}
             </p>
-            {ubicacionError ? (
-              <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
-                Reintentar
-              </button>
-            ) : null}
             {!conImei && puedeConfigurar ? (
               <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
                 Configurar dispositivo
               </button>
             ) : null}
-            {conImei && !ubicacionError ? <LinkEnVivo vehicleId={vehicleId} /> : null}
+            {conImei ? <LinkEnVivo vehicleId={vehicleId} /> : null}
           </div>
         ) : null}
       </div>

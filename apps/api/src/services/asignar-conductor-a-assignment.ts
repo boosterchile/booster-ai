@@ -1,7 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, conductores, tripEvents, users } from '../db/schema.js';
+import { assignments, conductores, tripEvents, users, vehicles } from '../db/schema.js';
+import { PENDING_FIREBASE_UID_PREFIX } from './vinculo-persona.js';
 
 /**
  * Asigna un conductor específico a un assignment existente.
@@ -14,13 +15,15 @@ import { assignments, conductores, tripEvents, users } from '../db/schema.js';
  * UUID del assignment (UX placeholder).
  *
  * Este servicio cierra el flujo: el carrier (dueño/admin/despachador)
- * elige uno de sus conductores activos y lo asocia al assignment.
+ * elige uno de sus conductores y, si quiere, el camión de su flota.
  *
  * Reglas:
  *   1. El assignment debe existir y pertenecer al carrier que invoca.
- *   2. El driver_user_id debe corresponder a un conductor ACTIVO de
+ *   2. El driver_user_id debe corresponder a un conductor no eliminado de
  *      ese mismo carrier (sino, un carrier podría asignar conductores
- *      de otra empresa — riesgo de filtrado de datos).
+ *      de otra empresa — riesgo de filtrado de datos). Que el usuario
+ *      todavía no haya activado la cuenta (`firebase_uid` pending-rut:)
+ *      NO lo excluye: se asigna igual y queda marcado `driverPending`.
  *   3. El assignment NO puede estar finalizado (cancelado/entregado).
  *      Para reasignaciones mid-trip por ahora bloqueamos; cuando aparezca
  *      el caso de uso real lo añadimos como `allow_reassign`.
@@ -29,8 +32,9 @@ import { assignments, conductores, tripEvents, users } from '../db/schema.js';
  *      `en_proceso`. La auditoría queda en trip_events.
  *
  * Side effect:
- *   - UPDATE assignments SET driver_user_id, updated_at
+ *   - UPDATE assignments SET driver_user_id, vehiculo_id (si vino), updated_at
  *   - INSERT trip_events { event_type='conductor_asignado', payload }
+ *   - No manda WhatsApp ni correo. Esos avisos salen al crear al conductor.
  *
  * Decisión de modelo: el campo es `driver_user_id` (users.id), NO
  * `conductor_id` (conductores.id). Razón: el endpoint del driver
@@ -67,6 +71,23 @@ export class AssignmentNotMutableError extends Error {
   }
 }
 
+export type VehicleNotAssignableReason =
+  | 'not_in_fleet'
+  | 'not_active'
+  | 'not_motriz'
+  | 'es_el_arrastre'
+  | 'en_transito';
+
+export class VehicleNotAssignableError extends Error {
+  constructor(
+    public readonly vehicleId: string,
+    public readonly reason: VehicleNotAssignableReason,
+  ) {
+    super(`Vehicle ${vehicleId} is not assignable: ${reason}`);
+    this.name = 'VehicleNotAssignableError';
+  }
+}
+
 export class DriverNotInCarrierError extends Error {
   constructor(
     public readonly driverUserId: string,
@@ -82,6 +103,13 @@ export interface AsignarConductorInput {
   logger: Logger;
   assignmentId: string;
   driverUserId: string;
+  /**
+   * Camión de la flota. Ausente → se conserva el `vehiculo_id` que dejó
+   * la oferta aceptada. Presente → solo si el viaje sigue `asignado`, y
+   * tiene que ser motriz y activo de la misma empresa. Con otro estado
+   * (recogido) se rechaza `en_transito` sin escribir.
+   */
+  vehiculoId?: string;
   /** Empresa carrier que está haciendo la asignación. */
   empresaId: string;
   /** User id del operador que dispara la asignación (audit). */
@@ -93,6 +121,26 @@ export interface AsignarConductorOutput {
   previousDriverUserId: string | null;
   newDriverUserId: string;
   driverName: string | null;
+  /** true si el usuario todavía no activó (firebase_uid pending-rut:). */
+  driverPending: boolean;
+  previousVehicleId: string;
+  newVehicleId: string;
+}
+
+/**
+ * Conductor de la empresa, no eliminado. No filtra por activación:
+ * `users.firebase_uid` pending-rut: sigue siendo asignable.
+ */
+export function condicionesConductorAsignable(empresaId: string, driverUserId: string) {
+  const filtro = and(
+    eq(conductores.userId, driverUserId),
+    eq(conductores.empresaId, empresaId),
+    isNull(conductores.deletedAt),
+  );
+  if (!filtro) {
+    throw new Error('filtro de conductor vacío');
+  }
+  return filtro;
 }
 
 /**
@@ -107,7 +155,7 @@ const MUTABLE_STATUSES = ['asignado', 'recogido'] as const;
 export async function asignarConductorAAssignment(
   input: AsignarConductorInput,
 ): Promise<AsignarConductorOutput> {
-  const { db, logger, assignmentId, driverUserId, empresaId, actingUserId } = input;
+  const { db, logger, assignmentId, driverUserId, vehiculoId, empresaId, actingUserId } = input;
 
   return await db.transaction(async (tx) => {
     // 1. Verificar assignment existe + pertenece al carrier + es mutable.
@@ -118,6 +166,8 @@ export async function asignarConductorAAssignment(
         status: assignments.status,
         driverUserId: assignments.driverUserId,
         tripId: assignments.tripId,
+        vehicleId: assignments.vehicleId,
+        unidadArrastreId: assignments.unidadArrastreId,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
@@ -133,39 +183,70 @@ export async function asignarConductorAAssignment(
       throw new AssignmentNotMutableError(assignmentId, assignment.status);
     }
 
-    // 2. Verificar driver_user_id es un conductor activo del MISMO carrier.
-    //    El JOIN con users sirve para sacar el fullName para el audit log.
+    // El camión solo se elige antes de salir. En `recogido` se puede
+    // cambiar el conductor, pero un vehiculo_id no se persiste.
+    if (vehiculoId && assignment.status !== 'asignado') {
+      throw new VehicleNotAssignableError(vehiculoId, 'en_transito');
+    }
+
+    // 2. Conductor de la misma empresa y no eliminado. La activación
+    //    pendiente no excluye: el firebase_uid se lee solo para marcarla.
     const [driverRow] = await tx
       .select({
         userId: users.id,
         userFullName: users.fullName,
         conductorId: conductores.id,
+        firebaseUid: users.firebaseUid,
       })
       .from(conductores)
       .innerJoin(users, eq(users.id, conductores.userId))
-      .where(
-        and(
-          eq(conductores.userId, driverUserId),
-          eq(conductores.empresaId, empresaId),
-          isNull(conductores.deletedAt),
-        ),
-      )
+      .where(condicionesConductorAsignable(empresaId, driverUserId))
       .limit(1);
 
     if (!driverRow) {
       throw new DriverNotInCarrierError(driverUserId, empresaId);
     }
+    const driverPending = driverRow.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX);
 
-    // 3. UPDATE assignment.
+    // 3. Camión, si el despachador eligió uno distinto del que dejó la oferta.
+    if (vehiculoId) {
+      const [vehicleRow] = await tx
+        .select({
+          id: vehicles.id,
+          empresaId: vehicles.empresaId,
+          vehicleStatus: vehicles.vehicleStatus,
+          unitCategory: vehicles.unitCategory,
+        })
+        .from(vehicles)
+        .where(eq(vehicles.id, vehiculoId))
+        .limit(1);
+      if (!vehicleRow || vehicleRow.empresaId !== empresaId) {
+        throw new VehicleNotAssignableError(vehiculoId, 'not_in_fleet');
+      }
+      if (vehicleRow.vehicleStatus !== 'activo') {
+        throw new VehicleNotAssignableError(vehiculoId, 'not_active');
+      }
+      if (vehicleRow.unitCategory !== 'motriz') {
+        throw new VehicleNotAssignableError(vehiculoId, 'not_motriz');
+      }
+      if (assignment.unidadArrastreId != null && assignment.unidadArrastreId === vehiculoId) {
+        throw new VehicleNotAssignableError(vehiculoId, 'es_el_arrastre');
+      }
+    }
+
+    const newVehicleId = vehiculoId ?? assignment.vehicleId;
+
+    // 4. UPDATE assignment.
     await tx
       .update(assignments)
       .set({
         driverUserId,
+        ...(vehiculoId ? { vehicleId: vehiculoId } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(assignments.id, assignmentId));
+      .where(and(eq(assignments.id, assignmentId), eq(assignments.empresaId, empresaId)));
 
-    // 4. Audit event en trip_events.
+    // 5. Audit event en trip_events.
     await tx.insert(tripEvents).values({
       tripId: assignment.tripId,
       eventType: 'conductor_asignado',
@@ -174,6 +255,9 @@ export async function asignarConductorAAssignment(
         previous_driver_user_id: assignment.driverUserId,
         new_driver_user_id: driverUserId,
         driver_name: driverRow.userFullName,
+        driver_pending: driverPending,
+        previous_vehicle_id: assignment.vehicleId,
+        new_vehicle_id: newVehicleId,
         acting_user_id: actingUserId,
       },
       // El audit lo dispara la UI del carrier, así que source='web'.
@@ -186,6 +270,9 @@ export async function asignarConductorAAssignment(
         assignmentId,
         previousDriverUserId: assignment.driverUserId,
         newDriverUserId: driverUserId,
+        driverPending,
+        previousVehicleId: assignment.vehicleId,
+        newVehicleId,
         empresaId,
       },
       'conductor asignado a assignment',
@@ -196,6 +283,9 @@ export async function asignarConductorAAssignment(
       previousDriverUserId: assignment.driverUserId,
       newDriverUserId: driverUserId,
       driverName: driverRow.userFullName ?? null,
+      driverPending,
+      previousVehicleId: assignment.vehicleId,
+      newVehicleId,
     };
   });
 }

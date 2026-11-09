@@ -12,6 +12,9 @@
 
 ---
 
+
+> **Enmienda 2026-11-02 (HC-004 T2, decisión de Felipe 14:41):** el título «Reporte estimativo de huella de carbono» deja de existir. Todos los niveles se titulan «Certificado de huella de carbono». La honestidad del nivel secundario la llevan tres señales que salen de una sola función (`presentacionNivel`): el sello ESTIMADO junto al título, un badge de calidad con el % de telemetría y el disclaimer nuevo justo después de Resultados, con «Estimado» en el pie de cada página. Solo `primario_verificable` es primario; un nivel ausente se trata como estimado. Las filas de la tabla de plantillas de abajo son históricas.
+
 ## Contexto
 
 El feature de "ruta verde + behavior coaching" requiere que Booster opere
