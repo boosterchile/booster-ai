@@ -152,6 +152,35 @@ describe('/app/servicios', () => {
     expect(codigos).toEqual(['BOO-CAMB', 'BOO-4F2A']);
   });
 
+  // editar-anular-cargas §9: la oficina se entera de la cancelación del generador.
+  it('un servicio cancelado por el generador lleva el badge, el motivo y ninguna acción', async () => {
+    const base = servicio();
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        servicio({
+          status: 'cancelado',
+          driver: null,
+          cancelacion: {
+            por_actor: 'generador_carga',
+            razon: 'Se cayó la venta',
+            en: '2026-11-09T12:00:00.000Z',
+          },
+          trip: { ...base.trip, status: 'cancelado' },
+        }),
+      ],
+    });
+    renderRoute();
+    const badge = await screen.findByTestId('badge-cancelado-generador');
+    expect(badge).toHaveTextContent('Cancelado por el generador');
+    expect(screen.getByText(/Se cayó la venta/)).toBeInTheDocument();
+    expect(screen.queryByText('Por recoger')).not.toBeInTheDocument();
+    expect(screen.queryByText('En ruta')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('asignar-conductor-as-1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sin-conductor-as-1')).not.toBeInTheDocument();
+    // No cuenta como servicio sin conductor: ya no hay nada que despachar.
+    expect(screen.queryByTestId('resumen-sin-conductor')).not.toBeInTheDocument();
+  });
+
   it('un servicio SIN conductor se ve como problema y ofrece asignarlo', async () => {
     apiGetSpy.mockResolvedValue({ assignments: [servicio({ driver: null })] });
     renderRoute();

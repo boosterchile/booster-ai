@@ -18,7 +18,7 @@
 
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -209,6 +209,14 @@ export function createAssignmentsRoutes(opts: {
     // Estados operacionales. Los terminales (entregado, cancelado) quedan
     // fuera: esta pantalla es para despachar, no para consultar histórico.
     const ACTIVE_STATUSES = ['asignado', 'recogido'] as const;
+    // Excepción (editar-anular-cargas §9, badge «Cancelado por el generador»):
+    // los servicios que el generador canceló en las últimas 72 horas siguen
+    // en la lista. Decisión interna: una ventana corta basta para que la
+    // oficina se entere aunque no haya abierto la app el día de la
+    // cancelación (un fin de semana largo cabe), sin convertir la pantalla
+    // de despacho en histórico. Pasadas las 72 horas desaparecen.
+    const VENTANA_CANCELADAS_MS = 72 * 60 * 60 * 1000;
+    const canceladasDesde = new Date(Date.now() - VENTANA_CANCELADAS_MS);
     // CHEQUEOS_REEMPLAZADOS assignments-lista: el listado no tenía rol.
     // Sin contexto se niega: no se entrega la lista completa.
     const ctxLista = ctxDeUserContext(auth.userContext);
@@ -225,6 +233,9 @@ export function createAssignmentsRoutes(opts: {
         acceptedAt: assignments.acceptedAt,
         pickedUpAt: assignments.pickedUpAt,
         agreedPriceClp: assignments.agreedPriceClp,
+        cancelledAt: assignments.cancelledAt,
+        cancelledByActor: assignments.cancelledByActor,
+        cancellationReason: assignments.cancellationReason,
         driverUserId: assignments.driverUserId,
         driverName: usersTable.fullName,
         vehicleId: assignments.vehicleId,
@@ -259,47 +270,67 @@ export function createAssignmentsRoutes(opts: {
       .where(
         and(
           eq(assignments.empresaId, auth.activeMembership.empresa.id),
-          inArray(assignments.status, ACTIVE_STATUSES),
+          or(
+            inArray(assignments.status, ACTIVE_STATUSES),
+            and(
+              eq(assignments.status, 'cancelado'),
+              eq(assignments.cancelledByActor, 'generador_carga'),
+              gte(assignments.cancelledAt, canceladasDesde),
+            ),
+          ),
           ...filtroConductor,
         ),
       )
       .orderBy(desc(assignments.acceptedAt));
 
     return c.json({
-      assignments: rows.map((r) => ({
-        id: r.assignmentId,
-        status: r.assignmentStatus,
-        accepted_at: safeIsoString(r.acceptedAt),
-        picked_up_at: safeIsoString(r.pickedUpAt),
-        agreed_price_clp: r.agreedPriceClp,
-        // `null` explícito, no campo ausente: la UI necesita distinguir "sin
-        // conductor" de "no me lo mandaron".
-        driver: r.driverUserId
-          ? { user_id: r.driverUserId, full_name: r.driverName ?? null }
-          : null,
-        vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
-        trip: {
-          id: r.tripId,
-          tracking_code: r.trackingCode,
-          status: r.tripStatus,
-          origin: { address_raw: r.originAddressRaw, region_code: r.originRegionCode },
-          destination: {
-            address_raw: r.destinationAddressRaw,
-            region_code: r.destinationRegionCode,
-          },
-          cargo_type: r.cargoType,
-          cargo_weight_kg: r.cargoWeightKg,
-          pickup_window_start: safeIsoString(r.pickupWindowStart),
-          pickup_window_end: safeIsoString(r.pickupWindowEnd),
-          consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
-          notes: r.notes,
-          reference: r.reference,
-          // El listado solo marca el servicio; el diff vive en el detalle.
-          cambio_pendiente: r.cambioPendienteEn
-            ? { existe: true, creado_en: safeIsoString(r.cambioPendienteEn) }
+      assignments: rows.map((r) => {
+        // §6.11: `cancelacion {por_actor, razon, en}` o null si no aplica.
+        const cancelacion =
+          r.assignmentStatus === 'cancelado' && r.cancelledByActor
+            ? {
+                por_actor: r.cancelledByActor,
+                razon: r.cancellationReason ?? null,
+                en: safeIsoString(r.cancelledAt),
+              }
+            : null;
+        return {
+          id: r.assignmentId,
+          status: r.assignmentStatus,
+          accepted_at: safeIsoString(r.acceptedAt),
+          picked_up_at: safeIsoString(r.pickedUpAt),
+          agreed_price_clp: r.agreedPriceClp,
+          // `null` explícito, no campo ausente: la UI necesita distinguir "sin
+          // conductor" de "no me lo mandaron".
+          driver: r.driverUserId
+            ? { user_id: r.driverUserId, full_name: r.driverName ?? null }
             : null,
-        },
-      })),
+          vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
+          trip: {
+            id: r.tripId,
+            tracking_code: r.trackingCode,
+            status: r.tripStatus,
+            origin: { address_raw: r.originAddressRaw, region_code: r.originRegionCode },
+            destination: {
+              address_raw: r.destinationAddressRaw,
+              region_code: r.destinationRegionCode,
+            },
+            cargo_type: r.cargoType,
+            cargo_weight_kg: r.cargoWeightKg,
+            pickup_window_start: safeIsoString(r.pickupWindowStart),
+            pickup_window_end: safeIsoString(r.pickupWindowEnd),
+            consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
+            notes: r.notes,
+            reference: r.reference,
+            // El listado solo marca el servicio; el diff vive en el detalle.
+            cambio_pendiente: r.cambioPendienteEn
+              ? { existe: true, creado_en: safeIsoString(r.cambioPendienteEn) }
+              : null,
+            cancelacion,
+          },
+          cancelacion,
+        };
+      }),
     });
   });
 

@@ -245,6 +245,9 @@ function AssignmentsSection() {
   const [error, setError] = useState<string | null>(null);
   const [geoPermission, setGeoPermission] = useState<PermissionStatus>('unknown');
   const [refrescando, setRefrescando] = useState(false);
+  // Sube con cada respuesta de `/me/assignments`: libera el bloqueo por un
+  // 409 `cambio_pendiente` cuando la lista nueva ya no trae el cambio.
+  const [versionCarga, setVersionCarga] = useState(0);
 
   // El fetch vive en un callback para poder repetirlo: el conductor recibe
   // servicios mientras tiene la pantalla abierta, y antes no había forma de
@@ -255,6 +258,7 @@ function AssignmentsSection() {
     try {
       const res = await api.get<{ assignments: DriverAssignment[] }>('/me/assignments');
       setAssignments(res.assignments);
+      setVersionCarga((v) => v + 1);
     } catch (err) {
       // Mensajes en lenguaje del conductor: `Error 500: boom` no le sirve a
       // alguien que está en ruta.
@@ -368,7 +372,12 @@ function AssignmentsSection() {
 
   return (
     <section className="mt-6 space-y-4">
-      <AssignmentCard destacado assignment={primero} geoPermission={geoPermission} />
+      <AssignmentCard
+        destacado
+        assignment={primero}
+        geoPermission={geoPermission}
+        versionCarga={versionCarga}
+      />
       {resto.length > 0 ? (
         <div>
           <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
@@ -377,7 +386,11 @@ function AssignmentsSection() {
           <ul className="mt-2 space-y-2">
             {resto.map((item) => (
               <li key={item.id}>
-                <AssignmentCard assignment={item} geoPermission={geoPermission} />
+                <AssignmentCard
+                  assignment={item}
+                  geoPermission={geoPermission}
+                  versionCarga={versionCarga}
+                />
               </li>
             ))}
           </ul>
@@ -653,9 +666,12 @@ export function AssignmentCard({
   sugerenciasRuta = true,
   instruccionesRetiro = true,
   destacado = false,
+  versionCarga,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
+  /** Contador de cargas de `/me/assignments` (ver `useConfirmarRecogida`). */
+  versionCarga?: number;
   /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
   sugerenciasRuta?: boolean;
   /** instrucciones-retiro: false en la preview pública, que no tiene sesión ni viaje real. */
@@ -690,6 +706,7 @@ export function AssignmentCard({
     initialRecogida: a.status === 'recogido',
     geofence: reporter.lastGeofence,
     cambioPendiente: a.trip.cambio_pendiente?.existe === true,
+    ...(versionCarga !== undefined ? { versionCarga } : {}),
   });
 
   const fase: FaseServicio = entregada

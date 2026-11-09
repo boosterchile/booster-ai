@@ -18,8 +18,10 @@ function wrapper({ children }: { children: ReactNode }) {
 const ACTUAL: CargaActual = {
   origin_address_raw: 'Av. Apoquindo 4500, Las Condes',
   origin_region_code: 'XIII',
+  origin_comuna_code: '13114',
   destination_address_raw: 'Av. Libertad 100, Viña del Mar',
   destination_region_code: 'V',
+  destination_comuna_code: null,
   cargo_type: 'carga_seca',
   cargo_weight_kg: 1000,
   cargo_volume_m3: null,
@@ -38,8 +40,10 @@ describe('cambiosDesdeFormulario', () => {
   const sinCambios = {
     origen: ACTUAL.origin_address_raw,
     origenRegion: 'XIII',
+    origenComuna: '13114',
     destino: ACTUAL.destination_address_raw,
     destinoRegion: 'V',
+    destinoComuna: '',
     tipo: 'carga_seca',
     peso: '1000',
     volumen: '',
@@ -71,6 +75,29 @@ describe('cambiosDesdeFormulario', () => {
     });
   });
 
+  // Hallazgo: cambiar la dirección borraba la comuna (el formulario no la tenía).
+  it('al cambiar la dirección conserva la comuna vigente', () => {
+    expect(
+      cambiosDesdeFormulario(ACTUAL, { ...sinCambios, origen: 'Av. Apoquindo 5000, Las Condes' }),
+    ).toEqual({
+      origin: {
+        address_raw: 'Av. Apoquindo 5000, Las Condes',
+        region_code: 'XIII',
+        comuna_code: '13114',
+      },
+    });
+  });
+
+  it('cambiar solo la comuna es un cambio del lugar', () => {
+    expect(cambiosDesdeFormulario(ACTUAL, { ...sinCambios, destinoComuna: '05109' })).toEqual({
+      destination: {
+        address_raw: ACTUAL.destination_address_raw,
+        region_code: 'V',
+        comuna_code: '05109',
+      },
+    });
+  });
+
   it('una descripción vaciada se borra con null', () => {
     expect(
       cambiosDesdeFormulario(
@@ -97,6 +124,41 @@ describe('SolicitarCambioForm', () => {
       }),
     );
     await waitFor(() => expect(onListo).toHaveBeenCalled());
+  });
+
+  it('muestra el diff antes/después de lo que se va a enviar', () => {
+    render(<SolicitarCambioForm tripId="t-1" actual={ACTUAL} onListo={vi.fn()} />, { wrapper });
+    // Sin cambios no hay vista previa.
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Peso (kg)'), { target: { value: '2500' } });
+    const tabla = screen.getByRole('table');
+    expect(tabla).toHaveTextContent('Peso');
+    expect(tabla).toHaveTextContent('1.000 kg');
+    expect(tabla).toHaveTextContent('2.500 kg');
+  });
+
+  it('precarga la comuna, la envía con el lugar y la vacía al cambiar la región', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ solicitud: { id: 's1' } });
+    render(<SolicitarCambioForm tripId="t-1" actual={ACTUAL} onListo={vi.fn()} />, { wrapper });
+    const comunaOrigen = screen.getByLabelText('Comuna de origen') as HTMLSelectElement;
+    expect(comunaOrigen.value).toBe('13114');
+    fireEvent.change(screen.getByLabelText('Dirección de origen'), {
+      target: { value: 'Av. Apoquindo 5000, Las Condes' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar al transportista' }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/trip-requests-v2/t-1/solicitudes-cambio', {
+        cambios: {
+          origin: {
+            address_raw: 'Av. Apoquindo 5000, Las Condes',
+            region_code: 'XIII',
+            comuna_code: '13114',
+          },
+        },
+      }),
+    );
+    fireEvent.change(screen.getByLabelText('Región de origen'), { target: { value: 'V' } });
+    expect((screen.getByLabelText('Comuna de origen') as HTMLSelectElement).value).toBe('');
   });
 
   it('sin cambios no llama al API', () => {

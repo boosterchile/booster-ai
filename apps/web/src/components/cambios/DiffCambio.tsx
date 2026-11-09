@@ -1,3 +1,4 @@
+import { comunaPorCodigo } from '@booster-ai/shared-schemas';
 import { CARGO_TYPE_LABELS, type CargoType, regionLabel } from '../../lib/etiquetas-carga.js';
 import type { RegionCode } from '../../lib/etiquetas-carga.js';
 
@@ -81,7 +82,9 @@ export function valorLegible<C extends CampoCambio>(campo: C, valor: CambiosCarg
     case 'origin':
     case 'destination': {
       const l = valor as LugarCambio;
-      return `${l.address_raw} (${regionLabel(l.region_code as RegionCode | null)})`;
+      const region = regionLabel(l.region_code as RegionCode | null);
+      const comuna = l.comuna_code ? comunaPorCodigo(l.comuna_code)?.name : undefined;
+      return `${l.address_raw} (${comuna ? `${comuna}, ${region}` : region})`;
     }
     case 'cargo_type': {
       const t = valor as string;
