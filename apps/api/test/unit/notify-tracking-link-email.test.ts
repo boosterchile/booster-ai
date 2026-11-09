@@ -11,6 +11,23 @@ beforeAll(() => {
   process.env.GOOGLE_CLOUD_PROJECT = 'test';
 });
 
+// Span y métrica de negocio (spec §3): se capturan para verificar el outcome.
+const { counterAdd, spanAttrs } = vi.hoisted(() => ({
+  counterAdd: vi.fn(),
+  spanAttrs: [] as Array<Record<string, unknown>>,
+}));
+vi.mock('../../src/observability/business-metrics.js', () => ({
+  getBusinessCounter: vi.fn(() => ({ add: counterAdd })),
+}));
+vi.mock('../../src/observability/business-span.js', () => ({
+  withBusinessSpan: vi.fn(async (_o: unknown, fn: (span: unknown) => Promise<unknown>) =>
+    fn({ setAttributes: vi.fn() }),
+  ),
+  setResultAttributes: vi.fn((_span: unknown, attrs: Record<string, unknown>) => {
+    spanAttrs.push(attrs);
+  }),
+}));
+
 const { notifyTrackingLinkEmailAtAssignment } = await import(
   '../../src/services/notify-tracking-link-email.js'
 );
@@ -108,6 +125,7 @@ const deps = (db: never, sender: EmailSender) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  spanAttrs.length = 0;
 });
 
 describe('notifyTrackingLinkEmailAtAssignment', () => {
@@ -220,5 +238,28 @@ describe('notifyTrackingLinkEmailAtAssignment', () => {
     await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
     expect(enviados[0]?.html).toContain('&lt;script&gt;x&lt;/script&gt; &amp; Cía');
     expect(enviados[0]?.html).not.toContain('<script>');
+  });
+});
+
+describe('notifyTrackingLinkEmailAtAssignment — observabilidad', () => {
+  it.each([
+    ['enviado', fila(), OK, 'sent', 1],
+    ['sin correo', fila({ shipperEmail: null, consigneeEmail: null }), OK, 'no_email', 0],
+    [
+      'proveedor caído',
+      fila(),
+      { enviado: false, motivo: 'sin_proveedor' } as const,
+      'send_failed',
+      0,
+    ],
+  ] as const)('%s → outcome %s en el span y en el contador', async (_c, f, res, outcome, n) => {
+    const { db } = makeDb({ fila: f });
+    const { sender } = makeSender(res);
+    await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
+    expect(spanAttrs.at(-1)).toEqual({
+      'booster.outcome': outcome,
+      'booster.tracking_correo.enviados': n,
+    });
+    expect(counterAdd).toHaveBeenCalledWith(1, { outcome });
   });
 });

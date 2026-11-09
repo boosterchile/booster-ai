@@ -20,6 +20,8 @@ import { regionLabel } from '@booster-ai/notification-fan-out';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, trips, users, vehicles } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import type { EmailMessage, EmailSender } from './notifications/email-sender.js';
 
 export interface NotifyTrackingLinkEmailDeps {
@@ -87,7 +89,34 @@ function armarCorreo(datos: {
   return { to: datos.to, subject: `Seguimiento de tu carga ${datos.trackingCode}`, text, html };
 }
 
+/**
+ * Span `notificaciones.tracking_correo` y contador de negocio por resultado
+ * (`sent` o el motivo del skip). Sin clave de Resend, todo termina en
+ * `send_failed`: la métrica lo hace visible.
+ */
 export async function notifyTrackingLinkEmailAtAssignment(
+  deps: NotifyTrackingLinkEmailDeps,
+  opts: { assignmentId: string },
+): Promise<NotifyTrackingLinkEmailResult> {
+  return await withBusinessSpan(
+    {
+      name: 'notificaciones.tracking_correo',
+      attributes: { 'booster.assignment_id': opts.assignmentId },
+    },
+    async (span) => {
+      const resultado = await enviarCorreoTracking(deps, opts);
+      const outcome = resultado.skipped ? resultado.reason : 'sent';
+      setResultAttributes(span, {
+        'booster.outcome': outcome,
+        'booster.tracking_correo.enviados': resultado.skipped ? 0 : resultado.enviados,
+      });
+      getBusinessCounter('notificaciones_tracking_correo').add(1, { outcome });
+      return resultado;
+    },
+  );
+}
+
+async function enviarCorreoTracking(
   deps: NotifyTrackingLinkEmailDeps,
   opts: { assignmentId: string },
 ): Promise<NotifyTrackingLinkEmailResult> {
