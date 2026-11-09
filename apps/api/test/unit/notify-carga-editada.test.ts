@@ -98,3 +98,26 @@ describe('notifyCargaEditada', () => {
     expect(r).toEqual({ destinatarios: 2, enviados: 1 });
   });
 });
+
+describe('notifyCargaEditada — cancelación', () => {
+  it('avisa la cancelación con el motivo', async () => {
+    const db = makeDb([{ userId: 'u-dueno' }]);
+    await notifyCargaEditada(
+      { db, logger },
+      {
+        tripId: 'trip-1',
+        asignacion: { id: 'asg-1', empresaId: 'emp-t', driverUserId: 'u-cond' },
+        evento: 'cancelacion',
+        motivo: 'El cliente postergó el pedido',
+      },
+    );
+    const { payload } = sendPushMock.mock.calls[0]?.[0] as {
+      payload: { title: string; body: string; tag: string };
+    };
+    expect(payload.title).toBe('Servicio cancelado');
+    expect(payload.body).toBe(
+      'El generador canceló el servicio BOO-ABC123. Motivo: El cliente postergó el pedido. No te presentes a la recogida.',
+    );
+    expect(payload.tag).toBe('viaje:trip-1:cancelacion');
+  });
+});
