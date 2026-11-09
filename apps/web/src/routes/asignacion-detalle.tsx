@@ -68,6 +68,7 @@ interface AssignmentDetail {
     vehicle_plate: string | null;
     vehicle_status?: string | null;
     vehicle_type: string | null;
+    vehicle_capacity_kg?: number | null;
     driver_user_id: string | null;
     driver_name: string | null;
     cancelled_at?: string | null;
@@ -210,6 +211,7 @@ function AsignacionDetallePage({
             }}
             puedeResponder={puedeResponderCambio}
             vehiclePlate={assignment?.vehicle_plate ?? null}
+            vehicleCapacityKg={assignment?.vehicle_capacity_kg ?? null}
           />
         )}
 

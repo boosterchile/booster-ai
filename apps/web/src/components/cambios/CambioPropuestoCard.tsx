@@ -47,11 +47,14 @@ export function CambioPropuestoCard({
   cambio,
   puedeResponder,
   vehiclePlate,
+  vehicleCapacityKg = null,
 }: {
   assignmentId: string;
   cambio: CambioPendienteOficina;
   puedeResponder: boolean;
   vehiclePlate: string | null;
+  /** Capacidad del vehículo asignado; con ella se avisa antes de aceptar (§12-P9). */
+  vehicleCapacityKg?: number | null;
 }) {
   const queryClient = useQueryClient();
   const [rechazando, setRechazando] = useState(false);
@@ -76,6 +79,11 @@ export function CambioPropuestoCard({
     onError: (err) => setError(mensajeErrorRespuesta(err, vehiclePlate)),
   });
   const ocupado = aceptar.isPending || rechazar.isPending;
+  const pesoPropuesto = cambio.cambios.weight_kg;
+  const excedeCapacidad =
+    typeof pesoPropuesto === 'number' &&
+    typeof vehicleCapacityKg === 'number' &&
+    pesoPropuesto > vehicleCapacityKg;
 
   return (
     <section
@@ -92,6 +100,13 @@ export function CambioPropuestoCard({
       <div className="mt-3 rounded-md bg-white p-3">
         <DiffCambio cambios={cambio.cambios} anteriores={cambio.valores_anteriores} />
       </div>
+      {excedeCapacidad && vehicleCapacityKg !== null && (
+        <p data-testid="excede-capacidad" className="mt-3 text-danger-800 text-sm">
+          Este peso supera la capacidad de {vehiclePlate ?? 'tu vehículo'} (
+          {vehicleCapacityKg.toLocaleString('es-CL')} kg). Asigna un vehículo con capacidad
+          suficiente o rechaza el cambio.
+        </p>
+      )}
       {error && (
         <p role="alert" className="mt-3 text-danger-700 text-sm">
           {error}

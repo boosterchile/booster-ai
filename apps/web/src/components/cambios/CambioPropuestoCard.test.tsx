@@ -81,6 +81,36 @@ describe('CambioPropuestoCard', () => {
     );
   });
 
+  it('con la capacidad del vehículo avisa antes de aceptar un peso que no cabe', () => {
+    render(
+      <CambioPropuestoCard
+        assignmentId="asg-1"
+        cambio={CAMBIO}
+        puedeResponder
+        vehiclePlate="ABCD12"
+        vehicleCapacityKg={2000}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByTestId('excede-capacidad')).toHaveTextContent(
+      'Este peso supera la capacidad de ABCD12 (2.000 kg).',
+    );
+  });
+
+  it('si el peso cabe no hay aviso', () => {
+    render(
+      <CambioPropuestoCard
+        assignmentId="asg-1"
+        cambio={CAMBIO}
+        puedeResponder
+        vehiclePlate="ABCD12"
+        vehicleCapacityKg={5000}
+      />,
+      { wrapper },
+    );
+    expect(screen.queryByTestId('excede-capacidad')).not.toBeInTheDocument();
+  });
+
   it('sin permiso para responder no muestra los botones', () => {
     card(false);
     expect(screen.queryByRole('button', { name: 'Aceptar cambio' })).not.toBeInTheDocument();

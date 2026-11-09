@@ -134,6 +134,7 @@ const ASSIGNMENT_DETAIL_ROW = {
   vehiclePlate: 'AB-CD-12',
   vehicleStatus: 'activo',
   vehicleType: 'camion_pequeno',
+  vehicleCapacityKg: 5000,
   driverUserId: 'driver-uuid',
   driverName: 'Pedro Conductor',
   tripId: TRIP_ID,
@@ -288,6 +289,25 @@ describe('GET /assignments/:id', () => {
     createdAt: new Date('2026-11-09T15:00:00Z'),
     closedAt: null,
   };
+
+  it('expone la capacidad del vehículo asignado (y null sin vehículo)', async () => {
+    const conVehiculo = makeDb({ selects: [[ASSIGNMENT_DETAIL_ROW], [], []] });
+    const app1 = await buildApp({ db: conVehiculo });
+    const r1 = (await (
+      await app1.request(`/assignments/${ASSIGNMENT_ID}`, {
+        headers: { 'x-test-userctx': VALID_CTX },
+      })
+    ).json()) as { assignment: { vehicle_capacity_kg: number | null } };
+    expect(r1.assignment.vehicle_capacity_kg).toBe(5000);
+    const sinVehiculo = makeDb({ selects: [[{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null }], []] });
+    const app2 = await buildApp({ db: sinVehiculo });
+    const r2 = (await (
+      await app2.request(`/assignments/${ASSIGNMENT_ID}`, {
+        headers: { 'x-test-userctx': VALID_CTX },
+      })
+    ).json()) as { assignment: { vehicle_capacity_kg: number | null } };
+    expect(r2.assignment.vehicle_capacity_kg).toBeNull();
+  });
 
   it('con cambio pendiente, la oficina ve el diff completo', async () => {
     const db = makeDb({

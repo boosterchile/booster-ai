@@ -361,6 +361,8 @@ export function createAssignmentsRoutes(opts: {
         vehiclePlate: vehicles.plate,
         vehicleStatus: vehicles.vehicleStatus,
         vehicleType: vehicles.vehicleType,
+        // editar-anular-cargas §9: avisar antes de aceptar un peso que no cabe.
+        vehicleCapacityKg: vehicles.capacityKg,
         driverUserId: assignments.driverUserId,
         driverName: usersTable.fullName,
         // trip
@@ -501,6 +503,7 @@ export function createAssignmentsRoutes(opts: {
         vehicle_plate: row.vehiclePlate,
         vehicle_status: row.vehicleId ? (row.vehicleStatus ?? null) : null,
         vehicle_type: row.vehicleType,
+        vehicle_capacity_kg: row.vehicleId ? (row.vehicleCapacityKg ?? null) : null,
         driver_user_id: row.driverUserId,
         driver_name: row.driverName,
         ubicacion_actual: ubicacionActual,
