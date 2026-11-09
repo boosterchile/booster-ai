@@ -23,6 +23,7 @@ import {
   type CambioPendienteGeneradorDatos,
 } from '../components/cambios/CambioPendienteGenerador.js';
 import { SolicitarCambioForm } from '../components/cambios/SolicitarCambioForm.js';
+import { UltimaSolicitudCambio } from '../components/cambios/UltimaSolicitudCambio.js';
 import { BajaCarga, EstadoBajaCarga, type ModoBaja } from '../components/cargas/BajaCarga.js';
 import {
   ContactoYNotasCard,
@@ -1373,6 +1374,12 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
           />
         </div>
       )}
+      {/* §9: sin pendiente, el resultado y el motivo de la última ya resuelta. */}
+      {trip && !trip.cambio_pendiente && tripQ.data?.assignment && (
+        <div className="mb-6">
+          <UltimaSolicitudCambio tripId={trip.id} />
+        </div>
+      )}
       {trip &&
         !trip.cambio_pendiente &&
         trip.acciones_permitidas?.solicitar_cambio &&
@@ -1384,8 +1391,10 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 actual={{
                   origin_address_raw: trip.origin_address_raw,
                   origin_region_code: trip.origin_region_code,
+                  origin_comuna_code: trip.origin_comuna_code,
                   destination_address_raw: trip.destination_address_raw,
                   destination_region_code: trip.destination_region_code,
+                  destination_comuna_code: trip.destination_comuna_code,
                   cargo_type: trip.cargo_type,
                   cargo_weight_kg: trip.cargo_weight_kg,
                   cargo_volume_m3: trip.cargo_volume_m3,

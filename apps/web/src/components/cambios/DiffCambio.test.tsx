@@ -28,6 +28,12 @@ describe('valorLegible', () => {
       { address_raw: 'Av. Uno 1', region_code: 'XIII' },
       'Av. Uno 1 (XIII — Metropolitana)',
     ],
+    // Un cambio solo de comuna tiene que leerse distinto del valor anterior.
+    [
+      'origin',
+      { address_raw: 'Av. Uno 1', region_code: 'XIII', comuna_code: '13114' },
+      'Av. Uno 1 (Las Condes, XIII — Metropolitana)',
+    ],
     ['cargo_type', 'refrigerada', 'Refrigerada'],
     ['modalidad_carga', 'programada', 'Programada'],
     ['description', null, 'Sin dato'],

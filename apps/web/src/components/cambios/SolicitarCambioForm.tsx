@@ -1,8 +1,9 @@
+import { type RegionCode, comunasDeRegion } from '@booster-ai/shared-schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
 import { CARGO_TYPE_LABELS, REGION_LABELS } from '../../lib/etiquetas-carga.js';
-import type { CambiosCarga } from './DiffCambio.js';
+import { type CambiosCarga, DiffCambio, type LugarCambio } from './DiffCambio.js';
 
 /**
  * «Solicitar cambio» del generador sobre una carga ya asignada
@@ -14,8 +15,11 @@ import type { CambiosCarga } from './DiffCambio.js';
 export interface CargaActual {
   origin_address_raw: string;
   origin_region_code: string | null;
+  /** CUT/INE de la comuna, si la carga la tiene. */
+  origin_comuna_code: string | null;
   destination_address_raw: string;
   destination_region_code: string | null;
+  destination_comuna_code: string | null;
   cargo_type: string;
   cargo_weight_kg: number | null;
   cargo_volume_m3: number | null;
@@ -69,14 +73,25 @@ function numeroONull(v: string): number | null {
   return t === '' ? null : Number(t);
 }
 
+function lugar(direccion: string, region: string, comuna: string): LugarCambio {
+  return {
+    address_raw: direccion.trim(),
+    region_code: region,
+    // Sin comuna elegida el lugar va sin ella (el API la deja vacía).
+    ...(comuna ? { comuna_code: comuna } : {}),
+  };
+}
+
 /** Solo los campos que cambiaron respecto de la carga actual. */
 export function cambiosDesdeFormulario(
   actual: CargaActual,
   f: {
     origen: string;
     origenRegion: string;
+    origenComuna: string;
     destino: string;
     destinoRegion: string;
+    destinoComuna: string;
     tipo: string;
     peso: string;
     volumen: string;
@@ -90,15 +105,17 @@ export function cambiosDesdeFormulario(
   const c: CambiosCarga = {};
   if (
     f.origen.trim() !== actual.origin_address_raw ||
-    f.origenRegion !== (actual.origin_region_code ?? '')
+    f.origenRegion !== (actual.origin_region_code ?? '') ||
+    f.origenComuna !== (actual.origin_comuna_code ?? '')
   ) {
-    c.origin = { address_raw: f.origen.trim(), region_code: f.origenRegion };
+    c.origin = lugar(f.origen, f.origenRegion, f.origenComuna);
   }
   if (
     f.destino.trim() !== actual.destination_address_raw ||
-    f.destinoRegion !== (actual.destination_region_code ?? '')
+    f.destinoRegion !== (actual.destination_region_code ?? '') ||
+    f.destinoComuna !== (actual.destination_comuna_code ?? '')
   ) {
-    c.destination = { address_raw: f.destino.trim(), region_code: f.destinoRegion };
+    c.destination = lugar(f.destino, f.destinoRegion, f.destinoComuna);
   }
   if (f.tipo !== actual.cargo_type) {
     c.cargo_type = f.tipo;
@@ -135,6 +152,44 @@ export function cambiosDesdeFormulario(
   return c;
 }
 
+/** Valores vigentes en la forma del diff, para la vista previa. */
+function anterioresDe(actual: CargaActual): CambiosCarga {
+  return {
+    origin: {
+      address_raw: actual.origin_address_raw,
+      region_code: actual.origin_region_code,
+      comuna_code: actual.origin_comuna_code,
+    },
+    destination: {
+      address_raw: actual.destination_address_raw,
+      region_code: actual.destination_region_code,
+      comuna_code: actual.destination_comuna_code,
+    },
+    cargo_type: actual.cargo_type,
+    weight_kg: actual.cargo_weight_kg,
+    volume_m3: actual.cargo_volume_m3,
+    description: actual.cargo_description,
+    pickup_window:
+      actual.pickup_window_start && actual.pickup_window_end
+        ? { start_at: actual.pickup_window_start, end_at: actual.pickup_window_end }
+        : null,
+    proposed_price_clp: actual.proposed_price_clp,
+    ...(actual.modalidad_carga === 'spot' || actual.modalidad_carga === 'programada'
+      ? { modalidad_carga: actual.modalidad_carga }
+      : {}),
+  };
+}
+
+function esRegion(v: string): v is RegionCode {
+  return v in REGION_LABELS;
+}
+
+function comunasOrdenadas(region: string) {
+  return esRegion(region)
+    ? [...comunasDeRegion(region)].sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    : [];
+}
+
 export function SolicitarCambioForm({
   tripId,
   actual,
@@ -148,8 +203,10 @@ export function SolicitarCambioForm({
   const [f, setF] = useState({
     origen: actual.origin_address_raw,
     origenRegion: actual.origin_region_code ?? '',
+    origenComuna: actual.origin_comuna_code ?? '',
     destino: actual.destination_address_raw,
     destinoRegion: actual.destination_region_code ?? '',
+    destinoComuna: actual.destination_comuna_code ?? '',
     tipo: actual.cargo_type,
     peso: actual.cargo_weight_kg?.toString() ?? '',
     volumen: actual.cargo_volume_m3?.toString() ?? '',
@@ -161,6 +218,17 @@ export function SolicitarCambioForm({
   });
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [k]: v }));
+  // La comuna pertenece a la región: si cambia la región, se vacía.
+  const setRegion = (extremo: 'origen' | 'destino') => (v: string) =>
+    setF((p) =>
+      extremo === 'origen'
+        ? { ...p, origenRegion: v, origenComuna: '' }
+        : { ...p, destinoRegion: v, destinoComuna: '' },
+    );
+  // Vista previa local de lo que se envía. El desglose comercial lo calcula
+  // el servidor y se ve en el banner del cambio pendiente, después de enviar.
+  const propuestos = cambiosDesdeFormulario(actual, f);
+  const hayCambios = Object.keys(propuestos).length > 0;
 
   const enviar = useMutation({
     mutationFn: (cambios: CambiosCarga) =>
@@ -175,12 +243,11 @@ export function SolicitarCambioForm({
   function onSubmit(ev: FormEvent) {
     ev.preventDefault();
     setError(null);
-    const cambios = cambiosDesdeFormulario(actual, f);
-    if (Object.keys(cambios).length === 0) {
+    if (!hayCambios) {
       setError('No cambiaste ningún dato.');
       return;
     }
-    enviar.mutate(cambios);
+    enviar.mutate(propuestos);
   }
 
   const campo = 'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2';
@@ -209,12 +276,27 @@ export function SolicitarCambioForm({
           <span className={etiqueta}>Región de origen</span>
           <select
             value={f.origenRegion}
-            onChange={(e) => set('origenRegion')(e.target.value)}
+            onChange={(e) => setRegion('origen')(e.target.value)}
             className={campo}
           >
             {Object.entries(REGION_LABELS).map(([code, label]) => (
               <option key={code} value={code}>
                 {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className={etiqueta}>Comuna de origen</span>
+          <select
+            value={f.origenComuna}
+            onChange={(e) => set('origenComuna')(e.target.value)}
+            className={campo}
+          >
+            <option value="">Sin comuna</option>
+            {comunasOrdenadas(f.origenRegion).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -231,12 +313,27 @@ export function SolicitarCambioForm({
           <span className={etiqueta}>Región de destino</span>
           <select
             value={f.destinoRegion}
-            onChange={(e) => set('destinoRegion')(e.target.value)}
+            onChange={(e) => setRegion('destino')(e.target.value)}
             className={campo}
           >
             {Object.entries(REGION_LABELS).map(([code, label]) => (
               <option key={code} value={code}>
                 {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className={etiqueta}>Comuna de destino</span>
+          <select
+            value={f.destinoComuna}
+            onChange={(e) => set('destinoComuna')(e.target.value)}
+            className={campo}
+          >
+            <option value="">Sin comuna</option>
+            {comunasOrdenadas(f.destinoRegion).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -324,6 +421,12 @@ export function SolicitarCambioForm({
           className={campo}
         />
       </label>
+      {hayCambios && (
+        <section aria-label="Cambios que vas a proponer" className="space-y-1">
+          <h4 className="font-medium text-neutral-800 text-sm">Cambios que vas a proponer</h4>
+          <DiffCambio cambios={propuestos} anteriores={anterioresDe(actual)} />
+        </section>
+      )}
       {error && (
         <p role="alert" className="text-danger-700 text-sm">
           {error}
