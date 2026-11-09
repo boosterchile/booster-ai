@@ -222,7 +222,11 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
       await next();
     };
     const userContext = rutas.createUserContextMiddleware({ db, logger });
-    const guard = rutas.createImpersonationWriteGuardMiddleware({ logger });
+    const guard = rutas.createImpersonationWriteGuardMiddleware({
+      logger,
+      db,
+      platformAdminEmails: LISTA,
+    });
     const a = new Hono();
     // Mismo orden que server.ts: en /me el guard corre antes del userContext.
     a.use('/admin/*', sesion, userContext, guard);
