@@ -553,8 +553,9 @@ describe('AppRoute — persona de Booster con empresa (SC9)', () => {
     providedContext = { kind: 'onboarded', me: adminConEmpresa() };
     renderWithQueryClient(<AppRoute />);
     expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
-    expect(screen.getByText('Bienvenido a Booster')).toBeInTheDocument();
-    expect(screen.getByText('Como generador de carga')).toBeInTheDocument();
+    // El inicio de su empresa (generadora pura), no el panel.
+    expect(screen.getByTestId('inicio-generador')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Felipe/ })).toBeInTheDocument();
   });
 
   it('con la elección pero sin empresa activa → redirige al panel', () => {
