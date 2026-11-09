@@ -1631,6 +1631,70 @@ export const tripEvents = pgTable(
   }),
 );
 
+/** editar-anular-cargas M3 — ciclo de vida de una solicitud de cambio. */
+export const tripChangeRequestStatusEnum = pgEnum('estado_solicitud_cambio', [
+  'pendiente',
+  'aceptada',
+  'rechazada',
+  'retirada',
+  'invalidada',
+]);
+
+/**
+ * Solicitudes de cambio de una carga ya asignada (editar-anular-cargas M3).
+ * El generador propone; el transportista acepta o rechaza. Mientras está
+ * `pendiente` el viaje conserva los datos originales y la recogida queda
+ * bloqueada. `cambios` y `valores_anteriores` se validan con Zod
+ * (`cambioPropuestoSchema`) al escribir y al leer.
+ */
+export const tripChangeRequests = pgTable(
+  'solicitudes_cambio_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id),
+    assignmentId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id),
+    requestedByUserId: uuid('solicitado_por_id')
+      .notNull()
+      .references(() => users.id),
+    status: tripChangeRequestStatusEnum('estado').notNull().default('pendiente'),
+    changes: jsonb('cambios').notNull(),
+    previousValues: jsonb('valores_anteriores').notNull(),
+    respondedByUserId: uuid('respondido_por_id').references(() => users.id),
+    respondedAt: timestamp('respondido_en', { withTimezone: true }),
+    responseReason: text('razon_respuesta'),
+    invalidationReason: varchar('motivo_invalidacion', { length: 40 }),
+    lastReminderAt: timestamp('ultimo_recordatorio_en', { withTimezone: true }),
+    remindersSent: integer('recordatorios_enviados').notNull().default(0),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('cerrado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    pendienteUnica: uniqueIndex('uq_solicitud_cambio_pendiente')
+      .on(table.tripId)
+      .where(sql`estado = 'pendiente'`),
+    asignacionIdx: index('idx_solicitudes_cambio_asignacion').on(table.assignmentId, table.status),
+    pendientesIdx: index('idx_solicitudes_cambio_pendientes')
+      .on(table.createdAt)
+      .where(sql`estado = 'pendiente'`),
+    cerrada: check(
+      'ck_solicitud_cambio_cerrada',
+      sql`(estado = 'pendiente') = (cerrado_en IS NULL)`,
+    ),
+    respondida: check(
+      'ck_solicitud_cambio_respondida',
+      sql`estado NOT IN ('aceptada', 'rechazada') OR (respondido_por_id IS NOT NULL AND respondido_en IS NOT NULL)`,
+    ),
+    motivoInvalidacion: check(
+      'ck_solicitud_cambio_motivo_invalidacion',
+      sql`motivo_invalidacion IS NULL OR motivo_invalidacion IN ('viaje_cancelado', 'datos_cambiaron', 'viaje_no_asignado')`,
+    ),
+  }),
+);
+
 /**
  * TripMetrics = métricas ESG por viaje (1:1 con trips). Moat ESG.
  *
