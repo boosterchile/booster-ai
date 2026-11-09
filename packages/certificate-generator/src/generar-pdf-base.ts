@@ -22,12 +22,14 @@ import { type FuentesCert, embeberFuentes } from './fuentes.js';
 import {
   FRASE_ISO,
   TAMANO_LINEA_METODO,
+  TITULO_AHORRO,
   TITULO_CERT,
   TITULO_DISCLAIMER,
   declaracionDistancia,
   formatRouteDataSource,
   formatearNumeroPrincipal,
   lineaMetodoCert,
+  lineasReferenciaHuellaChile,
   numeroEsCl,
   presentacionNivel,
   subtituloMetodologia,
@@ -196,6 +198,26 @@ export async function generarPdfConCajas(
       c.texto(l, MX + 16, c.y, 9.5, f.regular, TEXTO);
     }
   }
+  // Referencia HuellaChile: secundaria (9,5 / 8,5 pt gris, sin bold), bajo una línea fina.
+  const ref = lineasReferenciaHuellaChile(
+    m.combustibleUnidad === 'L' ? m.combustibleConsumido : null,
+    m.referencia,
+  );
+  if (ref) {
+    c.y -= 12;
+    c.page.drawLine({
+      start: { x: MX + 16, y: c.y },
+      end: { x: MX2 - 16, y: c.y },
+      thickness: 0.5,
+      color: hex('#D9DEE3'),
+    });
+    c.y -= 14;
+    c.texto(ref[0], MX + 16, c.y, 9.5, f.regular, GRIS);
+    for (const l of partir(ref[1], f.regular, 8.5, MX2 - MX - 32)) {
+      c.y -= 11;
+      c.texto(l, MX + 16, c.y, 8.5, f.regular, GRIS);
+    }
+  }
   c.y -= 16;
   dibujarRect(c.page, {
     x: MX,
@@ -210,7 +232,7 @@ export async function generarPdfConCajas(
   // 9. Disclaimer: inmediatamente después de Resultados y entero (no se parte).
   if (pres.estimado) {
     const lineas = partir(
-      textoDisclaimer(m.fuenteFactores, m.glecVersion),
+      textoDisclaimer(m.factoresLinea?.etiqueta ?? m.fuenteFactores, m.glecVersion),
       f.regular,
       9,
       MX2 - MX - 28,
@@ -243,14 +265,22 @@ export async function generarPdfConCajas(
     formatPrecisionMethod(m.precisionMethod),
     f,
   );
-  c.par(
-    'Factor de emisión usado',
-    `${numeroEsCl(m.emissionFactorUsado)} kg CO\u2082e / unidad`,
-    null,
-    null,
-    f,
-  );
-  c.par('Fuente de factores', m.fuenteFactores, null, null, f);
+  // Línea de factores (ux.md §Factores): solo si la tabla versionada resolvió la fuente.
+  const fl = m.factoresLinea;
+  if (fl) {
+    c.asegurar(40);
+    const u = 'kg CO\u2082e/L';
+    c.texto(
+      `Factores: WTW ${numeroEsCl(fl.wtw)} ${u} · TTW ${numeroEsCl(fl.ttw)} ${u} · WTT ${numeroEsCl(fl.wtt)} ${u}`,
+      MX,
+      c.y,
+      9.5,
+      f.semibold,
+      TEXTO,
+    );
+    c.texto(`Fuente de factores: ${fl.etiqueta}`, MX, c.y - 13, 8.5, f.regular, GRIS);
+    c.y -= 40;
+  }
   // ADR-028 — origen del polyline; solo si el campo está presente.
   if (m.routeDataSource) {
     c.par(
@@ -301,7 +331,7 @@ export async function generarPdfConCajas(
   const factorMatching = m.factorMatchingAplicado;
   const ahorroBackhaul = m.ahorroCo2eVsSinMatchingKgco2eWtw;
   if (factorMatching != null && ahorroBackhaul != null && ahorroBackhaul > 0) {
-    c.seccion('Ahorro CO\u2082e vía matching de retorno (GLEC v3.0 §6.4)', f);
+    c.seccion(TITULO_AHORRO, f);
     c.par(
       'Factor de matching aplicado',
       `${(factorMatching * 100).toFixed(0)}%`,
@@ -330,7 +360,8 @@ export async function generarPdfConCajas(
   }
 
   // Verificación.
-  c.asegurar(50);
+  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
+  c.asegurar(50 + (lineasUrl.length - 1) * 11);
   c.y -= 6;
   c.texto(
     'Este documento está firmado digitalmente con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.',
@@ -340,7 +371,6 @@ export async function generarPdfConCajas(
     f.regular,
     GRIS,
   );
-  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
   lineasUrl.forEach((l, i) => c.texto(l, MX, c.y - 13 - i * 11, 8.5, f.semibold, AZUL));
   c.texto(
     'Documento emitido por Booster Chile SpA. Cualquier alteración invalida la firma.',
@@ -368,7 +398,7 @@ export async function generarPdfConCajas(
   // estrictos (eIDAS, auditores ESG) rechazan el legacy.
   const pdfWithPlaceholder = plainAddPlaceholder({
     pdfBuffer: Buffer.from(pdfBytes),
-    reason: 'Certificación de huella de carbono GLEC v3.0',
+    reason: `Certificación de huella de carbono GLEC ${params.metricas.glecVersion}`,
     contactInfo: 'sustentabilidad@boosterchile.com',
     name: 'Booster Chile SpA',
     location: 'Santiago, Chile',
@@ -539,7 +569,8 @@ class Cursor {
       this.page = this.doc.addPage(A4);
       this.pagina += 1;
       registrarPagina(this.page, this.pagina, this.registro);
-      this.y = TOPE;
+      // El primer texto de la página nueva cuelga bajo el tope (alto ≤ 11 pt).
+      this.y = TOPE - 11;
     }
     if (titulo) {
       this.tituloPendiente = null;

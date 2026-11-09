@@ -98,8 +98,10 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
     expect(todo).toContain('kg CO\u2082e');
     // QA #873: etiquetas de Metodología fijadas (mutantes «Versión GLEC», «Fuente factores», «Factor»).
     expect(todo).toMatch(/Metodología GLEC\s+v3\.0/);
-    expect(todo).toMatch(/Factor de emisión usado\s+3,24 kg CO\u2082e \/ unidad/);
-    expect(todo).toMatch(/Fuente de factores\s+GLEC v2\.0 \(2019\), Tabla 32/);
+    // PR-B: «Factor de emisión usado» se reemplazó por la línea «Factores: …» y
+    // «Fuente de factores: …», que solo se imprimen con la tabla versionada
+    // (opción d). Sus etiquetas se fijan en «etiquetas fijas y valores de la emisión».
+    expect(todo).not.toContain('Factor de emisión usado');
     expect(todo).not.toContain('Versión GLEC');
     expect(todo).not.toContain('Fuente factores');
     expect(todo).toContain('cobertura 60%');
@@ -136,4 +138,89 @@ describe('plantilla v2 — primario (criterios 3, 5, 8, 10)', () => {
     expect(todo).toMatch(/Fecha del viaje\s*—/);
     expect(todo).toMatch(/Salida · Llegada\s*—/);
   });
+});
+
+describe('PR-B — factores, referencia HuellaChile y versión (criterios 7, 11, 12, 14, 15)', () => {
+  const conFactores: DatosMetricasCertificado = {
+    ...base,
+    fuenteFactores:
+      'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87',
+    factoresLinea: { etiqueta: 'GLEC v2.0 (2019), Tabla 32', ttw: 2.67, wtt: 0.57, wtw: 3.24 },
+    referencia: { ttw: 2.74, wtt: 0.624, fuente: 'HuellaChile 2025, MMA' },
+  };
+
+  it('etiquetas fijas y valores de la emisión', async () => {
+    const { todo } = await texto(conFactores);
+    expect(todo).toMatch(/Metodología GLEC\s+v3\.0/);
+    expect(todo).toContain(
+      'Factores: WTW 3,24 kg CO\u2082e/L · TTW 2,67 kg CO\u2082e/L · WTT 0,57 kg CO\u2082e/L',
+    );
+    expect(todo).toContain('Fuente de factores: GLEC v2.0 (2019), Tabla 32');
+    expect(todo).toContain('factores GLEC v2.0 (2019), Tabla 32 + GLEC Framework v3.0');
+    // criterio 14: kg_ref = 132,48 L × (2,740 + 0,624) = 445,66
+    expect(todo).toContain('Referencia HuellaChile 2025: 445,66 kg CO\u2082e WTW');
+    expect(todo).toContain(
+      'Calculado con los mismos 132,48 L y los factores MMA 2025 (TTW 2,740 + WTT 0,624 kg CO\u2082e/L). Solo referencia: el resultado de este certificado es el de arriba.',
+    );
+  });
+
+  it('otros factores o versión guardados → el PDF los imprime (nada fijo)', async () => {
+    const { todo } = await texto({
+      ...conFactores,
+      glecVersion: 'v3.1',
+      factoresLinea: { etiqueta: 'Otra tabla', ttw: 2.5, wtt: 0.5, wtw: 3 },
+      referencia: { ttw: 2.8, wtt: 0.7, fuente: 'HuellaChile 2025, MMA' },
+    });
+    expect(todo).toContain(
+      'Factores: WTW 3,00 kg CO\u2082e/L · TTW 2,50 kg CO\u2082e/L · WTT 0,50 kg CO\u2082e/L',
+    );
+    expect(todo).toContain('GLEC Framework v3.1 · ISO 14083:2023');
+    expect(todo).toContain('TTW 2,800 + WTT 0,700');
+    expect(todo).toContain('463,68'); // 132,48 × 3,5
+    // Subtítulo y disclaimer usan la versión de la emisión (la línea de método ADR-077 es aparte).
+    expect(todo).toContain('GLEC Framework v3.1).');
+    expect(todo).not.toContain('GLEC Framework v3.0');
+  });
+
+  it('criterios 12 y 15: sin SEC Chile ni «certificado/verificado HuellaChile»', async () => {
+    const { todo } = await texto({ ...conFactores, fuenteFactores: null, factoresLinea: null });
+    expect(todo).not.toContain('SEC Chile');
+    expect(todo.toLowerCase()).not.toMatch(/(certificado|verificado) huellachile/);
+    expect(todo).toContain('(Google Routes API + GLEC Framework v3.0)');
+  });
+
+  it('sin fila de factores no hay línea de factores; sin litros no hay referencia', async () => {
+    const { todo } = await texto({
+      ...conFactores,
+      factoresLinea: null,
+      combustibleConsumido: null,
+    });
+    expect(todo).not.toContain('Factores:');
+    expect(todo).not.toContain('Referencia HuellaChile');
+  });
+});
+
+describe('HC-004: ningún «v3.0» fijo en el PDF (sin backhaul)', () => {
+  it('con otra versión guardada, el PDF no contiene v3.0 en ninguna parte', async () => {
+    const { todo } = await texto({ ...base, glecVersion: 'v9.9' });
+    expect(todo).toContain('Consumo modelado según GLEC v9.9');
+    expect(todo).not.toContain('v3.0');
+  });
+});
+
+describe('HC-004: título de ahorro como cita fija del método (decision.md 18:07)', () => {
+  // §6.4 es una sección de GLEC v3.0: el título cita el método y NO sigue a
+  // version_glec. Si alguien lo interpola, este test falla.
+  const TITULO = 'Ahorro CO\u2082e vía matching de retorno (método GLEC v3.0 §6.4)';
+  const conAhorro = { factorMatchingAplicado: 0.5, ahorroCo2eVsSinMatchingKgco2eWtw: 40 };
+
+  it.each(['v2.0', 'v9.9'])(
+    'con version_glec %s el título no cambia y es el único v3.0',
+    async (v) => {
+      const { todo } = await texto({ ...base, ...conAhorro, glecVersion: v });
+      expect(todo).toContain(TITULO);
+      expect(todo).toContain(`GLEC Framework ${v} · ISO 14083:2023`);
+      expect(todo.split(TITULO).join('')).not.toContain('v3.0');
+    },
+  );
 });

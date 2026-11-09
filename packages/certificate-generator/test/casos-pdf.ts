@@ -33,6 +33,9 @@ const metricas = {
   uncertaintyFactor: 0.05,
   factorMatchingAplicado: 0.5,
   ahorroCo2eVsSinMatchingKgco2eWtw: 40,
+  // PR-B: con línea de factores y referencia HuellaChile, para que los márgenes las cubran.
+  factoresLinea: { etiqueta: 'GLEC v2.0 (2019), Tabla 32', ttw: 2.67, wtt: 0.57, wtw: 3.24 },
+  referencia: { ttw: 2.74, wtt: 0.624, fuente: 'HuellaChile 2025, MMA' },
 };
 const base: ParametrosGenerarPdf = {
   viaje,

@@ -26,6 +26,7 @@
  *     job de backfill (P2.f) lo retoma después.
  */
 
+import { factoresLineaCertificado } from '@booster-ai/carbon-calculator';
 import { emitirCertificado } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
@@ -62,6 +63,7 @@ export type EmitirResult =
         | 'trip_not_found'
         | 'trip_not_delivered'
         | 'metrics_missing'
+        | 'version_glec_missing'
         | 'already_issued'
         | 'no_shipper';
     }
@@ -141,6 +143,13 @@ async function emitirCertificadoViajeInner(
   const metrics = metricsRows[0];
   if (!metrics) {
     return { skipped: true, reason: 'metrics_missing' };
+  }
+  // HC-004 (Felipe 14:50): se imprime la versión GLEC real de la emisión; sin
+  // default 'v3.0'. Sin versión guardada no se firma un certificado.
+  const glecVersion = metrics.glecVersion;
+  if (!glecVersion) {
+    logger.error({ tripId }, 'emitirCertificadoViaje skipped: métricas sin version_glec');
+    return { skipped: true, reason: 'version_glec_missing' };
   }
   if (metrics.certificateIssuedAt) {
     // Ya emitido. Idempotente: retornamos como skipped pero loggeamos
@@ -228,6 +237,23 @@ async function emitirCertificadoViajeInner(
     }
   }
 
+  // HC-004 (opción d): factores por litro desde la tabla versionada por
+  // factores_fuente. Si no calza, la línea no se imprime y queda en el log.
+  const factorUsado = numOrNull(metrics.emissionFactorUsed) ?? 0;
+  const factoresLinea = factoresLineaCertificado(metrics.factoresFuente, factorUsado);
+  if (!factoresLinea) {
+    logger.warn(
+      { tripId, factoresFuente: metrics.factoresFuente, emissionFactorUsed: factorUsado },
+      'emitirCertificadoViaje: línea de factores omitida (fuente fuera de la tabla o factor no calza)',
+    );
+  }
+  const ttwRef = numOrNull(metrics.ttwRef);
+  const wttRef = numOrNull(metrics.wttRef);
+  const referencia =
+    ttwRef !== null && wttRef !== null && metrics.fuenteRef
+      ? { ttw: ttwRef, wtt: wttRef, fuente: metrics.fuenteRef }
+      : null;
+
   // (3) Llamar al package — la única función con I/O hacia KMS + GCS.
   const result = await emitirCertificado({
     viaje: {
@@ -258,10 +284,12 @@ async function emitirCertificadoViajeInner(
       precisionMethod:
         (metrics.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
         'por_defecto',
-      glecVersion: metrics.glecVersion ?? 'v3.0',
-      emissionFactorUsado: numOrNull(metrics.emissionFactorUsed) ?? 0,
-      // HC-003 T1: la fuente guardada al calcular; filas previas a 0068 → etiqueta legacy.
-      fuenteFactores: metrics.factoresFuente ?? 'SEC Chile 2024 + GLEC v3.0',
+      glecVersion,
+      emissionFactorUsado: factorUsado,
+      // Filas previas a 0068 quedan en null: no se imprime «SEC Chile 2024» (criterio 12).
+      fuenteFactores: metrics.factoresFuente,
+      factoresLinea,
+      referencia,
       calculatedAt: metrics.calculatedAt ?? new Date(),
       // ADR-028 — dual-source data fields. Si están NULL (trips legacy
       // pre-migración 0009 que no fueron recalculados), el cert-generator
