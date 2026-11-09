@@ -593,6 +593,14 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+        // seguimiento-por-correo: sin RESEND_API_KEY el sender registra el
+        // intento y la marca queda libre para cuando exista el secreto.
+        notifyTrackingLinkEmail: {
+          db: opts.db,
+          logger,
+          emailSender,
+          webAppUrl: config.WEB_APP_URL,
+        },
       }),
     );
 

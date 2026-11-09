@@ -15,6 +15,10 @@ import {
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularMetricasEstimadas } from './calcular-metricas-viaje.js';
 import {
+  type NotifyTrackingLinkEmailDeps,
+  notifyTrackingLinkEmailAtAssignment,
+} from './notify-tracking-link-email.js';
+import {
   type NotifyTrackingLinkDeps,
   notifyTrackingLinkAtAssignment,
 } from './notify-tracking-link.js';
@@ -103,6 +107,11 @@ interface AcceptOfferOptions {
    * el envío (dev local, tests).
    */
   notifyTrackingLink?: NotifyTrackingLinkDeps;
+  /**
+   * seguimiento-por-correo — Deps para enviar el mismo link por correo al
+   * generador y al destinatario. Canal independiente del WhatsApp.
+   */
+  notifyTrackingLinkEmail?: NotifyTrackingLinkEmailDeps;
 }
 
 export async function acceptOffer(opts: AcceptOfferOptions): Promise<AcceptOfferResult> {
@@ -129,7 +138,8 @@ export async function acceptOffer(opts: AcceptOfferOptions): Promise<AcceptOffer
 }
 
 async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferResult> {
-  const { db, logger, offerId, empresaId, userId, notifyTrackingLink } = opts;
+  const { db, logger, offerId, empresaId, userId, notifyTrackingLink, notifyTrackingLinkEmail } =
+    opts;
 
   return await db
     .transaction(async (tx) => {
@@ -326,6 +336,21 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
           logger.error(
             { err, assignmentId: result.assignment.id },
             'fallo despachar tracking link tras accept (sin impacto en assignment)',
+          );
+        }
+      }
+
+      // seguimiento-por-correo — el mismo link por correo. Fire-and-forget e
+      // independiente del WhatsApp: si uno falla, el otro sale igual.
+      if (notifyTrackingLinkEmail) {
+        try {
+          await notifyTrackingLinkEmailAtAssignment(notifyTrackingLinkEmail, {
+            assignmentId: result.assignment.id,
+          });
+        } catch (err) {
+          logger.error(
+            { err, assignmentId: result.assignment.id },
+            'fallo despachar tracking link por correo tras accept (sin impacto en assignment)',
           );
         }
       }

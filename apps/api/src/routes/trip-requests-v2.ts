@@ -372,6 +372,7 @@ export function createTripRequestsV2Routes(opts: {
           : {}),
         // Phase 5 PR-L3b — datos consignee opt-in para tracking link directo.
         ...(input.consignee?.name ? { consigneeName: input.consignee.name } : {}),
+        ...(input.consignee?.email ? { consigneeEmail: input.consignee.email } : {}),
         ...(input.consignee?.phone_e164
           ? { consigneeWhatsappE164: input.consignee.phone_e164 }
           : {}),
