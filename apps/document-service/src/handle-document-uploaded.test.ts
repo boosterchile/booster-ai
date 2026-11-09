@@ -5,9 +5,9 @@ import { createDocumentUploadedHandler } from './handle-document-uploaded.js';
 import type { DocumentStore, ObjectDownloader } from './process-document-uploaded.js';
 
 const VALID_MESSAGE = {
-  documentId: '11111111-1111-1111-1111-111111111111',
-  viajeId: '22222222-2222-2222-2222-222222222222',
-  filePath: 'transport-documents/22222222-2222-2222-2222-222222222222/abc.pdf',
+  documentId: '11111111-1111-4111-8111-111111111111',
+  viajeId: '22222222-2222-4222-8222-222222222222',
+  filePath: 'transport-documents/22222222-2222-4222-8222-222222222222/abc.pdf',
   fileMime: 'application/pdf',
 };
 

@@ -1,11 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import { boundedArray } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { consents, memberships, users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { extractClientIp } from '../middleware/client-ip.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 import {

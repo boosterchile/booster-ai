@@ -34,7 +34,7 @@ export const pushEnvelopeSchema = z.object({
     data: z.string(),
     messageId: z.string().min(1),
     publishTime: z.string().optional(),
-    attributes: z.record(z.string()).optional(),
+    attributes: z.record(z.string(), z.string()).optional(),
   }),
   subscription: z.string().min(1),
   /** Presente cuando la suscripción tiene DLQ (messaging.tf). */

@@ -3,12 +3,12 @@ import type { Logger } from '@booster-ai/logger';
 import { transportDocumentManualEntryInputSchema } from '@booster-ai/shared-schemas';
 import { PubSub } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
-import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
 import { assignments, transportDocuments, trips } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularRetentionUntil } from '../services/calcular-retention-until.js';
 

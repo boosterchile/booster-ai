@@ -47,6 +47,30 @@ Env vars requeridas:
 
 Exit code 1 si algún trip falló — útil para alerting en cron/CI.
 
+### `hc001-fuente-combustible-can.ts`
+
+HC-001: corrige `vehiculos.fuente_combustible_can` (KZXB64 89→83, LFGR63 84→83,
+KZBB26 84→sin_sensor) con guarda sobre el valor previo y exactamente 3 filas en
+una transacción. Dry-run por defecto. La ejecuta Ops Platform con OK de Felipe.
+
+Imprime el destino que pg va a usar (`<host>:<port>/<db>`, sin password) y aborta
+si es ambiguo (host o DB vacíos, socket, multi-host, `?host=`/`?port=` distintos).
+Con `DRY_RUN=false` exige `CONFIRMAR_DESTINO` exactamente igual a ese destino.
+Cualquier otro valor de `DRY_RUN` es dry-run.
+
+En prod se entra por el túnel IAP (cloud-sql-proxy en localhost): el destino es
+algo como `localhost:5436/booster_ai`. **Cópialo tal cual de la salida del dry-run**,
+no lo escribas a mano.
+
+```bash
+# 1. Dry-run (default): imprime {"destino":"localhost:5436/booster_ai",...}
+SENTIDO=up pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+# 2. Real (solo con el visto de Felipe):
+SENTIDO=up DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+# Reversa:
+SENTIDO=reversa DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
+```
+
 ### `reap-orphan-onboarding-firebase.ts`
 
 Borra el usuario Firebase **huérfano** del onboarding admin-provisioned

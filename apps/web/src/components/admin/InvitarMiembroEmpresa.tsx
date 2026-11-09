@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { urlActivar } from '../../lib/activar-url.js';
 import { ApiError, api } from '../../lib/api-client.js';
 import { logger } from '../../lib/logger.js';
+import { SolicitudRegistrada } from '../SolicitudRegistrada.js';
 
 /**
  * Fase 3.5 (onboarding-flow-redesign) — sumar una persona a una empresa que ya
@@ -292,18 +293,7 @@ export function InvitarMiembroEmpresa({
       </form>
 
       {result && !result.codigo_activacion && (
-        <div className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
-          <div className="font-semibold text-amber-900">
-            {result.vinculo === 'cuenta_activa' || result.estado === 'activa'
-              ? 'Esta persona ya tiene cuenta'
-              : 'Esta persona ya tiene un código vigente'}
-          </div>
-          <p className="mt-1 text-amber-800 text-sm">
-            {result.vinculo === 'cuenta_activa' || result.estado === 'activa'
-              ? 'Quedó en la empresa. Entra con su RUT y su clave. No hay código nuevo: su clave no cambia.'
-              : 'No se reemplazó. Cuando lo use en Activar cuenta, también quedará en esta empresa.'}
-          </p>
-        </div>
+        <SolicitudRegistrada volverLabel="Volver a Equipo" onVolver={() => setResult(null)} />
       )}
 
       {result?.codigo_activacion && (

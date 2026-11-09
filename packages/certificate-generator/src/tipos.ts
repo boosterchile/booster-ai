@@ -25,6 +25,11 @@ export interface DatosViajeCertificado {
   cargoPesoKg: number | null;
   pickupAt: Date | null;
   deliveredAt: Date | null;
+  /**
+   * HC-004 — versión del certificado (certificados_viaje). Ausente = v1.
+   * `reemplazaA` imprime «Versión N · reemplaza a vM» (p3b).
+   */
+  version?: { numero: number; reemplazaA?: number };
 }
 
 /**
@@ -63,12 +68,10 @@ export interface DatosMetricasCertificado {
    */
   coveragePct?: number;
   /**
-   * ADR-028 — Nivel de certificación derivado al cierre del trip. Si está
-   * ausente, asumimos `primario_verificable` (legacy path); el cert sale
-   * con header "CERTIFICADO". Cuando está presente:
-   *   - `primario_verificable` → header "CERTIFICADO DE HUELLA DE CARBONO"
-   *   - `secundario_modeled` o `secundario_default` → header "REPORTE
-   *     ESTIMATIVO DE HUELLA DE CARBONO" + disclaimer prominente.
+   * ADR-028 — Nivel de certificación derivado al cierre del trip. HC-004:
+   * el título es siempre «Certificado de huella de carbono»; solo
+   * `primario_verificable` es primario. Cualquier otro valor (o ausente)
+   * lleva sello ESTIMADO, badge de estimado y disclaimer.
    */
   certificationLevel?: 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
   /**

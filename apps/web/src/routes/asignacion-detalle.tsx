@@ -29,8 +29,8 @@ import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js'
 import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { esConductorDelViaje } from '../lib/es-conductor-del-viaje.js';
-import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
 interface AssignmentDetail {
   trip_request: {
@@ -80,8 +80,15 @@ export function AsignacionDetalleRoute() {
             </div>
           );
         }
-        const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
-        return <AsignacionDetallePage canWriteDocs={canWriteDocs} viewerUserId={ctx.me.user.id} />;
+        const flags = flagsDe(ctx.me);
+        return (
+          <AsignacionDetallePage
+            canWriteDocs={flags.documentos}
+            puedeAsignar={flags.asignar}
+            puedeCobraHoy={flags.pedirCobraHoy}
+            viewerUserId={ctx.me.user.id}
+          />
+        );
       }}
     </ProtectedRoute>
   );
@@ -89,9 +96,13 @@ export function AsignacionDetalleRoute() {
 
 function AsignacionDetallePage({
   canWriteDocs,
+  puedeAsignar,
+  puedeCobraHoy,
   viewerUserId,
 }: {
   canWriteDocs: boolean;
+  puedeAsignar: boolean;
+  puedeCobraHoy: boolean;
   viewerUserId: string;
 }) {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
@@ -163,7 +174,7 @@ function AsignacionDetallePage({
           driver_user_id=NULL y no había forma de setearlo después.
           Sin conductor asignado, el endpoint /assignments/:id/driver-position
           rechaza con 403 y el conductor no puede reportar GPS. */}
-      {assignment && (
+      {assignment && puedeAsignar && (
         <DriverAssignmentCard
           assignmentId={assignmentId}
           currentDriverName={assignment.driver_name}
@@ -211,7 +222,7 @@ function AsignacionDetallePage({
           vez que el viaje fue entregado. El service backend valida
           flag + liquidación + shipper credit; si el flag está off
           (entornos no-prod por default), el modal lo comunica. */}
-          {isDelivered && (
+          {isDelivered && puedeCobraHoy && (
             <div className="border-neutral-200 border-b bg-white px-4 py-3">
               <div className="flex flex-col gap-1">
                 <span className="font-medium text-neutral-700 text-sm">Pronto pago disponible</span>

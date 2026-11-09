@@ -46,13 +46,20 @@ export type Carga<T> = { estado: 'cargando' } | { estado: 'error' } | { estado: 
 
 export interface OfertaInicio {
   expires_at: string;
+  precioClp?: number | null;
+  origen?: string;
+  destino?: string;
 }
 
 export interface AsignacionInicio {
+  id?: string;
   status: string;
   sinConductor: boolean;
   pickupInicio: string | null;
   direccionOrigen: string;
+  direccionDestino?: string;
+  patente?: string | null;
+  conductor?: string | null;
 }
 
 export interface DocInicio {
@@ -73,6 +80,7 @@ export type EstadoVehiculoInicio = 'activo' | 'mantenimiento' | 'retirado';
 export type FuentePosicionInicio = 'own' | 'mirror' | 'browser_gps';
 
 export interface VehiculoFlotaInicio {
+  id?: string;
   plate: string;
   status?: EstadoVehiculoInicio;
   teltonikaImei: string | null;
@@ -83,6 +91,9 @@ export interface VehiculoFlotaInicio {
   longitude: number | null;
 }
 
+/** Cobra hoy en el Inicio: nunca tumba la página. Sin montos. */
+export type EstadoCobraHoy = 'cargando' | 'apagado' | 'error' | 'disponible';
+
 export interface DatosInicio {
   ofertas: Carga<OfertaInicio[]>;
   servicios: Carga<AsignacionInicio[]>;
@@ -90,12 +101,14 @@ export interface DatosInicio {
   flota: Carga<VehiculoFlotaInicio[]>;
   vehiculos: Carga<number>;
   conductores: Carga<number>;
+  cobraHoy: EstadoCobraHoy;
 }
 
 export interface ContextoInicio {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
+  veFinanzas: boolean;
   ahora: Date;
 }
 
@@ -185,6 +198,7 @@ export interface InicioVista {
   conectados: KpiConectados | null;
   accesos: AccesoVista[];
   pasos: PasoAlta[] | null;
+  cobraHoy: EstadoCobraHoy;
 }
 
 export function horaEnZona(ahora: Date, timeZone = ZONA_INICIO): number {
@@ -601,7 +615,7 @@ function filaServicios(carga: Carga<AsignacionInicio[]>, ahora: Date): FilaAtenc
   };
 }
 
-function etiquetaDocumento(tipo: string): string {
+export function etiquetaDocumento(tipo: string): string {
   return ETIQUETA_DOCUMENTO[tipo] ?? tipo;
 }
 
@@ -720,21 +734,11 @@ function buildAtencion(datos: DatosInicio, ahora: Date): AtencionVista {
   const todasListas = fuentes.every((fuente) => fuente.estado === 'listo');
   return {
     tipo: 'filas',
-    pendientes: todasListas ? sumaPendientes(datos, ahora.getTime()) : null,
+    // El número del encabezado es la cantidad de filas que se ven.
+    // Una fila puede agrupar varios vehículos, ofertas o documentos.
+    pendientes: todasListas ? filas.length : null,
     filas,
   };
-}
-
-function sumaPendientes(datos: DatosInicio, ahoraMs: number): number {
-  const ofertas = datos.ofertas.estado === 'listo' ? datos.ofertas.valor.length : 0;
-  const sinConductor =
-    datos.servicios.estado === 'listo'
-      ? datos.servicios.valor.filter((item) => item.sinConductor).length
-      : 0;
-  const vencidos = datos.cumplimiento.estado === 'listo' ? datos.cumplimiento.valor.vencidos : 0;
-  const sinSenal =
-    datos.flota.estado === 'listo' ? contarFlota(datos.flota.valor, ahoraMs).sinSenal : 0;
-  return ofertas + sinConductor + vencidos + sinSenal;
 }
 
 function kpiEnRuta(carga: Carga<AsignacionInicio[]>): KpiEnRuta {
@@ -791,7 +795,7 @@ function acceso(parcial: {
   };
 }
 
-function buildAccesos(datos: DatosInicio, esAdmin: boolean): AccesoVista[] {
+function buildAccesos(datos: DatosInicio, ctx: ContextoInicio): AccesoVista[] {
   const ofertas = datos.ofertas.estado === 'listo' ? datos.ofertas.valor.length : null;
   const sinConductor =
     datos.servicios.estado === 'listo'
@@ -841,20 +845,25 @@ function buildAccesos(datos: DatosInicio, esAdmin: boolean): AccesoVista[] {
       badge: vencidos,
       badgeTono: 'danger',
     }),
-    acceso({
-      id: 'cobra-hoy',
-      label: 'Cobra hoy',
-      to: '/app/cobra-hoy/historial',
-      testId: 'dashboard-link-cobra-hoy',
-    }),
-    acceso({
-      id: 'liquidaciones',
-      label: 'Liquidaciones',
-      to: '/app/liquidaciones',
-      testId: 'dashboard-link-liquidaciones',
-    }),
   ];
-  if (esAdmin) {
+  // CHEQUEOS_REEMPLAZADOS inicio-plata: antes salían para todo transportista.
+  if (ctx.veFinanzas) {
+    accesos.push(
+      acceso({
+        id: 'cobra-hoy',
+        label: 'Cobra hoy',
+        to: '/app/cobra-hoy/historial',
+        testId: 'dashboard-link-cobra-hoy',
+      }),
+      acceso({
+        id: 'liquidaciones',
+        label: 'Liquidaciones',
+        to: '/app/liquidaciones',
+        testId: 'dashboard-link-liquidaciones',
+      }),
+    );
+  }
+  if (ctx.esAdmin) {
     accesos.push(
       acceso({
         id: 'trayectos',
@@ -895,7 +904,8 @@ export function buildInicioVista(datos: DatosInicio, ctx: ContextoInicio): Inici
     atencion: buildAtencion(datos, ctx.ahora),
     enRuta,
     conectados,
-    accesos: buildAccesos(datos, ctx.esAdmin),
+    accesos: buildAccesos(datos, ctx),
     pasos: empresaNueva ? pasosAlta({ vehiculos: 0, conductores: 0, documentos: 0 }) : null,
+    cobraHoy: datos.cobraHoy,
   };
 }

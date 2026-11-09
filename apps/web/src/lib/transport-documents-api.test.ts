@@ -167,6 +167,27 @@ describe('listTransportDocuments', () => {
       code: 'invalid_response',
     });
   });
+
+  it('contrato TRK-003: details es error.flatten() de zod 3', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({});
+    const err = await listTransportDocuments(TRIP_ID).catch((e: unknown) => e);
+    const { status, code, message, details } = err as InstanceType<typeof ApiError>;
+    expect({ status, code, message, details }).toMatchInlineSnapshot(`
+      {
+        "code": "invalid_response",
+        "details": {
+          "fieldErrors": {
+            "documents": [
+              "Invalid input: expected array, received undefined",
+            ],
+          },
+          "formErrors": [],
+        },
+        "message": "Respuesta inválida (list)",
+        "status": 500,
+      }
+    `);
+  });
 });
 
 describe('uploadTransportDocument', () => {

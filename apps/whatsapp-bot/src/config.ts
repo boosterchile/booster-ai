@@ -13,8 +13,8 @@ import { z } from 'zod';
  * mantener todo el bundle de Twilio en un solo lugar).
  */
 const whatsAppBotEnvSchema = commonEnvSchema
-  .merge(gcpEnvSchema)
-  .merge(redisEnvSchema)
+  .extend(gcpEnvSchema.shape)
+  .extend(redisEnvSchema.shape)
   .extend({
     SERVICE_NAME: z.literal('booster-ai-whatsapp-bot'),
 

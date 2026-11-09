@@ -7,7 +7,6 @@ import {
   invitarMiembroEmpresaSchema,
   reemitirCodigoActivacionResponseSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
@@ -15,13 +14,18 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
+import {
+  VINCULO_PERSONA_EXISTENTE,
+  type VinculoPersona,
+  personaPrevia,
+} from '../services/vinculo-persona.js';
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -60,6 +64,9 @@ function miembroPendienteDe(row: {
  *                                        transportista), sin persona ni clave
  *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
  *                                        pendiente_verificacion)
+ *   POST  /admin/empresas/:id/activar-generador-carga
+ *                                      → prende `es_generador_carga` en un
+ *                                        transportista que ya existe
  *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
  *   POST  /admin/empresas/:id/miembros/:membershipId/codigo
  *                                      → emite un código nuevo para una
@@ -445,6 +452,148 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
     },
   );
 
+  // POST /admin/empresas/:id/activar-generador-carga — prende el rol en un
+  // transportista que ya existe. El alta solo escribe el flag al crear la
+  // fila; sin esto Van Oosterwyk se resolvía con UPDATE a mano.
+  // Idempotente: la segunda vez no reescribe quién ni cuándo.
+  // Desactivar queda fuera de alcance.
+  app.post('/:id/activar-generador-carga', zValidator('param', idParamSchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+
+    const { id } = c.req.valid('param');
+
+    return await withBusinessSpan(
+      {
+        name: 'empresa.activar_generador_carga',
+        attributes: { 'booster.empresa_id': id },
+      },
+      async (span) => {
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const existingRows = await opts.db
+          .select({
+            id: empresas.id,
+            isTransportista: empresas.isTransportista,
+            isGeneradorCarga: empresas.isGeneradorCarga,
+            generadorCargaActivadoEn: empresas.generadorCargaActivadoEn,
+            generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
+          })
+          .from(empresas)
+          .where(eq(empresas.id, id))
+          .limit(1);
+        const existing = existingRows[0];
+        if (!existing) {
+          return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+        }
+        if (!existing.isTransportista) {
+          return c.json({ error: 'conflict', code: 'not_a_transportista' }, 409);
+        }
+
+        let unchanged = existing.isGeneradorCarga;
+        let activadoEn = existing.generadorCargaActivadoEn;
+        let activadoPor = existing.generadorCargaActivadoPor;
+
+        if (!unchanged) {
+          const ahora = new Date();
+          // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+          const updated = await opts.db
+            .update(empresas)
+            .set({
+              isGeneradorCarga: true,
+              generadorCargaActivadoEn: ahora,
+              generadorCargaActivadoPor: admin.adminEmail,
+              updatedAt: ahora,
+            })
+            .where(
+              and(
+                eq(empresas.id, id),
+                eq(empresas.isTransportista, true),
+                eq(empresas.isGeneradorCarga, false),
+              ),
+            )
+            .returning({
+              id: empresas.id,
+              isTransportista: empresas.isTransportista,
+              isGeneradorCarga: empresas.isGeneradorCarga,
+              generadorCargaActivadoEn: empresas.generadorCargaActivadoEn,
+              generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
+            });
+          const row = updated[0];
+          if (row) {
+            activadoEn = row.generadorCargaActivadoEn;
+            activadoPor = row.generadorCargaActivadoPor;
+          } else {
+            // Otra activación ganó el UPDATE (WHERE es_generador_carga = false).
+            // Releer: si el rol ya quedó prendido, esta llamada es idempotente.
+            const racedRows = await opts.db
+              .select({
+                id: empresas.id,
+                isTransportista: empresas.isTransportista,
+                isGeneradorCarga: empresas.isGeneradorCarga,
+                generadorCargaActivadoEn: empresas.generadorCargaActivadoEn,
+                generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
+              })
+              .from(empresas)
+              .where(eq(empresas.id, id))
+              .limit(1);
+            const raced = racedRows[0];
+            if (raced?.isTransportista && raced.isGeneradorCarga) {
+              unchanged = true;
+              activadoEn = raced.generadorCargaActivadoEn;
+              activadoPor = raced.generadorCargaActivadoPor;
+            } else if (!raced) {
+              return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+            } else if (raced.isTransportista) {
+              opts.logger.error(
+                { empresaId: id },
+                'admin-empresas: activar generador no devolvió fila',
+              );
+              return c.json(
+                { error: 'internal_server_error', code: 'generador_update_failed' },
+                500,
+              );
+            } else {
+              return c.json({ error: 'conflict', code: 'not_a_transportista' }, 409);
+            }
+          }
+        }
+
+        opts.logger.info(
+          {
+            empresaId: id,
+            esGeneradorCargaAntes: existing.isGeneradorCarga,
+            esGeneradorCargaDespues: true,
+            esTransportista: true,
+            unchanged,
+            adminEmail: admin.adminEmail,
+            actorUserId: admin.userContext.user.id,
+          },
+          unchanged
+            ? 'admin-empresas: rol generador de carga sin cambio (idempotente)'
+            : 'admin-empresas: rol generador de carga activado',
+        );
+        getBusinessCounter('empresa_generador_carga_activaciones_total').add(1, {
+          unchanged: String(unchanged),
+        });
+        setResultAttributes(span, {
+          'booster.empresa.generador_unchanged': unchanged,
+        });
+
+        return c.json({
+          ok: true,
+          id,
+          es_generador_carga: true,
+          es_transportista: true,
+          unchanged,
+          activado_en: activadoEn ? fechaDe(activadoEn).toISOString() : null,
+          activado_por: activadoPor,
+        });
+      },
+    );
+  });
+
   app.post('/:id/miembros', zValidator('json', invitarMiembroEmpresaSchema), async (c) => {
     const admin = requirePlatformAdmin(c);
     if (!admin.ok) {
@@ -519,15 +668,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             );
           }
           userId = existente.id;
-          vinculo = clasificarVinculoPersona(existente);
-          if (vinculo === 'provisoria_sin_codigo') {
-            const codigo = generateActivationPin();
-            codigoEmitido = codigo;
-            await opts.db
-              .update(users)
-              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-              .where(eq(users.id, existente.id));
-          }
+          // Persona existente: sin código nuevo y sin revelar el estado de su cuenta.
+          vinculo = VINCULO_PERSONA_EXISTENTE;
         } else {
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const porEmail = await opts.db
@@ -573,17 +715,16 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           userId = created.id;
         }
 
-        const yaActiva = vinculo === 'cuenta_activa';
         const insertedMembership = await opts.db
           .insert(memberships)
           .values({
             userId,
             empresaId,
             role: body.rol,
-            status: yaActiva ? 'activa' : 'pendiente_invitacion',
+            status: 'pendiente_invitacion',
             invitedByUserId: admin.userContext.user.id,
             invitedAt: new Date(),
-            joinedAt: yaActiva ? new Date() : null,
+            joinedAt: null,
           })
           .returning({ id: memberships.id });
         const membership = insertedMembership[0];
@@ -609,12 +750,11 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         record('issued');
 
         if (codigoEmitido !== null && opts.emailSender) {
-          // Persona provisoria: su correo registrado, no el que tipeó el admin.
           await enviarCorreoActivacionCuenta({
             sender: opts.emailSender,
             logger: opts.logger,
-            email: existente?.email ?? email,
-            nombre: existente?.fullName ?? body.full_name,
+            email,
+            nombre: body.full_name,
             rut: body.rut,
             codigo: codigoEmitido,
             empresa: empresa.razonSocial,
@@ -634,7 +774,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             user_id: userId,
             membership_id: membership.id,
             rol: body.rol,
-            estado: yaActiva ? 'activa' : 'pendiente_invitacion',
+            estado: 'pendiente_invitacion',
             codigo_activacion: codigoEmitido,
             expira_en: expiraEn,
             vinculo,
@@ -683,6 +823,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               nombre: users.fullName,
               rut: users.rut,
               razonSocial: empresas.legalName,
+              personaCreadaEn: users.createdAt,
+              membresiaCreadaEn: memberships.createdAt,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -698,7 +840,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           const siguePendiente =
             fila.estado === 'pendiente_invitacion' &&
             fila.claveNumericaHash === null &&
-            fila.firebaseUid.startsWith('pending-rut:');
+            fila.firebaseUid.startsWith('pending-rut:') &&
+            !personaPrevia(fila.personaCreadaEn, fila.membresiaCreadaEn);
           if (!siguePendiente) {
             record('already_activated');
             return c.json({ error: 'conflict', code: 'already_activated' }, 409);

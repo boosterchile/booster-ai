@@ -90,7 +90,12 @@ describe('integration: patente duplicada en vehículos → 409', () => {
         memberships: [],
         activeMembership: {
           membership: { id: 'm-int', role: 'dueno' },
-          empresa: { id: empresaId, legal_name: 'Transportes Lic' },
+          empresa: {
+            id: empresaId,
+            legal_name: 'Transportes Lic',
+            isTransportista: true,
+            isGeneradorCarga: false,
+          },
         },
       });
       await next();

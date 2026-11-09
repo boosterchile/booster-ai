@@ -132,10 +132,7 @@ export const tripRequestCreateInputSchema = z
       cargo_type: cargoTypeSchema,
       /** Peso en kg. Filtra vehículos con capacidad menor. */
       weight_kg: z
-        .number({
-          invalid_type_error: 'Ingresa el peso en kg',
-          required_error: 'Ingresa el peso en kg',
-        })
+        .number({ message: 'Ingresa el peso en kg' })
         .int('Ingresa el peso en kg')
         .positive('El peso tiene que ser mayor a 0')
         .max(100_000, 'El peso máximo es 100.000 kg'),

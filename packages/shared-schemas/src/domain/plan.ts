@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { planIdSchema } from '../primitives/ids.js';
+import { errorOpcion } from '../primitives/mensajes.js';
 
 /**
  * Plan de suscripción.
@@ -11,7 +12,9 @@ import { planIdSchema } from '../primitives/ids.js';
  * Slice 2: integrar Flow.cl (Chile) o Stripe para subscription billing
  * real con webhooks de pago + downgrade automático en impago.
  */
-export const planSlugSchema = z.enum(['gratis', 'estandar', 'pro', 'enterprise']);
+export const planSlugSchema = z.enum(['gratis', 'estandar', 'pro', 'enterprise'], {
+  error: errorOpcion,
+});
 export type PlanSlug = z.infer<typeof planSlugSchema>;
 
 /**
