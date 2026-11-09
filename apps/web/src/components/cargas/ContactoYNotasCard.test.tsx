@@ -56,6 +56,35 @@ describe('ContactoYNotasCard', () => {
     expect(await screen.findByRole('button', { name: 'Editar' })).toBeInTheDocument();
   });
 
+  it('si el enlace de seguimiento cambió, lo avisa al volver al resumen', async () => {
+    vi.spyOn(api, 'patch').mockResolvedValue({
+      trip_request: { id: 't-1', campos: ['consignee'], enlace_seguimiento_renovado: true },
+    });
+    render(<ContactoYNotasCard tripId="t-1" datos={DATOS} editable />, { wrapper });
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.change(screen.getByLabelText('WhatsApp del destinatario'), {
+      target: { value: '+56922222222' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'El enlace de seguimiento cambió. El anterior dejó de funcionar.',
+    );
+    // Al volver a editar, el aviso se va.
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('si el enlace no cambió, no avisa', async () => {
+    vi.spyOn(api, 'patch').mockResolvedValue({
+      trip_request: { id: 't-1', campos: ['notes'], enlace_seguimiento_renovado: false },
+    });
+    render(<ContactoYNotasCard tripId="t-1" datos={DATOS} editable />, { wrapper });
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(await screen.findByRole('button', { name: 'Editar' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('vaciar los datos del destinatario manda null', async () => {
     const patch = vi.spyOn(api, 'patch').mockResolvedValue({});
     render(<ContactoYNotasCard tripId="t-1" datos={DATOS} editable />, { wrapper });

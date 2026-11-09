@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
 import { type DatosLibresInput, cargaEditadaPayloadSchema } from '@booster-ai/shared-schemas';
 import { aceptaDatosLibres, esEstadoViaje } from '@booster-ai/trip-state-machine';
@@ -15,6 +16,11 @@ import { assignments, tripEvents, trips } from '../db/schema.js';
  * destinatario y las notas pueden tener datos personales y eventos_viaje es
  * append-only). Las notificaciones las despacha el llamador después del commit
  * con lo que devuelve esta función.
+ *
+ * Enlace público de seguimiento (`.specs/seguimiento-enlace-destinatario/`
+ * §3.1): si el destinatario tenía un contacto y ese contacto cambia o se quita,
+ * el token de la asignación activa se reemplaza en la misma transacción. El
+ * token no sale de esta función: el reenvío lo lee de la asignación.
  */
 
 type CampoLibre = 'consignee' | 'notes' | 'reference';
@@ -26,8 +32,14 @@ export type ResultadoDatosLibres =
   | {
       ok: true;
       campos: CampoLibre[];
-      /** Teléfono del destinatario si cambió a un valor no nulo (para reenviar el link). */
-      telefonoDestinatarioNuevo: string | null;
+      /** El enlace público de seguimiento se reemplazó: el anterior ya no responde. */
+      enlaceRenovado: boolean;
+      /**
+       * A qué contactos del destinatario hay que mandar el enlace vigente. Con el
+       * enlace reemplazado, los contactos que quedaron; sin reemplazar, solo los
+       * que cambiaron a un valor.
+       */
+      reenviarEnlace: { telefono: string | null; correo: string | null };
       /** Asignación activa, para avisar al transportista y al conductor. */
       asignacion: {
         id: string;
@@ -39,6 +51,11 @@ export type ResultadoDatosLibres =
   | { ok: false; code: 'trip_not_found' }
   | { ok: false; code: 'trip_not_editable'; currentStatus: string }
   | { ok: false; code: 'sin_cambios' };
+
+/** Mismo correo sin distinguir mayúsculas; null solo es igual a null. */
+function mismoCorreo(a: string | null, b: string | null): boolean {
+  return a === null || b === null ? a === b : a.toLowerCase() === b.toLowerCase();
+}
 
 export async function editarDatosLibres(
   deps: { db: Db; logger: Logger },
@@ -70,6 +87,12 @@ export async function editarDatosLibres(
 
     const cambios: Partial<typeof trips.$inferInsert> = {};
     const campos: CampoLibre[] = [];
+    let contactoAnteriorCambio = false;
+    const reenviarEnlace: { telefono: string | null; correo: string | null } = {
+      telefono: null,
+      correo: null,
+    };
+    let contactoVigente = reenviarEnlace;
     if (input.consignee !== undefined) {
       // El destinatario se reemplaza completo; null lo borra.
       const nuevo = {
@@ -84,6 +107,17 @@ export async function editarDatosLibres(
       ) {
         Object.assign(cambios, nuevo);
         campos.push('consignee');
+        const telefonoCambio = nuevo.consigneeWhatsappE164 !== viaje.consigneeWhatsappE164;
+        const correoCambio = !mismoCorreo(nuevo.consigneeEmail, viaje.consigneeEmail);
+        contactoAnteriorCambio =
+          (viaje.consigneeWhatsappE164 !== null && telefonoCambio) ||
+          (viaje.consigneeEmail !== null && correoCambio);
+        contactoVigente = {
+          telefono: nuevo.consigneeWhatsappE164,
+          correo: nuevo.consigneeEmail,
+        };
+        reenviarEnlace.telefono = telefonoCambio ? nuevo.consigneeWhatsappE164 : null;
+        reenviarEnlace.correo = correoCambio ? nuevo.consigneeEmail : null;
       }
     }
     if (input.notes !== undefined && input.notes !== viaje.notes) {
@@ -110,34 +144,46 @@ export async function editarDatosLibres(
       payload: cargaEditadaPayloadSchema.parse({ modo: 'libre', campos }),
     });
 
-    const telefonoNuevo =
-      cambios.consigneeWhatsappE164 !== undefined &&
-      cambios.consigneeWhatsappE164 !== null &&
-      cambios.consigneeWhatsappE164 !== viaje.consigneeWhatsappE164
-        ? cambios.consigneeWhatsappE164
-        : null;
-
     // rls-allowlist: asignación del viaje ya validado contra la empresa generadora (empresaId).
-    const [asignacion] = await tx
+    const [fila] = await tx
       .select({
         id: assignments.id,
         status: assignments.status,
         empresaId: assignments.empresaId,
         driverUserId: assignments.driverUserId,
+        publicTrackingToken: assignments.publicTrackingToken,
       })
       .from(assignments)
       .where(and(eq(assignments.tripId, tripId), inArray(assignments.status, ASIGNACION_ACTIVA)))
       .limit(1);
+    const asignacion = fila
+      ? {
+          id: fila.id,
+          status: fila.status,
+          empresaId: fila.empresaId,
+          driverUserId: fila.driverUserId,
+        }
+      : null;
+
+    const enlaceRenovado = Boolean(fila?.publicTrackingToken) && contactoAnteriorCambio;
+    if (fila && enlaceRenovado) {
+      // rls-allowlist: UPDATE por id de la asignación del viaje ya validado contra empresaId.
+      await tx
+        .update(assignments)
+        .set({ publicTrackingToken: randomUUID() })
+        .where(eq(assignments.id, fila.id));
+    }
 
     logger.info(
-      { tripId, campos, conAsignacion: Boolean(asignacion) },
+      { tripId, campos, conAsignacion: Boolean(asignacion), enlaceRenovado },
       'datos libres de la carga editados',
     );
     return {
       ok: true,
       campos,
-      telefonoDestinatarioNuevo: telefonoNuevo,
-      asignacion: asignacion ?? null,
+      enlaceRenovado,
+      reenviarEnlace: enlaceRenovado ? contactoVigente : reenviarEnlace,
+      asignacion,
     } as const;
   });
 }

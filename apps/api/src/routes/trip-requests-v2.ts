@@ -75,6 +75,10 @@ import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import {
+  type NotifyTrackingLinkEmailDeps,
+  reenviarTrackingLinkEmailADestinatario,
+} from '../services/notify-tracking-link-email.js';
+import {
   type NotifyTrackingLinkDeps,
   reenviarTrackingLinkADestinatario,
 } from '../services/notify-tracking-link.js';
@@ -221,10 +225,14 @@ export function createTripRequestsV2Routes(opts: {
   /** Inyectable en tests. En runtime es el fetch global. */
   fetchImpl?: typeof fetch;
   /**
-   * editar-anular-cargas §12-P8 — deps para reenviar el link de tracking al
-   * número nuevo del destinatario. Ausente → no se reenvía (dev sin Twilio).
+   * Deps para mandar por WhatsApp el enlace de seguimiento vigente al
+   * destinatario cuando cambia su contacto
+   * (`.specs/seguimiento-enlace-destinatario/` §3.2). Ausente → no se reenvía
+   * (dev sin Twilio).
    */
   notifyTrackingLink?: NotifyTrackingLinkDeps;
+  /** Lo mismo por correo. Ausente → no se reenvía por correo. */
+  notifyTrackingLinkEmail?: NotifyTrackingLinkEmailDeps;
 }) {
   const app = new Hono();
 
@@ -1081,8 +1089,9 @@ export function createTripRequestsV2Routes(opts: {
     }
 
     // Post-commit, fire-and-forget: avisar a la transportista y al conductor,
-    // y reenviar el link al número nuevo del destinatario (§12-P8).
-    const { asignacion, telefonoDestinatarioNuevo } = resultado;
+    // y mandar el enlace vigente al destinatario
+    // (`.specs/seguimiento-enlace-destinatario/` §3.2).
+    const { asignacion, reenviarEnlace } = resultado;
     if (asignacion) {
       try {
         await notifyCambioCarga(
@@ -1092,11 +1101,11 @@ export function createTripRequestsV2Routes(opts: {
       } catch (err) {
         opts.logger.error({ err, tripId }, 'fallo avisar datos libres editados (la edición quedó)');
       }
-      if (telefonoDestinatarioNuevo && opts.notifyTrackingLink) {
+      if (reenviarEnlace.telefono && opts.notifyTrackingLink) {
         try {
           await reenviarTrackingLinkADestinatario(opts.notifyTrackingLink, {
             assignmentId: asignacion.id,
-            telefono: telefonoDestinatarioNuevo,
+            telefono: reenviarEnlace.telefono,
           });
         } catch (err) {
           opts.logger.error(
@@ -1105,8 +1114,27 @@ export function createTripRequestsV2Routes(opts: {
           );
         }
       }
+      if (reenviarEnlace.correo && opts.notifyTrackingLinkEmail) {
+        try {
+          await reenviarTrackingLinkEmailADestinatario(opts.notifyTrackingLinkEmail, {
+            assignmentId: asignacion.id,
+            correo: reenviarEnlace.correo,
+          });
+        } catch (err) {
+          opts.logger.error(
+            { err, tripId, assignmentId: asignacion.id },
+            'fallo reenviar link de tracking por correo al destinatario (la edición quedó)',
+          );
+        }
+      }
     }
-    return c.json({ trip_request: { id: tripId, campos: resultado.campos } });
+    return c.json({
+      trip_request: {
+        id: tripId,
+        campos: resultado.campos,
+        enlace_seguimiento_renovado: resultado.enlaceRenovado,
+      },
+    });
   });
 
   // ---------------------------------------------------------------------
