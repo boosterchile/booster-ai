@@ -349,6 +349,110 @@ describe('CargasDetalleRoute', () => {
     expect(screen.queryByRole('button', { name: 'Editar' }) !== null).toBe(visible);
   });
 
+  // editar-anular-cargas §9: anular antes del match, cancelar después.
+  const tripBase = {
+    id: 'trip-1',
+    tracking_code: 'BST-999',
+    origin_address_raw: 'A',
+    origin_region_code: 'XIII',
+    destination_address_raw: 'B',
+    destination_region_code: 'V',
+    cargo_type: 'carga_seca',
+    cargo_weight_kg: 5000,
+    cargo_volume_m3: null,
+    pickup_window_start: null,
+    pickup_window_end: null,
+    created_at: '2026-05-10T10:00:00Z',
+  };
+
+  it('antes del match ofrece «Anular carga» y no «Cancelar servicio»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'ofertas_enviadas',
+        acciones_permitidas: { editar_datos_libres: true, anular: true, cancelar: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByRole('button', { name: 'Anular carga' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
+  });
+
+  it('asignado ofrece «Cancelar servicio» con el teléfono del conductor', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: null,
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_user_id: 'u-c',
+        driver_name: 'Conductor Uno',
+        conductor_telefono_e164: '+56977777777',
+        ubicacion_actual: null,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar servicio' }));
+    expect(screen.getByText(/llama al conductor: \+56977777777/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Anular carga' })).not.toBeInTheDocument();
+  });
+
+  it('sin acciones de baja (en_proceso) no ofrece anular ni cancelar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'en_proceso',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
+    expect(screen.queryByRole('button', { name: 'Anular carga' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
+  });
+
+  it('una carga anulada muestra quién y cuándo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'cancelado',
+        acciones_permitidas: { editar_datos_libres: false, anular: false, cancelar: false },
+        anulacion: { en: '2026-11-09T16:00:00Z', por_nombre: 'Ana Pérez', razon: null },
+        cancelacion: null,
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/Anulada el .* por Ana Pérez\./)).toBeInTheDocument();
+  });
+
   it('en_proceso sin destinatario y con token → muestra el enlace público', async () => {
     const token = '550e8400-e29b-4114-a716-446655440000';
     vi.spyOn(api, 'get').mockResolvedValueOnce({

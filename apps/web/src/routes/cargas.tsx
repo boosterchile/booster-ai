@@ -5,7 +5,6 @@ import { APIProvider } from '@vis.gl/react-google-maps';
 import {
   ArrowLeft,
   ArrowRight,
-  Ban,
   Clock,
   Download,
   MapPin,
@@ -19,6 +18,7 @@ import { FormField, inputClass as fieldInputClass } from '../components/FormFiel
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
+import { BajaCarga, EstadoBajaCarga, type ModoBaja } from '../components/cargas/BajaCarga.js';
 import {
   ContactoYNotasCard,
   type DatosLibresCarga,
@@ -125,7 +125,15 @@ interface TripDetail extends TripSummary {
   consignee?: DatosLibresCarga['consignee'];
   notes?: string | null;
   reference?: string | null;
-  acciones_permitidas?: { editar_datos_libres: boolean };
+  acciones_permitidas?: {
+    editar_datos_libres: boolean;
+    anular?: boolean;
+    cancelar?: boolean;
+  };
+  /** Carga anulada antes del match: quién y cuándo (editar-anular-cargas §8.8). */
+  anulacion?: { en: string; por_nombre: string | null; razon: string | null } | null;
+  /** Servicio cancelado después del match. */
+  cancelacion?: { en: string; razon: string | null } | null;
 }
 
 interface TripEvent {
@@ -151,6 +159,8 @@ interface TripAssignment {
   vehicle_type: string | null;
   driver_user_id: string | null;
   driver_name: string | null;
+  /** Solo con el viaje en asignado o en_proceso (§12-P11). */
+  conductor_telefono_e164?: string;
   /** UUID del seguimiento público. Ausente en respuestas anteriores a este campo. */
   public_tracking_token?: string | null;
   /**
@@ -219,13 +229,6 @@ const STATUS_COLORS: Record<TripStatus, string> = {
   cancelado: 'bg-neutral-100 text-neutral-600',
   expirado: 'bg-neutral-100 text-neutral-600',
 };
-
-const CANCELLABLE_STATUSES: TripStatus[] = [
-  'borrador',
-  'esperando_match',
-  'emparejando',
-  'ofertas_enviadas',
-];
 
 const CARGO_TYPE_LABELS: Record<CargoType, string> = {
   carga_seca: 'Carga seca',
@@ -1341,11 +1344,6 @@ export function CargasDetalleRoute() {
 
 function CargaDetallePage({ me }: { me: MeOnboarded }) {
   const { id } = useParams({ strict: false }) as { id: string };
-  const queryClient = useQueryClient();
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
   const tripQ = useQuery({
     queryKey: ['cargas', id],
     queryFn: async () => {
@@ -1354,26 +1352,17 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
     refetchInterval: 30_000,
   });
 
-  const cancelM = useMutation({
-    mutationFn: async () => {
-      return await api.patch<{ trip_request: { status: string } }>(
-        `/trip-requests-v2/${id}/cancelar`,
-        cancelReason.trim() ? { reason: cancelReason.trim() } : {},
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cargas'] });
-      queryClient.invalidateQueries({ queryKey: ['cargas', id] });
-      setConfirmCancel(false);
-      setCancelReason('');
-    },
-    onError: (err: Error) => setError(err.message),
-  });
-
   const trip = tripQ.data?.trip_request;
-  const canCancel = Boolean(
-    trip && CANCELLABLE_STATUSES.includes(trip.status) && flagsDe(me).cancelarCarga,
-  );
+  // Anular o cancelar: lo decide el API con los guards; la capacidad del rol
+  // se cruza acá (editar-anular-cargas §9).
+  const puedeDarDeBaja = flagsDe(me).cancelarCarga;
+  const modoBaja: ModoBaja | null = puedeDarDeBaja
+    ? trip?.acciones_permitidas?.anular
+      ? 'anular'
+      : trip?.acciones_permitidas?.cancelar
+        ? 'cancelar'
+        : null
+    : null;
   const shareUrl = publicTrackingShareUrl(
     tripQ.data?.assignment?.public_tracking_token,
     trip?.status,
@@ -1404,71 +1393,24 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
             )}
           </div>
         </div>
-        {canCancel && trip && (
-          <div className="flex items-center gap-2">
-            {confirmCancel ? null : (
-              <button
-                type="button"
-                onClick={() => setConfirmCancel(true)}
-                className="flex items-center gap-1 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
-              >
-                <Ban className="h-4 w-4" aria-hidden />
-                Cancelar carga
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       {tripQ.isLoading && <p className="text-neutral-500">Cargando…</p>}
       {tripQ.error && <p className="text-danger-700">Error al cargar la carga.</p>}
 
-      {confirmCancel && trip && (
-        <div className="mb-6 rounded-lg border border-danger-200 bg-danger-50 p-4">
-          <h3 className="font-semibold text-danger-900 text-sm">¿Cancelar esta carga?</h3>
-          <p className="mt-1 text-danger-800 text-sm">
-            Acción irreversible. El sistema deja de buscar transportistas y la carga queda en estado
-            "Cancelado".
-          </p>
-          <div className="mt-3">
-            <label htmlFor="cancel_reason" className="block font-medium text-danger-900 text-sm">
-              Motivo (opcional)
-            </label>
-            <input
-              id="cancel_reason"
-              type="text"
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              className={`${inputClass} mt-1`}
-              placeholder="Ej: cambio de planes, dirección incorrecta…"
-              maxLength={500}
-            />
-          </div>
-          {error && <p className="mt-2 text-danger-700 text-sm">{error}</p>}
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmCancel(false);
-                setCancelReason('');
-                setError(null);
-              }}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-            >
-              Volver
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setError(null);
-                cancelM.mutate();
-              }}
-              disabled={cancelM.isPending}
-              className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
-            >
-              {cancelM.isPending ? 'Cancelando…' : 'Sí, cancelar carga'}
-            </button>
-          </div>
+      {modoBaja && trip && (
+        <div className="mb-6">
+          <BajaCarga
+            tripId={trip.id}
+            modo={modoBaja}
+            telefonoConductor={tripQ.data?.assignment?.conductor_telefono_e164 ?? null}
+          />
+        </div>
+      )}
+
+      {trip && (trip.anulacion || trip.cancelacion) && (
+        <div className="mb-6">
+          <EstadoBajaCarga anulacion={trip.anulacion} cancelacion={trip.cancelacion} />
         </div>
       )}
 
@@ -1755,6 +1697,3 @@ function DataRow({
     </div>
   );
 }
-
-const inputClass =
-  'block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none';
