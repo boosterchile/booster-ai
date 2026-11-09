@@ -2349,6 +2349,19 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso — persona por con
     expect(d.updates).toEqual([]);
   });
 
+  it('cuenta sin marca que ya no tiene confirmación pendiente → 404, sin escrituras', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: [[CUENTA_POR_CONFIRMAR], []] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('personal_not_found');
+    expect(d.locks).toEqual(['update', 'update']);
+    expect(d.deletes).toEqual([]);
+    expect(d.updates).toEqual([]);
+  });
+
   it('si el borrado no encuentra la confirmación → 404, sin evento', async () => {
     const d = makeDb({ listRows: [ADMIN_MARCADO], lookups: POR_CONFIRMAR, filasBorradas: [] });
     const logger = makeLogger();
