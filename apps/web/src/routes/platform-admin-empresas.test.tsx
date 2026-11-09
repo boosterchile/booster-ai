@@ -48,9 +48,9 @@ const EMPRESA = {
 const PENDIENTE = {
   user_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
   membership_id: MEMBERSHIP_ID,
-  nombre: 'Javier Vicencio',
+  nombre: 'Persona de Prueba',
   rut: '12345678-5',
-  email: 'fvicencio@me.com',
+  email: 'persona@empresa.test',
   rol: 'dueno',
   invitado_en: '2026-10-30T15:00:00.000Z',
   expira_en: '2026-11-06T15:00:00.000Z',
@@ -86,10 +86,12 @@ describe('/app/platform-admin/empresas', () => {
 
     fireEvent.change(screen.getByLabelText(/^Empresa$/i), { target: { value: EMPRESA_ID } });
     fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
-      target: { value: 'Javier Vicencio' },
+      target: { value: 'Persona de Prueba' },
     });
     fireEvent.change(screen.getByLabelText(/^RUT$/i), { target: { value: '12345678-5' } });
-    fireEvent.change(screen.getByLabelText(/^Email$/i), { target: { value: 'fvicencio@me.com' } });
+    fireEvent.change(screen.getByLabelText(/^Email$/i), {
+      target: { value: 'persona@empresa.test' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Agregar a la empresa/i }));
 
     expect(await screen.findByTestId(`reemitir-codigo-${MEMBERSHIP_ID}`)).toHaveTextContent(
