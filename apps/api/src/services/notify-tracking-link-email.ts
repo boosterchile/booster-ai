@@ -72,14 +72,17 @@ function armarCorreo(datos: {
   transportista: string | null;
   patente: string | null;
   url: string;
+  /** Primera línea; por defecto, la del aviso al asignar. */
+  encabezado?: string;
 }): EmailMessage {
+  const encabezado = datos.encabezado ?? `Tu carga ${datos.trackingCode} ya tiene transportista.`;
   const lineaTransporte = datos.transportista
     ? `Transporta: ${datos.transportista}${datos.patente ? ` (patente ${datos.patente})` : ''}.`
     : datos.patente
       ? `Vehículo: patente ${datos.patente}.`
       : null;
   const text = [
-    `Tu carga ${datos.trackingCode} ya tiene transportista.`,
+    encabezado,
     `Ruta: ${datos.origen} → ${datos.destino}.`,
     ...(lineaTransporte ? [lineaTransporte] : []),
     '',
@@ -88,7 +91,7 @@ function armarCorreo(datos: {
     'Booster',
   ].join('\n');
   const html = [
-    `<p>Tu carga <strong>${escaparHtml(datos.trackingCode)}</strong> ya tiene transportista.</p>`,
+    `<p>${escaparHtml(encabezado)}</p>`,
     `<p>Ruta: ${escaparHtml(datos.origen)} → ${escaparHtml(datos.destino)}.</p>`,
     ...(lineaTransporte ? [`<p>${escaparHtml(lineaTransporte)}</p>`] : []),
     `<p><a href="${escaparHtml(datos.url)}">Ver el seguimiento en vivo</a></p>`,
@@ -229,4 +232,86 @@ async function enviarCorreoTracking(
     'tracking por correo enviado',
   );
   return { assignmentId, skipped: false, enviados };
+}
+
+/**
+ * Reenvía el enlace vigente solo al correo del destinatario, cuando el
+ * generador cambia su contacto (`.specs/seguimiento-enlace-destinatario/`
+ * §3.2). Texto del destinatario: patente enmascarada y sin el nombre de la
+ * transportista. No usa la marca del envío al asignar.
+ */
+export async function reenviarTrackingLinkEmailADestinatario(
+  deps: NotifyTrackingLinkEmailDeps,
+  opts: { assignmentId: string; correo: string },
+): Promise<NotifyTrackingLinkEmailResult> {
+  return await withBusinessSpan(
+    {
+      name: 'notificaciones.tracking_correo_reenvio',
+      attributes: { 'booster.assignment_id': opts.assignmentId },
+    },
+    async (span) => {
+      const resultado = await reenviarCorreoTracking(deps, opts);
+      const outcome = resultado.skipped ? resultado.reason : 'sent';
+      setResultAttributes(span, { 'booster.outcome': outcome });
+      getBusinessCounter('notificaciones_tracking_correo').add(1, { outcome, tipo: 'reenvio' });
+      return resultado;
+    },
+  );
+}
+
+async function reenviarCorreoTracking(
+  deps: NotifyTrackingLinkEmailDeps,
+  opts: { assignmentId: string; correo: string },
+): Promise<NotifyTrackingLinkEmailResult> {
+  const { db, logger, emailSender, webAppUrl } = deps;
+  const { assignmentId } = opts;
+  const to = correoUsable(opts.correo);
+  if (!to) {
+    return { assignmentId, skipped: true, reason: 'no_email' };
+  }
+
+  const rows = await db
+    .select({
+      publicToken: assignments.publicTrackingToken,
+      trackingCode: trips.trackingCode,
+      originRegion: trips.originRegionCode,
+      destRegion: trips.destinationRegionCode,
+      vehiclePlate: vehicles.plate,
+    })
+    // rls-allowlist: notificador server-side; assignmentId de la carga que el generador acaba de editar.
+    .from(assignments)
+    .innerJoin(trips, eq(trips.id, assignments.tripId))
+    .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .where(eq(assignments.id, assignmentId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    logger.warn({ assignmentId }, 'reenvío de tracking por correo: asignación no encontrada');
+    return { assignmentId, skipped: true, reason: 'assignment_not_found' };
+  }
+  if (!row.publicToken) {
+    return { assignmentId, skipped: true, reason: 'no_token' };
+  }
+
+  const resultado = await emailSender.send(
+    armarCorreo({
+      to,
+      trackingCode: row.trackingCode,
+      origen: regionLabel(row.originRegion),
+      destino: regionLabel(row.destRegion),
+      transportista: null,
+      patente: row.vehiclePlate ? maskPlate(row.vehiclePlate) : null,
+      url: `${webAppUrl.replace(/\/$/, '')}/tracking/${row.publicToken}`,
+      encabezado: `Este es el enlace vigente para seguir la carga ${row.trackingCode}.`,
+    }),
+  );
+  if (!resultado.enviado) {
+    logger.warn(
+      { assignmentId, motivo: resultado.motivo },
+      'reenvío de tracking por correo: el correo no salió',
+    );
+    return { assignmentId, skipped: true, reason: 'send_failed' };
+  }
+  logger.info({ assignmentId, trackingCode: row.trackingCode }, 'tracking por correo reenviado');
+  return { assignmentId, skipped: false, enviados: 1 };
 }
