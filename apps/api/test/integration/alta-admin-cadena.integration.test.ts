@@ -182,7 +182,16 @@ describe('integration: cadena de alta desde el panel admin (T6)', () => {
       '/admin/empresas',
       rutas.createAdminEmpresaMiembrosRoutes({ db, logger, auth: firebase.auth }),
     );
-    a.route('/auth', rutas.createAuthActivarRoutes({ db, logger, firebaseAuth: firebase.auth }));
+    a.route(
+      '/auth',
+      rutas.createAuthActivarRoutes({
+        db,
+        logger,
+        firebaseAuth: firebase.auth,
+        platformAdminEmails: [ADMIN_EMAIL],
+        rateLimitPerRut: sinRateLimit,
+      }),
+    );
     a.route(
       '/auth',
       rutas.createAuthUniversalRoutes({

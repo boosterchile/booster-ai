@@ -519,6 +519,13 @@
       "when": 1780876800100,
       "tag": "0073_seguimiento_por_correo",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1780876800110,
+      "tag": "0074_usuarios_activacion_vence_en",
+      "breakpoints": true
     }
   ]
 }
