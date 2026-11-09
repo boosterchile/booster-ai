@@ -44,7 +44,7 @@ El paso 3 contradice el principio de identidad (`alta-cliente-autocontenida` §6
 
 ## 4. Contratos (los aprueba el PO en el PR)
 
-- **Migración expand-only** `0073`: `usuarios.activacion_vence_en timestamptz NULL`. Sin backfill ni default; ninguna fila existente cambia.
+- **Migración expand-only** `0074`: `usuarios.activacion_vence_en timestamptz NULL`. Sin backfill ni default; ninguna fila existente cambia.
 - `GET /admin/personal-booster` → `200 { personal: PersonalBooster[] }`, con `PersonalBooster = { email, en_lista, user_id | null, nombre | null, rut | null, estado: 'sin_cuenta' | 'pendiente_activacion' | 'activa', expira_en | null, ultimo_login_en | null }`. Ordenado por correo.
 - `POST /admin/personal-booster` body `{ email, full_name, rut }` → `201` si crea la cuenta, `200` si la persona ya existía: `{ ok, user_id, vinculo, codigo_activacion | null, expira_en | null, en_lista }`.
 - `POST /admin/personal-booster/:userId/codigo` sin body → `200 { ok, user_id, codigo_activacion, expira_en, en_lista }`.
@@ -73,7 +73,7 @@ El paso 3 contradice el principio de identidad (`alta-cliente-autocontenida` §6
 
 ## 7. Approach
 
-- **Migración** `0073_usuarios_activacion_vence_en.sql` + `down/` si el repo lo usa + columna `activacionVenceEn` en `db/schema.ts`.
+- **Migración** `0074_usuarios_activacion_vence_en.sql` + `down/` si el repo lo usa + columna `activacionVenceEn` en `db/schema.ts`.
 - **`routes/admin-personal-booster.ts`** con `createAdminPersonalBoosterRoutes({ db, logger, platformAdminEmails, emailSender, webAppUrl })`, montado en `server.ts` bajo `/admin/personal-booster` con la misma cadena de middleware que `/admin/empresas` (firebaseAuth → userContext → impersonationWriteGuard), y `requirePlatformAdmin` en cada handler. Transacción en el alta y en la re-emisión.
 - **`auth-activar.ts`** recibe `platformAdminEmails` y `rateLimitPerRut` por opciones. Una cuenta marcada exige el código del panel vigente; sin invitaciones vigentes, además el correo en la lista, y se activa sin membresías. **`auth-driver.ts`** aplica a una cuenta marcada la misma exigencia del código del panel.
 - **Correo:** función nueva junto a `enviarCorreoActivacionCuenta` para el personal de Booster (mismo remitente, texto propio).
@@ -103,3 +103,4 @@ El paso 3 contradice el principio de identidad (`alta-cliente-autocontenida` §6
 - 2026-11-09 — Al integrar main: la migración pasa a `0072` (main ya ocupaba 0065–0071). `/auth/activar` sigue la regla de main de activar solo la invitación original; una cuenta marcada sigue exigiendo el código del panel vigente y, sin esa invitación, el correo en la lista. Los emisores que main dejó (re-emisión del panel de empresas y conductores) ponen `activacion_vence_en` en NULL. Los contratos de §4 no cambian.
 - 2026-11-09 — El PO decide mantener SC3. El panel del personal lo usa solo un platform-admin: responde el vínculo de la persona y, si una cuenta provisoria que ya existía no tiene un código del panel vigente, le emite uno, aunque la haya creado otro flujo. Los flujos de empresa siguen la regla de #874.
 - 2026-11-09 — #885 ocupó `0072` en main (`0072_instrucciones_retiro`): la migración de esta spec pasa a `0073_usuarios_activacion_vence_en`, con su `down/` y su entrada del journal.
+- 2026-11-09 — #887 ocupó `0073` en main (`0073_seguimiento_por_correo`): la migración de esta spec pasa a `0074_usuarios_activacion_vence_en`.

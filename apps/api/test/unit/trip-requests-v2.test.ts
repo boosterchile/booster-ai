@@ -412,6 +412,37 @@ describe('POST /trip-requests-v2', () => {
     expect(body.matching.offer_ids).toEqual(['offer-1', 'offer-2']);
   });
 
+  // seguimiento-por-correo SC5: el correo del destinatario se guarda al crear.
+  it('guarda el correo del destinatario normalizado', async () => {
+    const matching = await import('../../src/services/matching.js');
+    vi.mocked(matching.runMatching).mockResolvedValueOnce({
+      tripId: 'trip-mail',
+      candidatesEvaluated: 0,
+      offersCreated: 0,
+      offers: [],
+    });
+    const values = vi.fn(() => ({
+      returning: vi.fn(async () => [{ id: 'trip-mail', trackingCode: 'BOO-MAIL01' }]),
+    }));
+    const db = { insert: vi.fn(() => ({ values })) } as unknown as Db;
+    const app = await buildAppWith({ db, userContext: buildUserContext() });
+    const res = await app.request('/trip-requests-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...validBody,
+        consignee: { name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' },
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        consigneeName: 'Bodega La Serena',
+        consigneeEmail: 'recepcion@cliente.cl',
+      }),
+    );
+  });
+
   describe('wire de geocodificación del origen (Task 4 medicion-huella-segmento)', () => {
     async function postTripWith(routesProjectId?: string) {
       const matching = await import('../../src/services/matching.js');

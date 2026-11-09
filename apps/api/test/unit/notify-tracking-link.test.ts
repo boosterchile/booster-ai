@@ -41,7 +41,7 @@ interface JoinRow {
   shipperWhatsapp: string | null;
 }
 
-function makeDbStub(opts: { row?: JoinRow | null }) {
+function makeDbStub(opts: { row?: JoinRow | null; claim?: boolean }) {
   const responses: Array<unknown[]> = [opts.row ? [opts.row] : []];
   let callIdx = 0;
   const limitFn = vi.fn(() => Promise.resolve(responses[callIdx++] ?? []));
@@ -50,7 +50,27 @@ function makeDbStub(opts: { row?: JoinRow | null }) {
   const innerJoinFn = vi.fn(() => ({ leftJoin: leftJoinFn, where: whereFn }));
   const fromFn = vi.fn(() => ({ innerJoin: innerJoinFn, where: whereFn }));
   const selectFn = vi.fn(() => ({ from: fromFn }));
-  return { db: { select: selectFn } as unknown as NotifyTrackingLinkDeps['db'] };
+  // Marca de idempotencia (seguimiento-por-correo): UPDATE … WHERE … IS NULL
+  // RETURNING. `claim: false` simula que ya se envió.
+  const sets: Array<Record<string, unknown>> = [];
+  const updateFn = vi.fn(() => ({
+    set: vi.fn((v: Record<string, unknown>) => {
+      sets.push(v);
+      const resultado = opts.claim === false ? [] : [{ id: ASSIGNMENT_ID }];
+      return {
+        where: vi.fn(() =>
+          Object.assign(Promise.resolve(undefined), {
+            returning: vi.fn(async () => resultado),
+          }),
+        ),
+      };
+    }),
+  }));
+  return {
+    db: { select: selectFn, update: updateFn } as unknown as NotifyTrackingLinkDeps['db'],
+    sets,
+    updateFn,
+  };
 }
 
 function makeTwilioStub(overrides?: { sendContent?: ReturnType<typeof vi.fn> }) {
@@ -353,6 +373,54 @@ describe('notifyTrackingLinkAtAssignment', () => {
     );
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe('no_whatsapp');
+  });
+
+  // seguimiento-por-correo: la idempotencia que el docstring daba por hecha.
+  it('ya enviado (la marca no se toma) → already_notified, sin enviar', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db } = makeDbStub({ row: baseRow(), claim: false });
+    const twilio = makeTwilioStub();
+    const result = await notifyTrackingLinkAtAssignment(
+      { db, logger: noopLogger, twilioClient: twilio, contentSidTracking: VALID_SID },
+      { assignmentId: ASSIGNMENT_ID },
+    );
+    expect(result).toMatchObject({ skipped: true, reason: 'already_notified' });
+    expect(twilio.sendContent).not.toHaveBeenCalled();
+  });
+
+  it('envío exitoso deja la marca tomada', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db, sets } = makeDbStub({ row: baseRow() });
+    await notifyTrackingLinkAtAssignment(
+      { db, logger: noopLogger, twilioClient: makeTwilioStub(), contentSidTracking: VALID_SID },
+      { assignmentId: ASSIGNMENT_ID },
+    );
+    expect(sets).toHaveLength(1);
+    expect(sets[0]?.trackingLinkSentAt).toBeInstanceOf(Date);
+  });
+
+  it('si Twilio falla en el primer envío, libera la marca y propaga el error', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db, sets } = makeDbStub({ row: baseRow() });
+    const sendContent = vi.fn().mockRejectedValue(new Error('twilio 503'));
+    await expect(
+      notifyTrackingLinkAtAssignment(
+        {
+          db,
+          logger: noopLogger,
+          twilioClient: makeTwilioStub({ sendContent }),
+          contentSidTracking: VALID_SID,
+        },
+        { assignmentId: ASSIGNMENT_ID },
+      ),
+    ).rejects.toThrow('twilio 503');
+    expect(sets.at(-1)).toEqual({ trackingLinkSentAt: null });
   });
 
   it('regiones unknown se mapean a placeholder em-dash', async () => {

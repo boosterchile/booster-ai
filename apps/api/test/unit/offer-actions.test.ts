@@ -23,6 +23,17 @@ vi.mock('../../src/services/calcular-metricas-viaje.js', () => ({
   })),
 }));
 
+// seguimiento-por-correo: el envío por correo se verifica en su propio test;
+// acá solo importa que acceptOffer lo despache y que su falla no lo revierta.
+const notifyEmailMock = vi.fn(async () => ({
+  assignmentId: 'assign-1',
+  skipped: false,
+  enviados: 1,
+}));
+vi.mock('../../src/services/notify-tracking-link-email.js', () => ({
+  notifyTrackingLinkEmailAtAssignment: (...args: unknown[]) => notifyEmailMock(...(args as [])),
+}));
+
 const noop = (): void => undefined;
 const noopLogger = {
   trace: noop,
@@ -263,6 +274,40 @@ describe('acceptOffer', () => {
     // El guard del trip DEBE tomar el row lock: si alguien borra el
     // .for('update'), este assert rompe (la serialización es el fix).
     expect(db.forSpy).toHaveBeenCalledWith('update');
+  });
+
+  it.each([
+    ['envía el link por correo con la asignación creada', null],
+    ['si el correo falla, la aceptación queda igual', new Error('resend caído')],
+  ])('%s', async (_caso, falla) => {
+    notifyEmailMock.mockClear();
+    if (falla) {
+      notifyEmailMock.mockRejectedValueOnce(falla);
+    }
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [
+        [{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1', agreedPriceClp: 250000 }],
+        [],
+      ],
+    });
+    const emailDeps = {
+      db: db as never,
+      logger: noopLogger,
+      emailSender: { send: vi.fn() },
+      webAppUrl: 'https://app.boosterchile.com',
+    };
+    const result = await acceptOffer({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      userId: USER_ID,
+      notifyTrackingLinkEmail: emailDeps,
+    });
+    expect(result.assignment.id).toBe('assign-1');
+    expect(notifyEmailMock).toHaveBeenCalledWith(emailDeps, { assignmentId: 'assign-1' });
   });
 
   it('happy path: accept con N supersededOffers (otras offers pendientes del mismo trip)', async () => {

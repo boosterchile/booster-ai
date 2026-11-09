@@ -1,4 +1,4 @@
--- Migration 0073 — vencimiento del código de activación en la cuenta.
+-- Migration 0074 — vencimiento del código de activación en la cuenta.
 --
 -- Se escribió como 0065 y se renumeró el 2026-11-09 (main ya ocupaba 0065–0071).
 --
