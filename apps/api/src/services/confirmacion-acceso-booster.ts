@@ -24,8 +24,9 @@ import { generateActivationPin, hashActivationPin, verifyActivationPin } from '.
  *   una nueva borra la anterior en la misma transacción. Una consumida queda
  *   como registro.
  * - Orden de bloqueo: primero la fila de `usuarios`, después la de la
- *   confirmación. El alta y la re-emisión bloquean la cuenta antes de emitir;
- *   la confirmación bloquea las dos antes de verificar.
+ *   confirmación. El alta y la re-emisión bloquean la cuenta antes de emitir,
+ *   «Quitar acceso» antes de borrar, y la confirmación bloquea las dos antes
+ *   de verificar.
  */
 
 /** Vigencia del código de confirmación. */
@@ -136,7 +137,12 @@ export function codigoConfirmacionUsable(
 }
 
 /** Motivo interno de un rechazo. La respuesta HTTP es la misma para todos. */
-export type MotivoRechazoConfirmacion = 'sin_codigo' | 'incorrecto' | 'vencido' | 'agotado';
+export type MotivoRechazoConfirmacion =
+  | 'sin_codigo'
+  | 'cuenta_no_activa'
+  | 'incorrecto'
+  | 'vencido'
+  | 'agotado';
 
 export type ResultadoConfirmacion =
   | {
@@ -149,6 +155,11 @@ export type ResultadoConfirmacion =
       tipo: 'confirmada';
       persona: { id: string; email: string; fullName: string };
       emitidoPorUsuarioId: string;
+      /**
+       * Correo de quien emitió el código, en minúsculas, leído en la misma
+       * transacción; null si la cuenta ya no está.
+       */
+      emitidoPorEmail: string | null;
       /** La cuenta ya estaba marcada antes de confirmar. */
       yaMarcada: boolean;
     };
@@ -161,6 +172,7 @@ export type ResultadoConfirmacion =
  *
  * - Sin confirmación pendiente: verifica contra el hash de relleno y no
  *   escribe.
+ * - Cuenta que no está `activo`: no escribe; la confirmación sigue pendiente.
  * - Sin intentos o vencida: no escribe.
  * - Código incorrecto: suma un intento fallido.
  * - Código correcto: consume la confirmación y marca la cuenta.
@@ -175,6 +187,7 @@ export async function confirmarAccesoBooster(
       email: users.email,
       fullName: users.fullName,
       isPlatformAdmin: users.isPlatformAdmin,
+      status: users.status,
     })
     .from(users)
     .where(eq(users.id, opts.usuarioId))
@@ -204,6 +217,13 @@ export async function confirmarAccesoBooster(
 
   if (!cuenta || !pendiente) {
     return { tipo: 'rechazada', motivo: 'sin_codigo', intentosFallidos: null };
+  }
+  if (cuenta.status !== 'activo') {
+    return {
+      tipo: 'rechazada',
+      motivo: 'cuenta_no_activa',
+      intentosFallidos: pendiente.intentosFallidos,
+    };
   }
   if (pendiente.intentosFallidos >= CONFIRMACION_ACCESO_BOOSTER_MAX_INTENTOS) {
     return { tipo: 'rechazada', motivo: 'agotado', intentosFallidos: pendiente.intentosFallidos };
@@ -243,10 +263,20 @@ export async function confirmarAccesoBooster(
     .set({ isPlatformAdmin: true, updatedAt: opts.ahora })
     .where(eq(users.id, cuenta.id));
 
+  // Dentro de la transacción: después del commit no queda ninguna lectura de
+  // la que dependan el evento de auditoría y el aviso a la lista.
+  // rls-allowlist: correo de quien emitió el código, para el aviso a la lista de respaldo.
+  const emisores = await tx
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, pendiente.emitidoPorUsuarioId))
+    .limit(1);
+
   return {
     tipo: 'confirmada',
     persona: { id: cuenta.id, email: cuenta.email, fullName: cuenta.fullName },
     emitidoPorUsuarioId: pendiente.emitidoPorUsuarioId,
+    emitidoPorEmail: emisores[0]?.email.toLowerCase() ?? null,
     yaMarcada: cuenta.isPlatformAdmin === true,
   };
 }

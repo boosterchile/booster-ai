@@ -4,10 +4,8 @@ import {
   confirmarAccesoBoosterResponseSchema,
   confirmarAccesoBoosterSchema,
 } from '@booster-ai/shared-schemas';
-import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
-import { users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
@@ -41,11 +39,13 @@ const EMISOR_SIN_CORREO = 'un admin de Booster';
  *   del body. En una sesión de impersonación es una escritura bloqueada
  *   (403), también si la empresa activa es de prueba.
  * - Todo rechazo es la misma 400 `codigo_invalido`: sin confirmación
- *   pendiente, código incorrecto, vencido o sin intentos.
+ *   pendiente, cuenta que no está activa, código incorrecto, vencido o sin
+ *   intentos.
  * - Cinco intentos fallidos por código; al quinto el admin emite otro.
  * - La confirmación deja el evento `personal_booster.acceso_otorgado` y avisa
- *   a la lista de respaldo. El código no entra a logs, spans, métricas,
- *   auditoría ni avisos.
+ *   a la lista de respaldo. Todo lo que necesitan se lee en la transacción:
+ *   después del commit no hay lecturas que puedan fallar. El código no entra
+ *   a logs, spans, métricas, auditoría ni avisos.
  */
 export function createMeConfirmarAccesoBoosterRoutes(opts: {
   db: Db;
@@ -109,7 +109,7 @@ export function createMeConfirmarAccesoBoosterRoutes(opts: {
         }
 
         record('confirmado');
-        const { persona, emitidoPorUsuarioId } = resultado;
+        const { persona, emitidoPorUsuarioId, emitidoPorEmail } = resultado;
 
         if (resultado.yaMarcada) {
           opts.logger.info(
@@ -121,19 +121,14 @@ export function createMeConfirmarAccesoBoosterRoutes(opts: {
             'personal-booster: confirmación consumida en una cuenta ya marcada',
           );
         } else {
-          // rls-allowlist: correo de quien emitió el código, para el aviso a la lista de respaldo.
-          const emisores = await opts.db
-            .select({ email: users.email })
-            .from(users)
-            .where(eq(users.id, emitidoPorUsuarioId))
-            .limit(1);
+          // Nunca lanza: cada fallo de envío queda registrado.
           const aviso = await enviarAvisoAccesoPanel({
             sender: opts.emailSender,
             logger: opts.logger,
             accion: 'confirmado',
             destinatarios: opts.platformAdminEmails,
             persona: { userId: persona.id, nombre: persona.fullName, email: persona.email },
-            actorEmail: emisores[0]?.email.toLowerCase() ?? EMISOR_SIN_CORREO,
+            actorEmail: emitidoPorEmail ?? EMISOR_SIN_CORREO,
             webAppUrl: opts.webAppUrl,
           });
           opts.logger.info(

@@ -9,7 +9,9 @@ import type { EmailSender } from './email-sender.js';
  * `BOOSTER_PLATFORM_ADMIN_EMAILS`, con quién hizo el cambio y a quién. Nunca
  * lleva un código.
  *
- * Solo texto plano: el nombre lo tipea un admin y así no hay HTML que escapar.
+ * Solo texto plano, sin HTML que escapar: el nombre y el correo de la persona
+ * pueden venir de la cuenta existente, que cargó la empresa que la creó, y no
+ * del admin.
  *
  * **Nunca lanza.** Cuando esto corre el cambio ya está hecho. Un proveedor
  * caído no puede deshacerlo; cada fallo queda registrado sin el cuerpo.
