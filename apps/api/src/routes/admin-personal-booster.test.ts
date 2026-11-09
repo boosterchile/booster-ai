@@ -910,6 +910,83 @@ describe('POST /admin/personal-booster/:userId/codigo — re-emisión (SC5)', ()
   });
 });
 
+describe('admin-personal-booster — contrato de los 400 (TRK-003)', () => {
+  it('POST / con correo inválido y nombre corto → 400 con el body común', async () => {
+    const d = makeDb();
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request(
+      '/',
+      postJson({ ...BODY, email: 'no-es-correo', full_name: 'A' }),
+    );
+
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_format",
+                "format": "email",
+                "message": "Ingresa un correo válido",
+                "origin": "string",
+                "path": [
+                  "email",
+                ],
+              },
+              {
+                "code": "too_small",
+                "inclusive": true,
+                "message": "Escribe al menos 2 caracteres",
+                "minimum": 2,
+                "origin": "string",
+                "path": [
+                  "full_name",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+    expect(d.select).not.toHaveBeenCalled();
+  });
+
+  it('POST /:userId/codigo con un userId que no es UUID → 400 con el body común', async () => {
+    const d = makeDb();
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/no-es-uuid/codigo', { method: 'POST' });
+
+    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "error": {
+            "issues": [
+              {
+                "code": "invalid_format",
+                "format": "uuid",
+                "message": "Invalid UUID",
+                "origin": "string",
+                "path": [
+                  "userId",
+                ],
+              },
+            ],
+            "name": "ZodError",
+          },
+          "success": false,
+        },
+        "status": 400,
+      }
+    `);
+    expect(d.select).not.toHaveBeenCalled();
+  });
+});
+
 describe('admin-personal-booster — impersonación (SC8)', () => {
   async function appImpersonada(d: ReturnType<typeof makeDb>) {
     const mod = await loadMod();

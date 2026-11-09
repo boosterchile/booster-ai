@@ -8,13 +8,13 @@ import {
   listaPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
 } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, esFirebaseUidDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { users } from '../db/schema.js';
+import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
