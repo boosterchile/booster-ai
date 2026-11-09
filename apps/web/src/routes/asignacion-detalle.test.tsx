@@ -255,6 +255,55 @@ describe('AsignacionDetalleRoute', () => {
     expect(screen.queryByTestId('transport-docs-panel')).not.toBeInTheDocument();
   });
 
+  // editar-anular-cargas §9: la oficina ve el cambio propuesto arriba.
+  it('con un cambio pendiente (vista de oficina) muestra la tarjeta para responder', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        tracking_code: 'BST-004',
+        status: 'asignado',
+        origin: { address_raw: 'A', region_code: 'XIII' },
+        destination: { address_raw: 'B', region_code: 'V' },
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 1000,
+        shipper_legal_name: 'ACME',
+        cambio_pendiente: {
+          existe: true,
+          id: 'sol-1',
+          cambios: { weight_kg: 2500 },
+          valores_anteriores: { weight_kg: 1000 },
+          creado_en: '2026-11-09T15:00:00.000Z',
+        },
+      },
+      assignment: { id: 'a1', status: 'asignado', driver_user_id: 'user-1' } as never,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    expect(await screen.findByTestId('cambio-propuesto')).toHaveTextContent('2.500 kg');
+    expect(screen.getByRole('button', { name: 'Aceptar cambio' })).toBeInTheDocument();
+  });
+
+  it('el conductor (solo sabe que existe) no ve la tarjeta', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        tracking_code: 'BST-005',
+        status: 'asignado',
+        origin: { address_raw: 'A', region_code: 'XIII' },
+        destination: { address_raw: 'B', region_code: 'V' },
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 1000,
+        shipper_legal_name: 'ACME',
+        cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00.000Z' },
+      },
+      assignment: { id: 'a1', status: 'asignado', driver_user_id: 'user-1' } as never,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true, { role: 'conductor' }) };
+    renderRoute();
+    await waitFor(() => expect(screen.getAllByText(/BST-005/).length).toBeGreaterThan(0));
+    expect(screen.queryByTestId('cambio-propuesto')).not.toBeInTheDocument();
+  });
+
   it('shipper_legal_name null → chat title con fallback', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
       trip_request: {

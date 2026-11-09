@@ -18,6 +18,12 @@ import { FormField, inputClass as fieldInputClass } from '../components/FormFiel
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
+import {
+  CambioPendienteGenerador,
+  type CambioPendienteGeneradorDatos,
+} from '../components/cambios/CambioPendienteGenerador.js';
+import { SolicitarCambioForm } from '../components/cambios/SolicitarCambioForm.js';
+import { UltimaSolicitudCambio } from '../components/cambios/UltimaSolicitudCambio.js';
 import { BajaCarga, EstadoBajaCarga, type ModoBaja } from '../components/cargas/BajaCarga.js';
 import {
   ContactoYNotasCard,
@@ -44,6 +50,13 @@ import {
 } from '../lib/cert-download.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 import { env } from '../lib/env.js';
+import {
+  CARGO_TYPE_LABELS,
+  type CargoType,
+  type RegionCode,
+  etiquetaEvento,
+  regionLabel,
+} from '../lib/etiquetas-carga.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 import { logger } from '../lib/logger.js';
 
@@ -63,37 +76,6 @@ type TripStatus =
   | 'entregado'
   | 'cancelado'
   | 'expirado';
-
-type CargoType =
-  | 'carga_seca'
-  | 'perecible'
-  | 'refrigerada'
-  | 'congelada'
-  | 'fragil'
-  | 'peligrosa'
-  | 'liquida'
-  | 'construccion'
-  | 'agricola'
-  | 'ganado'
-  | 'otra';
-
-type RegionCode =
-  | 'I'
-  | 'II'
-  | 'III'
-  | 'IV'
-  | 'V'
-  | 'VI'
-  | 'VII'
-  | 'VIII'
-  | 'IX'
-  | 'X'
-  | 'XI'
-  | 'XII'
-  | 'XIII'
-  | 'XIV'
-  | 'XV'
-  | 'XVI';
 
 interface TripSummary {
   id: string;
@@ -127,9 +109,14 @@ interface TripDetail extends TripSummary {
   reference?: string | null;
   acciones_permitidas?: {
     editar_datos_libres: boolean;
+    solicitar_cambio?: boolean;
+    retirar_cambio?: boolean;
     anular?: boolean;
     cancelar?: boolean;
   };
+  /** editar-anular-cargas §6.8: la propuesta del generador que espera respuesta. */
+  cambio_pendiente?: CambioPendienteGeneradorDatos | null;
+  modalidad_carga?: string;
   /** Carga anulada antes del match: quién y cuándo (editar-anular-cargas §8.8). */
   anulacion?: { en: string; por_nombre: string | null; razon: string | null } | null;
   /** Servicio cancelado después del match. */
@@ -229,46 +216,6 @@ const STATUS_COLORS: Record<TripStatus, string> = {
   cancelado: 'bg-neutral-100 text-neutral-600',
   expirado: 'bg-neutral-100 text-neutral-600',
 };
-
-const CARGO_TYPE_LABELS: Record<CargoType, string> = {
-  carga_seca: 'Carga seca',
-  perecible: 'Perecible',
-  refrigerada: 'Refrigerada',
-  congelada: 'Congelada',
-  fragil: 'Frágil',
-  peligrosa: 'Peligrosa',
-  liquida: 'Líquida',
-  construccion: 'Construcción',
-  agricola: 'Agrícola',
-  ganado: 'Ganado',
-  otra: 'Otra',
-};
-
-const REGION_LABELS: Record<RegionCode, string> = {
-  XV: 'XV — Arica y Parinacota',
-  I: 'I — Tarapacá',
-  II: 'II — Antofagasta',
-  III: 'III — Atacama',
-  IV: 'IV — Coquimbo',
-  V: 'V — Valparaíso',
-  XIII: 'XIII — Metropolitana',
-  VI: 'VI — O’Higgins',
-  VII: 'VII — Maule',
-  XVI: 'XVI — Ñuble',
-  VIII: 'VIII — Biobío',
-  IX: 'IX — Araucanía',
-  XIV: 'XIV — Los Ríos',
-  X: 'X — Los Lagos',
-  XI: 'XI — Aysén',
-  XII: 'XII — Magallanes',
-};
-
-function regionLabel(code: RegionCode | null | undefined): string {
-  if (!code) {
-    return '—';
-  }
-  return REGION_LABELS[code] ?? code;
-}
 
 function formatCLP(amount: number | null): string {
   if (amount == null) {
@@ -1344,6 +1291,7 @@ export function CargasDetalleRoute() {
 
 function CargaDetallePage({ me }: { me: MeOnboarded }) {
   const { id } = useParams({ strict: false }) as { id: string };
+  const [solicitandoCambio, setSolicitandoCambio] = useState(false);
   const tripQ = useQuery({
     queryKey: ['cargas', id],
     queryFn: async () => {
@@ -1412,6 +1360,67 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
         <div className="mb-6">
           <EstadoBajaCarga anulacion={trip.anulacion} cancelacion={trip.cancelacion} />
         </div>
+      )}
+
+      {/* editar-anular-cargas §9: después del match, los cambios se proponen. */}
+      {trip?.cambio_pendiente && (
+        <div className="mb-6">
+          <CambioPendienteGenerador
+            tripId={trip.id}
+            cambio={trip.cambio_pendiente}
+            puedeRetirar={
+              Boolean(trip.acciones_permitidas?.retirar_cambio) && flagsDe(me).editarCarga
+            }
+          />
+        </div>
+      )}
+      {/* §9: sin pendiente, el resultado y el motivo de la última ya resuelta. */}
+      {trip && !trip.cambio_pendiente && tripQ.data?.assignment && (
+        <div className="mb-6">
+          <UltimaSolicitudCambio tripId={trip.id} />
+        </div>
+      )}
+      {trip &&
+        !trip.cambio_pendiente &&
+        trip.acciones_permitidas?.solicitar_cambio &&
+        flagsDe(me).editarCarga && (
+          <div className="mb-6">
+            {solicitandoCambio ? (
+              <SolicitarCambioForm
+                tripId={trip.id}
+                actual={{
+                  origin_address_raw: trip.origin_address_raw,
+                  origin_region_code: trip.origin_region_code,
+                  origin_comuna_code: trip.origin_comuna_code,
+                  destination_address_raw: trip.destination_address_raw,
+                  destination_region_code: trip.destination_region_code,
+                  destination_comuna_code: trip.destination_comuna_code,
+                  cargo_type: trip.cargo_type,
+                  cargo_weight_kg: trip.cargo_weight_kg,
+                  cargo_volume_m3: trip.cargo_volume_m3,
+                  cargo_description: trip.cargo_description,
+                  pickup_window_start: trip.pickup_window_start,
+                  pickup_window_end: trip.pickup_window_end,
+                  proposed_price_clp: trip.proposed_price_clp,
+                  modalidad_carga: trip.modalidad_carga ?? 'spot',
+                }}
+                onListo={() => setSolicitandoCambio(false)}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSolicitandoCambio(true)}
+                className="rounded-md border border-primary-300 px-3 py-1.5 font-medium text-primary-700 text-sm hover:bg-primary-50"
+              >
+                Solicitar cambio
+              </button>
+            )}
+          </div>
+        )}
+      {trip?.status === 'en_proceso' && (
+        <p className="mb-6 text-neutral-600 text-sm">
+          La carga ya fue recogida. Para cambios, llama al conductor o reporta un incidente.
+        </p>
       )}
 
       {tripQ.data && trip && (
@@ -1618,7 +1627,7 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-neutral-900 text-sm">
-                          {ev.event_type.replace(/_/g, ' ')}
+                          {etiquetaEvento(ev.event_type)}
                         </span>
                         <span className="text-neutral-500 text-xs">
                           {formatDateTime(ev.recorded_at)}
