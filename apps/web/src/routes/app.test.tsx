@@ -558,6 +558,14 @@ describe('AppRoute — persona de Booster con empresa (SC9)', () => {
     expect(screen.getByRole('heading', { level: 1, name: /Felipe/ })).toBeInTheDocument();
   });
 
+  it('con una membresía de conductor → redirige al panel, no al shell del conductor', () => {
+    const me = makeMe('conductor', true, false);
+    me.user = { ...me.user, is_platform_admin: true };
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
   it('con la elección pero sin empresa activa → redirige al panel', () => {
     elegirVistaEmpresa();
     const me = adminConEmpresa();
