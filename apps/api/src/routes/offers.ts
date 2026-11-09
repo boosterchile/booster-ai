@@ -12,6 +12,7 @@ import {
   OfferNotFoundForPreviewError,
   generarEcoPreview,
 } from '../services/eco-route-preview.js';
+import type { NotifyTrackingLinkEmailDeps } from '../services/notify-tracking-link-email.js';
 import {
   OfferExpiredError,
   OfferNotFoundError,
@@ -47,6 +48,8 @@ export function createOfferRoutes(opts: {
    * envía WhatsApp (fallback dev local).
    */
   notifyTrackingLink?: import('../services/notify-tracking-link.js').NotifyTrackingLinkDeps;
+  /** seguimiento-por-correo — el mismo link por correo (canal independiente). */
+  notifyTrackingLinkEmail?: NotifyTrackingLinkEmailDeps;
 }) {
   const app = new Hono();
 
@@ -143,6 +146,9 @@ export function createOfferRoutes(opts: {
         empresaId: active.empresa.id,
         userId: userContext.user.id,
         ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+        ...(opts.notifyTrackingLinkEmail
+          ? { notifyTrackingLinkEmail: opts.notifyTrackingLinkEmail }
+          : {}),
       });
       return c.json(
         {

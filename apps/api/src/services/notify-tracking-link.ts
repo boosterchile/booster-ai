@@ -16,10 +16,11 @@
  *   Esta política se reporta en el resultado vía `recipient` para
  *   audit/analytics.
  *
- * **Idempotencia**: igual que notify-offer.ts, marcar via columna
- * `tracking_link_enviado_en` en assignments. Mismo patrón anti-spam:
- * si la mutation se reintenta o el dispatcher fire-and-forget se
- * dispara dos veces, sólo se envía una vez.
+ * **Idempotencia**: columna `asignaciones.tracking_link_enviado_en`
+ * (migración 0073; antes este comentario la daba por hecha sin que
+ * existiera). Se toma con un UPDATE condicional antes de enviar: si el
+ * dispatcher se dispara dos veces, solo uno envía. Si el primer envío falla,
+ * se libera para que un reintento pueda mandarlo.
  *
  * **Skip silencioso** (NO error) si:
  *   - Twilio o Content SID ausentes (Meta sin aprobar todavía)
@@ -38,7 +39,7 @@ import {
   buildTrackingLinkVariables,
 } from '@booster-ai/notification-fan-out';
 import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, trips, users } from '../db/schema.js';
 
@@ -142,13 +143,37 @@ export async function notifyTrackingLinkAtAssignment(
     publicTrackingToken: row.publicToken,
   });
 
+  // rls-allowlist: notificador server-side; UPDATE por el assignmentId ya validado.
+  const tomadas = await db
+    .update(assignments)
+    .set({ trackingLinkSentAt: new Date() })
+    .where(and(eq(assignments.id, assignmentId), isNull(assignments.trackingLinkSentAt)))
+    .returning({ id: assignments.id });
+  if (tomadas.length === 0) {
+    return { assignmentId, skipped: true, reason: 'already_notified' };
+  }
+
   let responseSid = '';
   for (const target of recipients) {
-    const sent = await twilioClient.sendContent({
-      to: target.phone,
-      contentSid: contentSidTracking,
-      contentVariables: variables,
-    });
+    let sent: { sid: string };
+    try {
+      sent = await twilioClient.sendContent({
+        to: target.phone,
+        contentSid: contentSidTracking,
+        contentVariables: variables,
+      });
+    } catch (err) {
+      // Nada salió todavía: se libera la marca para que un reintento lo envíe.
+      // Si ya salió algún mensaje, la marca queda: reintentar duplicaría.
+      if (!responseSid) {
+        // rls-allowlist: notificador server-side; libera la marca del mismo assignmentId.
+        await db
+          .update(assignments)
+          .set({ trackingLinkSentAt: null })
+          .where(eq(assignments.id, assignmentId));
+      }
+      throw err;
+    }
     if (!responseSid) {
       responseSid = sent.sid;
     }

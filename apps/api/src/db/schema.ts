@@ -1391,6 +1391,8 @@ export const trips = pgTable(
      */
     consigneeName: varchar('destinatario_nombre', { length: 100 }),
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
+    // seguimiento-por-correo (0073): correo opcional del destinatario.
+    consigneeEmail: varchar('destinatario_email', { length: 254 }),
     /**
      * Override por viaje del opt-in de medición de huella. NULL = heredar el
      * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
@@ -1507,6 +1509,10 @@ export const assignments = pgTable(
      * lo tienen.
      */
     publicTrackingToken: uuid('tracking_token_publico'),
+    // seguimiento-por-correo (0073): idempotencia del envío del enlace, una
+    // marca por canal para que la caída de uno no frene al otro.
+    trackingLinkSentAt: timestamp('tracking_link_enviado_en', { withTimezone: true }),
+    trackingLinkEmailSentAt: timestamp('tracking_link_email_enviado_en', { withTimezone: true }),
     /**
      * Fix privacidad tracking público (migración 0052). Override explícito de
      * expiración del `publicTrackingToken`: NULL = derivar en el servicio
