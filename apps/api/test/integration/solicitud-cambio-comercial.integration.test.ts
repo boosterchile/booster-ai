@@ -45,15 +45,13 @@ describe('integration: cambio de precio y modalidad tras el match (§7)', () => 
     handle = createTestDb();
     const vigente = await leerConfiguracionPublicada(handle.db);
     // Una versión anterior, distinta de la vigente: spot 15 %, programada 8 %.
-    const [maximo] = await handle.db
-      .select({ version: schema.configuracionComercial.version })
-      .from(schema.configuracionComercial)
-      .orderBy(schema.configuracionComercial.version);
+    // Número negativo: `publicar` numera con max(version)+1, y un número alto
+    // acá le cambiaría la numeración a los demás tests de la misma base.
     congelada = uno(
       await handle.db
         .insert(schema.configuracionComercial)
         .values({
-          version: (maximo?.version ?? 0) + 1000 + Math.floor(Math.random() * 1000),
+          version: -(1 + Math.floor(Math.random() * 2_000_000_000)),
           config: {
             ...vigente.config,
             comisiones: { ...vigente.config.comisiones, spot_pct: 15, programada_pct: 8 },
