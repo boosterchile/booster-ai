@@ -101,7 +101,9 @@ describe('emisores del código de activación (spec §6.6)', () => {
   });
 
   it('el recorrido encuentra los emisores de UPDATE y de INSERT', () => {
-    expect(todos.filter((e) => e.metodo === 'set').length).toBeGreaterThanOrEqual(10);
+    // Hoy: la re-emisión del panel de empresas, cuatro en conductores y dos en
+    // el panel del personal. Si baja, el recorrido dejó de verlos.
+    expect(todos.filter((e) => e.metodo === 'set').length).toBeGreaterThanOrEqual(7);
     expect(todos.some((e) => e.metodo === 'values')).toBe(true);
   });
 });
