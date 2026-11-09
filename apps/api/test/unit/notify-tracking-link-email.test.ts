@@ -142,7 +142,9 @@ describe('notifyTrackingLinkEmailAtAssignment', () => {
     expect(m?.subject).toBe('Seguimiento de tu carga BOO-XYZ987');
     expect(m?.text).toContain(`https://app.boosterchile.com/tracking/${TOKEN}`);
     expect(m?.text).toContain('Transportes Andes');
-    expect(m?.text).toContain('ABCD12');
+    expect(m?.text).toContain('**CD12');
+    expect(m?.text).not.toContain('ABCD12');
+    expect(m?.html).not.toContain('ABCD12');
     expect(m?.html).toContain(`href="https://app.boosterchile.com/tracking/${TOKEN}"`);
   });
 
@@ -151,6 +153,28 @@ describe('notifyTrackingLinkEmailAtAssignment', () => {
     const { sender, enviados } = makeSender(OK);
     await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
     expect(enviados.map((m) => m.to)).toEqual(['generador@empresa.cl', 'recepcion@cliente.cl']);
+  });
+
+  it('al destinatario no le llega el nombre de la transportista ni la patente completa', async () => {
+    const { db } = makeDb({ fila: fila({ consigneeEmail: 'recepcion@cliente.cl' }) });
+    const { sender, enviados } = makeSender(OK);
+    await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
+    const [alGenerador, alDestinatario] = enviados;
+    expect(alGenerador?.text).toContain('Transportes Andes');
+    for (const cuerpo of [alDestinatario?.text, alDestinatario?.html]) {
+      expect(cuerpo).not.toContain('Transportes Andes');
+      expect(cuerpo).not.toContain('ABCD12');
+      expect(cuerpo).toContain('**CD12');
+    }
+    expect(alDestinatario?.text).toContain(`https://app.boosterchile.com/tracking/${TOKEN}`);
+  });
+
+  it('correo compartido por generador y destinatario: un envío, con el texto del generador', async () => {
+    const { db } = makeDb({ fila: fila({ consigneeEmail: 'Generador@Empresa.CL' }) });
+    const { sender, enviados } = makeSender(OK);
+    await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]?.text).toContain('Transportes Andes');
   });
 
   it('mismo correo con otras mayúsculas: un solo envío', async () => {
