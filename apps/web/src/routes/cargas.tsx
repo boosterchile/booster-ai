@@ -44,6 +44,12 @@ import {
 } from '../lib/cert-download.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 import { env } from '../lib/env.js';
+import {
+  CARGO_TYPE_LABELS,
+  type CargoType,
+  type RegionCode,
+  regionLabel,
+} from '../lib/etiquetas-carga.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 import { logger } from '../lib/logger.js';
 
@@ -63,37 +69,6 @@ type TripStatus =
   | 'entregado'
   | 'cancelado'
   | 'expirado';
-
-type CargoType =
-  | 'carga_seca'
-  | 'perecible'
-  | 'refrigerada'
-  | 'congelada'
-  | 'fragil'
-  | 'peligrosa'
-  | 'liquida'
-  | 'construccion'
-  | 'agricola'
-  | 'ganado'
-  | 'otra';
-
-type RegionCode =
-  | 'I'
-  | 'II'
-  | 'III'
-  | 'IV'
-  | 'V'
-  | 'VI'
-  | 'VII'
-  | 'VIII'
-  | 'IX'
-  | 'X'
-  | 'XI'
-  | 'XII'
-  | 'XIII'
-  | 'XIV'
-  | 'XV'
-  | 'XVI';
 
 interface TripSummary {
   id: string;
@@ -229,46 +204,6 @@ const STATUS_COLORS: Record<TripStatus, string> = {
   cancelado: 'bg-neutral-100 text-neutral-600',
   expirado: 'bg-neutral-100 text-neutral-600',
 };
-
-const CARGO_TYPE_LABELS: Record<CargoType, string> = {
-  carga_seca: 'Carga seca',
-  perecible: 'Perecible',
-  refrigerada: 'Refrigerada',
-  congelada: 'Congelada',
-  fragil: 'Frágil',
-  peligrosa: 'Peligrosa',
-  liquida: 'Líquida',
-  construccion: 'Construcción',
-  agricola: 'Agrícola',
-  ganado: 'Ganado',
-  otra: 'Otra',
-};
-
-const REGION_LABELS: Record<RegionCode, string> = {
-  XV: 'XV — Arica y Parinacota',
-  I: 'I — Tarapacá',
-  II: 'II — Antofagasta',
-  III: 'III — Atacama',
-  IV: 'IV — Coquimbo',
-  V: 'V — Valparaíso',
-  XIII: 'XIII — Metropolitana',
-  VI: 'VI — O’Higgins',
-  VII: 'VII — Maule',
-  XVI: 'XVI — Ñuble',
-  VIII: 'VIII — Biobío',
-  IX: 'IX — Araucanía',
-  XIV: 'XIV — Los Ríos',
-  X: 'X — Los Lagos',
-  XI: 'XI — Aysén',
-  XII: 'XII — Magallanes',
-};
-
-function regionLabel(code: RegionCode | null | undefined): string {
-  if (!code) {
-    return '—';
-  }
-  return REGION_LABELS[code] ?? code;
-}
 
 function formatCLP(amount: number | null): string {
   if (amount == null) {
