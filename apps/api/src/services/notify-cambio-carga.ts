@@ -28,7 +28,8 @@ export type EventoCambioCarga =
   | 'cambio_solicitado'
   | 'cambio_aceptado'
   | 'cambio_rechazado'
-  | 'cambio_retirado';
+  | 'cambio_retirado'
+  | 'cambio_recordatorio';
 
 type Grupo = 'generador' | 'transportista' | 'conductor';
 
@@ -87,6 +88,15 @@ const AVISOS: Record<EventoCambioCarga, Partial<Record<Grupo, Texto>>> = {
     },
   },
   cambio_retirado: { transportista: cambioRetirado, conductor: cambioRetirado },
+  // El job de recordatorios (§6.14): el tag fijo hace que el navegador
+  // reemplace el aviso anterior en vez de apilarlos.
+  cambio_recordatorio: {
+    transportista: {
+      title: 'Cambio sin responder',
+      body: (codigo) =>
+        `Tienes un cambio sin responder en ${codigo}. No se puede confirmar la recogida hasta que respondas.`,
+    },
+  },
 };
 
 export async function notifyCambioCarga(
