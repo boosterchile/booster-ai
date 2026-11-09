@@ -40,6 +40,7 @@ describe('router', () => {
         'app/chat/$id',
         'app/zonas',
         'app/platform-admin/personal',
+        'app/confirmar-acceso-booster',
         'solicitar-acceso',
       ]),
     );

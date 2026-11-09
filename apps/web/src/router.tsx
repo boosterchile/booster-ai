@@ -6,6 +6,7 @@ import {
   lazyRouteComponent,
 } from '@tanstack/react-router';
 import { RouteFallback } from './components/RouteFallback.js';
+import { RUTA_CONFIRMAR_ACCESO_BOOSTER } from './lib/confirmar-acceso-booster-url.js';
 import { reportError } from './lib/error-reporting.js';
 import { RootComponent } from './routes/__root.js';
 // Rutas EAGER (primer-paint público): no se code-splittean, para evitar un
@@ -374,6 +375,17 @@ const platformAdminPersonalRoute = createRoute({
   ),
 });
 
+// .specs/confirmar-acceso-booster SC18 — la persona confirma con su sesión el
+// código que le entregó el admin de Booster. Bajo /app: exige sesión.
+const confirmarAccesoBoosterRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: RUTA_CONFIRMAR_ACCESO_BOOSTER,
+  component: lazyRouteComponent(
+    () => import('./routes/confirmar-acceso-booster.js'),
+    'ConfirmarAccesoBoosterRoute',
+  ),
+});
+
 const platformAdminTeltonikaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/teltonika',
@@ -669,6 +681,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,
   platformAdminPersonalRoute,
+  confirmarAccesoBoosterRoute,
   platformAdminTeltonikaRoute,
   platformAdminStakeholdersRoute,
   platformAdminObservatorioRoute,
