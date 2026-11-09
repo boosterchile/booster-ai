@@ -2,6 +2,11 @@ import type { Logger } from '@booster-ai/logger';
 import { describe, expect, it, vi } from 'vitest';
 import { createSignupRequestRoutes } from './signup-request.js';
 
+// La ruta lee la lista de respaldo de `config`.
+vi.mock('../config.js', () => ({
+  config: { BOOSTER_PLATFORM_ADMIN_EMAILS: ['respaldo@boosterchile.com'] },
+}));
+
 // T8 SEC-001 Sprint 2b — route tests POST /api/v1/signup-request (SC-1.2.1 +
 // SC-1.2.5). Cubre: valid body → 202, invalid → 422, shadowed (email
 // existente en users) → 202 idéntico (anti-enumeration), service throw → 503.
@@ -86,6 +91,23 @@ describe('POST /api/v1/signup-request (SC-1.2.1)', () => {
     expect(json.ok).toBe(true);
     expect(d.spies.select).toHaveBeenCalledTimes(1);
     // CRITICAL anti-enumeration assertion: NO insert.
+    expect(d.spies.insert).not.toHaveBeenCalled();
+  });
+
+  // `.specs/correos-solicitudes-panel` SC1: la ruta pasa la lista de `config`.
+  it('correo de la lista de respaldo → 202 idéntico, sin consultar ni insertar', async () => {
+    const d = makeDb();
+    const app = createSignupRequestRoutes({ db: d.db, logger: noopLogger });
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'Respaldo@BoosterChile.com', nombreCompleto: 'Otra Persona' }),
+    });
+
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(d.spies.select).not.toHaveBeenCalled();
     expect(d.spies.insert).not.toHaveBeenCalled();
   });
 
