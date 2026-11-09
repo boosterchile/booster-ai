@@ -785,6 +785,18 @@ function PanelCodigoEmitido({ panel, onCerrar }: { panel: CodigoEmitido; onCerra
   );
 }
 
+/** El código en grande. */
+function CodigoEnPantalla({ codigo }: { codigo: string }) {
+  return (
+    <div
+      className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]"
+      data-testid="personal-codigo"
+    >
+      {codigo}
+    </div>
+  );
+}
+
 /** El código en grande, con «Copiar código». */
 function CodigoParaCopiar({ codigo }: { codigo: string }) {
   const [copia, setCopia] = useState<'pendiente' | 'copiado' | 'fallo'>('pendiente');
@@ -802,12 +814,7 @@ function CodigoParaCopiar({ codigo }: { codigo: string }) {
   return (
     <>
       <div className="mt-3 flex items-center gap-2">
-        <div
-          className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]"
-          data-testid="personal-codigo"
-        >
-          {codigo}
-        </div>
+        <CodigoEnPantalla codigo={codigo} />
         <button
           type="button"
           onClick={() => void copiar()}
@@ -921,7 +928,10 @@ function PanelConfirmacion({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar
         persona no tiene acceso al panel.
       </p>
       <DatosDeLaPersona panel={panel} />
-      <CodigoParaCopiar codigo={panel.codigo} />
+      {/* Sin «Copiar código»: se entrega en persona, no por un canal. */}
+      <div className="mt-3 flex">
+        <CodigoEnPantalla codigo={panel.codigo} />
+      </div>
       <p className="mt-2 text-amber-700 text-xs">Vence el {fechaHora(panel.expiraEn)}.</p>
       <p className="mt-2 text-amber-800 text-sm">
         La persona inicia sesión con su RUT y su clave de siempre, entra a{' '}
