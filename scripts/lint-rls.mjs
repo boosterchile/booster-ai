@@ -44,6 +44,7 @@ const TENANT_FREE_TABLES = new Set([
   'tripEvents', // siempre se inserta dentro de transacción de un trip ya validado
   'tripMetrics', // alias inglés de metricasViaje
   'certificadosViaje', // versiones del cert; por trip_id validado, como tripMetrics (HC-001 p3a)
+  'tripChangeRequests', // solicitudes de cambio; bajo lock de un viaje o asignación ya validados (editar-anular-cargas M3)
   'chatMessages', // se filtra por assignment_id (que ya validó tenant en resolveChatAccess)
   'pushSubscriptions', // se filtra por userId
   'telemetryPoints', // se filtra por vehicleId (que ya validó tenant)

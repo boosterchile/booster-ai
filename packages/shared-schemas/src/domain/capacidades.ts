@@ -168,6 +168,19 @@ export function puedeCancelarCarga(ctx: CapacidadCtx): boolean {
   return puedePublicarCarga(ctx);
 }
 
+/** Editar una carga propia (editar-anular-cargas §6): mismo permiso que publicarla. */
+export function puedeEditarCarga(ctx: CapacidadCtx): boolean {
+  return puedePublicarCarga(ctx);
+}
+
+/**
+ * Aceptar o rechazar un cambio que propone el generador sobre una carga ya
+ * asignada: mismo permiso que aceptar una oferta (§6). El conductor no.
+ */
+export function puedeResponderCambioCarga(ctx: CapacidadCtx): boolean {
+  return puedeAceptarOferta(ctx);
+}
+
 /** Sucursales: gestor de una empresa generadora. */
 export function puedeGestionarSucursales(ctx: CapacidadCtx): boolean {
   return ctx.isGeneradorCarga && esGestor(ctx);
@@ -196,6 +209,8 @@ export const CAPACIDADES = {
   puedeVerMapaFlota,
   puedePublicarCarga,
   puedeCancelarCarga,
+  puedeEditarCarga,
+  puedeResponderCambioCarga,
   puedeInvitarMiembro,
   puedeAdministrarEmpresa,
   puedeGestionarFlota,

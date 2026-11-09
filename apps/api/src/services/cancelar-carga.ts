@@ -7,6 +7,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, offers, tripEvents, trips } from '../db/schema.js';
+import { invalidarSolicitudPendiente } from './solicitud-cambio-carga.js';
 
 /**
  * Anular o cancelar una carga (spec editar-anular-cargas §6.6, §12-P6).
@@ -146,6 +147,12 @@ export async function cancelarCarga(
         // la transacción para no dejar el viaje cancelado con la asignación viva.
         throw new Error(`no se pudo cancelar la asignación ${asignacion.id} (estado cambió)`);
       }
+      // Una solicitud de cambio pendiente ya no tiene a quién aplicarse (§6.6).
+      const solicitudInvalidada = await invalidarSolicitudPendiente(tx, {
+        tripId,
+        userId,
+        motivo: 'viaje_cancelado',
+      });
       await tx.insert(tripEvents).values({
         tripId,
         assignmentId: asignacion.id,
@@ -161,7 +168,12 @@ export async function cancelarCarga(
         },
       });
       logger.info(
-        { tripId, trackingCode: viaje.trackingCode, assignmentId: asignacion.id },
+        {
+          tripId,
+          trackingCode: viaje.trackingCode,
+          assignmentId: asignacion.id,
+          solicitudInvalidada,
+        },
         'carga cancelada por el generador después del match',
       );
       return {

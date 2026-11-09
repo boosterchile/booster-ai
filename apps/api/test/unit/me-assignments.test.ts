@@ -131,6 +131,24 @@ describe('GET /me/assignments — vehicle.has_teltonika (tarjeta guiada del cond
     });
   });
 
+  // editar-anular-cargas §12-P7: el conductor sabe que hay un cambio, no cuál.
+  it('con un cambio pendiente: solo existe y desde cuándo; sin cambio: null', async () => {
+    const app = await buildApp(
+      makeDbStub([
+        { ...ROW, cambioPendienteEn: new Date('2026-11-09T15:00:00Z') },
+        { ...ROW, assignmentId: 'asg-2', tripId: 'trip-2', cambioPendienteEn: null },
+      ]),
+    );
+    const body = (await (await app.request('/me/assignments')).json()) as {
+      assignments: Array<{ trip: Record<string, unknown> }>;
+    };
+    expect(body.assignments[0]?.trip.cambio_pendiente).toEqual({
+      existe: true,
+      creado_en: '2026-11-09T15:00:00.000Z',
+    });
+    expect(body.assignments[1]?.trip.cambio_pendiente).toBeNull();
+  });
+
   it('sin vehículo asignado → vehicle null', async () => {
     const app = await buildApp(
       makeDbStub([{ ...ROW, vehicleId: null, vehiclePlate: null, vehicleTeltonikaImei: null }]),
