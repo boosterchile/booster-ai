@@ -818,6 +818,11 @@ describe('integration: alta del personal de Booster desde el panel (SC7)', () =>
     // 2. Una transportista registra a la misma persona como conductor, corrige
     //    su teléfono y reenvía la invitación (#826: guardar el teléfono solo no
     //    la reenvía): eso deja en la cuenta un código que no emitió el panel.
+    //    La transportista puede reenviarla porque la persona y el conductor
+    //    nacen dentro de la tolerancia de `personaPrevia` (60 s): los pasos 1
+    //    y 2 corren seguidos. Si los separa más que eso, `/telefono` responde
+    //    409 `identidad_vinculada` y el caso cae en el paso 2, no en la regla
+    //    de `activacion_vence_en`.
     const flota = await transportista(sufijo);
     const conductor = await flota.request(
       '/conductores',

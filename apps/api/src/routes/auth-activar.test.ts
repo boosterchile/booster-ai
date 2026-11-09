@@ -480,6 +480,62 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
     expect(u.activacionVenceEn).toBeNull();
   });
 
+  // La consulta trae solo la primera membresía (la invitación original). Si ya
+  // no está pendiente o venció, no cuenta como invitación: queda el camino del
+  // personal, que no toca membresías.
+  const PRIMERA_NO_VIGENTE = [
+    [
+      'la primera membresía ya no está pendiente',
+      { status: 'removida', invitedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
+    ],
+    [
+      'la invitación original venció',
+      { status: 'pendiente_invitacion', invitedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) },
+    ],
+  ] as const;
+
+  it.each(PRIMERA_NO_VIGENTE)(
+    'cuenta marcada en la lista, con el código del panel vigente y %s: activa la cuenta sin tocar membresías',
+    async (_caso, primera) => {
+      const d = makeDb({
+        user: personal(),
+        membresia: { id: 'membresia-1', empresaId: 'empresa-1', ...primera },
+      });
+      const a = makeAuth();
+      const res = await activar(buildApp(d.db, a.auth, LISTA));
+
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { custom_token: string }).custom_token).toBe('ct-activacion');
+      const u = d.userUpdates[0] as Record<string, unknown>;
+      expect(u.status).toBe('activo');
+      expect(u.activationPinHash).toBeNull();
+      expect(u.activacionVenceEn).toBeNull();
+      expect(d.membresiaUpdates).toEqual([]);
+      expect(noopLogger.info).toHaveBeenCalledWith(
+        { event_type: 'personal_booster.activacion', userId: 'user-personal' },
+        'auth-activar: personal de Booster activado con clave propia',
+      );
+    },
+  );
+
+  it.each(PRIMERA_NO_VIGENTE)(
+    'cuenta marcada fuera de la lista, con el código del panel vigente y %s → la misma 401 genérica, sin escrituras',
+    async (_caso, primera) => {
+      const d = makeDb({
+        user: personal(),
+        membresia: { id: 'membresia-1', empresaId: 'empresa-1', ...primera },
+      });
+      const a = makeAuth();
+      const res = await activar(buildApp(d.db, a.auth, ['dev@boosterchile.com']));
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(d.userUpdates).toEqual([]);
+      expect(d.membresiaUpdates).toEqual([]);
+      expect(a.spies.createUser).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ['activacion_vence_en es NULL', { activacionVenceEn: null }],
     ['el código del panel venció', { activacionVenceEn: new Date(Date.now() - 60 * 1000) }],
