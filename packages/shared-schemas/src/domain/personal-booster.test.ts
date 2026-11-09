@@ -46,6 +46,30 @@ describe('altaPersonalBoosterSchema', () => {
       false,
     );
   });
+
+  it.each([
+    ['falta el correo', { email: undefined }, 'email', 'Completa este campo'],
+    ['el correo es inválido', { email: 'no-es-correo' }, 'email', 'Ingresa un correo válido'],
+    [
+      'el correo es largo',
+      { email: `${'a'.repeat(251)}@b.cl` },
+      'email',
+      'Usa como máximo 255 caracteres',
+    ],
+    ['falta el nombre', { full_name: undefined }, 'full_name', 'Completa este campo'],
+    ['el nombre es corto', { full_name: ' A ' }, 'full_name', 'Escribe al menos 2 caracteres'],
+    [
+      'el nombre es largo',
+      { full_name: 'a'.repeat(201) },
+      'full_name',
+      'Usa como máximo 200 caracteres',
+    ],
+  ])('responde en español cuando %s', (_caso, cambio, campo, mensaje) => {
+    const base = { email: 'ana.soto@boosterchile.com', full_name: 'Ana Soto', rut: '12345678-5' };
+    const r = altaPersonalBoosterSchema.safeParse({ ...base, ...cambio });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.find((i) => i.path[0] === campo)?.message).toBe(mensaje);
+  });
 });
 
 describe('listaPersonalBoosterResponseSchema', () => {

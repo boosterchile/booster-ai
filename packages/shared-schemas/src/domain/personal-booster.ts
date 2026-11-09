@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { rutSchema } from '../primitives/chile.js';
+import { MENSAJES } from '../primitives/mensajes.js';
 
 /**
  * Alta del personal de Booster desde el panel de administración
@@ -17,11 +18,21 @@ const codigoActivacionSchema = z.string().regex(/^\d{6}$/);
 /**
  * Body de `POST /admin/personal-booster`. El correo se normaliza a minúsculas
  * (la lista de Terraform se compara en minúsculas) y el RUT a su forma
- * canónica `12345678-K` con el dígito verificador validado.
+ * canónica `12345678-K` con el dígito verificador validado. Los mensajes son
+ * los de `MENSAJES`; se arman aquí porque el recorte va antes de validar.
  */
 export const altaPersonalBoosterSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(255),
-  full_name: z.string().trim().min(2).max(200),
+  email: z
+    .string({ error: MENSAJES.requerido })
+    .trim()
+    .toLowerCase()
+    .email(MENSAJES.correo)
+    .max(255, MENSAJES.max(255)),
+  full_name: z
+    .string({ error: MENSAJES.requerido })
+    .trim()
+    .min(2, MENSAJES.min(2))
+    .max(200, MENSAJES.max(200)),
   rut: rutSchema,
 });
 export type AltaPersonalBoosterInput = z.input<typeof altaPersonalBoosterSchema>;
