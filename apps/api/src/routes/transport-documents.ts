@@ -189,6 +189,16 @@ export function createTransportDocumentsRoutes(opts: {
     };
   }
 
+  function actorDe(auth: {
+    userContext: { user: { id: string } };
+    activeMembership: { membership: { role: string } };
+  }) {
+    return {
+      role: auth.activeMembership.membership.role,
+      userId: auth.userContext.user.id,
+    };
+  }
+
   /**
    * Gate de rol de ESCRITURA (review F4-4a finding 4). Reusa el mismo conjunto
    * que `documentos.ts:requireWriteRole`: solo dueño/admin/despachador del
@@ -216,7 +226,11 @@ export function createTransportDocumentsRoutes(opts: {
    * generadora de carga del viaje, O transportista del assignment. Devuelve
    * `{ authorized, exists }`.
    */
-  async function authorizeOverTrip(tripId: string, empresaId: string) {
+  async function authorizeOverTrip(
+    tripId: string,
+    empresaId: string,
+    actor: { role: string; userId: string },
+  ) {
     const tripRows = await opts.db
       .select({ id: trips.id, generadorCargaEmpresaId: trips.generadorCargaEmpresaId })
       .from(trips)
@@ -230,7 +244,7 @@ export function createTransportDocumentsRoutes(opts: {
       return { exists: true as const, authorized: true as const };
     }
     const asgRows = await opts.db
-      .select({ empresaId: assignments.empresaId })
+      .select({ empresaId: assignments.empresaId, driverUserId: assignments.driverUserId })
       .from(assignments)
       .where(
         and(
@@ -240,7 +254,10 @@ export function createTransportDocumentsRoutes(opts: {
       )
       .limit(1);
     const asg = asgRows[0];
-    if (asg && asg.empresaId === empresaId) {
+    // documentos-conductor: el conductor empleado ve solo su viaje
+    // (`veSoloSuViaje`). `conductor_id` guarda un `usuarios.id`.
+    const esConductor = actor.role === 'conductor';
+    if (asg && asg.empresaId === empresaId && (!esConductor || asg.driverUserId === actor.userId)) {
       return { exists: true as const, authorized: true as const };
     }
     return { exists: true as const, authorized: false as const };
@@ -264,7 +281,7 @@ export function createTransportDocumentsRoutes(opts: {
     // closure del span (TS pierde el narrowing a través del callback).
     const transportDocumentsBucket = opts.transportDocumentsBucket;
 
-    const authz = await authorizeOverTrip(tripId, auth.empresaId);
+    const authz = await authorizeOverTrip(tripId, auth.empresaId, actorDe(auth));
     if (!authz.exists) {
       return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
     }
@@ -431,7 +448,7 @@ export function createTransportDocumentsRoutes(opts: {
         return c.json({ error: 'document_not_found', code: 'document_not_found' }, 404);
       }
 
-      const authz = await authorizeOverTrip(doc.viajeId, auth.empresaId);
+      const authz = await authorizeOverTrip(doc.viajeId, auth.empresaId, actorDe(auth));
       if (!authz.authorized) {
         return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
       }
@@ -517,7 +534,7 @@ export function createTransportDocumentsRoutes(opts: {
     }
     const tripId = c.req.param('id');
 
-    const authz = await authorizeOverTrip(tripId, auth.empresaId);
+    const authz = await authorizeOverTrip(tripId, auth.empresaId, actorDe(auth));
     if (!authz.exists) {
       return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
     }
@@ -565,7 +582,7 @@ export function createTransportDocumentsRoutes(opts: {
       return c.json({ error: 'document_not_found', code: 'document_not_found' }, 404);
     }
 
-    const authz = await authorizeOverTrip(doc.viajeId, auth.empresaId);
+    const authz = await authorizeOverTrip(doc.viajeId, auth.empresaId, actorDe(auth));
     if (!authz.authorized) {
       return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
     }
