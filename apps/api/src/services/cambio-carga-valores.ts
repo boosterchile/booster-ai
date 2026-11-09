@@ -102,6 +102,11 @@ export function valoresActuales(v: ViajeEditable): Required<CambiosGuardados> {
   };
 }
 
+/** Siete decimales, la precisión de `numeric(10,7)`: el mismo punto compara igual. */
+function redondear7(v: number | undefined): number | undefined {
+  return v === undefined ? undefined : Number(v.toFixed(7));
+}
+
 /** La propuesta validada, en la misma forma normalizada que `valoresActuales`. */
 export function normalizarPropuesta(c: CambioPropuesto): CambiosGuardados {
   const out: CambiosGuardados = {};
@@ -110,8 +115,8 @@ export function normalizarPropuesta(c: CambioPropuesto): CambiosGuardados {
       c.origin.address_raw,
       c.origin.region_code,
       c.origin.comuna_code ?? null,
-      c.origin.latitude,
-      c.origin.longitude,
+      redondear7(c.origin.latitude),
+      redondear7(c.origin.longitude),
     );
   }
   if (c.destination) {
@@ -119,8 +124,8 @@ export function normalizarPropuesta(c: CambioPropuesto): CambiosGuardados {
       c.destination.address_raw,
       c.destination.region_code,
       c.destination.comuna_code ?? null,
-      c.destination.latitude,
-      c.destination.longitude,
+      redondear7(c.destination.latitude),
+      redondear7(c.destination.longitude),
     );
   }
   if (c.cargo_type !== undefined) {

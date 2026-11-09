@@ -484,8 +484,6 @@ export type ResultadoAceptarSolicitud =
       campos: CampoPropuesto[];
       aviso: AvisoRespuesta;
       vehicleId: string | null;
-      /** Cambió el origen sin coordenadas: hay que geocodificarlo post-commit. */
-      origenSinCoordenadas: { originAddress: string; destinationAddress: string } | null;
     }
   | FalloContexto
   | { ok: false; code: 'solicitud_invalidada'; motivo: MotivoInvalidacion }
@@ -640,19 +638,10 @@ export async function aceptarSolicitudCambio(
       },
       'solicitud de cambio aceptada',
     );
-    const origenSinCoordenadas =
-      cambios.origin && cambios.origin.latitude == null
-        ? {
-            originAddress: cambios.origin.address_raw,
-            destinationAddress:
-              cambios.destination?.address_raw ?? viajeActual.destinationAddressRaw,
-          }
-        : null;
     return {
       ok: true,
       campos,
       vehicleId: ctx.asignacion.vehicleId,
-      origenSinCoordenadas,
       aviso: {
         tripId: ctx.viaje.id,
         trackingCode: ctx.viaje.trackingCode,

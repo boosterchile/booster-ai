@@ -11,7 +11,6 @@ const aceptarMock = vi.fn();
 const rechazarMock = vi.fn();
 const notifyMock = vi.fn(async () => ({ destinatarios: 2, enviados: 2 }));
 const metricasMock = vi.fn(async () => ({}));
-const geocodeMock = vi.fn(async () => null);
 vi.mock('../../src/services/solicitud-cambio-carga.js', () => ({
   aceptarSolicitudCambio: (...a: unknown[]) => aceptarMock(...a),
   rechazarSolicitudCambio: (...a: unknown[]) => rechazarMock(...a),
@@ -22,9 +21,6 @@ vi.mock('../../src/services/notify-cambio-carga.js', () => ({
 }));
 vi.mock('../../src/services/calcular-metricas-viaje.js', () => ({
   calcularMetricasEstimadas: (...a: unknown[]) => metricasMock(...(a as [])),
-}));
-vi.mock('../../src/services/geocodificar-origen.js', () => ({
-  geocodificarOrigen: (...a: unknown[]) => geocodeMock(...(a as [])),
 }));
 
 const { createAssignmentsRoutes } = await import('../../src/routes/assignments.js');
@@ -60,8 +56,15 @@ function app(role = 'dueno', puedeAceptarOfertas = false) {
   return a;
 }
 
-const post = (a: Hono, accion: string, body?: unknown) =>
-  a.request(`/assignments/asg-1/solicitudes-cambio/sol-1/${accion}`, {
+const ASG_ID = '0b5f4c1e-2a3d-4e6f-8a9b-1c2d3e4f5a6b';
+const SOL_ID = '6f1c2a7e-4b2d-4c55-9a7b-1d2e3f4a5b6c';
+const post = (
+  a: Hono,
+  accion: string,
+  body?: unknown,
+  ids = `${ASG_ID}/solicitudes-cambio/${SOL_ID}`,
+) =>
+  a.request(`/assignments/${ids}/${accion}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -85,21 +88,19 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/aceptar', () => {
       campos: ['weight_kg'],
       aviso: AVISO,
       vehicleId: 'veh-1',
-      origenSinCoordenadas: null,
     });
     const res = await post(app(), 'aceptar');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, solicitud_id: 'sol-1', campos: ['weight_kg'] });
+    expect(await res.json()).toEqual({ ok: true, solicitud_id: SOL_ID, campos: ['weight_kg'] });
     expect(aceptarMock).toHaveBeenCalledWith(expect.anything(), {
-      assignmentId: 'asg-1',
+      assignmentId: ASG_ID,
       empresaId: 'emp-t',
       userId: 'user-1',
-      solicitudId: 'sol-1',
+      solicitudId: SOL_ID,
     });
     expect(metricasMock).toHaveBeenCalledWith(
       expect.objectContaining({ tripId: 'trip-1', vehicleId: 'veh-1' }),
     );
-    expect(geocodeMock).not.toHaveBeenCalled();
     expect(notifyMock).toHaveBeenCalledWith(expect.anything(), {
       tripId: 'trip-1',
       asignacion: AVISO.asignacion,
@@ -107,32 +108,15 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/aceptar', () => {
     });
   });
 
-  it('origen nuevo sin coordenadas → geocodifica; ventana sola → no recalcula huella', async () => {
+  it('una ventana sola no recalcula la huella', async () => {
     aceptarMock.mockResolvedValueOnce({
       ok: true,
       campos: ['pickup_window'],
       aviso: AVISO,
       vehicleId: 'veh-1',
-      origenSinCoordenadas: null,
     });
     await post(app(), 'aceptar');
     expect(metricasMock).not.toHaveBeenCalled();
-
-    aceptarMock.mockResolvedValueOnce({
-      ok: true,
-      campos: ['origin'],
-      aviso: AVISO,
-      vehicleId: 'veh-1',
-      origenSinCoordenadas: { originAddress: 'Nuevo 1', destinationAddress: 'Dest 2' },
-    });
-    await post(app(), 'aceptar');
-    expect(geocodeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tripId: 'trip-1',
-        originAddress: 'Nuevo 1',
-        routesProjectId: 'proj',
-      }),
-    );
   });
 
   it('si el post-commit falla, la aceptación responde 200 igual', async () => {
@@ -141,7 +125,6 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/aceptar', () => {
       campos: ['weight_kg'],
       aviso: AVISO,
       vehicleId: null,
-      origenSinCoordenadas: null,
     });
     metricasMock.mockRejectedValueOnce(new Error('routes caído'));
     notifyMock.mockRejectedValueOnce(new Error('push caído'));
@@ -187,6 +170,13 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/aceptar', () => {
     expect(notifyMock).not.toHaveBeenCalled();
   });
 
+  it('programada con el contrato desactivado entre solicitud y respuesta → 422', async () => {
+    aceptarMock.mockResolvedValue({ ok: false, code: 'contrato_programado_no_habilitado' });
+    const res = await post(app(), 'aceptar');
+    expect(res.status).toBe(422);
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
   it('conductor o despachador sin permiso → 403, sin llamar al servicio', async () => {
     for (const a of [app('conductor'), app('despachador'), app('visualizador')]) {
       const res = await post(a, 'aceptar');
@@ -205,10 +195,10 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/rechazar', () => {
     const res = await post(app(), 'rechazar', { reason: 'El camión no da' });
     expect(res.status).toBe(200);
     expect(rechazarMock).toHaveBeenCalledWith(expect.anything(), {
-      assignmentId: 'asg-1',
+      assignmentId: ASG_ID,
       empresaId: 'emp-t',
       userId: 'user-1',
-      solicitudId: 'sol-1',
+      solicitudId: SOL_ID,
       reason: 'El camión no da',
     });
     expect(notifyMock).toHaveBeenCalledWith(expect.anything(), {
@@ -230,6 +220,19 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/rechazar', () => {
 
   it('el conductor no rechaza', async () => {
     expect((await post(app('conductor'), 'rechazar', {})).status).toBe(403);
+    expect(rechazarMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ids mal formados', () => {
+  it('un :id o :sid que no es UUID responde 404 sin llamar al servicio', async () => {
+    expect((await post(app(), 'aceptar', undefined, `x/solicitudes-cambio/${SOL_ID}`)).status).toBe(
+      404,
+    );
+    expect((await post(app(), 'rechazar', {}, `${ASG_ID}/solicitudes-cambio/abc`)).status).toBe(
+      404,
+    );
+    expect(aceptarMock).not.toHaveBeenCalled();
     expect(rechazarMock).not.toHaveBeenCalled();
   });
 });

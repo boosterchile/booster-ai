@@ -48,6 +48,7 @@ import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
+import { completarCoordenadasPropuesta } from '../services/coordenadas-propuesta.js';
 import {
   type DesgloseGenerador,
   desgloseParaGenerador,
@@ -1146,18 +1147,18 @@ export function createTripRequestsV2Routes(opts: {
         return sinPermiso;
       }
       const tripId = c.req.param('id');
-      const { cambios } = c.req.valid('json');
+      const empresaId = auth.activeMembership.empresa.id;
+      // §6.3: las coordenadas se resuelven ANTES de la tx, sin llamadas externas bajo lock.
+      const cambios = await completarCoordenadasPropuesta(
+        { db: opts.db, logger: opts.logger, routesProjectId: opts.routesProjectId },
+        { tripId, empresaId, cambios: c.req.valid('json').cambios },
+      );
       const r = await withBusinessSpan(
         { name: 'cargas.solicitud_cambio.crear', attributes: { 'booster.trip_id': tripId } },
         async (span) => {
           const res = await crearSolicitudCambio(
             { db: opts.db, logger: opts.logger },
-            {
-              tripId,
-              empresaId: auth.activeMembership.empresa.id,
-              userId: auth.userContext.user.id,
-              cambios,
-            },
+            { tripId, empresaId, userId: auth.userContext.user.id, cambios },
           );
           const resultado = res.ok ? 'creada' : res.code;
           setResultAttributes(span, { 'booster.outcome': resultado });
@@ -1202,51 +1203,56 @@ export function createTripRequestsV2Routes(opts: {
     },
   );
 
-  app.post('/:id/solicitudes-cambio/:sid/retirar', async (c) => {
-    const auth = requireShipperAuth(c, { requireActive: true });
-    if (!auth.ok) {
-      return auth.response;
-    }
-    const sinPermiso = denegarEditarCarga(c, auth.userContext);
-    if (sinPermiso) {
-      return sinPermiso;
-    }
-    const tripId = c.req.param('id');
-    const solicitudId = c.req.param('sid');
-    const r = await withBusinessSpan(
-      {
-        name: 'cargas.solicitud_cambio.retirar',
-        attributes: { 'booster.trip_id': tripId, 'booster.solicitud_id': solicitudId },
-      },
-      async (span) => {
-        const res = await retirarSolicitudCambio(
-          { db: opts.db, logger: opts.logger },
-          {
-            tripId,
-            empresaId: auth.activeMembership.empresa.id,
-            userId: auth.userContext.user.id,
-            solicitudId,
-          },
-        );
-        const resultado = res.ok ? 'retirada' : res.code;
-        setResultAttributes(span, { 'booster.outcome': resultado });
-        getBusinessCounter('solicitud_cambio_total').add(1, { resultado, comercial: false });
-        return res;
-      },
-    );
-    if (!r.ok) {
-      return c.json({ error: r.code, code: r.code }, r.code === 'trip_not_found' ? 404 : 409);
-    }
-    try {
-      await notifyCambioCarga(
-        { db: opts.db, logger: opts.logger },
-        { tripId, asignacion: r.asignacion, evento: 'cambio_retirado' },
+  app.post(
+    '/:id/solicitudes-cambio/:sid/retirar',
+    zValidator('param', z.object({ id: z.string().uuid(), sid: z.string().uuid() }), (r, c) =>
+      r.success ? undefined : c.json({ error: 'not_found', code: 'not_found' }, 404),
+    ),
+    async (c) => {
+      const auth = requireShipperAuth(c, { requireActive: true });
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarEditarCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const { id: tripId, sid: solicitudId } = c.req.valid('param');
+      const r = await withBusinessSpan(
+        {
+          name: 'cargas.solicitud_cambio.retirar',
+          attributes: { 'booster.trip_id': tripId, 'booster.solicitud_id': solicitudId },
+        },
+        async (span) => {
+          const res = await retirarSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            {
+              tripId,
+              empresaId: auth.activeMembership.empresa.id,
+              userId: auth.userContext.user.id,
+              solicitudId,
+            },
+          );
+          const resultado = res.ok ? 'retirada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          getBusinessCounter('solicitud_cambio_total').add(1, { resultado, comercial: false });
+          return res;
+        },
       );
-    } catch (err) {
-      opts.logger.error({ err, tripId }, 'avisar solicitud retirada falló (quedó retirada)');
-    }
-    return c.json({ ok: true, solicitud_id: solicitudId });
-  });
+      if (!r.ok) {
+        return c.json({ error: r.code, code: r.code }, r.code === 'trip_not_found' ? 404 : 409);
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId, asignacion: r.asignacion, evento: 'cambio_retirado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'avisar solicitud retirada falló (quedó retirada)');
+      }
+      return c.json({ ok: true, solicitud_id: solicitudId });
+    },
+  );
 
   app.get('/:id/solicitudes-cambio', async (c) => {
     const auth = requireShipperAuth(c);

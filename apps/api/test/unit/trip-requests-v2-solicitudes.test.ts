@@ -51,8 +51,10 @@ function app(role = 'dueno') {
   return a;
 }
 
+const TRIP_ID = '1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d';
+const SOL_ID = '6f1c2a7e-4b2d-4c55-9a7b-1d2e3f4a5b6c';
 const post = (a: Hono, path: string, body?: unknown) =>
-  a.request(`/trip-requests-v2/trip-1${path}`, {
+  a.request(`/trip-requests-v2/${TRIP_ID}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -87,16 +89,47 @@ describe('POST /trip-requests-v2/:id/solicitudes-cambio', () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ solicitud: SOLICITUD });
     expect(crearMock).toHaveBeenCalledWith(expect.anything(), {
-      tripId: 'trip-1',
+      tripId: TRIP_ID,
       empresaId: 'emp-1',
       userId: 'user-1',
       cambios: { weight_kg: 2000 },
     });
     expect(notifyMock).toHaveBeenCalledWith(expect.anything(), {
-      tripId: 'trip-1',
+      tripId: TRIP_ID,
       asignacion: ASG,
       evento: 'cambio_solicitado',
     });
+  });
+
+  it('un cambio comercial con tasa congelada devuelve el desglose propuesto (solo al generador)', async () => {
+    const desglose = {
+      precio_transportista_clp: 900_000,
+      comision_pct: 8,
+      comision_clp: 72_000,
+      iva_comision_clp: 13_680,
+      precio_generador_clp: 972_000,
+      total_factura_generador_clp: 85_680,
+    };
+    crearMock.mockResolvedValue({
+      ok: true,
+      solicitud: SOLICITUD,
+      campos: ['proposed_price_clp'],
+      asignacion: ASG,
+      desglosePropuesto: desglose,
+    });
+    const res = await post(app(), '/solicitudes-cambio', {
+      cambios: { proposed_price_clp: 900_000 },
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ solicitud: SOLICITUD, desglose_propuesto: desglose });
+  });
+
+  it('programada sin contrato → 422', async () => {
+    crearMock.mockResolvedValue({ ok: false, code: 'contrato_programado_no_habilitado' });
+    const res = await post(app(), '/solicitudes-cambio', {
+      cambios: { modalidad_carga: 'programada' },
+    });
+    expect(res.status).toBe(422);
   });
 
   it('si el aviso falla, la solicitud responde 201 igual', async () => {
@@ -146,13 +179,13 @@ describe('POST /trip-requests-v2/:id/solicitudes-cambio', () => {
     expect(notifyMock).not.toHaveBeenCalled();
   });
 
-  it('visualizador → 403 read_only; un campo comercial o un dato libre → 400', async () => {
+  it('visualizador → 403 read_only; un precio no positivo o un dato libre → 400', async () => {
     expect(
       (await post(app('visualizador'), '/solicitudes-cambio', { cambios: { weight_kg: 2 } }))
         .status,
     ).toBe(403);
     expect(
-      (await post(app(), '/solicitudes-cambio', { cambios: { proposed_price_clp: 1 } })).status,
+      (await post(app(), '/solicitudes-cambio', { cambios: { proposed_price_clp: 0 } })).status,
     ).toBe(400);
     expect((await post(app(), '/solicitudes-cambio', { cambios: { notes: 'x' } })).status).toBe(
       400,
@@ -165,26 +198,31 @@ describe('POST /trip-requests-v2/:id/solicitudes-cambio', () => {
 describe('POST /trip-requests-v2/:id/solicitudes-cambio/:sid/retirar', () => {
   it('200 y avisa que se retiró', async () => {
     retirarMock.mockResolvedValue({ ok: true, asignacion: ASG });
-    const res = await post(app(), '/solicitudes-cambio/sol-1/retirar');
+    const res = await post(app(), `/solicitudes-cambio/${SOL_ID}/retirar`);
     expect(res.status).toBe(200);
     expect(retirarMock).toHaveBeenCalledWith(expect.anything(), {
-      tripId: 'trip-1',
+      tripId: TRIP_ID,
       empresaId: 'emp-1',
       userId: 'user-1',
-      solicitudId: 'sol-1',
+      solicitudId: SOL_ID,
     });
     expect(notifyMock).toHaveBeenCalledWith(expect.anything(), {
-      tripId: 'trip-1',
+      tripId: TRIP_ID,
       asignacion: ASG,
       evento: 'cambio_retirado',
     });
   });
 
+  it('un :sid que no es UUID → 404 sin llamar al servicio', async () => {
+    expect((await post(app(), '/solicitudes-cambio/abc/retirar')).status).toBe(404);
+    expect(retirarMock).not.toHaveBeenCalled();
+  });
+
   it('ya no vigente → 409; viaje ajeno → 404', async () => {
     retirarMock.mockResolvedValueOnce({ ok: false, code: 'solicitud_no_vigente' });
-    expect((await post(app(), '/solicitudes-cambio/sol-1/retirar')).status).toBe(409);
+    expect((await post(app(), `/solicitudes-cambio/${SOL_ID}/retirar`)).status).toBe(409);
     retirarMock.mockResolvedValueOnce({ ok: false, code: 'trip_not_found' });
-    expect((await post(app(), '/solicitudes-cambio/sol-1/retirar')).status).toBe(404);
+    expect((await post(app(), `/solicitudes-cambio/${SOL_ID}/retirar`)).status).toBe(404);
     expect(notifyMock).not.toHaveBeenCalled();
   });
 });
@@ -192,9 +230,11 @@ describe('POST /trip-requests-v2/:id/solicitudes-cambio/:sid/retirar', () => {
 describe('GET /trip-requests-v2/:id/solicitudes-cambio', () => {
   it('lista el historial; viaje ajeno → 404', async () => {
     listarMock.mockResolvedValueOnce([SOLICITUD]);
-    const ok = await app().request('/trip-requests-v2/trip-1/solicitudes-cambio');
+    const ok = await app().request(`/trip-requests-v2/${TRIP_ID}/solicitudes-cambio`);
     expect(await ok.json()).toEqual({ solicitudes: [SOLICITUD] });
     listarMock.mockResolvedValueOnce(null);
-    expect((await app().request('/trip-requests-v2/trip-1/solicitudes-cambio')).status).toBe(404);
+    expect((await app().request(`/trip-requests-v2/${TRIP_ID}/solicitudes-cambio`)).status).toBe(
+      404,
+    );
   });
 });
