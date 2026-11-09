@@ -120,6 +120,7 @@ export function createEmpresaRoutes(opts: {
         input,
         authorizedBy: 'self_service',
         selfServiceEnabled: opts.selfOnboardingEnabled,
+        platformAdminEmails: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
       });
 
       return c.json(onboardingResponseBody(result), 201);
@@ -239,6 +240,7 @@ export function createEmpresaRoutes(opts: {
         input,
         authorizedBy: 'admin_provisioned',
         selfServiceEnabled: opts.selfOnboardingEnabled,
+        platformAdminEmails: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
         onboardingTokenConsumption: {
           solicitudId: verification.solicitudId,
           tokenHash: hashOnboardingToken(token),

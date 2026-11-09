@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { claveNumericaSchema, rutSchema } from '@booster-ai/shared-schemas';
-import { and, eq, notInArray, sql } from 'drizzle-orm';
+import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
@@ -46,8 +46,9 @@ function driverSyntheticEmail(rut: string): string {
  *   - 200 { custom_token, synthetic_email } → cliente firma in.
  *   - 401 invalid_credentials → RUT o PIN no matchean (no distinguir
  *     cuál falló para no filtrar la existencia del RUT).
- *   - 410 already_activated → user ya tiene firebase_uid real. El cliente
- *     debe usar Firebase email/password con el email sintético.
+ *   - 410 already_activated → la cuenta ya está activada; la persona entra
+ *     por el login principal con RUT y clave. El cuerpo no trae datos de la
+ *     cuenta (`.specs/bordes-autenticacion` SC1).
  *   - 503 not_a_driver → user existe pero no tiene fila conductores activa.
  *
  * Personal de Booster (`.specs/alta-personal-booster` §6.6): una cuenta con
@@ -132,14 +133,7 @@ export function createDriverAuthRoutes(opts: {
     // 2. Si ya está activado (firebase_uid real o clave elegida), no podemos
     //    activar de nuevo. Un pin ajeno no reescribe la credencial.
     if (cuentaYaActivada(user)) {
-      return c.json(
-        {
-          error: 'already_activated',
-          code: 'already_activated',
-          synthetic_email: user.email,
-        },
-        410,
-      );
+      return c.json({ error: 'already_activated', code: 'already_activated' }, 410);
     }
 
     // 3. Verificar PIN.
@@ -148,7 +142,8 @@ export function createDriverAuthRoutes(opts: {
       // borrado manualmente). Tratar como invalid_credentials.
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
-    const pinOk = verifyActivationPin(body.pin, user.activationPinHash);
+    const hashVerificado = user.activationPinHash;
+    const pinOk = verifyActivationPin(body.pin, hashVerificado);
     if (!pinOk) {
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
@@ -217,8 +212,10 @@ export function createDriverAuthRoutes(opts: {
       return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
     }
 
-    // 6. UPDATE local DB. Exige que la cuenta siga sin estar suspendida ni
-    //    eliminada: si cambió desde la lectura, no se activa ni hay sesión.
+    // 6. UPDATE local DB. Exige que el código siga siendo el verificado, que
+    //    la cuenta siga sin clave y que no esté suspendida ni eliminada: si
+    //    otra activación o una re-emisión llegó primero, no se activa ni hay
+    //    sesión (`.specs/bordes-autenticacion` SC3).
     let escritas: { id: string }[];
     try {
       escritas = await opts.db
@@ -239,7 +236,14 @@ export function createDriverAuthRoutes(opts: {
           lastLoginAt: sql`now()`,
           updatedAt: sql`now()`,
         })
-        .where(and(eq(users.id, user.id), notInArray(users.status, [...ESTADOS_SIN_ACTIVACION])))
+        .where(
+          and(
+            eq(users.id, user.id),
+            eq(users.activationPinHash, hashVerificado),
+            isNull(users.claveNumericaHash),
+            notInArray(users.status, [...ESTADOS_SIN_ACTIVACION]),
+          ),
+        )
         .returning({ id: users.id });
     } catch (err) {
       // Si el UPDATE falla pero Firebase quedó creado, no rollback — el
@@ -253,7 +257,7 @@ export function createDriverAuthRoutes(opts: {
     if (escritas.length === 0) {
       opts.logger.info(
         { userId: user.id },
-        'driver-activate: la cuenta cambió de estado antes de escribir; no se activa',
+        'driver-activate: la cuenta cambió antes de escribir; no se activa',
       );
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
