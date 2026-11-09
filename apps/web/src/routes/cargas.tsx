@@ -19,6 +19,10 @@ import { FormField, inputClass as fieldInputClass } from '../components/FormFiel
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
+import {
+  ContactoYNotasCard,
+  type DatosLibresCarga,
+} from '../components/cargas/ContactoYNotasCard.js';
 import { RecepcionYPagoCard } from '../components/comercial/RecepcionYPagoCard.js';
 import {
   DesgloseGenerador,
@@ -117,6 +121,11 @@ interface TripDetail extends TripSummary {
   destination_comuna_code: string | null;
   cargo_description: string | null;
   updated_at: string;
+  /** editar-anular-cargas — datos libres y acciones permitidas (el API los deriva del estado). */
+  consignee?: DatosLibresCarga['consignee'];
+  notes?: string | null;
+  reference?: string | null;
+  acciones_permitidas?: { editar_datos_libres: boolean };
 }
 
 interface TripEvent {
@@ -656,6 +665,9 @@ interface TripFormValues {
   cargo_weight_kg: string;
   cargo_volume_m3: string;
   cargo_description: string;
+  /** editar-anular-cargas §12-P4 — notas y referencia opcionales al crear. */
+  notes: string;
+  reference: string;
   pickup_start_local: string;
   pickup_end_local: string;
   proposed_price_clp: string;
@@ -687,6 +699,8 @@ const EMPTY_FORM: TripFormValues = {
   cargo_weight_kg: '',
   cargo_volume_m3: '',
   cargo_description: '',
+  notes: '',
+  reference: '',
   pickup_start_local: '',
   pickup_end_local: '',
   proposed_price_clp: '',
@@ -771,6 +785,8 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
           },
         }
       : {}),
+    ...(v.notes.trim() ? { notes: v.notes.trim() } : {}),
+    ...(v.reference.trim() ? { reference: v.reference.trim() } : {}),
   };
 }
 
@@ -792,6 +808,8 @@ const SCHEMA_PATH_TO_FIELD: Record<string, keyof TripFormValues> = {
   'cargo.weight_kg': 'cargo_weight_kg',
   'cargo.volume_m3': 'cargo_volume_m3',
   'cargo.description': 'cargo_description',
+  notes: 'notes',
+  reference: 'reference',
   'pickup_window.start_at': 'pickup_start_local',
   'pickup_window.end_at': 'pickup_end_local',
   proposed_price_clp: 'proposed_price_clp',
@@ -1106,6 +1124,38 @@ function TripForm({
               )}
             />
           </div>
+          <div className="sm:col-span-2">
+            <FormField
+              label="Notas para el transportista"
+              error={errors.notes?.message}
+              render={({ id, describedBy }) => (
+                <textarea
+                  id={id}
+                  aria-describedby={describedBy}
+                  rows={2}
+                  {...register('notes')}
+                  className={fieldInputClass(!!errors.notes)}
+                  maxLength={1000}
+                  placeholder="Horario de recepción, andén, a quién preguntar (opcional)"
+                />
+              )}
+            />
+          </div>
+          <FormField
+            label="Referencia"
+            error={errors.reference?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                maxLength={100}
+                {...register('reference')}
+                className={fieldInputClass(!!errors.reference)}
+                placeholder="Tu número de pedido u orden (opcional)"
+              />
+            )}
+          />
         </div>
       </section>
 
@@ -1505,6 +1555,20 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
               )}
             </div>
           </DataCard>
+
+          {trip.consignee && (
+            <ContactoYNotasCard
+              tripId={trip.id}
+              datos={{
+                consignee: trip.consignee,
+                notes: trip.notes ?? null,
+                reference: trip.reference ?? null,
+              }}
+              editable={
+                Boolean(trip.acciones_permitidas?.editar_datos_libres) && flagsDe(me).publicarCarga
+              }
+            />
+          )}
 
           <DataCard title="Ventana de pickup">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

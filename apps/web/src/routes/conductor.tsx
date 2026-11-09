@@ -26,6 +26,7 @@ import { TripHeroCard } from '../components/inicio/trip-hero-card.js';
 import { InstruccionesRetiroConductor } from '../components/instrucciones-retiro/InstruccionesRetiroConductor.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
+import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
@@ -91,6 +92,10 @@ export interface DriverAssignment {
     cargo_weight_kg: number | null;
     pickup_window_start: string | null;
     pickup_window_end: string | null;
+    /** editar-anular-cargas §12-P4 — datos libres que fija el generador. */
+    consignee?: { name: string | null; phone_e164: string | null } | null;
+    notes?: string | null;
+    reference?: string | null;
   };
   carrier_empresa: { id: string; legal_name: string | null };
   vehicle: { id: string; plate: string | null; has_teltonika: boolean } | null;
@@ -908,6 +913,14 @@ export function AssignmentCard({
           transportista) y terminaba viendo herramientas de su jefe — "asignar
           conductor" y el factoring de Cobra hoy—, cuyas acciones después le
           respondían 403. */}
+      {/* editar-anular-cargas §12-P4: contacto del destinatario, notas y referencia,
+          antes y durante el viaje (al entregar es cuando más sirve el contacto). */}
+      <DatosLibresViaje
+        className="mt-4"
+        consignee={a.trip.consignee ?? null}
+        notes={a.trip.notes ?? null}
+        reference={a.trip.reference ?? null}
+      />
       <div className="mt-4 space-y-2 border-neutral-100 border-t pt-4">
         {fase === 'por_recoger' && (
           <>
