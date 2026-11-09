@@ -30,7 +30,11 @@ export type ModalidadCarga = DesgloseGeneradorDto['modalidad_carga'];
 
 const clp = (n: number) => `$${n.toLocaleString('es-CL')}`;
 
-export function DesgloseGenerador({ desglose }: { desglose: DesgloseGeneradorDto }) {
+export function DesgloseGenerador({
+  desglose,
+}: {
+  desglose: Omit<DesgloseGeneradorDto, 'modalidad_carga'>;
+}) {
   const filas: Array<[string, string]> = [
     ['Precio del transportista', clp(desglose.precio_transportista_clp)],
     [`Comisión Booster (${desglose.comision_pct} %)`, clp(desglose.comision_clp)],

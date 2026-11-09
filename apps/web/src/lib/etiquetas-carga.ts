@@ -73,3 +73,39 @@ export function regionLabel(code: RegionCode | null | undefined): string {
   }
   return REGION_LABELS[code] ?? code;
 }
+
+/** Línea de tiempo de la carga (editar-anular-cargas §9). */
+export const ETIQUETAS_EVENTO: Record<string, string> = {
+  intake_iniciado: 'Solicitud iniciada',
+  intake_capturado: 'Solicitud capturada',
+  matching_iniciado: 'Búsqueda de transportista',
+  ofertas_enviadas: 'Ofertas enviadas',
+  oferta_aceptada: 'Oferta aceptada',
+  oferta_rechazada: 'Oferta rechazada',
+  oferta_expirada: 'Oferta vencida',
+  asignacion_creada: 'Transportista asignado',
+  conductor_asignado: 'Conductor asignado',
+  recogida_confirmada: 'Carga recogida',
+  entrega_confirmada: 'Entrega confirmada',
+  cancelado: 'Cancelada',
+  carbono_calculado: 'Huella calculada',
+  certificado_emitido: 'Certificado emitido',
+  telemetria_primera_recibida: 'Primera posición del vehículo',
+  telemetria_perdida: 'Se perdió la señal del vehículo',
+  ruta_desviada: 'Desvío de ruta',
+  disputa_abierta: 'Disputa abierta',
+  incidente_reportado: 'Incidente reportado',
+  carga_editada: 'Datos de la carga actualizados',
+  cambio_solicitado: 'Cambio propuesto al transportista',
+  cambio_respondido: 'Respuesta al cambio propuesto',
+};
+
+/** Un tipo que la web todavía no conoce se muestra legible, nunca en crudo. */
+export function etiquetaEvento(tipo: string): string {
+  const conocida = ETIQUETAS_EVENTO[tipo];
+  if (conocida) {
+    return conocida;
+  }
+  const texto = tipo.replace(/_/g, ' ').trim();
+  return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : 'Evento';
+}

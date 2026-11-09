@@ -435,6 +435,79 @@ describe('CargasDetalleRoute', () => {
     expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
   });
 
+  // editar-anular-cargas §9: cambios después del match.
+  it('asignado sin cambio pendiente ofrece «Solicitar cambio» y abre el formulario', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: {
+          editar_datos_libres: true,
+          solicitar_cambio: true,
+          retirar_cambio: false,
+          anular: false,
+          cancelar: true,
+        },
+        cambio_pendiente: null,
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Solicitar cambio' }));
+    expect(screen.getByRole('form', { name: 'Solicitar cambio' })).toBeInTheDocument();
+  });
+
+  it('con un cambio pendiente muestra el aviso con «Retirar solicitud» y no ofrece otro', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: {
+          editar_datos_libres: true,
+          solicitar_cambio: false,
+          retirar_cambio: true,
+          anular: false,
+          cancelar: true,
+        },
+        cambio_pendiente: {
+          id: 'sol-1',
+          cambios: { weight_kg: 2500 },
+          valores_anteriores: { weight_kg: 5000 },
+          creado_en: '2026-11-09T15:00:00.000Z',
+        },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(
+      await screen.findByText('Cambio pendiente de aprobación del transportista'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retirar solicitud' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Solicitar cambio' })).not.toBeInTheDocument();
+  });
+
+  it('en proceso explica que la carga ya fue recogida', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'en_proceso',
+        acciones_permitidas: { editar_datos_libres: true, solicitar_cambio: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/La carga ya fue recogida/)).toBeInTheDocument();
+  });
+
   it('una carga anulada muestra quién y cuándo', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
       trip_request: {
