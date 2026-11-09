@@ -974,7 +974,7 @@ describe('PersonalBooster — código de confirmación (confirmar-acceso-booster
     expect(panel).not.toHaveTextContent(INSTRUCCION_CONFIRMACION);
   });
 
-  it('copiar el código de confirmación lo deja en el portapapeles', async () => {
+  it('el código de confirmación se muestra sin «Copiar código»: se entrega en persona (SC16)', async () => {
     const writeText = vi.fn(async () => undefined);
     stubClipboard(writeText);
     await renderConLista(LISTA_CON_CONFIRMACION);
@@ -989,10 +989,10 @@ describe('PersonalBooster — código de confirmación (confirmar-acceso-booster
 
     fireEvent.click(within(fila(FELI.email)).getByRole('button', { name: 'Generar código nuevo' }));
     const panel = await within(fila(FELI.email)).findByTestId('personal-codigo-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Copiar código' }));
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('913507'));
-    expect(await within(panel).findByRole('button', { name: 'Copiado ✓' })).toBeInTheDocument();
+    expect(within(panel).getByTestId('personal-codigo')).toHaveTextContent('913507');
+    expect(within(panel).queryByRole('button', { name: 'Copiar código' })).not.toBeInTheDocument();
+    expect(writeText).not.toHaveBeenCalled();
   });
 });
 
