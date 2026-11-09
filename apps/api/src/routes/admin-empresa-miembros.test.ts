@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -69,6 +71,8 @@ interface DbOpts {
   lookupQueue?: unknown[][];
   /** Filas del `select` que hizo `innerJoin` (pendientes y reemisión). */
   joinedMembershipRows?: unknown[];
+  /** Error que lanza el INSERT de la persona (p. ej. el UNIQUE del correo). */
+  insertUserError?: unknown;
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -141,6 +145,9 @@ function makeDb(opts: DbOpts = {}) {
           insertedMemberships.push(vals);
           return [{ id: 'membership-uuid' }];
         }
+        if (opts.insertUserError) {
+          throw opts.insertUserError;
+        }
         insertedUsers.push(vals);
         return [{ id: 'user-uuid' }];
       }),
@@ -172,6 +179,7 @@ function makeDb(opts: DbOpts = {}) {
     insertedEmpresas,
     insertedCarrierMemberships,
     updates,
+    select,
   };
 }
 
@@ -612,6 +620,59 @@ describe('POST /admin/empresas/:id/miembros', () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
     expect(d.insertedUsers.length).toBe(0);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo de la persona nueva se
+ * compara con las cuentas existentes sin distinguir mayúsculas, y una alta
+ * simultánea con el mismo correo responde el mismo 409.
+ */
+describe('POST /admin/empresas/:id/miembros — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  const YA_REGISTRADO = { error: 'conflict', code: 'email_already_registered' };
+
+  function post(app: Hono, email: string) {
+    return app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...BODY, email }),
+    });
+  }
+
+  it('persona nueva: la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+
+    const res = await post(buildApp(mod, d.db, a.auth), 'FVicencio@Me.com');
+
+    expect(res.status).toBe(201);
+    // 0 = empresa, 1 = persona por RUT, 2 = cuenta por correo.
+    const chain = d.select.mock.results[2]?.value as { where: ReturnType<typeof vi.fn> };
+    const predicado = chain.where.mock.calls[0]?.[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['fvicencio@me.com']);
+  });
+
+  it('el UNIQUE del correo en el INSERT (alta simultánea) → el mismo 409, sin membresía', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      insertUserError: Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'usuarios_email_key',
+      }),
+    });
+    const a = makeAuthStub();
+
+    const res = await post(buildApp(mod, d.db, a.auth), BODY.email);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.insertedMemberships).toHaveLength(0);
   });
 });
 

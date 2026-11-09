@@ -1,7 +1,10 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Auth } from 'firebase-admin/auth';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { users } from '../db/schema.js';
 import { hashOnboardingToken, verifyOnboardingToken } from './onboarding-token.js';
-import { approveSignupRequest } from './signup-request.js';
+import { approveSignupRequest, submitSignupRequest } from './signup-request.js';
 
 /**
  * T1.3 (onboarding-flow-redesign) — `approveSignupRequest` gateado.
@@ -79,6 +82,8 @@ function makeNotifier() {
 interface DbOpts {
   requestRow?: typeof REQUEST | undefined;
   updateRows?: unknown[]; // admin-provisioned UPDATE returning
+  /** Filas de `usuarios` que devuelve la búsqueda de una cuenta por correo. */
+  cuentasConCorreo?: unknown[];
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -86,11 +91,17 @@ function makeDb(opts: DbOpts = {}) {
   const capturedSets: Record<string, unknown>[] = [];
   const insertCalls: unknown[] = [];
 
+  // Predicados de la búsqueda de una cuenta por correo (tabla `usuarios`).
+  const predicadosCuenta: unknown[] = [];
   const select = vi.fn(() => ({
-    from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        limit: vi.fn(async () => (requestRow ? [requestRow] : [])),
-      })),
+    from: vi.fn((tabla: unknown) => ({
+      where: vi.fn((predicado: unknown) => {
+        if (tabla === users) {
+          predicadosCuenta.push(predicado);
+          return { limit: vi.fn(async () => opts.cuentasConCorreo ?? []) };
+        }
+        return { limit: vi.fn(async () => (requestRow ? [requestRow] : [])) };
+      }),
     })),
   }));
 
@@ -126,6 +137,7 @@ function makeDb(opts: DbOpts = {}) {
     capturedSets,
     insertCalls,
     transaction,
+    predicadosCuenta,
   };
 }
 
@@ -142,6 +154,7 @@ describe('approveSignupRequest — modo viejo (flag OFF)', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'https://app.boosterchile.com/login',
       correlationId: 'corr-1',
+      platformAdminEmails: [],
     });
     expect(result).toEqual({ outcome: 'approved', firebaseUid: FB_UID, userId: 'user-uuid' });
     expect(transaction).toHaveBeenCalledTimes(1);
@@ -160,6 +173,7 @@ describe('approveSignupRequest — modo admin-provisioned (flag ON)', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'https://app.boosterchile.com/onboarding',
       correlationId: 'corr-2',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
 
@@ -209,6 +223,7 @@ describe('approveSignupRequest — modo admin-provisioned (flag ON)', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'https://app.boosterchile.com/onboarding',
       correlationId: 'corr-3',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
     expect(result).toEqual({ outcome: 'already_processed' });
@@ -235,6 +250,7 @@ describe('approveSignupRequest — link de acceso (T2.0)', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'https://app.boosterchile.com/login',
       correlationId: 'corr-access-1',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
 
@@ -257,6 +273,7 @@ describe('approveSignupRequest — link de acceso (T2.0)', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'https://app.boosterchile.com/login',
       correlationId: 'corr-access-2',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
 
@@ -293,6 +310,7 @@ describe('approveSignupRequest — link de acceso (T2.0)', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'https://app.boosterchile.com/login',
       correlationId: 'corr-access-3',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
 
@@ -308,6 +326,7 @@ describe('approveSignupRequest — casos previos preservados', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'x',
       correlationId: 'c',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
     expect(result).toEqual({ outcome: 'not_found' });
@@ -320,6 +339,7 @@ describe('approveSignupRequest — casos previos preservados', () => {
       approverEmail: 'admin@booster.cl',
       loginLinkUrl: 'x',
       correlationId: 'c',
+      platformAdminEmails: [],
       adminProvisionedOnboarding: ADMIN_PROVISIONED,
     });
     expect(result).toEqual({ outcome: 'already_processed' });
@@ -337,10 +357,180 @@ describe('approveSignupRequest — casos previos preservados', () => {
         approverEmail: 'admin@booster.cl',
         loginLinkUrl: 'x',
         correlationId: 'c',
+        platformAdminEmails: [],
         adminProvisionedOnboarding: ADMIN_PROVISIONED,
       },
     );
     expect(result).toEqual({ outcome: 'firebase_user_already_exists' });
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+/** Texto SQL y parámetros de un predicado de Drizzle. */
+function consultaDe(predicado: unknown) {
+  if (!(predicado instanceof SQL)) {
+    throw new Error('la búsqueda de la cuenta por correo no recibió un predicado SQL');
+  }
+  return new PgDialect().sqlToQuery(predicado);
+}
+
+/**
+ * `.specs/correos-solicitudes-panel` SC1 — la aprobación crea la cuenta del
+ * proveedor de identidad solo si el correo de la solicitud está libre: ni en la
+ * lista de respaldo ni en una cuenta existente, sin distinguir mayúsculas.
+ */
+describe('approveSignupRequest — el correo de la solicitud (correos-solicitudes-panel SC1)', () => {
+  const LISTA = ['respaldo@boosterchile.com'];
+  const MODOS = [
+    ['con enlace de onboarding', ADMIN_PROVISIONED],
+    ['sin enlace de onboarding', undefined],
+  ] as const;
+
+  it.each(MODOS)(
+    'un correo de la lista, con mayúsculas y espacios, no crea la cuenta (%s)',
+    async (_modo, provisioned) => {
+      const { db, capturedSets, insertCalls, transaction } = makeDb({
+        requestRow: { ...REQUEST, email: ' Respaldo@BoosterChile.com ' },
+      });
+      const auth = makeAuthWithResetLink('https://app.boosterchile.com/__/auth/action?mode=reset');
+      const notifier = makeNotifier();
+
+      const result = await approveSignupRequest(db, noopLogger, auth, notifier, {
+        id: SID,
+        approverEmail: 'admin@booster.cl',
+        loginLinkUrl: 'https://app.boosterchile.com/login',
+        correlationId: 'corr-lista',
+        platformAdminEmails: LISTA,
+        ...(provisioned ? { adminProvisionedOnboarding: provisioned } : {}),
+      });
+
+      // La respuesta de un correo que ya tiene cuenta, con la solicitud
+      // pendiente: sin cuenta del proveedor, sin enlace y sin escrituras.
+      expect(result).toEqual({ outcome: 'firebase_user_already_exists' });
+      expect(auth.createUser).not.toHaveBeenCalled();
+      expect(auth.generatePasswordResetLink).not.toHaveBeenCalled();
+      expect(capturedSets).toEqual([]);
+      expect(insertCalls).toEqual([]);
+      expect(transaction).not.toHaveBeenCalled();
+      expect(notifier.notifyUserOfApproval).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(MODOS)(
+    'el correo de una cuenta existente, sin distinguir mayúsculas, no crea la cuenta (%s)',
+    async (_modo, provisioned) => {
+      const d = makeDb({
+        requestRow: { ...REQUEST, email: 'Nuevo@Empresa.cl' },
+        cuentasConCorreo: [{ id: 'cuenta-existente' }],
+      });
+      const auth = makeAuthWithResetLink('https://app.boosterchile.com/__/auth/action?mode=reset');
+      const notifier = makeNotifier();
+
+      const result = await approveSignupRequest(d.db, noopLogger, auth, notifier, {
+        id: SID,
+        approverEmail: 'admin@booster.cl',
+        loginLinkUrl: 'https://app.boosterchile.com/login',
+        correlationId: 'corr-cuenta',
+        platformAdminEmails: LISTA,
+        ...(provisioned ? { adminProvisionedOnboarding: provisioned } : {}),
+      });
+
+      expect(result).toEqual({ outcome: 'firebase_user_already_exists' });
+      expect(auth.createUser).not.toHaveBeenCalled();
+      expect(auth.generatePasswordResetLink).not.toHaveBeenCalled();
+      expect(d.capturedSets).toEqual([]);
+      expect(d.transaction).not.toHaveBeenCalled();
+      const consulta = consultaDe(d.predicadosCuenta[0]);
+      expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+      expect(consulta.params).toEqual(['nuevo@empresa.cl']);
+    },
+  );
+
+  it('un correo libre sigue al alta después de buscar la cuenta en minúsculas', async () => {
+    const d = makeDb();
+    const auth = makeAuthWithResetLink('https://app.boosterchile.com/__/auth/action?mode=reset');
+
+    const result = await approveSignupRequest(d.db, noopLogger, auth, makeNotifier(), {
+      id: SID,
+      approverEmail: 'admin@booster.cl',
+      loginLinkUrl: 'https://app.boosterchile.com/login',
+      correlationId: 'corr-libre',
+      platformAdminEmails: LISTA,
+      adminProvisionedOnboarding: ADMIN_PROVISIONED,
+    });
+
+    expect(result.outcome).toBe('approved');
+    expect(auth.createUser).toHaveBeenCalledTimes(1);
+    expect(d.predicadosCuenta).toHaveLength(1);
+    expect(consultaDe(d.predicadosCuenta[0]).params).toEqual([REQUEST.email]);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC1 y SC3 — una solicitud con un correo
+ * ocupado (de la lista o de una cuenta, con cualquier mayúscula) no se guarda;
+ * la ruta responde la misma 202.
+ */
+describe('submitSignupRequest — correo ocupado (correos-solicitudes-panel SC1, SC3)', () => {
+  const LISTA = ['respaldo@boosterchile.com'];
+
+  function makeSubmitDb(cuentas: unknown[]) {
+    const where = vi.fn((_predicado: unknown) => ({ limit: vi.fn(async () => cuentas) }));
+    const select = vi.fn(() => ({ from: vi.fn(() => ({ where })) }));
+    const values = vi.fn((_fila: unknown) => ({ returning: vi.fn(async () => [{ id: SID }]) }));
+    const insert = vi.fn(() => ({ values }));
+    return { db: { select, insert } as never, where, select, insert, values };
+  }
+
+  it('la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const d = makeSubmitDb([]);
+
+    const res = await submitSignupRequest(
+      d.db,
+      noopLogger,
+      { email: 'Nuevo@Empresa.cl', nombreCompleto: 'Nueva Persona' },
+      'corr-1',
+      LISTA,
+    );
+
+    expect(res).toEqual({ outcome: 'submitted', signupRequestId: SID });
+    const consulta = consultaDe(d.where.mock.calls[0]?.[0]);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['nuevo@empresa.cl']);
+    expect(d.values).toHaveBeenCalledWith({
+      email: 'nuevo@empresa.cl',
+      nombreCompleto: 'Nueva Persona',
+    });
+  });
+
+  it('una cuenta guardada con otras mayúsculas → shadowed, sin solicitud nueva', async () => {
+    const d = makeSubmitDb([{ id: 'cuenta-mayus' }]);
+
+    const res = await submitSignupRequest(
+      d.db,
+      noopLogger,
+      { email: 'nuevo@empresa.cl', nombreCompleto: 'Nueva Persona' },
+      'corr-2',
+      LISTA,
+    );
+
+    expect(res).toEqual({ outcome: 'shadowed' });
+    expect(d.insert).not.toHaveBeenCalled();
+  });
+
+  it('un correo de la lista de respaldo, con mayúsculas y espacios → shadowed, sin consultar ni guardar', async () => {
+    const d = makeSubmitDb([]);
+
+    const res = await submitSignupRequest(
+      d.db,
+      noopLogger,
+      { email: ' Respaldo@BoosterChile.com ', nombreCompleto: 'Otra Persona' },
+      'corr-3',
+      LISTA,
+    );
+
+    expect(res).toEqual({ outcome: 'shadowed' });
+    expect(d.select).not.toHaveBeenCalled();
+    expect(d.insert).not.toHaveBeenCalled();
   });
 });

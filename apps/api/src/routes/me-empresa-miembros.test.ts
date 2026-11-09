@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -32,21 +34,32 @@ const noopLogger = {
 interface DbOpts {
   userByRut?: unknown[];
   membresiaExistente?: unknown[];
+  /** Cuentas que devuelve la búsqueda por correo de una persona nueva. */
+  cuentaConCorreo?: unknown[];
   listaEquipo?: unknown[];
   insertUserError?: unknown;
 }
 
 function makeDb(opts: DbOpts = {}) {
-  const cola = [opts.userByRut ?? [], opts.membresiaExistente ?? []];
+  // Persona existente: la segunda lectura es su membresía en la empresa.
+  // Persona nueva: es la búsqueda de una cuenta con su correo.
+  const porRut = opts.userByRut ?? [];
+  const cola = [
+    porRut,
+    porRut.length > 0 ? (opts.membresiaExistente ?? []) : (opts.cuentaConCorreo ?? []),
+  ];
   const insertedUsers: Record<string, unknown>[] = [];
   const insertedMemberships: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
 
   /** Bloqueos de fila pedidos con `.for(...)`, en orden. */
   const locks: string[] = [];
+  /** Predicados de cada `select().from().where(...)`, en orden. */
+  const wheres: unknown[] = [];
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
-      where: vi.fn(() => {
+      where: vi.fn((predicado: unknown) => {
+        wheres.push(predicado);
         const limit = vi.fn(async () => cola.shift() ?? []);
         return {
           limit,
@@ -100,6 +113,7 @@ function makeDb(opts: DbOpts = {}) {
     insertedMemberships,
     updates,
     locks,
+    wheres,
   };
 }
 
@@ -537,5 +551,55 @@ describe('POST /me/empresa/miembros — cuenta del personal de Booster (SC7)', (
     const res = await invitar(buildApp(d.db));
 
     expect(res.status).toBe(201);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo de la persona nueva se
+ * compara con las cuentas existentes sin distinguir mayúsculas, y una alta
+ * simultánea con el mismo correo responde el mismo 409.
+ */
+describe('POST /me/empresa/miembros — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  const YA_REGISTRADO = { error: 'conflict', code: 'email_already_registered' };
+
+  it('persona nueva: la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const d = makeDb();
+
+    const res = await post(buildApp(d.db), { ...BODY, email: 'Gobe00@Gmail.com' });
+
+    expect(res.status).toBe(201);
+    // 0 = persona por RUT, 1 = cuenta por correo.
+    const predicado = d.wheres[1];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['gobe00@gmail.com']);
+    // La búsqueda por correo no bloquea filas: solo la lectura por RUT.
+    expect(d.locks).toEqual(['update']);
+  });
+
+  it('el correo es de otra cuenta guardada con otras mayúsculas → 409 sin crear cuenta ni membresía', async () => {
+    const d = makeDb({ cuentaConCorreo: [{ id: 'u-mayus' }] });
+
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.insertedUsers).toHaveLength(0);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
+
+  it('el UNIQUE del correo en el INSERT (alta simultánea) → el mismo 409, sin membresía', async () => {
+    const d = makeDb({
+      insertUserError: { code: '23505', constraint: 'usuarios_email_key' },
+    });
+
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.insertedMemberships).toHaveLength(0);
   });
 });
