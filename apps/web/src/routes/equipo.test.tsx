@@ -174,6 +174,89 @@ describe('Equipo — listado', () => {
   });
 });
 
+/**
+ * capacidades-por-rol regla 7: dueño y admin editan en Equipo si un despachador
+ * acepta ofertas. Las ofertas son de la transportista; en una generadora pura
+ * el permiso no aplica y no se muestra.
+ */
+describe('Equipo — permiso «Puede aceptar ofertas»', () => {
+  function meDe(
+    role: 'dueno' | 'visualizador',
+    tipo: { transportista: boolean; generador: boolean },
+  ): MeOnboarded {
+    const base = ME.active_membership;
+    if (!base?.empresa) {
+      throw new Error('ME sin empresa activa');
+    }
+    return {
+      ...ME,
+      active_membership: {
+        ...base,
+        role,
+        empresa: {
+          ...base.empresa,
+          is_transportista: tipo.transportista,
+          is_generador_carga: tipo.generador,
+        },
+      },
+    };
+  }
+
+  it('en una generadora pura no se muestra junto al despachador', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByText('Despachador')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Puede aceptar ofertas')).not.toBeInTheDocument();
+  });
+
+  it('en una transportista la dueña lo ve y al marcarlo se guarda', async () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: meDe('dueno', { transportista: true, generador: false }),
+    };
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({ ok: true });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    const permiso = await screen.findByLabelText('Puede aceptar ofertas');
+    expect(permiso).not.toBeChecked();
+    fireEvent.click(permiso);
+    await waitFor(() =>
+      expect(patch).toHaveBeenCalledWith('/me/empresa/miembros/m2', {
+        puede_aceptar_ofertas: true,
+      }),
+    );
+  });
+
+  it('en una empresa mixta la dueña lo ve', async () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: meDe('dueno', { transportista: true, generador: true }),
+    };
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByLabelText('Puede aceptar ofertas')).toBeInTheDocument();
+  });
+
+  it('el visualizador de una transportista no lo ve', async () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: meDe('visualizador', { transportista: true, generador: false }),
+    };
+    vi.spyOn(api, 'get').mockResolvedValue({ miembros: MIEMBROS });
+
+    render(<EquipoRoute />, { wrapper: makeWrapper() });
+
+    expect(await screen.findByText('Despachador')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Puede aceptar ofertas')).not.toBeInTheDocument();
+  });
+});
+
 describe('Equipo — alta', () => {
   async function abrirFormYCompletar() {
     vi.spyOn(api, 'get').mockResolvedValue({ miembros: [] });

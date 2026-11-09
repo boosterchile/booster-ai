@@ -89,8 +89,11 @@ export function EquipoRoute() {
 }
 
 function EquipoPage({ me }: { me: MeOnboarded }) {
-  const puedeInvitar = flagsDe(me).invitar;
-  const puedeEditarOfertas = flagsDe(me).administrar;
+  const capacidades = flagsDe(me);
+  const puedeInvitar = capacidades.invitar;
+  // Las ofertas son de la transportista: en una generadora pura el permiso no
+  // aplica y no se muestra (capacidades-por-rol regla 7).
+  const puedeEditarOfertas = capacidades.administrar && capacidades.ctx?.isTransportista === true;
   const [miembros, setMiembros] = useState<Miembro[]>([]);
   const [cargando, setCargando] = useState(true);
   const [errorLista, setErrorLista] = useState<string | null>(null);
