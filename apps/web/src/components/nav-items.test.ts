@@ -59,6 +59,7 @@ describe('navSectionsForMe', () => {
     expect(l).toEqual([
       'Inicio',
       'Empresa',
+      'Equipo',
       'Crear carga',
       'Mis cargas',
       'Sucursales',
@@ -136,6 +137,26 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Mis cargas');
     expect(sections.some((s) => s.heading === 'Transporte')).toBe(true);
     expect(sections.some((s) => s.heading === 'Generador')).toBe(true);
+  });
+
+  // equipo-generador SC1: la gente de la empresa no depende del rol de la empresa.
+  it.each([
+    ['generador puro', { generador: true }],
+    ['transportista', { transportista: true }],
+    ['empresa dual', { transportista: true, generador: true }],
+  ] as const)('%s ve «Equipo» una vez, en la sección general', (_caso, flags) => {
+    for (const role of ['dueno', 'admin', 'despachador', 'visualizador'] as const) {
+      const sections = navSectionsForMe(buildMe({ ...flags, role }));
+      const l = labels(sections);
+      expect(
+        l.filter((x) => x === 'Equipo'),
+        role,
+      ).toHaveLength(1);
+      expect(
+        sections[0]?.items.map((i) => i.label),
+        role,
+      ).toContain('Equipo');
+    }
   });
 
   it('stakeholder → solo Inicio + Zonas', () => {

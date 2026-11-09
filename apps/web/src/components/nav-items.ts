@@ -68,6 +68,12 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   if (empresa && isAdmin) {
     inicioItems.push({ label: 'Empresa', to: '/app/empresa', icon: Leaf });
   }
+  // equipo-de-la-empresa / equipo-generador: la gente es de la empresa, no
+  // del rol de la empresa. La ve todo operador; el backend decide quién da
+  // de alta (dueño y admin).
+  if (empresa) {
+    inicioItems.push({ label: 'Equipo', to: '/app/equipo', icon: UserCog });
+  }
   const sections: NavSection[] = [{ items: inicioItems }];
 
   if (empresa?.is_transportista) {
@@ -82,10 +88,6 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Servicios', to: '/app/servicios', icon: ClipboardList },
       { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
       { label: 'Conductores', to: '/app/conductores', icon: Users },
-      // equipo-de-la-empresa: la gestión del equipo la hace el cliente, no
-      // Booster. El backend enforca por rol (dueño/admin escriben, el resto
-      // solo mira), así que el ítem es visible para todos los operadores.
-      { label: 'Equipo', to: '/app/equipo', icon: UserCog },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
     ];
     // CHEQUEOS_REEMPLAZADOS nav-gestion / inicio-plata: la plata es dueño y admin.
