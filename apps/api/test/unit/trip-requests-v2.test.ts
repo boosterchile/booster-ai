@@ -484,6 +484,7 @@ describe('POST /trip-requests-v2', () => {
           originAddress: validBody.origin.address_raw,
           destinationAddress: validBody.destination.address_raw,
           routesProjectId: 'booster-ai-494222',
+          soloSiOrigenVigente: true,
         }),
       );
     });

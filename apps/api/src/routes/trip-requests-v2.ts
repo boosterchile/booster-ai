@@ -423,6 +423,8 @@ export function createTripRequestsV2Routes(opts: {
           originAddress: input.origin.address_raw,
           destinationAddress: input.destination.address_raw,
           routesProjectId: opts.routesProjectId,
+          // Si una edición cambió el origen mientras Routes respondía, no se pisa.
+          soloSiOrigenVigente: true,
         });
         opts.logger.info(
           { tripId: trip.id, originGeocoded: origen !== null },
@@ -1167,14 +1169,19 @@ export function createTripRequestsV2Routes(opts: {
           originAddress: r.geocodificarOrigen.originAddress,
           destinationAddress: r.geocodificarOrigen.destinationAddress,
           routesProjectId: opts.routesProjectId,
+          // Una respuesta atrasada no pisa un origen editado después.
+          soloSiOrigenVigente: true,
         });
       } catch (err) {
         opts.logger.error({ err, tripId }, 'geocodificar origen tras editar la carga falló');
       }
     }
 
+    // §7: guardar en esperando_match corre el matching aunque no haya
+    // cambios — destraba una carga cuyo matching falló al crearse. El CAS de
+    // runMatching descarta una corrida concurrente.
     let matching: Awaited<ReturnType<typeof runMatching>> | null = null;
-    if (r.cambio && r.estado === 'esperando_match') {
+    if (r.estado === 'esperando_match') {
       try {
         matching = await runMatching({
           db: opts.db,

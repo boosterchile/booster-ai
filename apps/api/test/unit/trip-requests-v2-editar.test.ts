@@ -97,6 +97,8 @@ const put = (a: Hono, body: unknown) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Los mockResolvedValueOnce no consumidos no deben filtrarse al test siguiente.
+  matchingMock.mockReset();
 });
 
 describe('PUT /trip-requests-v2/:id (editar-anular-cargas §6.1)', () => {
@@ -132,7 +134,7 @@ describe('PUT /trip-requests-v2/:id (editar-anular-cargas §6.1)', () => {
     expect(geocodeMock).not.toHaveBeenCalled();
   });
 
-  it('sin cambios no corre el matching; origen nuevo sin coordenadas se geocodifica', async () => {
+  it('sin cambios en esperando_match igual corre el matching: destraba una carga cuyo matching falló al crearse (§7)', async () => {
     editarMock.mockResolvedValueOnce({
       ok: true,
       cambio: false,
@@ -140,9 +142,37 @@ describe('PUT /trip-requests-v2/:id (editar-anular-cargas §6.1)', () => {
       ofertasInvalidadas: 0,
       geocodificarOrigen: null,
     });
-    await put(app(), FORM);
-    expect(matchingMock).not.toHaveBeenCalled();
+    matchingMock.mockResolvedValueOnce({
+      candidatesEvaluated: 2,
+      offersCreated: 2,
+      offers: [{ id: 'o1' }, { id: 'o2' }],
+    });
+    const res = await put(app(), FORM);
+    expect(res.status).toBe(200);
+    expect(matchingMock).toHaveBeenCalledWith(expect.objectContaining({ tripId: 'trip-1' }));
+    expect(await res.json()).toMatchObject({
+      matching: { candidates_evaluated: 2, offers_created: 2, offer_ids: ['o1', 'o2'] },
+    });
+  });
 
+  it.each([
+    ['sin cambios', false, 'ofertas_enviadas'],
+    ['con cambios', true, 'borrador'],
+  ])('%s en %s no corre el matching', async (_n, cambio, estado) => {
+    editarMock.mockResolvedValueOnce({
+      ok: true,
+      cambio,
+      estado,
+      ofertasInvalidadas: 0,
+      geocodificarOrigen: null,
+    });
+    const res = await put(app(), FORM);
+    expect(res.status).toBe(200);
+    expect(matchingMock).not.toHaveBeenCalled();
+    expect(((await res.json()) as { matching: unknown }).matching).toBeNull();
+  });
+
+  it('origen nuevo sin coordenadas se geocodifica, condicionado a que el origen siga vigente', async () => {
     editarMock.mockResolvedValueOnce({
       ok: true,
       cambio: true,
@@ -156,6 +186,8 @@ describe('PUT /trip-requests-v2/:id (editar-anular-cargas §6.1)', () => {
         tripId: 'trip-1',
         originAddress: 'Otro 9',
         routesProjectId: 'proj',
+        // Una respuesta atrasada de Routes no pisa un origen editado después.
+        soloSiOrigenVigente: true,
       }),
     );
     expect(matchingMock).not.toHaveBeenCalled();
