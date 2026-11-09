@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api-client.js';
 import type { GeofenceLectura } from './use-driver-position-reporter.js';
 
@@ -36,6 +36,13 @@ export interface UseConfirmarRecogidaOptions {
    * `/me/assignments`). La recogida queda bloqueada hasta que se responda.
    */
   cambioPendiente?: boolean;
+  /**
+   * Contador de cargas de `/me/assignments`: cambia con cada respuesta nueva
+   * de la lista. Un 409 `cambio_pendiente` recibido cuando la lista decía que
+   * no había cambio solo se libera con una carga nueva (si la siguiente sigue
+   * sin cambio, el transportista ya respondió).
+   */
+  versionCarga?: number;
 }
 
 export interface UseConfirmarRecogidaResult {
@@ -83,18 +90,31 @@ export function mensajeDeRecogida(err: unknown): string {
 export function useConfirmarRecogida(
   opts: UseConfirmarRecogidaOptions,
 ): UseConfirmarRecogidaResult {
-  const { assignmentId, initialRecogida, geofence, cambioPendiente = false } = opts;
+  const {
+    assignmentId,
+    initialRecogida,
+    geofence,
+    cambioPendiente = false,
+    versionCarga = 0,
+  } = opts;
   const [recogida, setRecogida] = useState(initialRecogida);
-  // 409 `cambio_pendiente` recibido; se limpia cuando la lista vuelve sin cambio.
-  const [bloqueoApi, setBloqueoApi] = useState(false);
-  useEffect(() => {
-    if (!cambioPendiente) {
-      setBloqueoApi(false);
-    }
-  }, [cambioPendiente]);
-  const bloqueadaPorCambio = cambioPendiente || bloqueoApi;
   const [recogiendo, setRecogiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 409 `cambio_pendiente` recibido; se limpia con cada carga de la lista que
+  // vuelva sin cambio (no solo cuando `cambioPendiente` pasa de true a false:
+  // tras un 409 con la lista en false, ese valor no cambia nunca).
+  const [bloqueoApi, setBloqueoApi] = useState(false);
+  const bloqueoApiRef = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: versionCarga es el disparador (carga nueva de la lista), no un valor que se lea.
+  useEffect(() => {
+    if (!cambioPendiente && bloqueoApiRef.current) {
+      bloqueoApiRef.current = false;
+      setBloqueoApi(false);
+      // El mensaje del 409 ya no es cierto.
+      setError(null);
+    }
+  }, [cambioPendiente, versionCarga]);
+  const bloqueadaPorCambio = cambioPendiente || bloqueoApi;
   const [enteredAt, setEnteredAt] = useState<string | null>(null);
 
   // Primer cruce: se fija una sola vez.
@@ -121,6 +141,7 @@ export function useConfirmarRecogida(
       setRecogida(true);
     } catch (err) {
       if (err instanceof ApiError && err.code === 'cambio_pendiente') {
+        bloqueoApiRef.current = true;
         setBloqueoApi(true);
       }
       setError(mensajeDeRecogida(err));
