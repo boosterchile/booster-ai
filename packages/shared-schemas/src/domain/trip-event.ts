@@ -67,6 +67,11 @@ export const tripEventTypeSchema = z.enum([
   'ruta_desviada',
   'disputa_abierta',
   'incidente_reportado',
+  // editar-anular-cargas (migración 0074): edición de datos, solicitud de
+  // cambio después del match y su respuesta.
+  'carga_editada',
+  'cambio_solicitado',
+  'cambio_respondido',
 ]);
 export type TripEventType = z.infer<typeof tripEventTypeSchema>;
 
