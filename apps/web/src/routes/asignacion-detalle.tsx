@@ -257,8 +257,11 @@ function AsignacionDetallePage({
             </div>
           )}
 
-          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment. */}
-          {trip?.id && <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />}
+          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment.
+              Un servicio cancelado ya no recibe documentos (editar-anular-cargas §9). */}
+          {trip?.id && assignment?.status !== 'cancelado' && (
+            <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />
+          )}
 
           {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
           <div className="flex-1 overflow-hidden">

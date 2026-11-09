@@ -232,6 +232,8 @@ describe('AsignacionDetalleRoute', () => {
     );
     expect(screen.queryByTestId('driver-assignment-card')).not.toBeInTheDocument();
     expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
+    // Un servicio cancelado no recibe documentos.
+    expect(screen.queryByTestId('transport-docs-panel')).not.toBeInTheDocument();
   });
 
   it('shipper_legal_name null → chat title con fallback', async () => {
