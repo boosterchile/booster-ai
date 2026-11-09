@@ -170,13 +170,6 @@ describe('POST /assignments/:id/solicitudes-cambio/:sid/aceptar', () => {
     expect(notifyMock).not.toHaveBeenCalled();
   });
 
-  it('programada con el contrato desactivado entre solicitud y respuesta → 422', async () => {
-    aceptarMock.mockResolvedValue({ ok: false, code: 'contrato_programado_no_habilitado' });
-    const res = await post(app(), 'aceptar');
-    expect(res.status).toBe(422);
-    expect(notifyMock).not.toHaveBeenCalled();
-  });
-
   it('conductor o despachador sin permiso → 403, sin llamar al servicio', async () => {
     for (const a of [app('conductor'), app('despachador'), app('visualizador')]) {
       const res = await post(a, 'aceptar');

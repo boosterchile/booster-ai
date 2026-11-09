@@ -40,8 +40,6 @@ import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { issuesPublicos, zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
-import { desglosePropuesto, leerComercialViaje } from '../services/cambio-carga-comercial.js';
-import { cambiaComercial } from '../services/cambio-carga-valores.js';
 import { cancelarCarga } from '../services/cancelar-carga.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
@@ -646,13 +644,6 @@ export function createTripRequestsV2Routes(opts: {
     // Solo una carga asignada puede tener un cambio pendiente (§6.3).
     const cambioPendiente =
       trip.status === 'asignado' ? await solicitudPendienteDeViaje(opts.db, trip.id) : null;
-    // ADR-079 §5: el generador ve el desglose de lo que propuso (precio o modalidad).
-    const desgloseCambio =
-      cambioPendiente &&
-      (cambioPendiente.cambios.proposed_price_clp !== undefined ||
-        cambioPendiente.cambios.modalidad_carga !== undefined)
-        ? desglosePropuesto(await leerComercialViaje(opts.db, trip.id), cambioPendiente.cambios)
-        : null;
 
     const [assignmentRow] = await opts.db
       .select({
@@ -776,7 +767,7 @@ export function createTripRequestsV2Routes(opts: {
 
     return c.json({
       trip_request: {
-        ...serializeTripDetail(trip, auth.userContext, cambioPendiente, desgloseCambio),
+        ...serializeTripDetail(trip, auth.userContext, cambioPendiente),
         comercial,
         anulacion,
         cancelacion,
@@ -1162,10 +1153,7 @@ export function createTripRequestsV2Routes(opts: {
           );
           const resultado = res.ok ? 'creada' : res.code;
           setResultAttributes(span, { 'booster.outcome': resultado });
-          getBusinessCounter('solicitud_cambio_total').add(1, {
-            resultado,
-            comercial: res.ok ? cambiaComercial(res.campos) : false,
-          });
+          getBusinessCounter('solicitud_cambio_total').add(1, { resultado, comercial: false });
           return res;
         },
       );
@@ -1180,7 +1168,6 @@ export function createTripRequestsV2Routes(opts: {
           case 'cambio_pendiente_existente':
             return c.json({ error: r.code, code: r.code, solicitud_id: r.solicitudId }, 409);
           case 'sin_cambios':
-          case 'contrato_programado_no_habilitado':
             return c.json({ error: r.code, code: r.code }, 422);
         }
       }
@@ -1192,14 +1179,7 @@ export function createTripRequestsV2Routes(opts: {
       } catch (err) {
         opts.logger.error({ err, tripId }, 'avisar solicitud de cambio falló (quedó creada)');
       }
-      // ADR-079 §5: el desglose solo lo ve el generador.
-      return c.json(
-        {
-          solicitud: r.solicitud,
-          ...(r.desglosePropuesto ? { desglose_propuesto: r.desglosePropuesto } : {}),
-        },
-        201,
-      );
+      return c.json({ solicitud: r.solicitud }, 201);
     },
   );
 
@@ -1360,7 +1340,6 @@ function serializeTripDetail(
   row: typeof trips.$inferSelect,
   userContext: unknown,
   cambioPendiente: SolicitudVista | null = null,
-  desgloseCambio: DesgloseGenerador | null = null,
 ) {
   return {
     id: row.id,
@@ -1395,7 +1374,6 @@ function serializeTripDetail(
           cambios: cambioPendiente.cambios,
           valores_anteriores: cambioPendiente.valores_anteriores,
           creado_en: cambioPendiente.creado_en,
-          ...(desgloseCambio ? { desglose_propuesto: desgloseCambio } : {}),
         }
       : null,
     acciones_permitidas: accionesPermitidas(row.status, userContext, cambioPendiente !== null),

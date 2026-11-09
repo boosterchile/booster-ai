@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   type ViajeEditable,
-  cambiaComercial,
   cambiaHuella,
   camposQueCambian,
   columnasDesdeCambios,
@@ -27,8 +26,6 @@ const VIAJE: ViajeEditable = {
   cargoDescription: null,
   pickupWindowStart: new Date('2026-11-20T12:00:00Z'),
   pickupWindowEnd: new Date('2026-11-20T15:00:00Z'),
-  proposedPriceClp: 800_000,
-  modalidadCarga: 'spot',
 };
 
 describe('valoresActuales', () => {
@@ -56,8 +53,6 @@ describe('valoresActuales', () => {
         start_at: '2026-11-20T12:00:00.000Z',
         end_at: '2026-11-20T15:00:00.000Z',
       },
-      proposed_price_clp: 800_000,
-      modalidad_carga: 'spot',
     });
   });
 
@@ -169,22 +164,5 @@ describe('cambiaHuella', () => {
     expect(cambiaHuella(['weight_kg'])).toBe(true);
     expect(cambiaHuella(['destination'])).toBe(true);
     expect(cambiaHuella(['pickup_window', 'description', 'volume_m3'])).toBe(false);
-  });
-});
-
-describe('campos comerciales (editar-anular-cargas §7)', () => {
-  it('precio y modalidad se comparan y se escriben en viajes', () => {
-    const propuesta = normalizarPropuesta({ proposed_price_clp: 900_000, modalidad_carga: 'spot' });
-    expect(camposQueCambian(valoresActuales(VIAJE), propuesta)).toEqual(['proposed_price_clp']);
-    expect(
-      columnasDesdeCambios(
-        normalizarPropuesta({ proposed_price_clp: 900_000, modalidad_carga: 'programada' }),
-      ),
-    ).toEqual({ proposedPriceClp: 900_000, modalidadCarga: 'programada' });
-  });
-
-  it('cambiaComercial distingue precio y modalidad del resto', () => {
-    expect(cambiaComercial(['weight_kg', 'modalidad_carga'])).toBe(true);
-    expect(cambiaComercial(['weight_kg'])).toBe(false);
   });
 });

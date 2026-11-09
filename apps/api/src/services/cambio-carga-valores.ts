@@ -34,8 +34,6 @@ export type ViajeEditable = Pick<
   | 'cargoDescription'
   | 'pickupWindowStart'
   | 'pickupWindowEnd'
-  | 'proposedPriceClp'
-  | 'modalidadCarga'
 >;
 
 type Lugar = NonNullable<CambiosGuardados['origin']>;
@@ -97,8 +95,6 @@ export function valoresActuales(v: ViajeEditable): Required<CambiosGuardados> {
             end_at: isoNormalizado(v.pickupWindowEnd),
           }
         : null,
-    proposed_price_clp: v.proposedPriceClp,
-    modalidad_carga: v.modalidadCarga,
   };
 }
 
@@ -145,12 +141,6 @@ export function normalizarPropuesta(c: CambioPropuesto): CambiosGuardados {
       start_at: isoNormalizado(c.pickup_window.start_at),
       end_at: isoNormalizado(c.pickup_window.end_at),
     };
-  }
-  if (c.proposed_price_clp !== undefined) {
-    out.proposed_price_clp = c.proposed_price_clp;
-  }
-  if (c.modalidad_carga !== undefined) {
-    out.modalidad_carga = c.modalidad_carga;
   }
   return out;
 }
@@ -232,12 +222,6 @@ export function columnasDesdeCambios(cambios: CambiosGuardados): Partial<ViajeRo
     set.pickupWindowEnd = new Date(cambios.pickup_window.end_at);
     set.pickupDateRaw = `${cambios.pickup_window.start_at} → ${cambios.pickup_window.end_at}`;
   }
-  if (cambios.proposed_price_clp !== undefined) {
-    set.proposedPriceClp = cambios.proposed_price_clp;
-  }
-  if (cambios.modalidad_carga !== undefined) {
-    set.modalidadCarga = cambios.modalidad_carga;
-  }
   return set;
 }
 
@@ -251,14 +235,4 @@ const CAMPOS_HUELLA: ReadonlySet<CampoPropuesto> = new Set([
 
 export function cambiaHuella(campos: readonly CampoPropuesto[]): boolean {
   return campos.some((c) => CAMPOS_HUELLA.has(c));
-}
-
-const CAMPOS_COMERCIALES_PROPUESTOS: ReadonlySet<CampoPropuesto> = new Set([
-  'proposed_price_clp',
-  'modalidad_carga',
-]);
-
-/** Cambió precio o modalidad: recalcula precio acordado y comisión (§7). */
-export function cambiaComercial(campos: readonly CampoPropuesto[]): boolean {
-  return campos.some((c) => CAMPOS_COMERCIALES_PROPUESTOS.has(c));
 }

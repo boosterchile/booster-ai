@@ -22,20 +22,13 @@ import {
   vehicles,
 } from '../db/schema.js';
 import {
-  desglosePropuesto,
-  leerComercialViaje,
-  recalculoComercial,
-} from './cambio-carga-comercial.js';
-import {
   type ViajeEditable,
-  cambiaComercial,
   camposQueCambian,
   columnasDesdeCambios,
   normalizarPropuesta,
   soloCampos,
   valoresActuales,
 } from './cambio-carga-valores.js';
-import type { DesgloseGenerador } from './cotizacion-comercial.js';
 
 /**
  * Solicitudes de cambio de una carga asignada (editar-anular-cargas §6.3–6.5,
@@ -82,8 +75,6 @@ const COLUMNAS_EDITABLES = {
   cargoDescription: trips.cargoDescription,
   pickupWindowStart: trips.pickupWindowStart,
   pickupWindowEnd: trips.pickupWindowEnd,
-  proposedPriceClp: trips.proposedPriceClp,
-  modalidadCarga: trips.modalidadCarga,
 } as const;
 
 function vista(row: typeof tripChangeRequests.$inferSelect): SolicitudVista {
@@ -114,11 +105,8 @@ export type ResultadoCrearSolicitud =
       solicitud: SolicitudVista;
       campos: CampoPropuesto[];
       asignacion: AsignacionAviso;
-      /** Solo con un cambio comercial y tasa congelada; lo ve solo el generador. */
-      desglosePropuesto: DesgloseGenerador | null;
     }
   | { ok: false; code: 'trip_not_found' }
-  | { ok: false; code: 'contrato_programado_no_habilitado' }
   | { ok: false; code: 'trip_not_matched' }
   | { ok: false; code: 'trip_not_editable'; currentStatus: string }
   | { ok: false; code: 'sin_cambios' }
@@ -169,17 +157,6 @@ export async function crearSolicitudCambio(
       return { ok: false, code: 'sin_cambios' } as const;
     }
 
-    let desglose: DesgloseGenerador | null = null;
-    if (cambiaComercial(campos)) {
-      const comercial = await leerComercialViaje(tx, tripId);
-      // ADR-079 §2: `programada` exige contrato programado habilitado.
-      const chequeo = recalculoComercial(comercial, soloCampos(propuesta, campos), 0);
-      if (!chequeo.ok) {
-        return { ok: false, code: chequeo.code } as const;
-      }
-      desglose = desglosePropuesto(comercial, soloCampos(propuesta, campos));
-    }
-
     // rls-allowlist: solicitudes del viaje ya validado contra la empresa generadora (empresaId).
     const [pendiente] = await tx
       .select({ id: tripChangeRequests.id })
@@ -212,13 +189,7 @@ export async function crearSolicitudCambio(
       payload: cambioSolicitadoPayloadSchema.parse({ solicitud_id: fila.id, campos }),
     });
     logger.info({ tripId, solicitudId: fila.id, campos }, 'solicitud de cambio creada');
-    return {
-      ok: true,
-      solicitud: vista(fila),
-      campos,
-      asignacion,
-      desglosePropuesto: desglose,
-    } as const;
+    return { ok: true, solicitud: vista(fila), campos, asignacion } as const;
   });
 }
 
@@ -372,11 +343,7 @@ export async function invalidarSolicitudPendiente(
 
 interface ContextoRespuesta {
   viaje: { id: string; status: string; trackingCode: string; createdByUserId: string | null };
-  asignacion: AsignacionAviso & {
-    status: string;
-    vehicleId: string | null;
-    agreedPriceClp: number;
-  };
+  asignacion: AsignacionAviso & { status: string; vehicleId: string | null };
   solicitud: typeof tripChangeRequests.$inferSelect;
 }
 
@@ -414,7 +381,6 @@ async function bloquearContexto(
       driverUserId: assignments.driverUserId,
       status: assignments.status,
       vehicleId: assignments.vehicleId,
-      agreedPriceClp: assignments.agreedPriceClp,
     })
     .from(assignments)
     .where(and(eq(assignments.id, opts.assignmentId), eq(assignments.empresaId, opts.empresaId)))
@@ -487,8 +453,7 @@ export type ResultadoAceptarSolicitud =
     }
   | FalloContexto
   | { ok: false; code: 'solicitud_invalidada'; motivo: MotivoInvalidacion }
-  | { ok: false; code: 'excede_capacidad_vehiculo'; capacidadKg: number; pesoKg: number }
-  | { ok: false; code: 'contrato_programado_no_habilitado' };
+  | { ok: false; code: 'excede_capacidad_vehiculo'; capacidadKg: number; pesoKg: number };
 
 export async function aceptarSolicitudCambio(
   deps: { db: Db; logger: Logger },
@@ -549,37 +514,17 @@ export async function aceptarSolicitudCambio(
       }
     }
 
-    // Precio y modalidad (§7): se re-valida el contrato programado, por si se
-    // desactivó entre la solicitud y la respuesta, y se recalcula en esta tx.
-    let comercial: Extract<ReturnType<typeof recalculoComercial>, { ok: true }> | null = null;
-    if (cambiaComercial(campos)) {
-      const rec = recalculoComercial(
-        await leerComercialViaje(tx, ctx.viaje.id),
-        cambios,
-        ctx.asignacion.agreedPriceClp,
-      );
-      if (!rec.ok) {
-        return { ok: false, code: rec.code } as const;
-      }
-      comercial = rec;
-    }
-
     const now = new Date();
     await tx
       .update(trips)
-      .set({ ...columnasDesdeCambios(cambios), ...comercial?.viaje, updatedAt: now })
+      .set({ ...columnasDesdeCambios(cambios), updatedAt: now })
       .where(eq(trips.id, ctx.viaje.id));
-    const asignacionSet = {
+    if (cambios.origin || cambios.destination) {
       // La ruta eco sugerida era para el recorrido anterior.
-      ...(cambios.origin || cambios.destination ? { ecoRoutePolylineEncoded: null } : {}),
-      // La liquidación lee el precio acordado de la asignación.
-      ...comercial?.asignacion,
-    };
-    if (Object.keys(asignacionSet).length > 0) {
       // rls-allowlist: asignación bloqueada en bloquearContexto, validada contra la empresa.
       await tx
         .update(assignments)
-        .set({ ...asignacionSet, updatedAt: now })
+        .set({ ecoRoutePolylineEncoded: null, updatedAt: now })
         .where(eq(assignments.id, ctx.asignacion.id));
     }
     // rls-allowlist: solicitud bloqueada en bloquearContexto, validada contra la empresa.
@@ -625,7 +570,6 @@ export async function aceptarSolicitudCambio(
           campos,
           antes: anteriores,
           despues: cambios,
-          ...(comercial ? { comercial: comercial.bloque } : {}),
         }),
       },
     ]);

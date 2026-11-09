@@ -49,9 +49,9 @@ export type DatosLibresInput = z.infer<typeof datosLibresInputSchema>;
 const CAMPOS_LIBRES_SCHEMA = z.enum(['consignee', 'notes', 'reference']);
 
 /**
- * Campos que el generador puede proponer después del match: los de
- * `CAMPOS_CON_ACEPTACION` (@booster-ai/trip-state-machine), en su orden.
- * Precio y modalidad recalculan precio acordado y comisión al aceptar (§7).
+ * Campos que el generador puede proponer después del match en esta versión.
+ * Precio y modalidad (`CAMPOS_COMERCIALES`) se suman cuando exista su
+ * recálculo (PR8); hasta entonces `.strict()` los rechaza.
  */
 export const CAMPOS_PROPONIBLES = [
   'origin',
@@ -61,11 +61,7 @@ export const CAMPOS_PROPONIBLES = [
   'volume_m3',
   'description',
   'pickup_window',
-  'proposed_price_clp',
-  'modalidad_carga',
 ] as const;
-
-const MODALIDAD_SCHEMA = z.enum(['spot', 'programada']);
 
 export type CampoPropuesto = (typeof CAMPOS_PROPONIBLES)[number];
 
@@ -89,14 +85,6 @@ export const cambioPropuestoSchema = z
     volume_m3: cargoVolumeM3Schema.nullable().optional(),
     description: cargoDescriptionSchema.nullable().optional(),
     pickup_window: pickupWindowSchema.optional(),
-    // Después del match el precio es entero > 0 y no nulo: la columna
-    // `asignaciones.precio_acordado_clp` es NOT NULL (§5).
-    proposed_price_clp: z
-      .number({ message: 'Ingresa el precio en CLP' })
-      .int('Ingresa el precio en CLP')
-      .positive('El precio tiene que ser mayor a 0')
-      .optional(),
-    modalidad_carga: MODALIDAD_SCHEMA.optional(),
   })
   .strict()
   .refine(alMenosUnCampo, { message: 'Indica al menos un campo para cambiar' });
@@ -130,9 +118,6 @@ export const cambiosGuardadosSchema = z
     volume_m3: z.number().nullable(),
     description: z.string().nullable(),
     pickup_window: z.object({ start_at: z.string(), end_at: z.string() }).nullable(),
-    // Nulo solo si la carga se publicó sin precio (lo sugería el pricing-engine).
-    proposed_price_clp: z.number().nullable(),
-    modalidad_carga: MODALIDAD_SCHEMA,
   })
   .partial()
   .strict();
@@ -187,15 +172,6 @@ export const cargaEditadaPayloadSchema = z.discriminatedUnion('modo', [
     campos: z.array(CAMPO_PROPUESTO_SCHEMA).min(1),
     antes: cambiosGuardadosSchema,
     despues: cambiosGuardadosSchema,
-    /** Solo si cambió un campo comercial (§7). La comisión va como el numeric de Postgres. */
-    comercial: z
-      .object({
-        precio_acordado_antes: z.number().int(),
-        precio_acordado_despues: z.number().int(),
-        comision_pct_antes: z.string().nullable(),
-        comision_pct_despues: z.string().nullable(),
-      })
-      .optional(),
   }),
 ]);
 

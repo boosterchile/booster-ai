@@ -27,20 +27,6 @@ export function tasaParaPublicacion(
   });
 }
 
-/**
- * Tasa de comisión para una modalidad, tomada de la versión de configuración
- * congelada al publicar (`viajes.configuracion_comercial_id`), nunca de la
- * vigente (editar-anular-cargas §7): un cambio de modalidad cambia de tasa
- * dentro de la misma versión, y una configuración publicada después no se
- * cuela. Es la misma regla de publicación, aplicada a la versión congelada.
- */
-export function tasaCongeladaParaModalidad(
-  configCongelada: ConfiguracionComercial,
-  modalidad: ModalidadCarga,
-): number {
-  return tasaParaPublicacion(configCongelada, modalidad);
-}
-
 /** `programada` exige contrato programado habilitado por el platform-admin. */
 export function modalidadPermitida(
   modalidad: ModalidadCarga,

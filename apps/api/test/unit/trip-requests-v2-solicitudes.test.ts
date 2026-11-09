@@ -101,37 +101,6 @@ describe('POST /trip-requests-v2/:id/solicitudes-cambio', () => {
     });
   });
 
-  it('un cambio comercial con tasa congelada devuelve el desglose propuesto (solo al generador)', async () => {
-    const desglose = {
-      precio_transportista_clp: 900_000,
-      comision_pct: 8,
-      comision_clp: 72_000,
-      iva_comision_clp: 13_680,
-      precio_generador_clp: 972_000,
-      total_factura_generador_clp: 85_680,
-    };
-    crearMock.mockResolvedValue({
-      ok: true,
-      solicitud: SOLICITUD,
-      campos: ['proposed_price_clp'],
-      asignacion: ASG,
-      desglosePropuesto: desglose,
-    });
-    const res = await post(app(), '/solicitudes-cambio', {
-      cambios: { proposed_price_clp: 900_000 },
-    });
-    expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ solicitud: SOLICITUD, desglose_propuesto: desglose });
-  });
-
-  it('programada sin contrato → 422', async () => {
-    crearMock.mockResolvedValue({ ok: false, code: 'contrato_programado_no_habilitado' });
-    const res = await post(app(), '/solicitudes-cambio', {
-      cambios: { modalidad_carga: 'programada' },
-    });
-    expect(res.status).toBe(422);
-  });
-
   it('si el aviso falla, la solicitud responde 201 igual', async () => {
     crearMock.mockResolvedValue({
       ok: true,
@@ -179,13 +148,13 @@ describe('POST /trip-requests-v2/:id/solicitudes-cambio', () => {
     expect(notifyMock).not.toHaveBeenCalled();
   });
 
-  it('visualizador → 403 read_only; un precio no positivo o un dato libre → 400', async () => {
+  it('visualizador → 403 read_only; un campo comercial o un dato libre → 400', async () => {
     expect(
       (await post(app('visualizador'), '/solicitudes-cambio', { cambios: { weight_kg: 2 } }))
         .status,
     ).toBe(403);
     expect(
-      (await post(app(), '/solicitudes-cambio', { cambios: { proposed_price_clp: 0 } })).status,
+      (await post(app(), '/solicitudes-cambio', { cambios: { proposed_price_clp: 1 } })).status,
     ).toBe(400);
     expect((await post(app(), '/solicitudes-cambio', { cambios: { notes: 'x' } })).status).toBe(
       400,
