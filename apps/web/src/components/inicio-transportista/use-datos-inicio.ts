@@ -44,7 +44,7 @@ function seleccionarOfertas(data: OfertasCache): OfertaInicio[] {
   }));
 }
 
-function seleccionarServicios(filas: AsignacionCache[]): AsignacionInicio[] {
+export function seleccionarServicios(filas: AsignacionCache[]): AsignacionInicio[] {
   // `/assignments` también trae las canceladas por el generador (72 h, para
   // el badge de Servicios); el Inicio muestra solo lo que está en curso.
   return filas

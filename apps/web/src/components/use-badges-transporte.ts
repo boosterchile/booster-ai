@@ -15,7 +15,7 @@ function contarOfertas(data: { offers: readonly unknown[] }): number {
   return data.offers.length;
 }
 
-function contarSinConductor(filas: readonly { driver: unknown; status: string }[]): number {
+export function contarSinConductor(filas: readonly { driver: unknown; status: string }[]): number {
   // `/assignments` también trae las canceladas por el generador (72 h): no se despachan.
   return filas.filter((fila) => fila.driver == null && fila.status !== 'cancelado').length;
 }
