@@ -63,7 +63,13 @@ describe('listas de campos', () => {
 
 describe('clasificarEdicion', () => {
   it('sin cambios: directo y listas vacías', () => {
-    expect(clasificarEdicion('asignado', BASE, structuredClone(BASE))).toEqual({
+    expect(
+      clasificarEdicion('asignado', BASE, {
+        ...BASE,
+        origin: { ...ORIGEN },
+        consignee: { ...DESTINATARIO },
+      }),
+    ).toEqual({
       libres: [],
       materiales: [],
       comerciales: [],
