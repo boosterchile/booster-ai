@@ -33,6 +33,9 @@ interface Viaje {
   reference: string | null;
 }
 
+const TOKEN = '550e8400-e29b-41d4-a716-446655440000';
+const ASIGNACION = { id: 'asg-1', status: 'asignado', empresaId: 'emp-t', driverUserId: 'u-c' };
+
 const viaje = (over: Partial<Viaje> = {}): Viaje => ({
   status: 'asignado',
   consigneeName: 'Bodega',
@@ -49,6 +52,7 @@ const viaje = (over: Partial<Viaje> = {}): Viaje => ({
  */
 function makeDb(opts: { viaje: Viaje | null; asignacion?: Record<string, unknown> | null }) {
   const updates: Array<Record<string, unknown>> = [];
+  const tokens: Array<Record<string, unknown>> = [];
   const eventos: Array<Record<string, unknown>> = [];
   const forSpy = vi.fn();
   const select = vi.fn(() => {
@@ -74,9 +78,9 @@ function makeDb(opts: { viaje: Viaje | null; asignacion?: Record<string, unknown
     });
     return chain;
   });
-  const update = vi.fn(() => ({
+  const update = vi.fn((t: unknown) => ({
     set: vi.fn((v: Record<string, unknown>) => {
-      updates.push(v);
+      (getTableName(t as never) === 'asignaciones' ? tokens : updates).push(v);
       return { where: vi.fn(async () => undefined) };
     }),
   }));
@@ -87,7 +91,7 @@ function makeDb(opts: { viaje: Viaje | null; asignacion?: Record<string, unknown
   }));
   const tx = { select, update, insert };
   const db = { transaction: vi.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)) };
-  return { db: db as never, updates, eventos, forSpy };
+  return { db: db as never, updates, tokens, eventos, forSpy };
 }
 
 const llamar = (db: never, input: Record<string, unknown>) =>
@@ -131,24 +135,35 @@ describe('editarDatosLibres', () => {
     });
   });
 
-  it('informa el teléfono nuevo del destinatario solo si cambió a un valor', async () => {
+  it('sin enlace que reemplazar, informa solo el contacto que cambió a un valor', async () => {
     const cambio = makeDb({
-      viaje: viaje(),
-      asignacion: { id: 'asg-1', status: 'asignado', empresaId: 'emp-t', driverUserId: 'u-c' },
+      viaje: viaje({ consigneeWhatsappE164: null }),
+      asignacion: { ...ASIGNACION, publicTrackingToken: TOKEN },
     });
     const r1 = await llamar(cambio.db, {
-      consignee: { name: 'Bodega', phone_e164: '+56922222222' },
+      consignee: { name: 'Bodega', phone_e164: '+56922222222', email: 'recepcion@cliente.cl' },
     });
     expect(r1).toMatchObject({
       ok: true,
-      telefonoDestinatarioNuevo: '+56922222222',
-      asignacion: { id: 'asg-1', status: 'asignado' },
+      enlaceRenovado: false,
+      reenviarEnlace: { telefono: '+56922222222', correo: 'recepcion@cliente.cl' },
+      asignacion: ASIGNACION,
     });
-    const igual = makeDb({ viaje: viaje() });
+    expect(cambio.tokens).toHaveLength(0);
+
+    const igual = makeDb({
+      viaje: viaje(),
+      asignacion: { ...ASIGNACION, publicTrackingToken: TOKEN },
+    });
     const r2 = await llamar(igual.db, {
       consignee: { name: 'Otro', phone_e164: '+56911111111' },
     });
-    expect(r2).toMatchObject({ ok: true, telefonoDestinatarioNuevo: null });
+    expect(r2).toMatchObject({
+      ok: true,
+      enlaceRenovado: false,
+      reenviarEnlace: { telefono: null, correo: null },
+    });
+    expect(igual.tokens).toHaveLength(0);
   });
 
   it('sin cambios reales → sin_cambios, sin escribir', async () => {
@@ -177,5 +192,117 @@ describe('editarDatosLibres', () => {
   it('viaje inexistente o de otra empresa → trip_not_found', async () => {
     const { db } = makeDb({ viaje: null });
     expect(await llamar(db, { notes: 'x' })).toEqual({ ok: false, code: 'trip_not_found' });
+  });
+});
+
+/**
+ * `.specs/seguimiento-enlace-destinatario/` §3.1: el enlace público cambia
+ * cuando el contacto que tenía el destinatario cambia o se quita.
+ */
+describe('editarDatosLibres — enlace de seguimiento', () => {
+  const conToken = (v: Partial<Viaje> = {}) =>
+    makeDb({ viaje: viaje(v), asignacion: { ...ASIGNACION, publicTrackingToken: TOKEN } });
+
+  it('cambia el teléfono → token nuevo y reenvío a los contactos vigentes', async () => {
+    const { db, tokens } = conToken({ consigneeEmail: 'recepcion@cliente.cl' });
+    const r = await llamar(db, {
+      consignee: { name: 'Bodega', phone_e164: '+56922222222', email: 'recepcion@cliente.cl' },
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      enlaceRenovado: true,
+      reenviarEnlace: { telefono: '+56922222222', correo: 'recepcion@cliente.cl' },
+      asignacion: ASIGNACION,
+    });
+    expect(tokens).toHaveLength(1);
+    const nuevo = tokens[0]?.publicTrackingToken;
+    expect(nuevo).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(nuevo).not.toBe(TOKEN);
+    // El token no sale del servicio: el reenvío lo lee de la asignación.
+    expect(JSON.stringify(r)).not.toContain(String(nuevo));
+    expect(JSON.stringify(r)).not.toContain(TOKEN);
+  });
+
+  it('cambia el correo → token nuevo', async () => {
+    const { db, tokens } = conToken({
+      consigneeWhatsappE164: null,
+      consigneeEmail: 'antes@cliente.cl',
+    });
+    const r = await llamar(db, { consignee: { name: 'Bodega', email: 'ahora@cliente.cl' } });
+    expect(r).toMatchObject({
+      enlaceRenovado: true,
+      reenviarEnlace: { telefono: null, correo: 'ahora@cliente.cl' },
+    });
+    expect(tokens).toHaveLength(1);
+  });
+
+  it('quitar el destinatario → token nuevo y nadie a quien reenviar', async () => {
+    const { db, tokens } = conToken();
+    const r = await llamar(db, { consignee: null });
+    expect(r).toMatchObject({
+      enlaceRenovado: true,
+      reenviarEnlace: { telefono: null, correo: null },
+    });
+    expect(tokens).toHaveLength(1);
+  });
+
+  it('quitar uno de dos contactos → token nuevo; se reenvía al que queda', async () => {
+    const { db, tokens } = conToken({ consigneeEmail: 'recepcion@cliente.cl' });
+    const r = await llamar(db, { consignee: { name: 'Bodega', phone_e164: '+56911111111' } });
+    expect(r).toMatchObject({
+      enlaceRenovado: true,
+      reenviarEnlace: { telefono: '+56911111111', correo: null },
+    });
+    expect(tokens).toHaveLength(1);
+  });
+
+  it.each([
+    ['solo cambia el nombre', viaje(), { consignee: { name: 'Otro', phone_e164: '+56911111111' } }],
+    [
+      'se agrega el segundo contacto',
+      viaje(),
+      { consignee: { name: 'Bodega', phone_e164: '+56911111111', email: 'nuevo@cliente.cl' } },
+    ],
+    [
+      'no había contacto',
+      viaje({ consigneeWhatsappE164: null }),
+      { consignee: { name: 'Bodega', phone_e164: '+56922222222' } },
+    ],
+    [
+      'el correo solo cambia de mayúsculas',
+      viaje({ consigneeEmail: 'recepcion@cliente.cl' }),
+      {
+        consignee: { name: 'Bodega', phone_e164: '+56911111111', email: 'Recepcion@Cliente.CL' },
+      },
+    ],
+    ['solo cambian las notas', viaje(), { notes: 'Andén 4' }],
+  ])('%s → el enlace queda igual', async (_caso, v, input) => {
+    const { db, tokens } = makeDb({
+      viaje: v,
+      asignacion: { ...ASIGNACION, publicTrackingToken: TOKEN },
+    });
+    expect(await llamar(db, input)).toMatchObject({ ok: true, enlaceRenovado: false });
+    expect(tokens).toHaveLength(0);
+  });
+
+  it('sin asignación, o con asignación sin token, no hay enlace que cambiar', async () => {
+    const sinAsignacion = makeDb({ viaje: viaje() });
+    expect(
+      await llamar(sinAsignacion.db, { consignee: { name: 'Bodega', phone_e164: '+56922222222' } }),
+    ).toMatchObject({ ok: true, enlaceRenovado: false, asignacion: null });
+    expect(sinAsignacion.tokens).toHaveLength(0);
+
+    const sinToken = makeDb({
+      viaje: viaje(),
+      asignacion: { ...ASIGNACION, publicTrackingToken: null },
+    });
+    expect(
+      await llamar(sinToken.db, { consignee: { name: 'Bodega', phone_e164: '+56922222222' } }),
+    ).toMatchObject({
+      ok: true,
+      enlaceRenovado: false,
+      reenviarEnlace: { telefono: '+56922222222', correo: null },
+    });
+    expect(sinToken.tokens).toHaveLength(0);
   });
 });

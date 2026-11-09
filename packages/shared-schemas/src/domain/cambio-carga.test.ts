@@ -184,3 +184,20 @@ describe('payloads de solicitudes de cambio', () => {
     expect(p.modo).toBe('cambio_aceptado');
   });
 });
+
+describe('carga_editada pre_match', () => {
+  it('lleva campos materiales y libres, y las ofertas invalidadas', () => {
+    const p = cargaEditadaPayloadSchema.parse({
+      modo: 'pre_match',
+      campos: ['weight_kg', 'notes'],
+      antes: { weight_kg: 1000 },
+      despues: { weight_kg: 2500 },
+      invalidated_offers: 2,
+    });
+    expect(p).toMatchObject({ modo: 'pre_match', invalidated_offers: 2 });
+    expect(
+      cargaEditadaPayloadSchema.safeParse({ modo: 'pre_match', campos: [], antes: {}, despues: {} })
+        .success,
+    ).toBe(false);
+  });
+});

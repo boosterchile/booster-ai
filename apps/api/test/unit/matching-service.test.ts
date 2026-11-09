@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { vehicles } from '../../src/db/schema.js';
+import { trips, vehicles } from '../../src/db/schema.js';
 import {
   TripRequestNotFoundError,
   TripRequestNotMatchableError,
@@ -36,11 +36,21 @@ function makeDb(queues: DbQueues = {}) {
   const fromCalls: unknown[] = [];
   const orderByCalls: unknown[][] = [];
   const insertValues: unknown[] = [];
+  // Tablas leídas con lock de fila (`.for('update')`), en orden.
+  const lockedTables: unknown[] = [];
 
   const buildSelectChain = () => {
+    let table: unknown;
     const chain: Record<string, unknown> = {
-      from: vi.fn((table?: unknown) => {
-        fromCalls.push(table);
+      from: vi.fn((t?: unknown) => {
+        table = t;
+        fromCalls.push(t);
+        return chain;
+      }),
+      for: vi.fn((strength: string) => {
+        if (strength === 'update') {
+          lockedTables.push(table);
+        }
         return chain;
       }),
       where: vi.fn(() => chain),
@@ -100,6 +110,7 @@ function makeDb(queues: DbQueues = {}) {
     __fromCalls: fromCalls,
     __orderByCalls: orderByCalls,
     __insertValues: insertValues,
+    __lockedTables: lockedTables,
   };
 }
 
@@ -150,6 +161,18 @@ describe('runMatching', () => {
     await expect(
       runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID }),
     ).rejects.toThrow(TripRequestNotMatchableError);
+  });
+
+  it('lee el viaje con FOR UPDATE antes del CAS: una edición concurrente espera (editar-anular-cargas §6.1)', async () => {
+    // Sin el lock, un PUT que commitea entre el SELECT y el CAS deja al
+    // matching ofertando con el precio/peso/región viejos.
+    const db = makeDb({
+      selects: [[TRIP_BASE], []], // trip + zonas vacías
+      inserts: [[], []],
+    });
+    await runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID });
+    expect(db.__fromCalls[0]).toBe(trips);
+    expect(db.__lockedTables[0]).toBe(trips);
   });
 
   it('throw TripRequestNotMatchableError si trip no tiene originRegionCode', async () => {
