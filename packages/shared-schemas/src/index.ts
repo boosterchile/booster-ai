@@ -28,6 +28,7 @@ export * from './domain/zona-stakeholder.js';
 export * from './domain/offer.js';
 export * from './domain/assignment.js';
 export * from './domain/trip-event.js';
+export * from './domain/cambio-carga.js';
 export * from './domain/trip-metrics.js';
 
 // Dominio — entidades del MVP shared (algunas precedentes a multi-tenant,

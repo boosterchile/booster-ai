@@ -148,6 +148,10 @@ const ASSIGNMENT_DETAIL_ROW = {
   pickupWindowEnd: new Date('2026-05-01T12:00:00Z'),
   proposedPriceClp: 250000,
   shipperLegalName: 'Shipper SpA',
+  consigneeName: 'Bodega',
+  consigneeWhatsappE164: '+56911111111',
+  notes: 'Andén 4',
+  reference: 'PO-1',
 };
 
 async function buildApp(opts: { db: unknown; certConfig?: unknown }) {
@@ -278,6 +282,12 @@ describe('GET /assignments/:id', () => {
       assignment: { ubicacion_actual: unknown };
     };
     expect(body.trip_request.tracking_code).toBe('TR-1');
+    // editar-anular-cargas §12-P4: la transportista ve contacto, notas y referencia.
+    expect(body.trip_request).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111' },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+    });
     expect(body.assignment.ubicacion_actual).toBeNull();
     const assignment = (
       body as { assignment: { driver_user_id: string | null; vehicle_id: string | null } }

@@ -432,6 +432,8 @@ describe('POST /trip-requests-v2', () => {
       body: JSON.stringify({
         ...validBody,
         consignee: { name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' },
+        notes: 'Andén 4',
+        reference: 'PO-1',
       }),
     });
     expect(res.status).toBe(201);
@@ -439,6 +441,9 @@ describe('POST /trip-requests-v2', () => {
       expect.objectContaining({
         consigneeName: 'Bodega La Serena',
         consigneeEmail: 'recepcion@cliente.cl',
+        // editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
+        notes: 'Andén 4',
+        reference: 'PO-1',
       }),
     );
   });
@@ -949,6 +954,11 @@ describe('GET /trip-requests-v2/:id', () => {
               pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
               pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
               proposedPriceClp: 250_000,
+              consigneeName: 'Bodega',
+              consigneeWhatsappE164: '+56911111111',
+              consigneeEmail: null,
+              notes: 'Andén 4',
+              reference: 'PO-1',
               createdAt: new Date('2026-05-02T15:00:00Z'),
               updatedAt: new Date('2026-05-02T15:00:00Z'),
             },
@@ -979,12 +989,25 @@ describe('GET /trip-requests-v2/:id', () => {
     const res = await app.request('/trip-requests-v2/trip-1');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      trip_request: { id: string; status: string };
+      trip_request: { id: string; status: string; [k: string]: unknown };
       events: unknown[];
       assignment: { vehicle_plate: string; empresa_legal_name: string } | null;
       metrics: unknown | null;
     };
     expect(body.trip_request.id).toBe('trip-1');
+    // editar-anular-cargas: datos libres y acciones permitidas en el detalle.
+    expect(body.trip_request).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111', email: null },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+      acciones_permitidas: {
+        editar_todo: false,
+        datos_libres: true,
+        solicitar_cambio: true,
+        anular: false,
+        cancelar: true,
+      },
+    });
     expect(body.assignment?.vehicle_plate).toBe('AB-CD-12');
     expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
     expect(body.metrics).toBeNull();
