@@ -38,14 +38,16 @@ import {
  *
  * **Personal de Booster** (`.specs/alta-personal-booster`, SC6). Una cuenta
  * con `es_admin_plataforma = true` se activa solo con un código emitido desde
- * el panel y vigente según `activacion_vence_en`, también si tiene
- * invitaciones vigentes: el panel es el único emisor que deja ese vencimiento
- * (`codigoPersonalVigente`). `/auth/driver-activate`, el otro endpoint que
- * consume el código, aplica la misma regla. La persona que el platform-admin dio de alta desde el panel no tiene
- * invitación a una empresa: sin invitaciones vigentes, además su correo tiene
- * que estar en la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`). Si
- * tiene invitaciones vigentes, se activan igual que las de cualquier persona.
- * Si falta una condición, la respuesta es la misma.
+ * el panel y vigente según `activacion_vence_en`, también si tiene la
+ * invitación original vigente: el panel es el único emisor que deja ese
+ * vencimiento (`codigoPersonalVigente`). `/auth/driver-activate`, el otro
+ * endpoint que consume el código, aplica la misma regla. La persona que el
+ * platform-admin dio de alta desde el panel no tiene invitación a una
+ * empresa: sin la invitación original vigente, además su correo tiene que
+ * estar en la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`), y se
+ * activa sin tocar membresías. Si tiene la invitación original (su primera
+ * membresía, pendiente y dentro de los 7 días), esa se activa igual que la de
+ * cualquier persona. Si falta una condición, la respuesta es la misma.
  *
  * **Un solo uso también en paralelo.** La escritura exige que el código siga
  * siendo el que se verificó y que la cuenta no tenga clave. Si otra activación
@@ -130,9 +132,12 @@ export function createAuthActivarRoutes(opts: {
       return rechazo();
     }
 
-    // El código se emite solo al crear a la persona, junto con su primera
-    // membresía. Activar suma esa invitación y ninguna otra: las de otras
-    // empresas esperan a que la persona las acepte. Vence a los 7 días.
+    // En los flujos de empresa, el código se emite solo al crear a la persona,
+    // junto con su primera membresía. El otro emisor es el panel del personal,
+    // que también lo emite a una cuenta provisoria que ya existía (spec SC3).
+    // Activar suma esa primera membresía si sigue pendiente y vigente, y
+    // ninguna otra: las de otras empresas esperan a que la persona las acepte.
+    // La invitación vence a los 7 días.
     // rls-allowlist: lookup pre-auth ligado al user recién verificado.
     const [primera] = await opts.db
       .select({
