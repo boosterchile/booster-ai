@@ -58,6 +58,7 @@ import { createHealthRouter } from './routes/health.js';
 import { createPickupInstructionsRoutes } from './routes/instrucciones-retiro.js';
 import { createInternalSafetyEventsRoutes } from './routes/internal-safety-events.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
+import { createMeConfirmarAccesoBoosterRoutes } from './routes/me-confirmar-acceso-booster.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeEmpresaMiembrosRoutes } from './routes/me-empresa-miembros.js';
 import { createMeEmpresaRoutes } from './routes/me-empresa.js';
@@ -464,6 +465,22 @@ export function createServer(opts: CreateServerOptions): Hono {
     meRouter.route(
       '/empresa/miembros',
       createMeEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
+    // confirmar-acceso-booster — POST /me/confirmar-acceso-booster: la persona
+    // confirma desde su sesión el código que el admin de Booster le entregó en
+    // persona. userContext precede el mount; el guard de `/me/*` corre antes
+    // que él y bloquea toda escritura impersonada (el handler también la
+    // rechaza).
+    app.use('/me/confirmar-acceso-booster', userContextMiddlewareForMe);
+    meRouter.route(
+      '/confirmar-acceso-booster',
+      createMeConfirmarAccesoBoosterRoutes({
         db: opts.db,
         logger,
         platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,

@@ -3,9 +3,11 @@ import type { EmailSender } from './email-sender.js';
 
 /**
  * Aviso a la lista de respaldo cuando el panel otorga o quita el acceso de
- * una persona (`.specs/acceso-panel-plataforma` SC5). Sale a cada correo de
+ * una persona (`.specs/acceso-panel-plataforma` SC5), o cuando la persona lo
+ * confirma desde su sesión con el código que le entregó un admin
+ * (`.specs/confirmar-acceso-booster` SC7). Sale a cada correo de
  * `BOOSTER_PLATFORM_ADMIN_EMAILS`, con quién hizo el cambio y a quién. Nunca
- * lleva un código de activación.
+ * lleva un código.
  *
  * Solo texto plano: el nombre lo tipea un admin y así no hay HTML que escapar.
  *
@@ -13,7 +15,12 @@ import type { EmailSender } from './email-sender.js';
  * caído no puede deshacerlo; cada fallo queda registrado sin el cuerpo.
  */
 
-export type AccionAccesoPanel = 'otorgado' | 'quitado';
+/**
+ * - `otorgado`: el alta marcó la cuenta.
+ * - `quitado`: «Quitar acceso» la desmarcó.
+ * - `confirmado`: la persona confirmó el código que le entregó el admin.
+ */
+export type AccionAccesoPanel = 'otorgado' | 'quitado' | 'confirmado';
 
 export interface ResultadoAvisoAccesoPanel {
   /** Correos distintos de la lista a los que se intentó avisar. */
@@ -29,7 +36,10 @@ export async function enviarAvisoAccesoPanel(opts: {
   /** La lista de respaldo. Se normaliza y se deduplica aquí. */
   destinatarios: readonly string[];
   persona: { userId: string; nombre: string; email: string };
-  /** Correo del platform-admin que hizo el cambio. */
+  /**
+   * Correo del platform-admin que hizo el cambio. En `confirmado`, el de quien
+   * emitió el código.
+   */
   actorEmail: string;
   webAppUrl: string;
 }): Promise<ResultadoAvisoAccesoPanel> {
@@ -41,19 +51,22 @@ export async function enviarAvisoAccesoPanel(opts: {
   const quien = `${persona.nombre} (${persona.email})`;
 
   const subject =
-    accion === 'otorgado'
-      ? `Booster: acceso al panel otorgado a ${persona.nombre}`
-      : `Booster: acceso al panel quitado a ${persona.nombre}`;
+    accion === 'quitado'
+      ? `Booster: acceso al panel quitado a ${persona.nombre}`
+      : `Booster: acceso al panel otorgado a ${persona.nombre}`;
+  const cambio: Record<AccionAccesoPanel, string> = {
+    otorgado: `${actorEmail} otorgó acceso al panel de administración de Booster a ${quien}.`,
+    quitado: `${actorEmail} quitó el acceso al panel de administración de Booster a ${quien}.`,
+    confirmado: `${quien} confirmó desde su sesión el código que le entregó ${actorEmail}. Desde ahora tiene acceso al panel de administración de Booster.`,
+  };
   const text = [
     'Hola,',
     '',
-    accion === 'otorgado'
-      ? `${actorEmail} otorgó acceso al panel de administración de Booster a ${quien}.`
-      : `${actorEmail} quitó el acceso al panel de administración de Booster a ${quien}.`,
+    cambio[accion],
     '',
-    accion === 'otorgado'
-      ? `Si este cambio no corresponde, quita el acceso en ${panel}.`
-      : `Si este cambio no corresponde, vuelve a dar de alta a la persona en ${panel}.`,
+    accion === 'quitado'
+      ? `Si este cambio no corresponde, vuelve a dar de alta a la persona en ${panel}.`
+      : `Si este cambio no corresponde, quita el acceso en ${panel}.`,
     '',
     'Recibes este aviso porque tu correo está en la lista de respaldo del panel.',
     '',

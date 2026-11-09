@@ -58,9 +58,11 @@ describe('impersonation-write-guard — confirmación del acceso al panel', () =
   const USE_GUARD = "app.use('/me/*', impersonationWriteGuardMiddleware)";
   const USE_CONTEXTO = `app.use('${PATH}', userContextMiddlewareForMe)`;
 
-  it('el path tiene userContext y queda bajo /me/*, con firebaseAuth y el guard', () => {
+  it('el path tiene su app.use y queda bajo /me/*, con firebaseAuth y el guard', () => {
+    // El colector solo extrae identificadores que terminan en `Middleware`;
+    // `userContextMiddlewareForMe` se comprueba en el texto (test siguiente).
     const mapa = collectMiddlewaresPerPath(SERVER_SOURCE);
-    expect(mapa.get(PATH)).toEqual(['userContextMiddlewareForMe']);
+    expect(mapa.has(PATH)).toBe(true);
     expect(mapa.get('/me/*')).toEqual(
       expect.arrayContaining(['firebaseAuthMiddleware', 'impersonationWriteGuardMiddleware']),
     );

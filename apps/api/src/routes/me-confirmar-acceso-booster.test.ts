@@ -332,6 +332,17 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
     expect(JSON.stringify(observabilidad)).not.toContain(CODIGO);
   });
 
+  it('sin el correo de quien emitió el código, el aviso lo nombra como un admin de Booster', async () => {
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], []] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender });
+
+    const res = await confirmar(app);
+
+    expect(res.status).toBe(200);
+    expect(send.mock.calls[0]?.[0].text).toContain('el código que le entregó un admin de Booster.');
+  });
+
   it('una cuenta que ya estaba marcada consume la confirmación sin avisar de nuevo', async () => {
     const d = makeDb({ lookups: [[persona({ isPlatformAdmin: true })], [confirmacion()]] });
     const { sender, send } = makeSender();

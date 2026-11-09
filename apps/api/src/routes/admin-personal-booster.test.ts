@@ -1,9 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
-import { SQL } from 'drizzle-orm';
+import { SQL, type Table, getTableName } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { confirmacionesAccesoBooster } from '../db/schema.js';
 import { createImpersonationWriteGuardMiddleware } from '../middleware/impersonation-write-guard.js';
 import { hashActivationPin, verifyActivationPin } from '../services/activation-pin.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -115,6 +114,14 @@ interface DbOpts {
 
 const CONFIRMACION_ID = '3e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b';
 
+/**
+ * `loadMod()` reinicia los módulos, así que la tabla que recibe el mock es otra
+ * instancia que la del import de este archivo: se compara por nombre.
+ */
+function esConfirmaciones(tabla: unknown): boolean {
+  return getTableName(tabla as Table) === 'confirmaciones_acceso_booster';
+}
+
 function makeDb(opts: DbOpts = {}) {
   const lookups = [...(opts.lookups ?? [])];
   const insertedUsers: Record<string, unknown>[] = [];
@@ -165,7 +172,7 @@ function makeDb(opts: DbOpts = {}) {
   const insert = vi.fn((tabla: unknown) => ({
     values: vi.fn((vals: Record<string, unknown>) => ({
       returning: vi.fn(async () => {
-        if (tabla === confirmacionesAccesoBooster) {
+        if (esConfirmaciones(tabla)) {
           operaciones.push('insert');
           insertedConfirmaciones.push(vals);
           return [{ id: CONFIRMACION_ID }];
@@ -1869,7 +1876,7 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
     expect(res.status).toBe(200);
     expect(d.operaciones).toEqual(['delete', 'insert']);
     expect(d.deletes).toHaveLength(1);
-    expect(d.deletes[0]?.tabla).toBe(confirmacionesAccesoBooster);
+    expect(esConfirmaciones(d.deletes[0]?.tabla)).toBe(true);
     const borrado = sqlDe(d.deletes[0]?.predicado);
     expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
     expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
@@ -2150,7 +2157,7 @@ describe('GET /admin/personal-booster — persona por confirmar (SC9)', () => {
     await app.request('/');
 
     expect(d.joins).toHaveLength(1);
-    expect(d.joins[0]?.tabla).toBe(confirmacionesAccesoBooster);
+    expect(esConfirmaciones(d.joins[0]?.tabla)).toBe(true);
     const on = sqlDe(d.joins[0]?.on);
     expect(on.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = "usuarios"."id"');
     expect(on.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
@@ -2187,7 +2194,7 @@ describe('POST /admin/personal-booster/:userId/quitar-acceso — persona por con
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, user_id: PERSONA_ID });
     expect(d.deletes).toHaveLength(1);
-    expect(d.deletes[0]?.tabla).toBe(confirmacionesAccesoBooster);
+    expect(esConfirmaciones(d.deletes[0]?.tabla)).toBe(true);
     const borrado = sqlDe(d.deletes[0]?.predicado);
     expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."usuario_id" = $1');
     expect(borrado.sql).toContain('"confirmaciones_acceso_booster"."consumido_en" is null');
