@@ -1,0 +1,21 @@
+-- =============================================================================
+-- REVERSE-SQL MANUAL — 0076_confirmaciones_acceso_booster (ADR-066)
+-- =============================================================================
+-- ⚠️ MANUAL-APPLY-ONLY. El auto-migrator (src/db/migrator.ts) es forward-only y
+--    NO lee este directorio. Esto NO es un down-migration auto-aplicado.
+--
+-- Revierte la migración 0076 (tabla confirmaciones_acceso_booster). Borrarla
+-- deja sin uso los códigos de confirmación pendientes: esas personas siguen
+-- sin acceso al panel hasta que el admin las vuelva a dar de alta. Las cuentas
+-- que ya confirmaron conservan su marca (`usuarios.es_admin_plataforma`). En
+-- prod conviene el rollback de código (la migración es aditiva → una revisión
+-- previa ignora la tabla) o PITR.
+--
+-- Aplicar a mano vía bastion en modo password (DDL):
+--   AUTH_MODE=password bash scripts/db/connect.sh -f apps/api/drizzle/down/0076_confirmaciones_acceso_booster.down.sql
+--
+-- ⚠️ NO actualiza drizzle.__drizzle_migrations: si la migración forward sigue en
+--    el repo, el próximo startup la re-aplica. Parche puente, no undo permanente.
+-- =============================================================================
+
+DROP TABLE IF EXISTS confirmaciones_acceso_booster;
