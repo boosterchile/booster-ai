@@ -240,7 +240,7 @@ describe('acceptOffer', () => {
 
   it('happy path: accept con 0 supersededOffers + assignment creado', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }], // UPDATE offer
         [], // UPDATE supersededed (vacío, era la única)
@@ -267,7 +267,7 @@ describe('acceptOffer', () => {
 
   it('happy path: accept con N supersededOffers (otras offers pendientes del mismo trip)', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }],
         [{ id: 'o2' }, { id: 'o3' }, { id: 'o4' }], // 3 supersededOffers
@@ -285,9 +285,9 @@ describe('acceptOffer', () => {
     expect(result.supersededOfferIds).toEqual(['o2', 'o3', 'o4']);
   });
 
-  it('UPDATE offer retorna empty → throw "Update offer returned no row"', async () => {
+  it('UPDATE offer con CAS no aplica (dejó de estar pendiente) → OfferNotPendingError', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[]], // UPDATE retorna vacío
     });
     await expect(
@@ -298,12 +298,38 @@ describe('acceptOffer', () => {
         empresaId: EMPRESA_ID,
         userId: USER_ID,
       }),
-    ).rejects.toThrow(/Update offer returned no row/);
+    ).rejects.toBeInstanceOf(OfferNotPendingError);
+  });
+
+  // editar-anular-cargas PR1: la oferta se revalida con lock después del lock
+  // del viaje. La carrera completa la cubre accept-oferta-cas.integration.
+  it.each([
+    ['ya no pendiente', { ...VALID_OFFER, status: 'expirada' }, OfferNotPendingError],
+    [
+      'vencida al relerla',
+      { ...VALID_OFFER, expiresAt: new Date(Date.now() - 1000) },
+      OfferExpiredError,
+    ],
+  ])('relectura tras el lock: %s → rechaza sin escribir', async (_caso, relectura, error) => {
+    const db = makeDb({ selects: [[VALID_OFFER], [VALID_TRIP], [relectura]] });
+    await expect(
+      acceptOffer({
+        db: db as never,
+        logger: noopLogger,
+        offerId: OFFER_ID,
+        empresaId: EMPRESA_ID,
+        userId: USER_ID,
+      }),
+    ).rejects.toBeInstanceOf(error);
+    expect(db.update).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    // Dos locks: el del viaje y el de la oferta.
+    expect(db.forSpy).toHaveBeenCalledTimes(2);
   });
 
   it('INSERT assignment retorna empty → throw', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }]],
       inserts: [[]], // INSERT assignment vacío
     });
@@ -323,7 +349,7 @@ describe('acceptOffer', () => {
     // destinatario_nombre / destinatario_whatsapp en esta fila: el token
     // no puede depender de esos campos.
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
       inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
     });
@@ -349,7 +375,11 @@ describe('acceptOffer', () => {
 
   it('suggestedVehicleId null → assignment.vehicleId queda como string vacío', async () => {
     const db = makeDb({
-      selects: [[{ ...VALID_OFFER, suggestedVehicleId: null }], [VALID_TRIP]],
+      selects: [
+        [{ ...VALID_OFFER, suggestedVehicleId: null }],
+        [VALID_TRIP],
+        [{ ...VALID_OFFER, suggestedVehicleId: null }],
+      ],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
       inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: '' }], []],
     });
