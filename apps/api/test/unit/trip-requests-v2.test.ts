@@ -108,6 +108,7 @@ interface UserContextOpts {
   isTransportista?: boolean;
   empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
+  role?: 'dueno' | 'admin' | 'despachador' | 'visualizador';
 }
 
 function buildUserContext(opts: UserContextOpts = {}): {
@@ -127,7 +128,7 @@ function buildUserContext(opts: UserContextOpts = {}): {
     isTransportista: opts.isTransportista ?? false,
     status: opts.empresaStatus ?? 'activa',
   };
-  const membership = { role: 'dueno' as const };
+  const membership = { role: opts.role ?? ('dueno' as const) };
   return {
     user: { id: opts.userId ?? 'user-1' },
     memberships: [{ membership, empresa }],
@@ -432,6 +433,8 @@ describe('POST /trip-requests-v2', () => {
       body: JSON.stringify({
         ...validBody,
         consignee: { name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' },
+        notes: 'Andén 4',
+        reference: 'PO-1',
       }),
     });
     expect(res.status).toBe(201);
@@ -439,6 +442,9 @@ describe('POST /trip-requests-v2', () => {
       expect.objectContaining({
         consigneeName: 'Bodega La Serena',
         consigneeEmail: 'recepcion@cliente.cl',
+        // editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
+        notes: 'Andén 4',
+        reference: 'PO-1',
       }),
     );
   });
@@ -949,6 +955,11 @@ describe('GET /trip-requests-v2/:id', () => {
               pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
               pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
               proposedPriceClp: 250_000,
+              consigneeName: 'Bodega',
+              consigneeWhatsappE164: '+56911111111',
+              consigneeEmail: null,
+              notes: 'Andén 4',
+              reference: 'PO-1',
               createdAt: new Date('2026-05-02T15:00:00Z'),
               updatedAt: new Date('2026-05-02T15:00:00Z'),
             },
@@ -979,15 +990,71 @@ describe('GET /trip-requests-v2/:id', () => {
     const res = await app.request('/trip-requests-v2/trip-1');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      trip_request: { id: string; status: string };
+      trip_request: { id: string; status: string; [k: string]: unknown };
       events: unknown[];
       assignment: { vehicle_plate: string; empresa_legal_name: string } | null;
       metrics: unknown | null;
     };
     expect(body.trip_request.id).toBe('trip-1');
+    // editar-anular-cargas: datos libres y acciones permitidas en el detalle.
+    expect(body.trip_request).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111', email: null },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+      acciones_permitidas: {
+        editar: false,
+        editar_datos_libres: true,
+        solicitar_cambio: true,
+        retirar_cambio: false,
+        anular: false,
+        cancelar: true,
+      },
+    });
     expect(body.assignment?.vehicle_plate).toBe('AB-CD-12');
     expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
     expect(body.metrics).toBeNull();
+  });
+
+  // editar-anular-cargas §6-8: las acciones combinan el estado con las
+  // capacidades del rol, para que la web no ofrezca lo que el API rechaza.
+  it.each([
+    ['dueno', true],
+    ['visualizador', false],
+  ] as const)('%s en esperando_match → editar y anular = %s', async (role, puede) => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [
+          [
+            {
+              id: 'trip-1',
+              trackingCode: 'BOO-AAA111',
+              status: 'esperando_match',
+              originAddressRaw: 'origen',
+              destinationAddressRaw: 'destino',
+              cargoType: 'carga_seca',
+              cargoWeightKg: 1500,
+              createdAt: new Date('2026-05-02T15:00:00Z'),
+              updatedAt: new Date('2026-05-02T15:00:00Z'),
+            },
+          ],
+          [],
+          [],
+        ],
+        orderByRows: [[]],
+      }),
+      userContext: buildUserContext({ role }),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { acciones_permitidas: unknown } };
+    expect(body.trip_request.acciones_permitidas).toEqual({
+      editar: puede,
+      editar_datos_libres: puede,
+      solicitar_cambio: false,
+      retirar_cambio: false,
+      anular: puede,
+      cancelar: false,
+    });
   });
 
   // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----

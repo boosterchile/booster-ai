@@ -351,6 +351,11 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         cargoWeightKg: trips.cargoWeightKg,
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
+        // editar-anular-cargas §12-P4: el conductor ve contacto, notas y referencia.
+        consigneeName: trips.consigneeName,
+        consigneeWhatsappE164: trips.consigneeWhatsappE164,
+        notes: trips.notes,
+        reference: trips.reference,
         vehicleId: assignments.vehicleId,
         vehiclePlate: vehicles.plate,
         vehicleTeltonikaImei: vehicles.teltonikaImei,
@@ -415,6 +420,9 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           cargo_weight_kg: r.cargoWeightKg,
           pickup_window_start: safeIso(r.pickupWindowStart),
           pickup_window_end: safeIso(r.pickupWindowEnd),
+          consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
+          notes: r.notes,
+          reference: r.reference,
         },
       })),
     });

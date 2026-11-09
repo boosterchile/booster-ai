@@ -197,3 +197,59 @@ export async function notifyTrackingLinkAtAssignment(
     recipient: recipient.role,
   };
 }
+
+/**
+ * editar-anular-cargas §12-P8 — reenvía el link de tracking al número nuevo
+ * del destinatario cuando el generador lo cambia después del match. Mismo
+ * token: el link anterior sigue sirviendo hasta que termine el viaje.
+ *
+ * No usa `tracking_link_enviado_en`: esa marca es del primer envío al asignar
+ * y ya está tomada. La deduplicación la hace el llamador, que solo llama si el
+ * número cambió (comparado dentro de la transacción de la edición). Mismo
+ * contrato que el primer envío: si Twilio falla, el error se propaga y el
+ * llamador lo loguea sin revertir la edición.
+ */
+export async function reenviarTrackingLinkADestinatario(
+  deps: NotifyTrackingLinkDeps,
+  opts: { assignmentId: string; telefono: string },
+): Promise<NotifyTrackingLinkResult> {
+  const { db, logger, twilioClient, contentSidTracking } = deps;
+  const { assignmentId, telefono } = opts;
+  if (twilioClient === null || contentSidTracking === null) {
+    return { assignmentId, skipped: true, reason: 'not_configured' };
+  }
+  const rows = await db
+    .select({
+      publicToken: assignments.publicTrackingToken,
+      trackingCode: trips.trackingCode,
+      originRegion: trips.originRegionCode,
+      destRegion: trips.destinationRegionCode,
+    })
+    // rls-allowlist: notificador server-side; assignmentId del viaje ya validado por el llamador.
+    .from(assignments)
+    .innerJoin(trips, eq(trips.id, assignments.tripId))
+    .where(eq(assignments.id, assignmentId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    return { assignmentId, skipped: true, reason: 'assignment_not_found' };
+  }
+  if (!row.publicToken) {
+    return { assignmentId, skipped: true, reason: 'no_token' };
+  }
+  const sent = await twilioClient.sendContent({
+    to: telefono,
+    contentSid: contentSidTracking,
+    contentVariables: buildTrackingLinkVariables({
+      trackingCode: row.trackingCode,
+      originRegionCode: row.originRegion,
+      destinationRegionCode: row.destRegion,
+      publicTrackingToken: row.publicToken,
+    }),
+  });
+  logger.info(
+    { assignmentId, trackingCode: row.trackingCode, twilioSid: sent.sid },
+    'link de tracking reenviado al destinatario nuevo',
+  );
+  return { assignmentId, skipped: false, recipient: 'consignee', twilioMessageSid: sent.sid };
+}

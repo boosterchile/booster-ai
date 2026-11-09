@@ -526,6 +526,13 @@
       "when": 1780876800110,
       "tag": "0074_usuarios_activacion_vence_en",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1780876800120,
+      "tag": "0075_viajes_notas_referencia_eventos_edicion",
+      "breakpoints": true
     }
   ]
 }

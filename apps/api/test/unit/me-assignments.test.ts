@@ -33,6 +33,10 @@ const ROW = {
   cargoWeightKg: 8000,
   pickupWindowStart: null,
   pickupWindowEnd: null,
+  consigneeName: 'Bodega La Serena',
+  consigneeWhatsappE164: '+56911111111',
+  notes: 'Andén 4',
+  reference: 'PO-1',
   vehicleId: 'veh-1',
   vehiclePlate: 'JLKT54',
   vehicleTeltonikaImei: '860693088543278',
@@ -111,6 +115,19 @@ describe('GET /me/assignments — vehicle.has_teltonika (tarjeta guiada del cond
       id: 'veh-1',
       plate: 'KFHC70',
       has_teltonika: false,
+    });
+  });
+
+  // editar-anular-cargas §12-P4: el conductor ve contacto, notas y referencia.
+  it('incluye contacto del destinatario, notas y referencia del viaje', async () => {
+    const app = await buildApp(makeDbStub([ROW]));
+    const body = (await (await app.request('/me/assignments')).json()) as {
+      assignments: Array<{ trip: Record<string, unknown> }>;
+    };
+    expect(body.assignments[0]?.trip).toMatchObject({
+      consignee: { name: 'Bodega La Serena', phone_e164: '+56911111111' },
+      notes: 'Andén 4',
+      reference: 'PO-1',
     });
   });
 

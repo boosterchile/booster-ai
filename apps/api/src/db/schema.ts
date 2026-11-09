@@ -343,6 +343,14 @@ export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
    * (legal); este es informativo + notifica al shipper.
    */
   'incidente_reportado',
+  /**
+   * editar-anular-cargas (0075). Payloads validados con Zod en
+   * shared-schemas (cambio-carga): edición de datos de la carga, solicitud
+   * de cambio después del match y su respuesta.
+   */
+  'carga_editada',
+  'cambio_solicitado',
+  'cambio_respondido',
 ]);
 
 export const tripEventSourceEnum = pgEnum('origen_evento_viaje', [
@@ -1401,6 +1409,9 @@ export const trips = pgTable(
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
     // seguimiento-por-correo (0073): correo opcional del destinatario.
     consigneeEmail: varchar('destinatario_email', { length: 254 }),
+    // editar-anular-cargas (0075): datos libres de la carga (§12-P4).
+    notes: text('notas'),
+    reference: varchar('referencia', { length: 100 }),
     /**
      * Override por viaje del opt-in de medición de huella. NULL = heredar el
      * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
@@ -1431,6 +1442,10 @@ export const trips = pgTable(
       table.generadorCargaWhatsapp,
     ),
     statusIdx: index('idx_viajes_estado').on(table.status),
+    notasLargoCheck: check(
+      'ck_viajes_notas_largo',
+      sql`${table.notes} IS NULL OR char_length(${table.notes}) <= 1000`,
+    ),
     originRegionIdx: index('idx_viajes_origen_region').on(table.originRegionCode),
     createdIdx: index('idx_viajes_creado').on(table.createdAt),
   }),

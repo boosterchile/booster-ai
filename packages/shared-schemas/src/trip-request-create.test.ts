@@ -156,3 +156,25 @@ describe('tripRequestCreateInputSchema — correo del destinatario', () => {
     expect(r.consignee?.email).toBeUndefined();
   });
 });
+
+// editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
+describe('tripRequestCreateInputSchema — notas y referencia', () => {
+  it('las acepta opcionales y sin espacios', () => {
+    const r = tripRequestCreateInputSchema.parse({
+      ...base(),
+      notes: ' Andén 4 ',
+      reference: 'PO-1',
+    });
+    expect(r.notes).toBe('Andén 4');
+    expect(r.reference).toBe('PO-1');
+  });
+
+  it('respeta los topes de 1000 y 100 caracteres', () => {
+    expect(
+      tripRequestCreateInputSchema.safeParse({ ...base(), notes: 'x'.repeat(1001) }).success,
+    ).toBe(false);
+    expect(
+      tripRequestCreateInputSchema.safeParse({ ...base(), reference: 'x'.repeat(101) }).success,
+    ).toBe(false);
+  });
+});
