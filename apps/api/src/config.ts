@@ -713,6 +713,13 @@ export const apiEnvSchema = commonEnvSchema
     GEOFENCE_RADIUS_M: z.coerce.number().int().positive().default(150),
 
     /**
+     * editar-anular-cargas §6.14 — cada cuántos minutos se le recuerda a la
+     * transportista una solicitud de cambio sin responder. El job corre cada
+     * 15 min (infrastructure/cambio-carga.tf); este valor decide cuáles toca.
+     */
+    CAMBIO_RECORDATORIO_INTERVALO_MIN: z.coerce.number().int().positive().default(60),
+
+    /**
      * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del
      * reaper de cuentas IdP inertes.
      *
