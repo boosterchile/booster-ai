@@ -46,12 +46,14 @@ const AVISO_SIN_RUT =
 const ESTADO_LABEL: Record<PersonalBoosterEstado, string> = {
   sin_cuenta: 'Sin cuenta',
   pendiente_activacion: 'Pendiente de activar',
+  pendiente_confirmacion: 'Pendiente de confirmar',
   activa: 'Activa',
 };
 
 const ESTADO_CLASE: Record<PersonalBoosterEstado, string> = {
   sin_cuenta: 'border-neutral-300 bg-neutral-100 text-neutral-700',
   pendiente_activacion: 'border-amber-300 bg-amber-50 text-amber-900',
+  pendiente_confirmacion: 'border-amber-300 bg-amber-50 text-amber-900',
   activa: 'border-success-200 bg-success-50 text-success-700',
 };
 

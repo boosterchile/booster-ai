@@ -4,12 +4,15 @@ import { MENSAJES } from '../primitives/mensajes.js';
 
 /**
  * Alta del personal de Booster desde el panel de administración
- * (`.specs/alta-personal-booster/spec.md` §4 y
- * `.specs/acceso-panel-plataforma/spec.md` §4).
+ * (`.specs/alta-personal-booster/spec.md` §4,
+ * `.specs/acceso-panel-plataforma/spec.md` §4 y
+ * `.specs/confirmar-acceso-booster/spec.md` §4).
  *
  * El panel otorga y quita el acceso: el alta marca la cuenta como personal y,
  * si no tiene clave, entrega un código de un solo uso; la persona elige su
- * propia clave en `/activar`. La lista de Terraform
+ * propia clave en `/activar`. Una cuenta con clave y vínculos con una empresa
+ * no queda marcada en el alta: la persona confirma el acceso desde su sesión
+ * con el código que el admin le entrega en persona. La lista de Terraform
  * (`BOOSTER_PLATFORM_ADMIN_EMAILS`) queda como respaldo para el primer admin.
  */
 
@@ -43,9 +46,18 @@ export type AltaPersonalBooster = z.infer<typeof altaPersonalBoosterSchema>;
  * Estado de una persona del personal tal como la ve el panel:
  *   - `sin_cuenta`: el correo está en la lista de Terraform y no hay cuenta.
  *   - `pendiente_activacion`: cuenta provisoria, todavía sin clave propia.
+ *   - `pendiente_confirmacion`: cuenta con clave y vínculos con una empresa,
+ *     sin marca, con un código de confirmación pendiente
+ *     (`.specs/confirmar-acceso-booster` SC9). Entra al panel cuando la
+ *     persona lo confirma desde su sesión.
  *   - `activa`: la persona ya eligió su clave.
  */
-export const personalBoosterEstadoSchema = z.enum(['sin_cuenta', 'pendiente_activacion', 'activa']);
+export const personalBoosterEstadoSchema = z.enum([
+  'sin_cuenta',
+  'pendiente_activacion',
+  'pendiente_confirmacion',
+  'activa',
+]);
 export type PersonalBoosterEstado = z.infer<typeof personalBoosterEstadoSchema>;
 
 /** Ítem de `GET /admin/personal-booster`. Nunca trae el código. */
@@ -57,7 +69,10 @@ export const personalBoosterSchema = z.object({
   nombre: z.string().nullable(),
   rut: z.string().nullable(),
   estado: personalBoosterEstadoSchema,
-  /** Vencimiento del código pendiente; null si no hay o si la cuenta está activa. */
+  /**
+   * Vencimiento del código pendiente (de activación o de confirmación); null
+   * si no hay uno que sirva o si la cuenta está activa.
+   */
   expira_en: z.string().datetime().nullable(),
   /** Último ingreso; solo para cuentas activas. */
   ultimo_login_en: z.string().datetime().nullable(),
@@ -79,12 +94,18 @@ export type ListaPersonalBoosterResponse = z.infer<typeof listaPersonalBoosterRe
  *     panel; se conserva.
  *   - `provisoria_sin_codigo`: provisoria sin un código vigente del panel: se
  *     emitió uno nuevo.
+ *   - `cuenta_activa_por_confirmar`: ya tenía clave y vínculos con una
+ *     empresa. No queda marcada: se emitió un código de confirmación que el
+ *     admin entrega en persona y que la persona confirma desde su sesión en
+ *     `POST /me/confirmar-acceso-booster` (`.specs/confirmar-acceso-booster`
+ *     SC1). Ese código nunca sale por correo.
  */
 export const vinculoPersonalBoosterSchema = z.enum([
   'nueva',
   'cuenta_activa',
   'codigo_vigente',
   'provisoria_sin_codigo',
+  'cuenta_activa_por_confirmar',
 ]);
 export type VinculoPersonalBooster = z.infer<typeof vinculoPersonalBoosterSchema>;
 
@@ -92,12 +113,15 @@ export type VinculoPersonalBooster = z.infer<typeof vinculoPersonalBoosterSchema
 const VINCULOS_CON_CODIGO: ReadonlySet<VinculoPersonalBooster> = new Set([
   'nueva',
   'provisoria_sin_codigo',
+  'cuenta_activa_por_confirmar',
 ]);
 
 /**
  * `POST /admin/personal-booster` → 201 si creó la cuenta (`vinculo: nueva`),
  * 200 si la persona ya existía. `codigo_activacion` viene solo cuando se
  * emitió en esta llamada; `expira_en` es el vencimiento del código pendiente.
+ * Con `vinculo: cuenta_activa_por_confirmar`, `codigo_activacion` es el código
+ * de confirmación.
  */
 export const altaPersonalBoosterResponseSchema = z
   .object({
@@ -135,12 +159,27 @@ export const altaPersonalBoosterResponseSchema = z
 export type AltaPersonalBoosterResponse = z.infer<typeof altaPersonalBoosterResponseSchema>;
 
 /**
+ * Qué código emitió la re-emisión:
+ *   - `provisoria_sin_codigo`: código de activación (7 días, sale por correo).
+ *   - `cuenta_activa_por_confirmar`: código de confirmación (24 horas, se
+ *     entrega en persona; `.specs/confirmar-acceso-booster` SC8).
+ */
+export const vinculoReemisionPersonalBoosterSchema = vinculoPersonalBoosterSchema.extract([
+  'provisoria_sin_codigo',
+  'cuenta_activa_por_confirmar',
+]);
+export type VinculoReemisionPersonalBooster = z.infer<typeof vinculoReemisionPersonalBoosterSchema>;
+
+/**
  * `POST /admin/personal-booster/:userId/codigo` (sin body) → 200. El código
- * anterior deja de servir y el plazo de 7 días corre desde la re-emisión.
+ * anterior deja de servir y el plazo corre desde la re-emisión. Sin `vinculo`
+ * (un API anterior a `.specs/confirmar-acceso-booster`) vale
+ * `provisoria_sin_codigo`, el único código que ese API emitía.
  */
 export const reemitirCodigoPersonalBoosterResponseSchema = z.object({
   ok: z.literal(true),
   user_id: z.string().uuid(),
+  vinculo: vinculoReemisionPersonalBoosterSchema.default('provisoria_sin_codigo'),
   codigo_activacion: codigoActivacionSchema,
   expira_en: z.string().datetime(),
   en_lista: z.boolean(),
@@ -194,3 +233,40 @@ export type PersonalBoosterErrorCode = z.infer<typeof personalBoosterErrorCodeSc
 export const CODIGO_CUENTA_PERSONAL_BOOSTER = 'cuenta_personal_booster' as const;
 export const MENSAJE_CUENTA_PERSONAL_BOOSTER =
   'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.';
+
+/**
+ * Confirmación del acceso al panel (`.specs/confirmar-acceso-booster`). El
+ * código de confirmación vence a las 24 horas y deja de servir al quinto
+ * intento fallido; para seguir, el admin emite otro.
+ */
+export const CONFIRMACION_ACCESO_BOOSTER_VIGENCIA_HORAS = 24;
+export const CONFIRMACION_ACCESO_BOOSTER_MAX_INTENTOS = 5;
+
+/**
+ * Body de `POST /me/confirmar-acceso-booster`: el código que entregó el admin.
+ * Mismo formato y mensaje que el código de `/auth/activar`.
+ */
+export const confirmarAccesoBoosterSchema = z.object({
+  codigo: z.string({ error: MENSAJES.requerido }).regex(/^\d{6}$/, 'El código tiene 6 números'),
+});
+export type ConfirmarAccesoBoosterInput = z.input<typeof confirmarAccesoBoosterSchema>;
+export type ConfirmarAccesoBooster = z.infer<typeof confirmarAccesoBoosterSchema>;
+
+/**
+ * `POST /me/confirmar-acceso-booster` → 200. La cuenta queda marcada como
+ * personal; el acceso rige desde la request siguiente (`GET /me` devuelve
+ * `is_platform_admin`).
+ */
+export const confirmarAccesoBoosterResponseSchema = z.object({
+  ok: z.literal(true),
+  user_id: z.string().uuid(),
+});
+export type ConfirmarAccesoBoosterResponse = z.infer<typeof confirmarAccesoBoosterResponseSchema>;
+
+/**
+ * Rechazo de `POST /me/confirmar-acceso-booster` → 400. Es uno solo para
+ * todos los casos: sin código pendiente, código incorrecto, vencido o sin
+ * intentos.
+ */
+export const confirmarAccesoBoosterErrorCodeSchema = z.enum(['codigo_invalido']);
+export type ConfirmarAccesoBoosterErrorCode = z.infer<typeof confirmarAccesoBoosterErrorCodeSchema>;

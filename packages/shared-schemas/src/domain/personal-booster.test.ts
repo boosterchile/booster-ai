@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   CODIGO_CUENTA_PERSONAL_BOOSTER,
+  CONFIRMACION_ACCESO_BOOSTER_MAX_INTENTOS,
+  CONFIRMACION_ACCESO_BOOSTER_VIGENCIA_HORAS,
   MENSAJE_CUENTA_PERSONAL_BOOSTER,
   altaPersonalBoosterResponseSchema,
   altaPersonalBoosterSchema,
+  confirmarAccesoBoosterErrorCodeSchema,
+  confirmarAccesoBoosterResponseSchema,
+  confirmarAccesoBoosterSchema,
   listaPersonalBoosterResponseSchema,
   personalBoosterErrorCodeSchema,
   personalBoosterEstadoSchema,
@@ -225,5 +230,114 @@ describe('cuenta del personal en los flujos de empresa', () => {
     expect(MENSAJE_CUENTA_PERSONAL_BOOSTER).toBe(
       'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
     );
+  });
+});
+
+// `.specs/confirmar-acceso-booster` §4 (T1).
+describe('confirmación del acceso al panel — contratos', () => {
+  const base = { ok: true, user_id: USER_ID, en_lista: false };
+
+  it('el estado pendiente_confirmacion es parte de la lista del personal', () => {
+    expect(personalBoosterEstadoSchema.options).toEqual([
+      'sin_cuenta',
+      'pendiente_activacion',
+      'pendiente_confirmacion',
+      'activa',
+    ]);
+    const r = listaPersonalBoosterResponseSchema.parse({
+      personal: [
+        {
+          email: 'ana.soto@boosterchile.com',
+          en_lista: false,
+          user_id: USER_ID,
+          nombre: 'Ana Soto',
+          rut: '12345678-5',
+          estado: 'pendiente_confirmacion',
+          expira_en: VENCE,
+          ultimo_login_en: null,
+        },
+      ],
+    });
+    expect(r.personal[0]?.estado).toBe('pendiente_confirmacion');
+  });
+
+  it('el alta cuenta_activa_por_confirmar trae el código y su vencimiento', () => {
+    expect(vinculoPersonalBoosterSchema.options).toContain('cuenta_activa_por_confirmar');
+    const vinculo = 'cuenta_activa_por_confirmar';
+    expect(
+      altaPersonalBoosterResponseSchema.safeParse({
+        ...base,
+        vinculo,
+        codigo_activacion: '123456',
+        expira_en: VENCE,
+      }).success,
+    ).toBe(true);
+    expect(
+      altaPersonalBoosterResponseSchema.safeParse({
+        ...base,
+        vinculo,
+        codigo_activacion: null,
+        expira_en: VENCE,
+      }).success,
+    ).toBe(false);
+    expect(
+      altaPersonalBoosterResponseSchema.safeParse({
+        ...base,
+        vinculo,
+        codigo_activacion: '123456',
+        expira_en: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('la re-emisión dice qué código emitió; sin el campo vale provisoria_sin_codigo', () => {
+    const reemision = {
+      ok: true,
+      user_id: USER_ID,
+      codigo_activacion: '654321',
+      expira_en: VENCE,
+      en_lista: false,
+    };
+    expect(reemitirCodigoPersonalBoosterResponseSchema.parse(reemision).vinculo).toBe(
+      'provisoria_sin_codigo',
+    );
+    expect(
+      reemitirCodigoPersonalBoosterResponseSchema.parse({
+        ...reemision,
+        vinculo: 'cuenta_activa_por_confirmar',
+      }).vinculo,
+    ).toBe('cuenta_activa_por_confirmar');
+    for (const vinculo of ['nueva', 'cuenta_activa', 'codigo_vigente', 'otra']) {
+      expect(
+        reemitirCodigoPersonalBoosterResponseSchema.safeParse({ ...reemision, vinculo }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('el body de la confirmación es un código de 6 dígitos', () => {
+    expect(confirmarAccesoBoosterSchema.parse({ codigo: '012345' })).toEqual({ codigo: '012345' });
+    for (const codigo of ['12345', '1234567', 'abcdef', '12 345', '']) {
+      const r = confirmarAccesoBoosterSchema.safeParse({ codigo });
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0]?.message).toBe('El código tiene 6 números');
+    }
+    const sinCodigo = confirmarAccesoBoosterSchema.safeParse({});
+    expect(sinCodigo.error?.issues[0]?.message).toBe('Completa este campo');
+  });
+
+  it('la respuesta trae ok y el user_id; el rechazo es uno solo', () => {
+    expect(confirmarAccesoBoosterResponseSchema.parse({ ok: true, user_id: USER_ID })).toEqual({
+      ok: true,
+      user_id: USER_ID,
+    });
+    expect(
+      confirmarAccesoBoosterResponseSchema.safeParse({ ok: true, user_id: 'no-uuid' }).success,
+    ).toBe(false);
+    expect(confirmarAccesoBoosterErrorCodeSchema.options).toEqual(['codigo_invalido']);
+  });
+
+  it('vigencia de 24 horas y cinco intentos', () => {
+    expect(CONFIRMACION_ACCESO_BOOSTER_VIGENCIA_HORAS).toBe(24);
+    expect(CONFIRMACION_ACCESO_BOOSTER_MAX_INTENTOS).toBe(5);
   });
 });
