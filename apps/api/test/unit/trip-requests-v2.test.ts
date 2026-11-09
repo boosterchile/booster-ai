@@ -873,7 +873,9 @@ describe('GET /trip-requests-v2', () => {
       .map((pred) => sqlDe(pred))
       .find((sql) => sql.params.includes('emp-1'));
     expect(filtro?.texto).toContain('generador_carga_empresa_id');
-    expect(filtro?.params).toEqual(['emp-1']);
+    // Excluye las anuladas: cancelado sin asignación (editar-anular-cargas §8.7).
+    expect(filtro?.texto).toContain('not (estado =  and id is null)');
+    expect(filtro?.params).toEqual(['emp-1', 'cancelado']);
   });
 });
 
@@ -935,7 +937,7 @@ describe('GET /trip-requests-v2/:id', () => {
   it('200 con trip + events + assignment + metrics', async () => {
     const app = await buildAppWith({
       db: makeQueryDb({
-        // limitRows orden: trip lookup, assignment, metrics
+        // limitRows orden: trip lookup, solicitud pendiente, assignment, metrics
         limitRows: [
           [
             {
@@ -964,6 +966,7 @@ describe('GET /trip-requests-v2/:id', () => {
               updatedAt: new Date('2026-05-02T15:00:00Z'),
             },
           ],
+          [],
           [
             {
               id: 'asg-1',
@@ -1120,6 +1123,8 @@ describe('GET /trip-requests-v2/:id', () => {
       db: makeQueryDb({
         limitRows: [
           [liveTripRow(opts.status)],
+          // asignado: la lectura de la solicitud de cambio pendiente (ninguna).
+          ...(opts.status === 'asignado' ? [[]] : []),
           [LIVE_ASSIGNMENT],
           [],
           opts.teltonika ?? [],
@@ -1255,108 +1260,5 @@ describe('GET /trip-requests-v2/:id', () => {
     expect(body.assignment?.ubicacion_actual).toBeNull();
     expect(body.assignment?.position_source).toBeNull();
     expect(body.assignment?.eta_minutes).toBeNull();
-  });
-});
-
-// =============================================================================
-// PATCH /trip-requests-v2/:id/cancelar
-// =============================================================================
-
-describe('PATCH /trip-requests-v2/:id/cancelar', () => {
-  it('sin userContext → 401', async () => {
-    const app = await buildAppWith({ db: makeQueryDb({}), userContext: null });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it('trip no encontrado → 404', async () => {
-    const app = await buildAppWith({
-      db: makeQueryDb({ limitRows: [[]] }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('trip ya asignado → 409 trip_not_cancellable', async () => {
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'asignado', trackingCode: 'BOO-XXX' }]],
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string; current_status: string };
-    expect(body.code).toBe('trip_not_cancellable');
-    expect(body.current_status).toBe('asignado');
-  });
-
-  it('200 cancela en estado esperando_match + registra evento', async () => {
-    const insertValues = vi.fn().mockResolvedValue([]);
-    const insertSpy = vi.fn(() => ({ values: insertValues }));
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'esperando_match', trackingCode: 'BOO-YYY' }]],
-        updateRows: [{ id: 'trip-1', trackingCode: 'BOO-YYY', status: 'cancelado' }],
-        insertSpy,
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ reason: 'cambio de planes' }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { trip_request: { status: string } };
-    expect(body.trip_request.status).toBe('cancelado');
-    expect(insertSpy).toHaveBeenCalled();
-  });
-
-  it('200 cancela con ofertas pendientes → las invalida y registra invalidated_offers', async () => {
-    const insertValues = vi.fn().mockResolvedValue([]);
-    const insertSpy = vi.fn(() => ({ values: insertValues }));
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'ofertas_enviadas', trackingCode: 'BOO-ZZZ' }]],
-        updateRowsSeq: [
-          // 1º update: trips → cancelado
-          [{ id: 'trip-1', trackingCode: 'BOO-ZZZ', status: 'cancelado' }],
-          // 2º update: offers pendiente → expirada (2 invalidadas)
-          [{ id: 'offer-1' }, { id: 'offer-2' }],
-        ],
-        insertSpy,
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { trip_request: { status: string } };
-    expect(body.trip_request.status).toBe('cancelado');
-
-    // El evento de auditoría registra cuántas ofertas se invalidaron.
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'cancelado',
-        payload: expect.objectContaining({ invalidated_offers: 2 }),
-      }),
-    );
   });
 });

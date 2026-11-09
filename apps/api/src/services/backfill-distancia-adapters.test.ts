@@ -109,7 +109,14 @@ describe('reconstruirTripBackfill — relleno de huecos con Routes', () => {
   it('HUECO → Routes recibe coordenadas, no el string «lat,lng» (400 Address Waypoint)', async () => {
     (cargarPingsVentana as Mock).mockResolvedValueOnce(pings);
     (computeRoutes as Mock).mockResolvedValue([
-      { distanceKm: 5, durationS: 100, fuelL: null, polylineEncoded: '', startLocation: null },
+      {
+        distanceKm: 5,
+        durationS: 100,
+        fuelL: null,
+        polylineEncoded: '',
+        startLocation: null,
+        endLocation: null,
+      },
     ]);
     const logger = makeLogger();
 

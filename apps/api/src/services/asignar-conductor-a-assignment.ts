@@ -1,7 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, conductores, tripEvents, users, vehicles } from '../db/schema.js';
+import { assignments, conductores, tripEvents, trips, users, vehicles } from '../db/schema.js';
 import { PENDING_FIREBASE_UID_PREFIX } from './vinculo-persona.js';
 
 /**
@@ -158,6 +158,22 @@ export async function asignarConductorAAssignment(
   const { db, logger, assignmentId, driverUserId, vehiculoId, empresaId, actingUserId } = input;
 
   return await db.transaction(async (tx) => {
+    // 0. Lock del viaje antes que el de la asignación: el mismo orden que
+    //    cancelar-carga, para que las dos no se crucen en un deadlock y para
+    //    que una cancelación en curso termine antes de leer el estado.
+    // rls-allowlist: el viaje se busca por su asignación; la pertenencia a empresaId se valida abajo.
+    await tx
+      .select({ id: trips.id })
+      .from(trips)
+      .where(
+        eq(
+          trips.id,
+          sql`(select ${assignments.tripId} from ${assignments} where ${assignments.id} = ${assignmentId})`,
+        ),
+      )
+      .for('update')
+      .limit(1);
+
     // 1. Verificar assignment existe + pertenece al carrier + es mutable.
     const [assignment] = await tx
       .select({
@@ -171,6 +187,7 @@ export async function asignarConductorAAssignment(
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
+      .for('update')
       .limit(1);
 
     if (!assignment) {
@@ -236,15 +253,25 @@ export async function asignarConductorAAssignment(
 
     const newVehicleId = vehiculoId ?? assignment.vehicleId;
 
-    // 4. UPDATE assignment.
-    await tx
+    // 4. UPDATE assignment, con CAS sobre el estado mutable.
+    const actualizadas = await tx
       .update(assignments)
       .set({
         driverUserId,
         ...(vehiculoId ? { vehicleId: vehiculoId } : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(assignments.id, assignmentId), eq(assignments.empresaId, empresaId)));
+      .where(
+        and(
+          eq(assignments.id, assignmentId),
+          eq(assignments.empresaId, empresaId),
+          inArray(assignments.status, [...MUTABLE_STATUSES]),
+        ),
+      )
+      .returning({ id: assignments.id });
+    if (actualizadas.length === 0) {
+      throw new AssignmentNotMutableError(assignmentId, assignment.status);
+    }
 
     // 5. Audit event en trip_events.
     await tx.insert(tripEvents).values({

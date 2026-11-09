@@ -91,3 +91,54 @@ describe('ctxDeUserContext', () => {
     expect(ctxDeUserContext(null)).toBeNull();
   });
 });
+
+describe('denegarEditarCarga y denegarResponderCambioCarga (editar-anular-cargas §6)', () => {
+  async function responder(
+    denegar: (c: never, uc: unknown) => Response | null,
+    uc: unknown,
+  ): Promise<{ status: number; code?: string } | null> {
+    const { Hono } = await import('hono');
+    const app = new Hono();
+    let resultado: Response | null = null;
+    app.get('/', (c) => {
+      resultado = denegar(c as never, uc);
+      return resultado ?? c.json({ ok: true });
+    });
+    const res = await app.request('/');
+    if (resultado === null) {
+      return null;
+    }
+    return { status: res.status, ...((await res.json()) as { code?: string }) };
+  }
+
+  it('editar: el gestor del generador pasa, el visualizador recibe read_only', async () => {
+    const { denegarEditarCarga } = await import('../../src/auth/capacidades.js');
+    expect(
+      await responder(denegarEditarCarga, sesion({ role: 'dueno', carrier: false, shipper: true })),
+    ).toBeNull();
+    expect(
+      await responder(
+        denegarEditarCarga,
+        sesion({ role: 'visualizador', carrier: false, shipper: true }),
+      ),
+    ).toMatchObject({ status: 403, code: 'read_only' });
+    expect(await responder(denegarEditarCarga, sesion({ role: 'dueno' }))).toMatchObject({
+      status: 403,
+      code: 'capability_denied',
+    });
+  });
+
+  it('responder un cambio: dueño del transportista pasa; conductor y despachador sin permiso no', async () => {
+    const { denegarResponderCambioCarga } = await import('../../src/auth/capacidades.js');
+    expect(await responder(denegarResponderCambioCarga, sesion({ role: 'dueno' }))).toBeNull();
+    expect(
+      await responder(denegarResponderCambioCarga, sesion({ role: 'despachador', flag: true })),
+    ).toBeNull();
+    for (const role of ['conductor', 'despachador', 'visualizador']) {
+      expect(await responder(denegarResponderCambioCarga, sesion({ role }))).toMatchObject({
+        status: 403,
+        code: 'capability_denied',
+      });
+    }
+  });
+});

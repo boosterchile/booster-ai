@@ -533,6 +533,20 @@
       "when": 1780876800120,
       "tag": "0075_viajes_notas_referencia_eventos_edicion",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1780876800220,
+      "tag": "0076_ofertas_unica_pendiente",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1780876800320,
+      "tag": "0077_solicitudes_cambio_viaje",
+      "breakpoints": true
     }
   ]
 }

@@ -218,16 +218,30 @@ describe('CargasNuevoRoute', () => {
 
 // seguimiento-por-correo: correo opcional del destinatario en el formulario.
 describe('CargasNuevoRoute — correo del destinatario', () => {
+  /**
+   * Clic + pegar en vez de `user.type`: el formulario se re-renderiza entero en
+   * cada tecla (`watch()`) y, tecla a tecla, este caso pasaba de los 5 s bajo
+   * cobertura en CI. Pegar dispara un solo input con el texto completo.
+   */
+  async function escribir(
+    user: ReturnType<typeof userEvent.setup>,
+    campo: HTMLElement,
+    texto: string,
+  ) {
+    await user.click(campo);
+    await user.paste(texto);
+  }
+
   async function llenarCargaValida(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
-    await user.type(screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
+    await escribir(user, screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
+    await escribir(user, screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
     const [origen, destino] = screen.getAllByLabelText(/Región/);
     if (!origen || !destino) {
       throw new Error('faltan los selectores de región');
     }
     await user.selectOptions(origen, 'XIII');
     await user.selectOptions(destino, 'VIII');
-    await user.type(screen.getByLabelText(/Peso/), '8000');
+    await escribir(user, screen.getByLabelText(/Peso/), '8000');
     const local = (fecha: Date) => {
       const pad = (n: number) => String(n).padStart(2, '0');
       return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
@@ -248,11 +262,19 @@ describe('CargasNuevoRoute — correo del destinatario', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasNuevoRoute />);
     await llenarCargaValida(user);
-    await user.type(screen.getByLabelText(/Nombre del destinatario/), 'Bodega La Serena');
-    await user.type(screen.getByLabelText(/Correo del destinatario/), 'Recepcion@Cliente.CL');
+    await escribir(user, screen.getByLabelText(/Nombre del destinatario/), 'Bodega La Serena');
+    await escribir(user, screen.getByLabelText(/Correo del destinatario/), 'Recepcion@Cliente.CL');
+    await escribir(user, screen.getByLabelText(/Notas para el transportista/), 'Andén 4');
+    await escribir(user, screen.getByLabelText(/^Referencia/), 'PO-1');
     await user.click(screen.getByRole('button', { name: 'Crear carga' }));
     await waitFor(() => expect(post).toHaveBeenCalled());
-    const [, body] = post.mock.calls[0] as [string, { consignee?: unknown }];
+    const [, body] = post.mock.calls[0] as [
+      string,
+      { consignee?: unknown; notes?: string; reference?: string },
+    ];
+    // editar-anular-cargas §12-P4: notas y referencia al crear.
+    expect(body.notes).toBe('Andén 4');
+    expect(body.reference).toBe('PO-1');
     // El API lo guarda en minúsculas (schema compartido); la web lo manda tal cual, sin espacios.
     expect(body.consignee).toEqual({ name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' });
   });
@@ -263,7 +285,7 @@ describe('CargasNuevoRoute — correo del destinatario', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasNuevoRoute />);
     await llenarCargaValida(user);
-    await user.type(screen.getByLabelText(/Correo del destinatario/), 'no-es-correo');
+    await escribir(user, screen.getByLabelText(/Correo del destinatario/), 'no-es-correo');
     await user.click(screen.getByRole('button', { name: 'Crear carga' }));
     expect(
       await screen.findByText('Ingresa un correo válido, como nombre@empresa.cl'),
@@ -302,6 +324,147 @@ describe('CargasDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasDetalleRoute />);
     await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
+  });
+
+  // editar-anular-cargas §9: «Contacto y notas» en el detalle.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('datos libres permitidos=%s → botón Editar visible=%s', async (permitido, visible) => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 'trip-1',
+        tracking_code: 'BST-999',
+        status: permitido ? 'asignado' : 'entregado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        cargo_volume_m3: null,
+        pickup_window_start: null,
+        pickup_window_end: null,
+        created_at: '2026-05-10T10:00:00Z',
+        consignee: { name: 'Bodega', phone_e164: null, email: null },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+        acciones_permitidas: { editar_datos_libres: permitido },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText('Contacto y notas')).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+    expect(screen.getByText('PO-1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar' }) !== null).toBe(visible);
+  });
+
+  // editar-anular-cargas §9: anular antes del match, cancelar después.
+  const tripBase = {
+    id: 'trip-1',
+    tracking_code: 'BST-999',
+    origin_address_raw: 'A',
+    origin_region_code: 'XIII',
+    destination_address_raw: 'B',
+    destination_region_code: 'V',
+    cargo_type: 'carga_seca',
+    cargo_weight_kg: 5000,
+    cargo_volume_m3: null,
+    pickup_window_start: null,
+    pickup_window_end: null,
+    created_at: '2026-05-10T10:00:00Z',
+  };
+
+  it('antes del match ofrece «Anular carga» y no «Cancelar servicio»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'ofertas_enviadas',
+        acciones_permitidas: { editar_datos_libres: true, anular: true, cancelar: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByRole('button', { name: 'Anular carga' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
+  });
+
+  it('asignado ofrece «Cancelar servicio» con el teléfono del conductor', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: null,
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_user_id: 'u-c',
+        driver_name: 'Conductor Uno',
+        conductor_telefono_e164: '+56977777777',
+        ubicacion_actual: null,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar servicio' }));
+    expect(screen.getByText(/llama al conductor: \+56977777777/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Anular carga' })).not.toBeInTheDocument();
+  });
+
+  it('sin acciones de baja (en_proceso) no ofrece anular ni cancelar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'en_proceso',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
+    expect(screen.queryByRole('button', { name: 'Anular carga' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
+  });
+
+  it('una carga anulada muestra quién y cuándo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'cancelado',
+        acciones_permitidas: { editar_datos_libres: false, anular: false, cancelar: false },
+        anulacion: { en: '2026-11-09T16:00:00Z', por_nombre: 'Ana Pérez', razon: null },
+        cancelacion: null,
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/Anulada el .* por Ana Pérez\./)).toBeInTheDocument();
   });
 
   it('en_proceso sin destinatario y con token → muestra el enlace público', async () => {

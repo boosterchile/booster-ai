@@ -13,8 +13,8 @@ const reenviarMock = vi.fn(async () => ({ assignmentId: 'asg-1', skipped: false 
 vi.mock('../../src/services/editar-datos-libres.js', () => ({
   editarDatosLibres: (...a: unknown[]) => editarMock(...a),
 }));
-vi.mock('../../src/services/notify-carga-editada.js', () => ({
-  notifyCargaEditada: (...a: unknown[]) => notifyMock(...(a as [])),
+vi.mock('../../src/services/notify-cambio-carga.js', () => ({
+  notifyCambioCarga: (...a: unknown[]) => notifyMock(...(a as [])),
 }));
 vi.mock('../../src/services/notify-tracking-link.js', () => ({
   reenviarTrackingLinkADestinatario: (...a: unknown[]) => reenviarMock(...(a as [])),

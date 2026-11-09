@@ -73,8 +73,11 @@ function makeDbStub(opts: {
   assignmentRow?: AssignmentRow | null;
   driverRow?: DriverRow | null;
   vehicleRow?: VehicleRow | null;
+  /** Filas que devuelve el UPDATE con CAS; por defecto la asignación. */
+  updateRows?: unknown[];
 }) {
-  const selectQueue: unknown[][] = [];
+  // Primer SELECT: el lock del viaje (mismo orden de locks que cancelar-carga).
+  const selectQueue: unknown[][] = [[{ id: TRIP_ID }]];
   if (opts.assignmentRow !== undefined) {
     selectQueue.push(opts.assignmentRow === null ? [] : [opts.assignmentRow]);
   }
@@ -85,8 +88,14 @@ function makeDbStub(opts: {
     selectQueue.push(opts.vehicleRow === null ? [] : [opts.vehicleRow]);
   }
 
+  /** Orden de las lecturas con lock: 'update' por cada `.for('update')`. */
+  const locks: string[] = [];
   const limitFn = vi.fn(() => Promise.resolve(selectQueue.shift() ?? []));
-  const whereFn = vi.fn(() => ({ limit: limitFn }));
+  const forFn = vi.fn((modo: string) => {
+    locks.push(modo);
+    return { limit: limitFn };
+  });
+  const whereFn = vi.fn(() => ({ limit: limitFn, for: forFn }));
   const innerJoinFn = vi.fn(() => ({ where: whereFn }));
   const fromFn = vi.fn(() => ({
     where: whereFn,
@@ -94,7 +103,10 @@ function makeDbStub(opts: {
   }));
   const selectFn = vi.fn(() => ({ from: fromFn }));
 
-  const updateWhereFn = vi.fn(() => Promise.resolve());
+  const updateReturningFn = vi.fn(() =>
+    Promise.resolve(opts.updateRows ?? [{ id: ASSIGNMENT_ID }]),
+  );
+  const updateWhereFn = vi.fn(() => ({ returning: updateReturningFn }));
   const updateSetFn = vi.fn(() => ({ where: updateWhereFn }));
   const updateFn = vi.fn(() => ({ set: updateSetFn }));
 
@@ -111,7 +123,11 @@ function makeDbStub(opts: {
 
   return {
     db: { transaction } as unknown as Parameters<typeof asignarConductorAAssignment>[0]['db'],
+    locks,
     spies: {
+      fromFn,
+      forFn,
+      updateWhereFn,
       selectFn,
       updateFn,
       updateSetFn,
@@ -152,6 +168,45 @@ const baseVehicle = (overrides: Partial<VehicleRow> = {}): VehicleRow => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('asignarConductorAAssignment — carreras con la cancelación', () => {
+  it('bloquea el viaje y después la asignación, como cancelar-carga (sin deadlock)', async () => {
+    const stub = makeDbStub({ assignmentRow: baseAssignment(), driverRow: baseDriver() });
+    await asignarConductorAAssignment({
+      db: stub.db,
+      logger: noopLogger,
+      assignmentId: ASSIGNMENT_ID,
+      driverUserId: DRIVER_USER_ID,
+      empresaId: EMPRESA_ID,
+      actingUserId: ACTING_USER_ID,
+    });
+    expect(stub.locks).toEqual(['update', 'update']);
+    const tablas = stub.spies.fromFn.mock.calls
+      .slice(0, 2)
+      .map((c) => (c as unknown[])[0] as Record<symbol, string>)
+      .map((t) => t[Symbol.for('drizzle:Name')]);
+    expect(tablas).toEqual(['viajes', 'asignaciones']);
+  });
+
+  it('si la asignación dejó de ser mutable antes del UPDATE (CAS en 0 filas), no escribe el evento', async () => {
+    const stub = makeDbStub({
+      assignmentRow: baseAssignment(),
+      driverRow: baseDriver(),
+      updateRows: [],
+    });
+    await expect(
+      asignarConductorAAssignment({
+        db: stub.db,
+        logger: noopLogger,
+        assignmentId: ASSIGNMENT_ID,
+        driverUserId: DRIVER_USER_ID,
+        empresaId: EMPRESA_ID,
+        actingUserId: ACTING_USER_ID,
+      }),
+    ).rejects.toBeInstanceOf(AssignmentNotMutableError);
+    expect(stub.spies.insertFn).not.toHaveBeenCalled();
+  });
 });
 
 describe('asignarConductorAAssignment', () => {
