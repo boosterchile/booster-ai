@@ -233,6 +233,15 @@ describe('integration: editar una carga antes del match (PUT)', () => {
     });
   });
 
+  test('el detalle cuenta las ofertas pendientes (para el aviso de la edición)', async () => {
+    const { v } = await cargaPublicada('ofertas_enviadas');
+    await oferta(v.id);
+    const r = await app.request(`/trip-requests-v2/${v.id}`);
+    expect(
+      ((await r.json()) as { trip_request: { ofertas_pendientes: number } }).trip_request,
+    ).toMatchObject({ ofertas_pendientes: 1 });
+  });
+
   test('solo datos libres con ofertas vivas: las ofertas siguen pendientes', async () => {
     const { v, base } = await cargaPublicada('ofertas_enviadas');
     await oferta(v.id);

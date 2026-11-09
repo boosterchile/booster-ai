@@ -441,6 +441,12 @@ const cargasDetalleRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasDetalleRoute'),
 });
 
+const cargasEditarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cargas/$id/editar',
+  component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasEditarRoute'),
+});
+
 const vehiculoLiveRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/$id/live',
@@ -675,6 +681,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminImpersonarRoute,
   cargasListRoute,
   cargasNuevaRoute,
+  cargasEditarRoute,
   cargasDetalleRoute,
   cargaTrackRoute,
   certificadosRoute,

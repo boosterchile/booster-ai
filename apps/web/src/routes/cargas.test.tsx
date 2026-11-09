@@ -39,7 +39,16 @@ vi.mock('../components/map/VehicleMap.js', () => ({
   VehicleMap: () => <div data-testid="vehicle-map" />,
 }));
 
-const { CargasListRoute, CargasNuevoRoute, CargasDetalleRoute } = await import('./cargas.js');
+const {
+  CargasListRoute,
+  CargasNuevoRoute,
+  CargasDetalleRoute,
+  CargasEditarRoute,
+  cambiaAlgoMaterial,
+  formDesdeDetalle,
+  mensajeErrorEdicion,
+} = await import('./cargas.js');
+const { ApiError } = await import('../lib/api-client.js');
 
 // jsdom no implementa scrollIntoView. useScrollToFirstError lo llama al
 // submit con errores y, sin stub, desmonta el árbol del test.
@@ -614,5 +623,108 @@ describe('CargasDetalleRoute', () => {
     expect(
       screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/),
     ).toBeInTheDocument();
+  });
+});
+
+// editar-anular-cargas §9: edición total antes del match.
+describe('CargasEditarRoute', () => {
+  const futuro = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+  const detalle = (status: string, extra: Record<string, unknown> = {}) => ({
+    trip_request: {
+      id: 'trip-1',
+      tracking_code: 'BST-777',
+      status,
+      origin_address_raw: 'Av. Apoquindo 4500, Las Condes',
+      origin_region_code: 'XIII',
+      origin_comuna_code: null,
+      destination_address_raw: 'Av. Libertad 100, Viña del Mar',
+      destination_region_code: 'V',
+      destination_comuna_code: null,
+      cargo_type: 'carga_seca',
+      cargo_weight_kg: 1000,
+      cargo_volume_m3: null,
+      cargo_description: null,
+      pickup_window_start: futuro(24),
+      pickup_window_end: futuro(27),
+      proposed_price_clp: null,
+      modalidad_carga: 'spot',
+      created_at: '2026-11-01T00:00:00Z',
+      notes: null,
+      reference: null,
+      consignee: { name: null, phone_e164: null, email: null },
+      acciones_permitidas: { editar: true, editar_datos_libres: true },
+      ofertas_pendientes: 3,
+      ...extra,
+    },
+    events: [],
+    assignment: null,
+    metrics: null,
+  });
+
+  it('formDesdeDetalle precarga el formulario y cambiaAlgoMaterial distingue notas de peso', () => {
+    const f = formDesdeDetalle(detalle('ofertas_enviadas').trip_request as never);
+    expect(f).toMatchObject({
+      origin_address_raw: 'Av. Apoquindo 4500, Las Condes',
+      cargo_weight_kg: '1000',
+      modalidad_carga: 'spot',
+    });
+    expect(cambiaAlgoMaterial(f, { ...f, notes: 'Andén 4' })).toBe(false);
+    expect(cambiaAlgoMaterial(f, { ...f, cargo_weight_kg: '2500' })).toBe(true);
+  });
+
+  it('mensajeErrorEdicion explica el 409 de una carga que ya tiene transportista', () => {
+    expect(mensajeErrorEdicion(new ApiError(409, 'trip_not_editable', null))).toMatch(
+      /ya tiene transportista/,
+    );
+    expect(mensajeErrorEdicion(new ApiError(409, 'trip_busy', null))).toMatch(/unos segundos/);
+  });
+
+  it('con ofertas vivas, un cambio material pide confirmación antes de guardar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(detalle('ofertas_enviadas'));
+    const put = vi.spyOn(api, 'put').mockResolvedValue({});
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasEditarRoute />);
+    const peso = await screen.findByLabelText(/Peso/);
+    fireEvent.change(peso, { target: { value: '2500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(
+      await screen.findByText(/Hay 3 transportistas evaluando esta carga/),
+    ).toBeInTheDocument();
+    expect(put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, guardar cambios' }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/trip-requests-v2/trip-1',
+        expect.objectContaining({ cargo: expect.objectContaining({ weight_kg: 2500 }) }),
+      ),
+    );
+  });
+
+  it('solo notas: guarda sin preguntar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(detalle('ofertas_enviadas'));
+    const put = vi.spyOn(api, 'put').mockResolvedValue({});
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasEditarRoute />);
+    fireEvent.change(await screen.findByLabelText(/Notas para el transportista/), {
+      target: { value: 'Andén 4' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/trip-requests-v2/trip-1',
+        expect.objectContaining({ notes: 'Andén 4' }),
+      ),
+    );
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('una carga que ya no se edita no muestra el formulario', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(
+      detalle('asignado', { acciones_permitidas: { editar: false, editar_datos_libres: true } }),
+    );
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasEditarRoute />);
+    expect(await screen.findByText(/ya no se edita directamente/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
   });
 });

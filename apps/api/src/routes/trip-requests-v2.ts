@@ -610,6 +610,15 @@ export function createTripRequestsV2Routes(opts: {
       .where(eq(tripEvents.tripId, id))
       .orderBy(asc(tripEvents.recordedAt));
 
+    // §9: la edición avisa cuántas transportistas están evaluando la carga.
+    const [pendientes] =
+      trip.status === 'ofertas_enviadas'
+        ? await opts.db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(offers)
+            .where(and(eq(offers.tripId, trip.id), eq(offers.status, 'pendiente')))
+        : [{ n: 0 }];
+
     // Solo una carga asignada puede tener un cambio pendiente (§6.3).
     const cambioPendiente =
       trip.status === 'asignado' ? await solicitudPendienteDeViaje(opts.db, trip.id) : null;
@@ -747,6 +756,7 @@ export function createTripRequestsV2Routes(opts: {
         comercial,
         anulacion,
         cancelacion,
+        ofertas_pendientes: pendientes?.n ?? 0,
       },
       events,
       assignment: assignmentRow
