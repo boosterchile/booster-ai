@@ -337,6 +337,11 @@ export function createAssignmentsRoutes(opts: {
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
         proposedPriceClp: trips.proposedPriceClp,
+        // editar-anular-cargas §12-P4: datos libres que ve la transportista.
+        consigneeName: trips.consigneeName,
+        consigneeWhatsappE164: trips.consigneeWhatsappE164,
+        notes: trips.notes,
+        reference: trips.reference,
         shipperLegalName: empresaShipper.legalName,
       })
       .from(assignments)
@@ -418,6 +423,9 @@ export function createAssignmentsRoutes(opts: {
         pickup_window_end: row.pickupWindowEnd?.toISOString() ?? null,
         proposed_price_clp: row.proposedPriceClp,
         shipper_legal_name: row.shipperLegalName,
+        consignee: { name: row.consigneeName, phone_e164: row.consigneeWhatsappE164 },
+        notes: row.notes,
+        reference: row.reference,
       },
       assignment: {
         id: row.assignmentId,

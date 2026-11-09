@@ -453,3 +453,55 @@ describe('notifyTrackingLinkAtAssignment', () => {
     expect(call.contentVariables['3']).toBe('XX'); // unknown code → raw fallback
   });
 });
+
+// editar-anular-cargas §12-P8: el link al número nuevo del destinatario.
+describe('reenviarTrackingLinkADestinatario', () => {
+  it('manda el link al número nuevo, sin tocar la marca del primer envío', async () => {
+    const { reenviarTrackingLinkADestinatario } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db, updateFn } = makeDbStub({ row: baseRow() });
+    const twilio = makeTwilioStub();
+    const r = await reenviarTrackingLinkADestinatario(
+      { db, logger: noopLogger, twilioClient: twilio, contentSidTracking: VALID_SID },
+      { assignmentId: ASSIGNMENT_ID, telefono: '+56922222222' },
+    );
+    expect(r).toMatchObject({ skipped: false, recipient: 'consignee' });
+    expect(twilio.sendContent).toHaveBeenCalledTimes(1);
+    expect(twilio.sendContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+56922222222',
+        contentVariables: expect.objectContaining({ '4': TOKEN }),
+      }),
+    );
+    expect(updateFn).not.toHaveBeenCalled();
+  });
+
+  it('sin Twilio configurado o sin token: no envía', async () => {
+    const { reenviarTrackingLinkADestinatario } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const sinTwilio = await reenviarTrackingLinkADestinatario(
+      {
+        db: makeDbStub({ row: baseRow() }).db,
+        logger: noopLogger,
+        twilioClient: null,
+        contentSidTracking: VALID_SID,
+      },
+      { assignmentId: ASSIGNMENT_ID, telefono: '+56922222222' },
+    );
+    expect(sinTwilio).toMatchObject({ skipped: true, reason: 'not_configured' });
+    const twilio = makeTwilioStub();
+    const sinToken = await reenviarTrackingLinkADestinatario(
+      {
+        db: makeDbStub({ row: baseRow({ publicToken: null }) }).db,
+        logger: noopLogger,
+        twilioClient: twilio,
+        contentSidTracking: VALID_SID,
+      },
+      { assignmentId: ASSIGNMENT_ID, telefono: '+56922222222' },
+    );
+    expect(sinToken).toMatchObject({ skipped: true, reason: 'no_token' });
+    expect(twilio.sendContent).not.toHaveBeenCalled();
+  });
+});

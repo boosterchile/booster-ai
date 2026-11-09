@@ -562,6 +562,8 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // editar-anular-cargas §12-P8: reenvío del link al destinatario nuevo.
+        ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
         // T10-21 — ranking local, en sombra o en matching-engine (flags).
         ranking: crearRankeadorMatching({
           modo: modoMatching({
