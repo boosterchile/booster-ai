@@ -270,6 +270,70 @@ describe('GET /assignments/:id', () => {
     expect(res.status).toBe(403);
   });
 
+  // editar-anular-cargas §6.11 / §12-P7: la oficina ve el cambio; el conductor solo que existe.
+  const SOLICITUD_ROW = {
+    id: '6f1c2a7e-4b2d-4c55-9a7b-1d2e3f4a5b6c',
+    tripId: TRIP_ID,
+    assignmentId: ASSIGNMENT_ID,
+    requestedByUserId: 'gen-user',
+    status: 'pendiente',
+    changes: { weight_kg: 2000 },
+    previousValues: { weight_kg: 1000 },
+    respondedByUserId: null,
+    respondedAt: null,
+    responseReason: null,
+    invalidationReason: null,
+    lastReminderAt: null,
+    remindersSent: 0,
+    createdAt: new Date('2026-11-09T15:00:00Z'),
+    closedAt: null,
+  };
+
+  it('con cambio pendiente, la oficina ve el diff completo', async () => {
+    const db = makeDb({
+      selects: [[{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null }], [SOLICITUD_ROW]],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}`, {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    const body = (await res.json()) as { trip_request: { cambio_pendiente: unknown } };
+    expect(body.trip_request.cambio_pendiente).toEqual({
+      existe: true,
+      id: SOLICITUD_ROW.id,
+      cambios: { weight_kg: 2000 },
+      valores_anteriores: { weight_kg: 1000 },
+      creado_en: '2026-11-09T15:00:00.000Z',
+    });
+  });
+
+  it('con cambio pendiente, el conductor solo sabe que existe, sin los datos propuestos', async () => {
+    const db = makeDb({
+      selects: [
+        [{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null, driverUserId: USER_ID }],
+        [SOLICITUD_ROW],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}`, {
+      headers: {
+        'x-test-userctx': JSON.stringify({
+          user: { id: USER_ID },
+          activeMembership: {
+            empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+            membership: { role: 'conductor' },
+          },
+        }),
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { cambio_pendiente: unknown } };
+    expect(body.trip_request.cambio_pendiente).toEqual({
+      existe: true,
+      creado_en: '2026-11-09T15:00:00.000Z',
+    });
+  });
+
   it('cancelado por el generador: expone fecha, autor y motivo (editar-anular-cargas §9)', async () => {
     const db = makeDb({
       selects: [
@@ -333,6 +397,8 @@ describe('GET /assignments/:id', () => {
     const db = makeDb({
       selects: [
         [ASSIGNMENT_DETAIL_ROW],
+        // Viaje asignado: lectura de la solicitud de cambio pendiente (ninguna).
+        [],
         [
           {
             timestampDevice: new Date('2026-05-10T10:30:00Z'),

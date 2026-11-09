@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -11,6 +11,7 @@ import {
   empresas,
   memberships,
   organizacionesStakeholder,
+  tripChangeRequests,
   trips,
   users,
   vehicles,
@@ -366,6 +367,14 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         consigneeWhatsappE164: trips.consigneeWhatsappE164,
         notes: trips.notes,
         reference: trips.reference,
+        // editar-anular-cargas §12-P7: el conductor solo sabe que hay un cambio
+        // pendiente, nunca los datos propuestos.
+        cambioPendienteEn: sql<Date | string | null>`(
+          select ${tripChangeRequests.createdAt} from ${tripChangeRequests}
+          where ${tripChangeRequests.tripId} = ${trips.id}
+            and ${tripChangeRequests.status} = 'pendiente'
+          limit 1
+        )`,
         vehicleId: assignments.vehicleId,
         vehiclePlate: vehicles.plate,
         vehicleTeltonikaImei: vehicles.teltonikaImei,
@@ -433,6 +442,9 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
           notes: r.notes,
           reference: r.reference,
+          cambio_pendiente: r.cambioPendienteEn
+            ? { existe: true, creado_en: safeIso(r.cambioPendienteEn) }
+            : null,
         },
       })),
     });

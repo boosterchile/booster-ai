@@ -1,4 +1,4 @@
--- Migration 0077 — Solicitudes de cambio de una carga asignada
+-- Migration 0076 — Solicitudes de cambio de una carga asignada
 -- (spec editar-anular-cargas, M3).
 --
 -- Después del match, todo cambio que no sea un dato libre lo propone el

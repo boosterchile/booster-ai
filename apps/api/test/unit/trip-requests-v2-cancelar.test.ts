@@ -12,8 +12,8 @@ const notifyMock = vi.fn(async () => ({ destinatarios: 2, enviados: 2 }));
 vi.mock('../../src/services/cancelar-carga.js', () => ({
   cancelarCarga: (...a: unknown[]) => cancelarMock(...a),
 }));
-vi.mock('../../src/services/notify-carga-editada.js', () => ({
-  notifyCargaEditada: (...a: unknown[]) => notifyMock(...(a as [])),
+vi.mock('../../src/services/notify-cambio-carga.js', () => ({
+  notifyCambioCarga: (...a: unknown[]) => notifyMock(...(a as [])),
 }));
 
 const { createTripRequestsV2Routes } = await import('../../src/routes/trip-requests-v2.js');

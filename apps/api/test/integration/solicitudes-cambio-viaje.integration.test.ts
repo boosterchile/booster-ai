@@ -6,10 +6,10 @@ import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
- * editar-anular-cargas M3 (migración 0077) contra Postgres real: una sola
+ * editar-anular-cargas M3 (migración 0076) contra Postgres real: una sola
  * solicitud pendiente por viaje, y las restricciones de cierre y respuesta.
  */
-describe('integration: solicitudes de cambio de viaje (migración 0077)', () => {
+describe('integration: solicitudes de cambio de viaje (migración 0076)', () => {
   let handle: TestDbHandle;
   let base: { tripId: string; assignmentId: string; userId: string };
 

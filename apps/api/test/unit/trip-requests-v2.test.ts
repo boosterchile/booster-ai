@@ -937,7 +937,7 @@ describe('GET /trip-requests-v2/:id', () => {
   it('200 con trip + events + assignment + metrics', async () => {
     const app = await buildAppWith({
       db: makeQueryDb({
-        // limitRows orden: trip lookup, assignment, metrics
+        // limitRows orden: trip lookup, solicitud pendiente, assignment, metrics
         limitRows: [
           [
             {
@@ -966,6 +966,7 @@ describe('GET /trip-requests-v2/:id', () => {
               updatedAt: new Date('2026-05-02T15:00:00Z'),
             },
           ],
+          [],
           [
             {
               id: 'asg-1',
@@ -1122,6 +1123,8 @@ describe('GET /trip-requests-v2/:id', () => {
       db: makeQueryDb({
         limitRows: [
           [liveTripRow(opts.status)],
+          // asignado: la lectura de la solicitud de cambio pendiente (ninguna).
+          ...(opts.status === 'asignado' ? [[]] : []),
           [LIVE_ASSIGNMENT],
           [],
           opts.teltonika ?? [],

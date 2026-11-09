@@ -3,6 +3,7 @@ import type { Logger } from '@booster-ai/logger';
 import {
   MENSAJES,
   abrirDisputaSchema,
+  cambioPropuestoSchema,
   datosLibresInputSchema,
   errorOpcion,
   puedeCancelarCarga,
@@ -21,7 +22,7 @@ import { and, asc, desc, eq, isNull, not, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { ctxDeUserContext, denegarPublicarCarga } from '../auth/capacidades.js';
+import { ctxDeUserContext, denegarEditarCarga, denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
@@ -66,7 +67,7 @@ import {
 } from '../services/mandato-cobro/eventos-pago.js';
 import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
-import { notifyCargaEditada } from '../services/notify-carga-editada.js';
+import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import {
   type NotifyTrackingLinkDeps,
@@ -74,6 +75,13 @@ import {
 } from '../services/notify-tracking-link.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
 import { resolverEnlaceMapa } from '../services/resolver-enlace-mapa.js';
+import {
+  type SolicitudVista,
+  crearSolicitudCambio,
+  listarSolicitudesCambio,
+  retirarSolicitudCambio,
+  solicitudPendienteDeViaje,
+} from '../services/solicitud-cambio-carga.js';
 
 /**
  * Endpoint canónico para que un generador de carga autenticado:
@@ -632,6 +640,10 @@ export function createTripRequestsV2Routes(opts: {
       .where(eq(tripEvents.tripId, id))
       .orderBy(asc(tripEvents.recordedAt));
 
+    // Solo una carga asignada puede tener un cambio pendiente (§6.3).
+    const cambioPendiente =
+      trip.status === 'asignado' ? await solicitudPendienteDeViaje(opts.db, trip.id) : null;
+
     const [assignmentRow] = await opts.db
       .select({
         id: assignments.id,
@@ -754,7 +766,7 @@ export function createTripRequestsV2Routes(opts: {
 
     return c.json({
       trip_request: {
-        ...serializeTripDetail(trip, auth.userContext),
+        ...serializeTripDetail(trip, auth.userContext, cambioPendiente),
         comercial,
         anulacion,
         cancelacion,
@@ -1084,7 +1096,7 @@ export function createTripRequestsV2Routes(opts: {
     const { asignacion, telefonoDestinatarioNuevo } = resultado;
     if (asignacion) {
       try {
-        await notifyCargaEditada(
+        await notifyCambioCarga(
           { db: opts.db, logger: opts.logger },
           { tripId, asignacion, evento: 'datos_libres' },
         );
@@ -1106,6 +1118,129 @@ export function createTripRequestsV2Routes(opts: {
       }
     }
     return c.json({ trip_request: { id: tripId, campos: resultado.campos } });
+  });
+
+  // ---------------------------------------------------------------------
+  // Solicitudes de cambio (editar-anular-cargas §6.3–6.5): después del match,
+  // todo cambio que no sea un dato libre lo acepta o rechaza el transportista.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/:id/solicitudes-cambio',
+    zValidator('json', z.object({ cambios: cambioPropuestoSchema }).strict()),
+    async (c) => {
+      const auth = requireShipperAuth(c, { requireActive: true });
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarEditarCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const tripId = c.req.param('id');
+      const { cambios } = c.req.valid('json');
+      const r = await withBusinessSpan(
+        { name: 'cargas.solicitud_cambio.crear', attributes: { 'booster.trip_id': tripId } },
+        async (span) => {
+          const res = await crearSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            {
+              tripId,
+              empresaId: auth.activeMembership.empresa.id,
+              userId: auth.userContext.user.id,
+              cambios,
+            },
+          );
+          const resultado = res.ok ? 'creada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          getBusinessCounter('solicitud_cambio_total').add(1, { resultado, comercial: false });
+          return res;
+        },
+      );
+      if (!r.ok) {
+        switch (r.code) {
+          case 'trip_not_found':
+            return c.json({ error: r.code, code: r.code }, 404);
+          case 'trip_not_matched':
+            return c.json({ error: r.code, code: r.code }, 409);
+          case 'trip_not_editable':
+            return c.json({ error: r.code, code: r.code, current_status: r.currentStatus }, 409);
+          case 'cambio_pendiente_existente':
+            return c.json({ error: r.code, code: r.code, solicitud_id: r.solicitudId }, 409);
+          case 'sin_cambios':
+            return c.json({ error: r.code, code: r.code }, 422);
+        }
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId, asignacion: r.asignacion, evento: 'cambio_solicitado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'avisar solicitud de cambio falló (quedó creada)');
+      }
+      return c.json({ solicitud: r.solicitud }, 201);
+    },
+  );
+
+  app.post('/:id/solicitudes-cambio/:sid/retirar', async (c) => {
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const sinPermiso = denegarEditarCarga(c, auth.userContext);
+    if (sinPermiso) {
+      return sinPermiso;
+    }
+    const tripId = c.req.param('id');
+    const solicitudId = c.req.param('sid');
+    const r = await withBusinessSpan(
+      {
+        name: 'cargas.solicitud_cambio.retirar',
+        attributes: { 'booster.trip_id': tripId, 'booster.solicitud_id': solicitudId },
+      },
+      async (span) => {
+        const res = await retirarSolicitudCambio(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            empresaId: auth.activeMembership.empresa.id,
+            userId: auth.userContext.user.id,
+            solicitudId,
+          },
+        );
+        const resultado = res.ok ? 'retirada' : res.code;
+        setResultAttributes(span, { 'booster.outcome': resultado });
+        getBusinessCounter('solicitud_cambio_total').add(1, { resultado, comercial: false });
+        return res;
+      },
+    );
+    if (!r.ok) {
+      return c.json({ error: r.code, code: r.code }, r.code === 'trip_not_found' ? 404 : 409);
+    }
+    try {
+      await notifyCambioCarga(
+        { db: opts.db, logger: opts.logger },
+        { tripId, asignacion: r.asignacion, evento: 'cambio_retirado' },
+      );
+    } catch (err) {
+      opts.logger.error({ err, tripId }, 'avisar solicitud retirada falló (quedó retirada)');
+    }
+    return c.json({ ok: true, solicitud_id: solicitudId });
+  });
+
+  app.get('/:id/solicitudes-cambio', async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const solicitudes = await listarSolicitudesCambio(
+      { db: opts.db },
+      { tripId: c.req.param('id'), empresaId: auth.activeMembership.empresa.id },
+    );
+    if (!solicitudes) {
+      return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+    }
+    return c.json({ solicitudes });
   });
 
   // ---------------------------------------------------------------------
@@ -1164,7 +1299,7 @@ export function createTripRequestsV2Routes(opts: {
     // de la cancelación con su motivo (§8).
     if (resultado.tipo === 'cancelacion') {
       try {
-        await notifyCargaEditada(
+        await notifyCambioCarga(
           { db: opts.db, logger: opts.logger },
           {
             tripId,
@@ -1195,7 +1330,11 @@ function motivoDelPayload(payload: unknown): string | null {
   return null;
 }
 
-function serializeTripDetail(row: typeof trips.$inferSelect, userContext: unknown) {
+function serializeTripDetail(
+  row: typeof trips.$inferSelect,
+  userContext: unknown,
+  cambioPendiente: SolicitudVista | null = null,
+) {
   return {
     id: row.id,
     tracking_code: row.trackingCode,
@@ -1222,7 +1361,16 @@ function serializeTripDetail(row: typeof trips.$inferSelect, userContext: unknow
     },
     notes: row.notes,
     reference: row.reference,
-    acciones_permitidas: accionesPermitidas(row.status, userContext),
+    // §6.8: el generador ve su propuesta completa mientras está pendiente.
+    cambio_pendiente: cambioPendiente
+      ? {
+          id: cambioPendiente.id,
+          cambios: cambioPendiente.cambios,
+          valores_anteriores: cambioPendiente.valores_anteriores,
+          creado_en: cambioPendiente.creado_en,
+        }
+      : null,
+    acciones_permitidas: accionesPermitidas(row.status, userContext, cambioPendiente !== null),
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -1232,10 +1380,10 @@ function serializeTripDetail(row: typeof trips.$inferSelect, userContext: unknow
  * Qué puede hacer quien mira la carga, en su estado actual (spec
  * editar-anular-cargas §6-8). Combina los guards de la máquina de estados con
  * las mismas capacidades que exigen las rutas, para que la web no ofrezca una
- * acción que el API va a rechazar. `retirar_cambio` depende de que exista una
- * solicitud pendiente; las solicitudes llegan en un PR posterior (§11, PR7).
+ * acción que el API va a rechazar. Con una solicitud pendiente no se propone
+ * otra: se retira la vigente.
  */
-function accionesPermitidas(estado: string, userContext: unknown) {
+function accionesPermitidas(estado: string, userContext: unknown, hayCambioPendiente: boolean) {
   const ctx = ctxDeUserContext(userContext as Parameters<typeof ctxDeUserContext>[0]);
   const editar = ctx !== null && puedePublicarCarga(ctx);
   const cancelar = ctx !== null && puedeCancelarCarga(ctx);
@@ -1243,8 +1391,8 @@ function accionesPermitidas(estado: string, userContext: unknown) {
   return {
     editar: editar && valido && esEditablePreMatch(estado),
     editar_datos_libres: editar && valido && aceptaDatosLibres(estado),
-    solicitar_cambio: editar && valido && aceptaSolicitudCambio(estado),
-    retirar_cambio: false,
+    solicitar_cambio: editar && valido && aceptaSolicitudCambio(estado) && !hayCambioPendiente,
+    retirar_cambio: editar && hayCambioPendiente,
     anular: cancelar && valido && esAnulablePorGenerador(estado),
     cancelar: cancelar && valido && esCancelablePostMatch(estado),
   };
