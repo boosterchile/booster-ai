@@ -29,7 +29,7 @@ export interface EmitirAltaExencionInput {
   /**
    * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. El enlace de esta alta
    * crea la cuenta del dueño, así que un correo de la lista se rechaza como
-   * uno ya registrado (`.specs/correos-solicitudes-panel` SC1). Obligatoria:
+   * uno ya registrado, igual que uno reservado (`.specs/correos-solicitudes-panel` SC1). Obligatoria:
    * sin ella el chequeo quedaría apagado sin aviso.
    */
   platformAdminEmails: readonly string[];
@@ -65,9 +65,9 @@ export async function emitirAltaExencion(
   const emailLower = input.email.toLowerCase().trim();
   const nombreTrimmed = input.nombreCompleto.trim();
 
-  // Cuenta con ese correo, sin distinguir mayúsculas, o correo de la lista de
-  // respaldo: los dos casos responden `email_already_registered`
-  // (`.specs/correos-solicitudes-panel` SC1 y SC3).
+  // Cuenta con ese correo, sin distinguir mayúsculas, correo de la lista de
+  // respaldo o correo reservado: los tres casos responden
+  // `email_already_registered` (`.specs/correos-solicitudes-panel` SC1 y SC3).
   const usuarioExiste = await correoOcupado({
     db,
     email: emailLower,

@@ -52,7 +52,8 @@ export async function submitSignupRequest(
   correlationId: string,
   /**
    * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. Un correo de la lista
-   * se trata como uno ya usado (`.specs/correos-solicitudes-panel` SC1).
+   * se trata como uno ya usado, igual que uno reservado
+   * (`.specs/correos-solicitudes-panel` SC1).
    * Obligatoria: sin ella el chequeo quedaría apagado sin aviso.
    */
   platformAdminEmails: readonly string[],
@@ -60,8 +61,8 @@ export async function submitSignupRequest(
   const emailLower = input.email.toLowerCase().trim();
   const nombreTrimmed = input.nombreCompleto.trim();
 
-  // Correo de una cuenta, sin distinguir mayúsculas, o de la lista de
-  // respaldo (`.specs/correos-solicitudes-panel` SC1 y SC3).
+  // Correo de una cuenta, sin distinguir mayúsculas, de la lista de respaldo
+  // o reservado (`.specs/correos-solicitudes-panel` SC1 y SC3).
   if (await correoOcupado({ db, email: emailLower, lista: platformAdminEmails })) {
     // Email enumeration defense: no INSERT, no error al caller. Solo
     // structured log para que Booster pueda medir la rate de shadowed
@@ -198,9 +199,10 @@ export type ApproveSignupRequestResult =
  *   - `not_found`: id no existe en `solicitudes_registro`.
  *   - `already_processed`: race condition con otro admin (estado != pending).
  *   - `firebase_user_already_exists`: Firebase rechaza createUser (email-already-exists),
- *     o el correo de la solicitud está en la lista de respaldo o ya es de una
- *     cuenta, sin distinguir mayúsculas (`.specs/correos-solicitudes-panel`
- *     SC1); el row queda intacto pendiente para revisión manual.
+ *     o el correo de la solicitud está en la lista de respaldo, es reservado
+ *     o ya es de una cuenta, sin distinguir mayúsculas
+ *     (`.specs/correos-solicitudes-panel` SC1); el row queda intacto
+ *     pendiente para revisión manual.
  */
 export async function approveSignupRequest(
   db: Db,
@@ -251,8 +253,8 @@ export async function approveSignupRequest(
   }
 
   // El correo de la solicitud no queda en una cuenta nueva si está en la
-  // lista de respaldo o ya es de una cuenta, sin distinguir mayúsculas
-  // (`.specs/correos-solicitudes-panel` SC1), en los dos modos. Responde como
+  // lista de respaldo, es reservado o ya es de una cuenta, sin distinguir
+  // mayúsculas (`.specs/correos-solicitudes-panel` SC1), en los dos modos. Responde como
   // un correo que ya tiene cuenta en Firebase: sin cuenta nueva, sin enlace y
   // con la solicitud pendiente.
   if (await correoOcupado({ db, email: request.email, lista: opts.platformAdminEmails })) {

@@ -129,8 +129,9 @@ export type OnboardingAuthorization = 'self_service' | 'admin_provisioned';
  * Pre-condiciones (validadas dentro de la transacción para evitar TOCTOU):
  *   - No existe user con `firebaseUid` (sino UserAlreadyExistsError 409).
  *   - No existe user con `email`, sin distinguir mayúsculas, y el correo no
- *     está en la lista de respaldo del panel (sino EmailAlreadyInUseError 409,
- *     `.specs/correos-solicitudes-panel` SC3 y `.specs/bordes-autenticacion` SC5).
+ *     está en la lista de respaldo del panel ni es reservado (sino
+ *     EmailAlreadyInUseError 409, `.specs/correos-solicitudes-panel` SC3 y
+ *     `.specs/bordes-autenticacion` SC5).
  *   - No existe empresa con `input.empresa.rut` (sino EmpresaRutDuplicateError 409).
  *   - El plan slug existe en `planes` y está activo (sino PlanNotFoundError 400).
  *
@@ -252,9 +253,9 @@ export async function onboardEmpresa(opts: {
     }
 
     // 2. Verificar que el email no sea de otro user, sin distinguir
-    //    mayúsculas (`.specs/correos-solicitudes-panel` SC3), ni de la lista
-    //    de respaldo del panel (`.specs/bordes-autenticacion` SC5). Misma
-    //    respuesta en los dos casos.
+    //    mayúsculas, ni reservado (`.specs/correos-solicitudes-panel` SC3),
+    //    ni de la lista de respaldo del panel (`.specs/bordes-autenticacion`
+    //    SC5). Misma respuesta en los tres casos.
     if (await correoOcupado({ db: tx, email: identidadEmail, lista: opts.platformAdminEmails })) {
       throw new EmailAlreadyInUseError(identidadEmail);
     }

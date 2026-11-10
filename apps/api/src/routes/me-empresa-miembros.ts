@@ -190,10 +190,10 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       const existente = existentes[0];
 
       // Una cuenta del personal de Booster no se gestiona desde una empresa
-      // (SC7), y una cuenta nueva no recibe un correo de la lista de respaldo
-      // ni el de otra cuenta, sin distinguir mayúsculas
+      // (SC7), y una cuenta nueva no recibe un correo de la lista de respaldo,
+      // ni el de otra cuenta, sin distinguir mayúsculas, ni uno reservado
       // (`.specs/correos-solicitudes-panel` SC3): se rechaza como un correo ya
-      // registrado, sin decir cuál de los dos casos es.
+      // registrado, sin decir cuál de los casos es.
       if (
         cuentaGestionadaPorBooster({ cuenta: existente ?? null, lista: opts.platformAdminEmails })
       ) {

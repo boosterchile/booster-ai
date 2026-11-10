@@ -676,9 +676,10 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           vinculo = VINCULO_PERSONA_EXISTENTE;
         } else {
           // Una cuenta nueva no recibe un correo de la lista de respaldo del
-          // panel (`.specs/bordes-autenticacion` SC5) ni el de otra cuenta,
-          // sin distinguir mayúsculas (`.specs/correos-solicitudes-panel`
-          // SC3): la misma respuesta en los dos casos.
+          // panel (`.specs/bordes-autenticacion` SC5), ni el de otra cuenta,
+          // sin distinguir mayúsculas, ni uno reservado
+          // (`.specs/correos-solicitudes-panel` SC3): la misma respuesta en
+          // los tres casos.
           if (
             await correoOcupado({
               db: opts.db,
