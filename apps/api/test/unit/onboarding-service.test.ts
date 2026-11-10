@@ -1,3 +1,5 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   EmailAlreadyInUseError,
@@ -583,5 +585,39 @@ describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', ()
     // Firebase; el canal de comunicación con la persona es su email real.
     expect(values.email).toBe(FB_EMAIL);
     expect(String(values.email)).not.toContain('invalid');
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo del dueño se compara con
+ * las cuentas existentes sin distinguir mayúsculas.
+ */
+describe('onboardEmpresa — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  it('la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const db = makeDb({ selects: [[], [{ id: 'cuenta-mayus' }]] });
+
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: 'Felipe@BoosterChile.com',
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
+        platformAdminEmails: ['respaldo@boosterchile.com'],
+        input: VALID_INPUT,
+      }),
+    ).rejects.toThrow(EmailAlreadyInUseError);
+
+    // 0 = cuenta por firebase_uid, 1 = cuenta por correo.
+    const chain = db.select.mock.results[1]?.value as { where: ReturnType<typeof vi.fn> };
+    const predicado = chain.where.mock.calls[0]?.[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['felipe@boosterchile.com']);
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });

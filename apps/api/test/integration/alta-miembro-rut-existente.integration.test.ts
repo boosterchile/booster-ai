@@ -28,12 +28,19 @@ const logger = {
 } as never;
 
 function authEnMemoria(): Auth {
-  const porEmail = new Map<string, { uid: string; email: string }>();
+  const porEmail = new Map<
+    string,
+    { uid: string; email: string; providerData: { providerId: string }[] }
+  >();
   const nf = (k: string) =>
     Object.assign(new Error(`no user ${k}`), { code: 'auth/user-not-found' });
   return {
     async createUser(p: { email?: string }) {
-      const u = { uid: `fb-${randomUUID().slice(0, 8)}`, email: p.email ?? 'x@x.invalid' };
+      const u = {
+        uid: `fb-${randomUUID().slice(0, 8)}`,
+        email: p.email ?? 'x@x.invalid',
+        providerData: [],
+      };
       porEmail.set(u.email, u);
       return u;
     },
@@ -43,6 +50,10 @@ function authEnMemoria(): Auth {
         throw nf(e);
       }
       return u;
+    },
+    // Como el SDK: una activación revoca las sesiones de una cuenta libre que reutiliza.
+    async revokeRefreshTokens(_uid: string) {
+      return undefined;
     },
     async createCustomToken(uid: string) {
       return `custom-token-${uid}`;

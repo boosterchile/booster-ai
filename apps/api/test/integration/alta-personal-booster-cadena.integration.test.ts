@@ -55,9 +55,16 @@ vi.mock('../../src/services/activation-pin.js', async (importOriginal) => {
   };
 });
 
+/** Cuenta del proveedor en memoria, con los campos del SDK que lee la API. */
+interface CuentaFake {
+  uid: string;
+  email: string;
+  providerData: { providerId: string }[];
+}
+
 function authEnMemoria() {
-  const porEmail = new Map<string, { uid: string; email: string }>();
-  const porUid = new Map<string, { uid: string; email: string }>();
+  const porEmail = new Map<string, CuentaFake>();
+  const porUid = new Map<string, CuentaFake>();
   /**
    * Escritura que corre una vez dentro del próximo `createUser`: en
    * `/auth/activar` cae entre la verificación del código y el UPDATE.
@@ -76,7 +83,7 @@ function authEnMemoria() {
       if (porEmail.has(email)) {
         throw Object.assign(new Error('exists'), { code: 'auth/email-already-exists' });
       }
-      const u = { uid: props.uid ?? `fb-${randomUUID().slice(0, 8)}`, email };
+      const u = { uid: props.uid ?? `fb-${randomUUID().slice(0, 8)}`, email, providerData: [] };
       porEmail.set(email, u);
       porUid.set(u.uid, u);
       return u;
@@ -94,6 +101,10 @@ function authEnMemoria() {
         throw noExiste(uid);
       }
       return u;
+    },
+    // Como el SDK: una activación revoca las sesiones de una cuenta libre que reutiliza.
+    async revokeRefreshTokens(_uid: string) {
+      return undefined;
     },
     async createCustomToken(uid: string) {
       return `custom-token-${uid}`;
