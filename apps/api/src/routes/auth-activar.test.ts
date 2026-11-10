@@ -54,6 +54,12 @@ interface DbOpts {
    * ya no era el verificado cuando llegó la escritura.
    */
   filasActualizadas?: unknown[];
+  /**
+   * Filas de los selects que siguen al de la membresía. Con una cuenta del
+   * proveedor ya existente son los de SC5: otra fila de `usuarios` con ese uid
+   * y una solicitud con ese uid.
+   */
+  filasDespues?: unknown[][];
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -81,7 +87,11 @@ function makeDb(opts: DbOpts = {}) {
         }
       : opts.membresia;
 
-  const cola: unknown[][] = [user ? [user] : [], membresia ? [membresia] : []];
+  const cola: unknown[][] = [
+    user ? [user] : [],
+    membresia ? [membresia] : [],
+    ...(opts.filasDespues ?? []),
+  ];
   const userUpdates: Record<string, unknown>[] = [];
   const membresiaUpdates: Record<string, unknown>[] = [];
   /** Predicado de cada UPDATE de `usuarios`, en orden. */
@@ -135,10 +145,10 @@ function makeDb(opts: DbOpts = {}) {
   };
 }
 
-function makeAuth() {
+function makeAuth(opts: { existente?: Record<string, unknown> } = {}) {
   const createUser = vi.fn(async (_props: Record<string, unknown>) => ({ uid: 'fb-nuevo' }));
   const createCustomToken = vi.fn(async (_uid: string, _claims?: unknown) => 'ct-activacion');
-  const getUserByEmail = vi.fn(async () => null);
+  const getUserByEmail = vi.fn(async () => opts.existente ?? null);
   return {
     auth: { createUser, createCustomToken, getUserByEmail } as unknown as Auth,
     spies: { createUser, createCustomToken },
@@ -731,5 +741,44 @@ describe('POST /auth/activar — tiempo de respuesta parejo (acceso-panel-plataf
 
     expect(vi.mocked(verifyActivationPin).mock.results[0]?.value).toBe(false);
     expect(await res.json()).toEqual({ error: 'invalid_credentials', code: 'invalid_credentials' });
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC5: la cuenta del proveedor que ya
+ * existe con el correo sintético se reutiliza solo si está libre: la cuenta
+ * que se activa tiene todavía un uid provisorio. Si no, la misma 503 de una falla del proveedor, sin escribir la
+ * cuenta ni sesión.
+ */
+describe('POST /auth/activar — cuenta del proveedor que ya existe (correos-solicitudes-panel SC5)', () => {
+  it('una cuenta libre se reutiliza', async () => {
+    const d = makeDb({ filasDespues: [[], []] });
+    const a = makeAuth({ existente: { uid: 'fb-libre', providerData: [] } });
+
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(200);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.createCustomToken).toHaveBeenCalledWith('fb-libre', expect.any(Object));
+    expect(d.userUpdates[0]?.firebaseUid).toBe('fb-libre');
+  });
+
+  it.each([
+    ['con un proveedor propio', { uid: 'fb-x', providerData: [{ providerId: 'password' }] }, []],
+    ['con el uid de otra fila de usuarios', { uid: 'fb-x', providerData: [] }, [[{ id: 'otro' }]]],
+    ['con el uid de una solicitud', { uid: 'fb-x', providerData: [] }, [[], [{ id: 'sol-1' }]]],
+    ['con una forma que no se reconoce', { uid: 'fb-x' }, []],
+  ])('%s → 503, sin escribir ni sesión', async (_caso, existente, filasDespues) => {
+    const d = makeDb({ filasDespues });
+    const a = makeAuth({ existente });
+
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'service_unavailable', code: 'firebase_error' });
+    expect(d.userUpdates).toHaveLength(0);
+    expect(d.membresiaUpdates).toHaveLength(0);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.createCustomToken).not.toHaveBeenCalled();
   });
 });

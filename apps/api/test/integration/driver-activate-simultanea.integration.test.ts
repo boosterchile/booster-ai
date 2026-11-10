@@ -42,7 +42,10 @@ const logger = {
  * cree. `createUser` rechaza un correo repetido con `auth/email-already-exists`.
  */
 function proveedorConBarrera(esperados: number) {
-  const porEmail = new Map<string, { uid: string; email: string }>();
+  const porEmail = new Map<
+    string,
+    { uid: string; email: string; providerData: { providerId: string }[] }
+  >();
   let llegados = 0;
   let abrir: () => void = noop;
   const barrera = new Promise<void>((resolve) => {
@@ -69,7 +72,11 @@ function proveedorConBarrera(esperados: number) {
           code: 'auth/email-already-exists',
         });
       }
-      const cuenta = { uid: `fb-${randomUUID().slice(0, 8)}`, email: props.email };
+      const cuenta = {
+        uid: `fb-${randomUUID().slice(0, 8)}`,
+        email: props.email,
+        providerData: [],
+      };
       porEmail.set(props.email, cuenta);
       return cuenta;
     },

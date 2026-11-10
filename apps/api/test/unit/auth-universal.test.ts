@@ -38,9 +38,16 @@ const WRONG_CLAVE = '654321';
 function makeDbStub(opts: {
   userRow?: Record<string, unknown> | null;
   updateOk?: boolean;
+  /**
+   * Filas de los selects que siguen al de la cuenta. Con una cuenta del
+   * proveedor ya existente son los de SC5: otra fila de `usuarios` con ese uid
+   * y una solicitud con ese uid.
+   */
+  filasDespues?: Array<Record<string, unknown>[]>;
 }) {
   const queue: Array<Record<string, unknown>[]> = [
     opts.userRow === null ? [] : [opts.userRow ?? {}],
+    ...(opts.filasDespues ?? []),
   ];
 
   const limit = vi.fn(() => Promise.resolve(queue.shift() ?? []));
@@ -389,5 +396,71 @@ describe('POST /auth/login-rut (ADR-035)', () => {
       body: JSON.stringify({ rut: VALID_RUT, clave: 'abc123' }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC5: al promover una cuenta provisoria,
+ * la cuenta del proveedor que ya existe con el correo sintético se reutiliza
+ * solo si está libre. Si no, la misma 502 de una falla del proveedor, sin
+ * escribir la cuenta ni sesión.
+ */
+describe('POST /auth/login-rut — cuenta del proveedor que ya existe (correos-solicitudes-panel SC5)', () => {
+  const PROVISORIA = {
+    id: USER_ID,
+    firebaseUid: 'pending-rut:111111111',
+    email: 'usuario@example.com',
+    rut: '11111111-1',
+    claveNumericaHash: hashClaveNumerica(CORRECT_CLAVE),
+    activationPinHash: null,
+    status: 'activo',
+  };
+
+  function conCuentaExistente(cuenta: Record<string, unknown>) {
+    const fb = makeFirebaseStub();
+    fb.spies.getUserByEmail.mockReset();
+    fb.spies.getUserByEmail.mockResolvedValue(cuenta);
+    return fb;
+  }
+
+  function entrar(app: Hono) {
+    return app.request('/auth/login-rut', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, clave: CORRECT_CLAVE }),
+    });
+  }
+
+  it('una cuenta libre se reutiliza', async () => {
+    const { db, updateSet } = makeDbStub({ userRow: PROVISORIA, filasDespues: [[], []] });
+    const fb = conCuentaExistente({ uid: 'fb-libre', providerData: [] });
+    const app = await buildApp(db, fb.auth);
+
+    const res = await entrar(app);
+
+    expect(res.status).toBe(200);
+    expect(fb.spies.createUser).not.toHaveBeenCalled();
+    expect(fb.spies.createCustomToken).toHaveBeenCalledWith('fb-libre', expect.anything());
+    const escrito = updateSet.mock.calls[0]?.[0] as { firebaseUid?: string } | undefined;
+    expect(escrito?.firebaseUid).toBe('fb-libre');
+  });
+
+  it.each([
+    ['con un proveedor propio', { uid: 'fb-x', providerData: [{ providerId: 'password' }] }, []],
+    ['con el uid de otra fila de usuarios', { uid: 'fb-x', providerData: [] }, [[{ id: 'otro' }]]],
+    ['con el uid de una solicitud', { uid: 'fb-x', providerData: [] }, [[], [{ id: 'sol-1' }]]],
+    ['con una forma que no se reconoce', { uid: 'fb-x' }, []],
+  ])('%s → 502, sin escribir ni sesión', async (_caso, cuenta, filasDespues) => {
+    const { db, updateSet } = makeDbStub({ userRow: PROVISORIA, filasDespues });
+    const fb = conCuentaExistente(cuenta);
+    const app = await buildApp(db, fb.auth);
+
+    const res = await entrar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(fb.spies.createUser).not.toHaveBeenCalled();
+    expect(fb.spies.createCustomToken).not.toHaveBeenCalled();
   });
 });

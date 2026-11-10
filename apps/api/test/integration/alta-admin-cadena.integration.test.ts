@@ -31,9 +31,16 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 const ADMIN_EMAIL = 'admin-alta@test.invalid';
 
+/** Cuenta del proveedor en memoria, con los campos del SDK que lee la API. */
+interface CuentaFake {
+  uid: string;
+  email: string;
+  providerData: { providerId: string }[];
+}
+
 function authEnMemoria() {
-  const porEmail = new Map<string, { uid: string; email: string }>();
-  const porUid = new Map<string, { uid: string; email: string }>();
+  const porEmail = new Map<string, CuentaFake>();
+  const porUid = new Map<string, CuentaFake>();
   const tokens: string[] = [];
   const noExiste = (email: string) =>
     Object.assign(new Error(`no user: ${email}`), { code: 'auth/user-not-found' });
@@ -43,7 +50,7 @@ function authEnMemoria() {
       if (porEmail.has(email)) {
         throw Object.assign(new Error('exists'), { code: 'auth/email-already-exists' });
       }
-      const u = { uid: props.uid ?? `fb-${randomUUID().slice(0, 8)}`, email };
+      const u = { uid: props.uid ?? `fb-${randomUUID().slice(0, 8)}`, email, providerData: [] };
       porEmail.set(email, u);
       porUid.set(u.uid, u);
       return u;

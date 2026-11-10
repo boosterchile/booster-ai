@@ -9,7 +9,14 @@
 
 ## 1. Objective
 
-Tres reglas para las altas de cuentas: la aprobación de una solicitud de registro aplica la regla de la lista de respaldo y de los correos reservados, la primera activación del conductor tiene una sola entrada aunque lleguen dos pedidos a la vez, y un correo es el mismo con o sin mayúsculas cuando se compara con las cuentas existentes.
+Reglas para las altas de cuentas y para las cuentas del proveedor de identidad que usan:
+
+- la aprobación de una solicitud de registro aplica la regla de la lista de respaldo y de los correos reservados;
+- la primera activación del conductor tiene una sola entrada aunque lleguen dos pedidos a la vez;
+- un correo es el mismo con o sin mayúsculas cuando se compara con las cuentas existentes;
+- una activación reutiliza una cuenta del proveedor solo si ya es de la persona o está libre;
+- una cuenta del proveedor creada al aprobar una solicitud entra solo por el onboarding;
+- las dos reglas anteriores valen también para las aprobaciones ya hechas.
 
 ## 2. Why now
 
@@ -28,7 +35,14 @@ El PO pidió sumarlas a la serie de `acceso-panel-plataforma` (#893) y `bordes-a
   - `submitSignupRequest` → 202 sin solicitud nueva.
 
   En las tres invitaciones, si otra alta guarda el mismo correo entre la búsqueda y el INSERT, el choque con el UNIQUE de `usuarios.email` responde el mismo 409 `email_already_registered`, no un 500. En las seis, un solo helper (`services/correo-de-cuenta.ts`) decide si un correo está ocupado: ya es de una cuenta, está en la lista de respaldo o es reservado. Consulta la base en todos los casos, así que un correo ocupado cuesta lo mismo sea cual sea el motivo. Reemplaza los chequeos de lista que agregó `bordes-autenticacion` SC5, con la misma respuesta. Sin migración y sin tocar el UNIQUE.
-- [ ] SC4 — Tests nombrados para SC1–SC3, con el rojo exhibido en un commit propio que precede a la implementación (auth es dominio crítico), integración contra Postgres real y `pnpm run ci` corrido en el momento.
+- [ ] SC4 — Tests nombrados para SC1–SC3 y SC5–SC7, con el rojo exhibido en un commit propio que precede a cada implementación (auth es dominio crítico), integración contra Postgres real y `pnpm run ci` corrido en el momento.
+- [ ] SC5 — **Una activación reutiliza una cuenta del proveedor solo si ya es de la persona o está libre.** `POST /auth/activar`, `POST /auth/driver-activate` (también en la relectura de SC2) y `POST /auth/login-rut` (cuenta con `firebase_uid` provisorio `pending-rut:`) buscan la cuenta del proveedor por el correo sintético del RUT. Reutilizan la cuenta que encuentran solo en dos casos:
+  - su uid ya es el `firebase_uid` de la cuenta que se activa;
+  - está libre: no tiene un proveedor propio (`providerData` vacío, es decir, sin contraseña, sin enlace por correo y sin otro proveedor), su uid no es el `firebase_uid` de otra fila de `usuarios` y no es el `firebase_uid` de una fila de `solicitudes_registro`.
+
+  Si no, la activación no escribe nada ni entrega sesión, y responde lo que cada ruta ya responde ante una falla del proveedor: `/auth/activar` 503 `firebase_error`, `/auth/driver-activate` 502 `firebase_error` y `/auth/login-rut` 502 `firebase_error`. El motivo queda en el log de error. La cuenta que devuelve el proveedor pasa por Zod: una forma que no se reconoce no se reutiliza. `bootstrapPlatformAdmin` no reutiliza una cuenta cuyo uid es el `firebase_uid` de una solicitud: aborta sin escrituras con `CuentaDeSolicitudError`.
+- [ ] SC6 — **Una cuenta del proveedor creada al aprobar una solicitud entra solo por el onboarding.** En `GET /me`, cuando ninguna cuenta tiene el uid de la sesión y ese uid es el `firebase_uid` de una fila de `solicitudes_registro`, `/me` no vincula por correo una cuenta existente ni crea la cuenta de la lista de respaldo. Responde `needs_onboarding: true`, como a cualquier sesión sin cuenta. El onboarding con el token de la aprobación (`onboardEmpresa`) sigue siendo su entrada.
+- [ ] SC7 — **SC5 y SC6 valen también para las aprobaciones ya hechas.** Las dos reglas leen el estado al momento de usarlo: los proveedores de la cuenta y las filas de `usuarios` y `solicitudes_registro`. No dependen de una marca puesta al aprobar, así que no necesitan migración ni backfill. En el modo sin enlace de onboarding, la aprobación no guarda el uid en la solicitud: crea con él una fila de `usuarios`, que SC5 cuenta como otra cuenta.
 
 ## 4. Contratos
 
@@ -40,6 +54,8 @@ Sin contratos nuevos: cada ruta reutiliza una respuesta que ya tenía.
 - `POST /auth/driver-activate` → 401 `invalid_credentials` (SC2).
 - `POST /admin/empresas/:id/miembros`, `POST /admin/stakeholder-orgs/:id/invitar`, `POST /me/empresa/miembros` → 409 `email_already_registered` (SC3).
 - `POST /empresas/onboarding` y `POST /empresas/onboarding-admin` → 409 `email_in_use` (SC3).
+- `POST /auth/activar` → 503 `firebase_error`; `POST /auth/driver-activate` y `POST /auth/login-rut` → 502 `firebase_error` (SC5).
+- `GET /me` → 200 `needs_onboarding: true` (SC6).
 
 Firmas internas: `submitSignupRequest`, `approveSignupRequest` y `emitirAltaExencion` reciben la lista de respaldo como parámetro obligatorio, igual que `onboardEmpresa`. Sin ella el chequeo quedaría apagado sin aviso.
 
@@ -50,6 +66,9 @@ Firmas internas: `submitSignupRequest`, `approveSignupRequest` y `emitirAltaExen
 - Las altas con su propia comparación de correo siguen como están: `routes/conductores.ts` y `routes/admin-personal-booster.ts` ya comparan en minúsculas con su búsqueda, y `/me` vincula por correo verificado y crea la cuenta de la lista con el correo exacto que entrega el proveedor de identidad. Llevarlas al helper es otro cambio.
 - Una respuesta uniforme para la primera activación simultánea en `/auth/activar` y `/auth/login-rut`: SC2 cubre solo `/auth/driver-activate`.
 - Traducir a 409 el choque con el UNIQUE de `usuarios.email` en el onboarding: esta spec lo hace en las tres invitaciones.
+- Borrar, deshabilitar o modificar una cuenta del proveedor que SC5 no reutiliza. La activación se detiene y la cuenta queda como está; resolverla es una tarea de soporte.
+- Que `/me` vincule por correo sin distinguir mayúsculas: hoy compara el correo exacto y SC6 no lo cambia.
+- Cambiar cómo entrega la aprobación el enlace de acceso.
 
 ## 6. Constraints
 
@@ -64,6 +83,7 @@ Firmas internas: `submitSignupRequest`, `approveSignupRequest` y `emitirAltaExen
 - `services/emitir-alta-exencion.ts`: `correoOcupado` en su chequeo previo; pasa la lista al approve.
 - `routes/auth-driver.ts`: si `createUser` responde `auth/email-already-exists`, `getUserByEmail` y sigue a la escritura. `codigoError` se exporta desde `services/identidad-firebase-conductor.ts`.
 - `routes/admin-empresa-miembros.ts`, `routes/admin-stakeholder-orgs.ts`, `routes/me-empresa-miembros.ts` y `services/onboarding.ts`: `correoOcupado` en lugar de la búsqueda exacta y del chequeo de lista. En las tres invitaciones, `esEmailDuplicado` en el `catch` del INSERT.
+- `services/cuenta-proveedor-reutilizable.ts`: `cuentaProveedorReutilizable({ db, cuenta, usuario })` valida la cuenta con Zod y decide SC5; `cuentaCreadaPorSolicitud(db, uid)` busca el uid en `solicitudes_registro`. Las usan `routes/auth-activar.ts`, `routes/auth-driver.ts`, `routes/auth-universal.ts` y `services/bootstrap-platform-admin.ts` (SC5), y `routes/me.ts` (SC6).
 
 ## 8. Test list
 
@@ -74,10 +94,15 @@ Firmas internas: `submitSignupRequest`, `approveSignupRequest` y `emitirAltaExen
 - T5 (SC1, SC3) — integración `correo-de-cuenta.integration.test.ts` contra Postgres real: las tres invitaciones con la variante en minúsculas de una cuenta guardada con mayúsculas y con un correo reservado; el choque con el UNIQUE en el INSERT de las tres; `onboardEmpresa`, `submitSignupRequest`, `emitirAltaExencion` y el approve en los dos modos, con un correo de la lista, uno reservado y la variante de una cuenta. Con un correo de la lista sin cuenta, las tres invitaciones quedan como regresión de `bordes-autenticacion` SC5 sobre el helper.
 - T6 (SC2) — integración `driver-activate-simultanea.integration.test.ts`: dos primeras activaciones simultáneas sin cuenta previa del proveedor, con un doble cuyo `createUser` rechaza un correo repetido → una 200 y una 401, y queda la clave de quien entró.
 - T7 — `services/correo-de-cuenta.test.ts`: el helper. Va con la implementación porque el módulo es nuevo. Los correos reservados y la consulta en todos los casos tienen su rojo propio.
+- T8 (SC5, rojo) — `services/cuenta-proveedor-reutilizable.test.ts`: la cuenta de la persona se reutiliza aunque tenga proveedores; una cuenta libre se reutiliza; con un proveedor propio, con el uid de otra fila de `usuarios`, con el uid de una solicitud o con una forma que no se reconoce, no.
+- T9 (SC5, rojo) — `test/unit/auth-driver.test.ts`, `test/unit/auth-universal.test.ts` y `routes/auth-activar.test.ts`: una cuenta encontrada con un proveedor propio, o con el uid de otra fila o de una solicitud, responde la falla del proveedor de cada ruta, sin escribir la cuenta y sin sesión. También en la relectura de SC2. Una cuenta libre sigue activando.
+- T10 (SC5, rojo) — `services/bootstrap-platform-admin.test.ts`: una cuenta existente cuyo uid es el de una solicitud → `CuentaDeSolicitudError`, sin escrituras.
+- T11 (SC6, rojo) — `test/unit/me-platform-admin.test.ts` y `test/unit/me-onboarding-google-path.test.ts`: una sesión cuyo uid es el de una solicitud no vincula por correo ni crea la cuenta de la lista y responde `needs_onboarding: true`.
+- T12 (SC5–SC7) — integración `cuentas-proveedor-aprobacion.integration.test.ts` contra Postgres real: una solicitud aprobada con el uid de la cuenta, insertada como queda hoy en la base, frena la activación por los tres caminos, el bootstrap, el vínculo por correo y la cuenta de la lista. Una cuenta libre sigue activando, y en el modo sin enlace la fila de `usuarios` de la aprobación frena la activación.
 
 ## 9. Rollout
 
-Merge después de #895 y release (lo dispara el PO). Sin migración. Una solicitud pendiente cuyo correo esté en la lista, sea reservado o ya sea de una cuenta responde 409 al aprobarla y se resuelve rechazándola desde el panel.
+Merge después de #895 y release (lo dispara el PO). Sin migración. Una solicitud pendiente cuyo correo esté en la lista, sea reservado o ya sea de una cuenta responde 409 al aprobarla y se resuelve rechazándola desde el panel. Una activación que SC5 detiene queda en el log de error con su motivo y se resuelve desde soporte.
 
 ## 10. Decision log
 
@@ -88,3 +113,7 @@ Merge después de #895 y release (lo dispara el PO). Sin migración. Una solicit
 - 2026-11-09 — Sin índice sobre `lower(email)` ni migración: fuera de alcance.
 - 2026-11-09 — Un correo reservado (`esEmailDeRelleno`) está ocupado. El dominio `boosterchile.invalid` es el de las cuentas del proveedor de identidad que se entran por RUT, y el relleno `pending-rut-` no es un canal real: ninguna alta crea una cuenta con ellos. Misma respuesta que un correo registrado.
 - 2026-11-09 — `correoOcupado` busca la cuenta en todos los casos y combina después con la lista y con los correos reservados. Así, en cada alta y en la solicitud pública, los tres motivos hacen la misma consulta (§6.2). Reemplaza lo anotado arriba: la lista ya no se revisa primero ni sin consulta.
+- 2026-11-10 — El PO pide sumar a este PR tres reglas sobre las cuentas del proveedor de identidad: SC5, SC6 y SC7.
+- 2026-11-10 — SC5 usa `providerData` para saber si una cuenta tiene credenciales propias. El proveedor informa `password` solo cuando la cuenta tiene contraseña o entra por enlace de correo, así que una cuenta creada sin contraseña llega con la lista vacía. Las cuentas que crean las activaciones no tienen contraseña ni otro proveedor.
+- 2026-11-10 — Cuando SC5 no reutiliza la cuenta, la activación se detiene con la respuesta de una falla del proveedor. No borra ni modifica la cuenta: queda para soporte.
+- 2026-11-10 — SC6 mira solo el uid guardado en la solicitud. En el modo sin enlace, la aprobación crea la fila de `usuarios` con ese uid, así que `/me` la encuentra por uid y no llega al vínculo por correo.
