@@ -87,8 +87,8 @@ describe('PublicTrackingRoute', () => {
       trip: {
         tracking_code: 'BOO-XYZ987',
         status: 'en_proceso',
-        origin_address: 'Av. Apoquindo 123, Las Condes',
-        destination_address: 'Calle Coquimbo 45, La Serena',
+        origin_address: 'Las Condes, Metropolitana',
+        destination_address: 'La Serena, Coquimbo',
         cargo_type: 'carga_seca',
       },
       vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
@@ -104,13 +104,45 @@ describe('PublicTrackingRoute', () => {
     render(renderWithRouter(VALID_TOKEN));
     await waitFor(() => expect(screen.getByText(/^En camino$/)).toBeInTheDocument());
     expect(screen.getByText(/BOO-XYZ987/i)).toBeInTheDocument();
-    expect(screen.getByText(/Av\. Apoquindo 123/i)).toBeInTheDocument();
-    expect(screen.getByText(/Calle Coquimbo 45/i)).toBeInTheDocument();
+    expect(screen.getByText(/Las Condes, Metropolitana/i)).toBeInTheDocument();
+    expect(screen.getByText(/La Serena, Coquimbo/i)).toBeInTheDocument();
     expect(screen.getByText(/Camión 3\/4/i)).toBeInTheDocument();
     expect(screen.getByText(/\*\*\*AS12/i)).toBeInTheDocument();
     expect(screen.getByText(/65 km\/h/i)).toBeInTheDocument();
     // Coordenadas formateadas
     expect(screen.getByText(/-33\.41720/i)).toBeInTheDocument();
+  });
+
+  it('el pie nombra al operador y enlaza a los términos; el mapa externo no envía referrer', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      status: 'found',
+      trip: {
+        tracking_code: 'BOO-PIE001',
+        status: 'en_proceso',
+        origin_address: 'Las Condes, Metropolitana',
+        destination_address: 'La Serena, Coquimbo',
+        cargo_type: 'carga_seca',
+      },
+      vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
+      position: {
+        timestamp: '2026-05-10T15:00:00Z',
+        latitude: -33.4172,
+        longitude: -70.6063,
+        speed_kmh: 65,
+      },
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
+      eta_minutes: null,
+    });
+    render(renderWithRouter(VALID_TOKEN));
+    await waitFor(() =>
+      expect(screen.getByText(/Servicio operado por Booster Chile SpA/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('link', { name: /términos/i })).toHaveAttribute(
+      'href',
+      '/legal/terminos',
+    );
+    const mapa = screen.getByRole('link', { name: /Ver en Google Maps/i });
+    expect(mapa.getAttribute('rel')).toContain('noreferrer');
   });
 
   it('NO muestra plate completa en el DOM', async () => {

@@ -45,6 +45,8 @@ describe('GET /public/tracking/:token', () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body).toEqual({ error: 'not_found' });
+    expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
   });
 
   it('token con formato inválido → 404 (mismo neutro que not found en DB)', async () => {
@@ -78,6 +80,8 @@ describe('GET /public/tracking/:token', () => {
     const res = await app.request(`/${VALID_TOKEN}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toContain('no-store');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     const body = (await res.json()) as { trip: { tracking_code: string } };
     expect(body.trip.tracking_code).toBe('BOO-X1');
   });

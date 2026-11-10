@@ -65,6 +65,8 @@ function makeDb(queues: DbQueues = {}) {
       orderBy: vi.fn(() => chain),
       innerJoin: vi.fn(() => chain),
       groupBy: vi.fn(() => chain),
+      // La lectura del viaje toma lock de fila (`.for('update')`).
+      for: vi.fn(() => chain),
       limit: vi.fn(async () => selects.shift() ?? []),
     };
     chain.then = (resolve: (v: unknown) => unknown) => {

@@ -213,3 +213,27 @@ describe('notifyCambioCarga — solicitudes de cambio (§8)', () => {
     expect(avisos().get('u-cond')?.body).toMatch(/Respóndelo antes de la recogida/);
   });
 });
+
+describe('notifyCambioCarga — recordatorio (§8)', () => {
+  it('solo a la oficina de la transportista, con su tag propio', async () => {
+    const db = makeDb([{ userId: 'u-dueno' }]);
+    await notifyCambioCarga(
+      { db, logger },
+      {
+        tripId: 'trip-1',
+        asignacion: { id: 'asg-1', empresaId: 'emp-t', driverUserId: 'u-cond' },
+        evento: 'cambio_recordatorio',
+      },
+    );
+    expect(sendPushMock).toHaveBeenCalledTimes(1);
+    const { userId, payload } = sendPushMock.mock.calls[0]?.[0] as {
+      userId: string;
+      payload: { body: string; tag: string };
+    };
+    expect(userId).toBe('u-dueno');
+    expect(payload.body).toBe(
+      'Tienes un cambio sin responder en BOO-ABC123. No se puede confirmar la recogida hasta que respondas.',
+    );
+    expect(payload.tag).toBe('viaje:trip-1:cambio_recordatorio');
+  });
+});

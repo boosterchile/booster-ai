@@ -44,7 +44,7 @@ function columnaOrden(arg: unknown): string | null {
   return buscar(arg);
 }
 
-function makeDb(filas: { telemetria?: unknown[]; movil?: unknown[] }) {
+function makeDb(filas: { telemetria?: unknown[]; movil?: unknown[]; otraEnProceso?: unknown[] }) {
   const tablas: string[] = [];
   const ordenes: string[][] = [];
   const select = vi.fn(() => {
@@ -55,16 +55,20 @@ function makeDb(filas: { telemetria?: unknown[]; movil?: unknown[] }) {
       tablas.push(tabla);
       return chain;
     });
+    chain.innerJoin = vi.fn(() => chain);
     chain.where = vi.fn(() => chain);
     chain.orderBy = vi.fn((...args: unknown[]) => {
       ordenes.push(args.map(columnaOrden).filter((n): n is string => n != null));
       return chain;
     });
-    chain.limit = vi.fn(() =>
-      Promise.resolve(
+    chain.limit = vi.fn(() => {
+      if (tabla === 'asignaciones') {
+        return Promise.resolve(filas.otraEnProceso ?? []);
+      }
+      return Promise.resolve(
         tabla === 'telemetria_puntos' ? (filas.telemetria ?? []) : (filas.movil ?? []),
-      ),
-    );
+      );
+    });
     return chain;
   });
   return { db: { select } as unknown as Db, tablas, ordenes, select };
@@ -136,7 +140,7 @@ describe('resolverPosicionEnVivo', () => {
 
     const r = await resolverPosicionEnVivo({ db, ...BASE, tripStatus: 'asignado' });
 
-    expect(tablas).toEqual(['telemetria_puntos']);
+    expect(tablas).toEqual(['asignaciones', 'telemetria_puntos']);
     expect(r.source).toBe('teltonika');
     expect(r.pings).toEqual([
       { timestamp: hace(2), latitude: -33.45, longitude: -70.66, speedKmh: 65, angleDeg: 90 },
@@ -205,5 +209,62 @@ describe('resolverPosicionEnVivo', () => {
     expect(r.pings).toEqual([
       { timestamp: hace(2), latitude: -33.4, longitude: -70.6, speedKmh: null, angleDeg: null },
     ]);
+  });
+
+  // ---- `.specs/seguimiento-publico-minimizacion/` §3.2 ----
+
+  const PING_TELTONIKA = {
+    timestamp: hace(2),
+    latitude: '-33.4500000',
+    longitude: '-70.6600000',
+    speedKmh: 65,
+    angleDeg: 90,
+  };
+  const PING_MOVIL = {
+    timestamp: hace(1),
+    latitude: '-33.4000000',
+    longitude: '-70.6000000',
+    speedKmh: '20.00',
+    angleDeg: 10,
+  };
+
+  it('asignado + el vehículo tiene otra asignación en_proceso → no usa Teltonika; móvil de esta asignación', async () => {
+    const { db, tablas } = makeDb({
+      otraEnProceso: [{ id: 'asg-otra' }],
+      telemetria: [PING_TELTONIKA],
+      movil: [PING_MOVIL],
+    });
+
+    const r = await resolverPosicionEnVivo({ db, ...BASE, tripStatus: 'asignado' });
+
+    expect(tablas).toEqual(['asignaciones', 'posiciones_movil_conductor']);
+    expect(r.source).toBe('mobile');
+    expect(r.pings).toHaveLength(1);
+    expect(r.pings[0]?.latitude).toBe(-33.4);
+  });
+
+  it('asignado + otra asignación en_proceso + sin móvil → sin posición', async () => {
+    const { db, tablas } = makeDb({
+      otraEnProceso: [{ id: 'asg-otra' }],
+      telemetria: [PING_TELTONIKA],
+      movil: [],
+    });
+
+    const r = await resolverPosicionEnVivo({ db, ...BASE, tripStatus: 'asignado' });
+
+    expect(tablas).not.toContain('telemetria_puntos');
+    expect(r).toEqual({ source: null, pings: [] });
+  });
+
+  it('en_proceso no consulta otras asignaciones: Teltonika del vehículo como siempre', async () => {
+    const { db, tablas } = makeDb({
+      otraEnProceso: [{ id: 'asg-otra' }],
+      telemetria: [PING_TELTONIKA],
+    });
+
+    const r = await resolverPosicionEnVivo({ db, ...BASE, tripStatus: 'en_proceso' });
+
+    expect(tablas).toEqual(['telemetria_puntos']);
+    expect(r.source).toBe('teltonika');
   });
 });

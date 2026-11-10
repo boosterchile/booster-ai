@@ -28,9 +28,8 @@ vi.mock('../../src/observability/business-span.js', () => ({
   }),
 }));
 
-const { notifyTrackingLinkEmailAtAssignment } = await import(
-  '../../src/services/notify-tracking-link-email.js'
-);
+const { notifyTrackingLinkEmailAtAssignment, reenviarTrackingLinkEmailADestinatario } =
+  await import('../../src/services/notify-tracking-link-email.js');
 
 const noop = (): void => undefined;
 const logger = {
@@ -142,7 +141,9 @@ describe('notifyTrackingLinkEmailAtAssignment', () => {
     expect(m?.subject).toBe('Seguimiento de tu carga BOO-XYZ987');
     expect(m?.text).toContain(`https://app.boosterchile.com/tracking/${TOKEN}`);
     expect(m?.text).toContain('Transportes Andes');
-    expect(m?.text).toContain('ABCD12');
+    expect(m?.text).toContain('**CD12');
+    expect(m?.text).not.toContain('ABCD12');
+    expect(m?.html).not.toContain('ABCD12');
     expect(m?.html).toContain(`href="https://app.boosterchile.com/tracking/${TOKEN}"`);
   });
 
@@ -151,6 +152,28 @@ describe('notifyTrackingLinkEmailAtAssignment', () => {
     const { sender, enviados } = makeSender(OK);
     await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
     expect(enviados.map((m) => m.to)).toEqual(['generador@empresa.cl', 'recepcion@cliente.cl']);
+  });
+
+  it('al destinatario no le llega el nombre de la transportista ni la patente completa', async () => {
+    const { db } = makeDb({ fila: fila({ consigneeEmail: 'recepcion@cliente.cl' }) });
+    const { sender, enviados } = makeSender(OK);
+    await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
+    const [alGenerador, alDestinatario] = enviados;
+    expect(alGenerador?.text).toContain('Transportes Andes');
+    for (const cuerpo of [alDestinatario?.text, alDestinatario?.html]) {
+      expect(cuerpo).not.toContain('Transportes Andes');
+      expect(cuerpo).not.toContain('ABCD12');
+      expect(cuerpo).toContain('**CD12');
+    }
+    expect(alDestinatario?.text).toContain(`https://app.boosterchile.com/tracking/${TOKEN}`);
+  });
+
+  it('correo compartido por generador y destinatario: un envío, con el texto del generador', async () => {
+    const { db } = makeDb({ fila: fila({ consigneeEmail: 'Generador@Empresa.CL' }) });
+    const { sender, enviados } = makeSender(OK);
+    await notifyTrackingLinkEmailAtAssignment(deps(db, sender), { assignmentId: ASSIGNMENT_ID });
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]?.text).toContain('Transportes Andes');
   });
 
   it('mismo correo con otras mayúsculas: un solo envío', async () => {
@@ -261,5 +284,59 @@ describe('notifyTrackingLinkEmailAtAssignment — observabilidad', () => {
       'booster.tracking_correo.enviados': n,
     });
     expect(counterAdd).toHaveBeenCalledWith(1, { outcome });
+  });
+});
+
+/** `.specs/seguimiento-enlace-destinatario/` §3.2: reenvío solo al destinatario. */
+describe('reenviarTrackingLinkEmailADestinatario', () => {
+  const reenviar = (db: never, sender: EmailSender, correo = 'recepcion@cliente.cl') =>
+    reenviarTrackingLinkEmailADestinatario(deps(db, sender), {
+      assignmentId: ASSIGNMENT_ID,
+      correo,
+    });
+
+  it('va solo al correo indicado, con el enlace vigente y el texto del destinatario', async () => {
+    const { db, update } = makeDb({ fila: fila() });
+    const { sender, enviados } = makeSender(OK);
+    expect(await reenviar(db, sender)).toMatchObject({ skipped: false, enviados: 1 });
+    expect(enviados.map((m) => m.to)).toEqual(['recepcion@cliente.cl']);
+    const [m] = enviados;
+    expect(m?.text).toContain(`https://app.boosterchile.com/tracking/${TOKEN}`);
+    for (const cuerpo of [m?.text, m?.html]) {
+      expect(cuerpo).not.toContain('Transportes Andes');
+      expect(cuerpo).not.toContain('ABCD12');
+      expect(cuerpo).toContain('**CD12');
+    }
+    // No usa la marca del envío al asignar.
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('correo sintético o vacío → no_email, sin enviar', async () => {
+    const { db } = makeDb({ fila: fila() });
+    const { sender } = makeSender(OK);
+    expect(await reenviar(db, sender, 'x@boosterchile.invalid')).toMatchObject({
+      skipped: true,
+      reason: 'no_email',
+    });
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  it('asignación inexistente o sin token → skip', async () => {
+    const { sender } = makeSender(OK);
+    expect(await reenviar(makeDb({ fila: null }).db, sender)).toMatchObject({
+      skipped: true,
+      reason: 'assignment_not_found',
+    });
+    expect(await reenviar(makeDb({ fila: fila({ publicToken: null }) }).db, sender)).toMatchObject({
+      skipped: true,
+      reason: 'no_token',
+    });
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  it('si el proveedor no lo saca → send_failed', async () => {
+    const { db } = makeDb({ fila: fila() });
+    const { sender } = makeSender({ enviado: false, motivo: 'sin_proveedor' });
+    expect(await reenviar(db, sender)).toMatchObject({ skipped: true, reason: 'send_failed' });
   });
 });
