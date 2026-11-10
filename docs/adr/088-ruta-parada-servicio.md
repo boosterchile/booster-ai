@@ -1,6 +1,6 @@
 # ADR-088 — Ruta, parada y servicio: el recorrido del camión se separa de cada carga
 
-**Estado**: Borrador para decisión del PO. Pasa a `Vigente` con su visto en el PR que lo mergea. No se mergea con decisiones abiertas (sección final).
+**Estado**: Vigente. El PO cerró las decisiones de la sección final el 2026-11-10.
 **Fecha**: 2026-11-09
 **Decider**: Felipe Vicencio (Product Owner).
 **Acota a**:
@@ -77,9 +77,11 @@ Si se resuelve con un parche (por ejemplo, permitir varias asignaciones con el m
 - **Varias asignaciones con el mismo vehículo, sin entidad ruta.** No hay dónde guardar el orden de paradas ni los tramos vacíos, y la huella se duplica.
 - **Un «viaje padre» con viajes hijos.** Mezcla en una misma tabla dos cosas con dueños distintos (el recorrido es del transportista; la carga, del generador) y obliga a dos máquinas de estado en una.
 
-## Decisiones abiertas para el PO
+## Decisiones del PO
 
-| # | Pregunta | Recomendación |
+El PO aceptó las cuatro recomendaciones el 2026-11-10.
+
+| # | Pregunta | Decisión |
 |---|---|---|
 | 1 | ¿Quién arma la ruta? | El transportista agrupa servicios que ya aceptó. Que Booster sugiera agrupaciones queda para después, con spec propia. |
 | 2 | ¿Se renombra `viajes` a `servicios` en la base? | No. Se mantiene la tabla y los contratos; el término «servicio» se usa en la interfaz y en la documentación. |

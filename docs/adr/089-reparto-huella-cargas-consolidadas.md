@@ -1,6 +1,6 @@
 # ADR-089 — La huella de una ruta se calcula una vez y se reparte por toneladas-kilómetro
 
-**Estado**: Borrador para decisión del PO. Pasa a `Vigente` con su visto en el PR que lo mergea. No se mergea con decisiones abiertas (sección final).
+**Estado**: Vigente. El PO cerró las decisiones de la sección final el 2026-11-10.
 **Fecha**: 2026-11-09
 **Decider**: Felipe Vicencio (Product Owner).
 **Acota a**:
@@ -69,9 +69,11 @@ Un certificado que suma más que la emisión real no resiste una verificación, 
 - **Repartir por precio.** No tiene base física y no es defendible ante un verificador.
 - **Seguir calculando por servicio y corregir después.** Mantiene dos cálculos que deben coincidir y no coinciden.
 
-## Decisiones abiertas para el PO
+## Decisiones del PO
 
-| # | Pregunta | Recomendación |
+El PO aceptó las cuatro recomendaciones el 2026-11-10.
+
+| # | Pregunta | Decisión |
 |---|---|---|
 | 1 | ¿Certificado al cerrar la ruta, o uno provisional al entregar cada servicio? | Solo al cerrar la ruta. Un provisional que después cambia debilita el documento. |
 | 2 | Un servicio sin peso declarado dentro de una ruta consolidada. | Exigir peso para consolidar: sin peso el servicio no entra en una ruta con otros. Evita certificados parciales. |
