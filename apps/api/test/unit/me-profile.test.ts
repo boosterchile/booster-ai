@@ -1,3 +1,4 @@
+import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -245,7 +246,15 @@ describe('PATCH /me/profile', () => {
       };
     });
     const innerJoinFn = vi.fn(() => ({ where: whereFnSelect }));
-    const fromFn = vi.fn(() => ({ where: whereFnSelect, innerJoin: innerJoinFn }));
+    // La consulta a `solicitudes_registro` (`.specs/correos-solicitudes-panel`
+    // SC6) responde aparte y no cuenta en la secuencia: el uid no es de una
+    // solicitud.
+    const deSolicitud = { where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })) };
+    const fromFn = vi.fn((tabla: Parameters<typeof getTableName>[0]) =>
+      getTableName(tabla) === 'solicitudes_registro'
+        ? deSolicitud
+        : { where: whereFnSelect, innerJoin: innerJoinFn },
+    );
     const selectFn = vi.fn(() => ({ from: fromFn }));
 
     const linkedRow = { ...baseUserRow, firebaseUid: 'fb-google-NEW' };

@@ -1021,6 +1021,33 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
     await esperarFallaSinEscribir(await activar(app), stub, firebase);
   });
 
+  it('si la revisión de la cuenta en la base falla → 502 db_error, sin escribir ni sesión', async () => {
+    const stub = stubPendiente();
+    const select = vi.mocked(stub.db.select);
+    const original = select.getMockImplementation();
+    if (!original) {
+      throw new Error('fixture: el doble de select no tiene implementación');
+    }
+    // Las dos primeras consultas son la cuenta y el conductor; la tercera, la de SC5.
+    let llamadas = 0;
+    select.mockImplementation((...args: Parameters<typeof original>) => {
+      llamadas += 1;
+      if (llamadas === 3) {
+        throw new Error('db caída');
+      }
+      return original(...args);
+    });
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-libre' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'db_error', code: 'db_error' });
+    expect(stub.capturedUpdates).toHaveLength(0);
+    expect(firebase.createCustomToken).not.toHaveBeenCalled();
+  });
+
   it('en la relectura de SC2, una cuenta con un proveedor propio → 502, sin escribir ni sesión', async () => {
     const stub = stubPendiente();
     const getUserByEmail = vi

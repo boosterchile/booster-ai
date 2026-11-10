@@ -13,6 +13,7 @@ import {
   verifyActivationPin,
 } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
+import { cuentaProveedorReutilizable } from '../services/cuenta-proveedor-reutilizable.js';
 import {
   codigoPersonalVigente,
   cuentaYaActivada,
@@ -194,13 +195,28 @@ export function createAuthActivarRoutes(opts: {
 
     // Cuenta Firebase real. La contraseña NO se setea: la credencial de la
     // persona es su clave numérica, que verifica `login-rut` contra nuestra BD.
+    // Una cuenta que ya existía con el correo sintético se reutiliza solo si
+    // está libre (`.specs/correos-solicitudes-panel` SC5). Si no, la misma 503
+    // de una falla del proveedor y nada escrito.
     let firebaseUid: string;
     try {
       const existente = await opts.firebaseAuth
         .getUserByEmail(syntheticEmail(body.rut))
         .catch(() => null);
       if (existente) {
-        firebaseUid = existente.uid;
+        const veredicto = await cuentaProveedorReutilizable({
+          db: opts.db,
+          cuenta: existente,
+          usuario: { id: user.id, firebaseUid: user.firebaseUid },
+        });
+        if (!veredicto.reutilizable) {
+          opts.logger.error(
+            { userId: user.id, motivo: veredicto.motivo },
+            'auth-activar: la cuenta del proveedor encontrada no se reutiliza',
+          );
+          return c.json({ error: 'service_unavailable', code: 'firebase_error' }, 503);
+        }
+        firebaseUid = veredicto.uid;
       } else {
         const creado = await opts.firebaseAuth.createUser({
           email: syntheticEmail(body.rut),

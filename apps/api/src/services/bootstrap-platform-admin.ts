@@ -6,6 +6,7 @@ import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
 import { hashClaveNumerica, isValidClaveFormat } from './clave-numerica.js';
+import { cuentaCreadaPorSolicitud } from './cuenta-proveedor-reutilizable.js';
 
 /**
  * Gap A del alta de usuarios (diagnóstico hito CORFO §7,
@@ -107,6 +108,16 @@ export class FirebaseUidConflictError extends Error {
   }
 }
 
+export class CuentaDeSolicitudError extends Error {
+  constructor(email: string) {
+    super(
+      `La cuenta Firebase de ${email} la creó la aprobación de una solicitud de registro. ` +
+        'El bootstrap no la reutiliza (`.specs/correos-solicitudes-panel` SC5). Abort sin escrituras; resolver manualmente antes de re-correr.',
+    );
+    this.name = 'CuentaDeSolicitudError';
+  }
+}
+
 export async function bootstrapPlatformAdmin(opts: {
   db: Db;
   firebaseAuth: Auth;
@@ -201,6 +212,11 @@ export async function bootstrapPlatformAdmin(opts: {
       const uidOwnerEmail = uidOwner[0]?.email;
       if (uidOwnerEmail) {
         throw new FirebaseUidConflictError(firebaseUid, uidOwnerEmail);
+      }
+      // 4b'. Una cuenta existente que creó una aprobación no se reutiliza
+      //      (`.specs/correos-solicitudes-panel` SC5).
+      if (firebase === 'existing' && (await cuentaCreadaPorSolicitud(tx, firebaseUid))) {
+        throw new CuentaDeSolicitudError(email);
       }
     }
 

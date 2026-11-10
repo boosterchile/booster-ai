@@ -9,6 +9,10 @@ import { conductores, memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
+import {
+  type ResultadoReutilizacion,
+  cuentaProveedorReutilizable,
+} from '../services/cuenta-proveedor-reutilizable.js';
 import { codigoError } from '../services/identidad-firebase-conductor.js';
 import { codigoPersonalVigente, cuentaYaActivada } from '../services/vinculo-persona.js';
 
@@ -25,18 +29,22 @@ function driverSyntheticEmail(rut: string): string {
   return `drivers+${rut.replace(/[.\-]/g, '')}@boosterchile.invalid`;
 }
 
+/** La cuenta del proveedor que recién se creó, o la que ya existía con el correo sintético. */
+type CuentaConductor = { tipo: 'creada'; uid: string } | { tipo: 'existente'; cuenta: unknown };
+
 /**
  * Crea la cuenta Firebase del conductor. Si otro pedido de la misma primera
  * activación la creó entre la lectura y la creación, Firebase rechaza el
- * correo repetido: se usa esa cuenta, que es la del mismo RUT, y la escritura
- * con predicado decide cuál de los dos pedidos activa
- * (`.specs/correos-solicitudes-panel` SC2). Cualquier otro error sube.
+ * correo repetido: se vuelve a leer esa cuenta, que pasa por la misma regla
+ * que una cuenta encontrada (SC5), y la escritura con predicado decide cuál de
+ * los dos pedidos activa (`.specs/correos-solicitudes-panel` SC2). Cualquier
+ * otro error sube.
  */
 async function crearCuentaFirebaseConductor(
   auth: Auth,
   syntheticEmail: string,
   rut: string,
-): Promise<string> {
+): Promise<CuentaConductor> {
   try {
     const created = await auth.createUser({
       email: syntheticEmail,
@@ -44,13 +52,12 @@ async function crearCuentaFirebaseConductor(
       displayName: `Conductor ${rut}`,
       disabled: false,
     });
-    return created.uid;
+    return { tipo: 'creada', uid: created.uid };
   } catch (err) {
     if (codigoError(err) !== 'auth/email-already-exists') {
       throw err;
     }
-    const creadaPorOtroPedido = await auth.getUserByEmail(syntheticEmail);
-    return creadaPorOtroPedido.uid;
+    return { tipo: 'existente', cuenta: await auth.getUserByEmail(syntheticEmail) };
   }
 }
 
@@ -65,9 +72,9 @@ async function crearCuentaFirebaseConductor(
  *      - Verifica que tenga activacion_pin_hash setado (sino → 410 ya
  *        activado, fall through a Firebase email/password login).
  *      - Verifica el PIN con scrypt timing-safe.
- *      - Crea (o actualiza) Firebase Auth user con email sintético +
- *        password = PIN. Si ya existe el Firebase user con ese email
- *        (e.g. retry del mismo activate), reusa.
+ *      - Crea la cuenta Firebase con el email sintético, sin contraseña.
+ *        Si ya existe una con ese email (e.g. retry del mismo activate), la
+ *        reusa solo si está libre (`.specs/correos-solicitudes-panel` SC5).
  *      - UPDATE usuarios: firebase_uid=real, email=sintético,
  *        activacion_pin_hash=NULL, status='activo'.
  *      - Mint custom token para que el cliente haga signInWithCustomToken.
@@ -94,6 +101,10 @@ async function crearCuentaFirebaseConductor(
  * dos pedidos crean a la vez la cuenta Firebase, el que recibe
  * `auth/email-already-exists` usa la que creó el otro y sigue a la escritura
  * con predicado. Uno solo entra; el otro recibe la misma 401.
+ *
+ * Cuenta Firebase que ya existe (`.specs/correos-solicitudes-panel` SC5): se
+ * reutiliza solo si está libre, sin proveedor propio y sin ser de otra fila de
+ * `usuarios` ni de una solicitud. Si no, 502 `firebase_error` y nada escrito.
  */
 const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
 
@@ -227,18 +238,47 @@ export function createDriverAuthRoutes(opts: {
     // hasheada en nuestra BD y verifica `login-rut`. La cuenta Firebase es solo
     // el vehículo del custom token.
     const syntheticEmail = driverSyntheticEmail(rut);
-    let firebaseUid: string;
+    let cuenta: CuentaConductor;
     try {
       const existing = await opts.firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);
-      if (existing) {
-        // Caso retry (e.g. la primera vez el UPDATE de la DB falló post-Firebase).
-        firebaseUid = existing.uid;
-      } else {
-        firebaseUid = await crearCuentaFirebaseConductor(opts.firebaseAuth, syntheticEmail, rut);
-      }
+      // Con una cuenta ya existente (p. ej. un retry tras un UPDATE fallido),
+      // la regla de SC5 decide abajo si se reutiliza.
+      cuenta = existing
+        ? { tipo: 'existente', cuenta: existing }
+        : await crearCuentaFirebaseConductor(opts.firebaseAuth, syntheticEmail, rut);
     } catch (err) {
       opts.logger.error({ err, rut }, 'Firebase user create/update failed in driver-activate');
       return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+    }
+
+    // 5b. Una cuenta que ya existía se reutiliza solo si está libre
+    //     (`.specs/correos-solicitudes-panel` SC5). Si no, nada se escribe.
+    let firebaseUid: string;
+    if (cuenta.tipo === 'creada') {
+      firebaseUid = cuenta.uid;
+    } else {
+      let veredicto: ResultadoReutilizacion;
+      try {
+        veredicto = await cuentaProveedorReutilizable({
+          db: opts.db,
+          cuenta: cuenta.cuenta,
+          usuario: { id: user.id, firebaseUid: user.firebaseUid },
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, userId: user.id },
+          'driver-activate: no se pudo revisar la cuenta',
+        );
+        return c.json({ error: 'db_error', code: 'db_error' }, 502);
+      }
+      if (!veredicto.reutilizable) {
+        opts.logger.error(
+          { userId: user.id, motivo: veredicto.motivo },
+          'driver-activate: la cuenta del proveedor encontrada no se reutiliza',
+        );
+        return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+      }
+      firebaseUid = veredicto.uid;
     }
 
     // 6. UPDATE local DB. Exige que el código siga siendo el verificado, que

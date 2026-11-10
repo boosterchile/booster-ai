@@ -20,6 +20,7 @@ import {
 import { zValidator } from '../lib/validation.js';
 import { extractClientIp } from '../middleware/client-ip.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
+import { cuentaCreadaPorSolicitud } from '../services/cuenta-proveedor-reutilizable.js';
 
 /**
  * GET /me — endpoint que el cliente web llama post-login con Firebase.
@@ -62,8 +63,23 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // Nota: si en el futuro permitimos email/password sin verificación,
     // habría que NO linkear desde provider verificado a email/password no
     // verificado para prevenir hijack.
+    //
+    // Una cuenta del proveedor creada al aprobar una solicitud entra solo por
+    // el onboarding (`.specs/correos-solicitudes-panel` SC6): ni este vínculo
+    // ni la cuenta de la lista de abajo. Se reconoce porque su uid es el
+    // `firebase_uid` de una solicitud.
     // ---------------------------------------------------------------------
-    if (!user && claims.email && claims.emailVerified) {
+    const sinCuentaConCorreoVerificado = !user && Boolean(claims.email) && claims.emailVerified;
+    const sesionDeSolicitud =
+      sinCuentaConCorreoVerificado && (await cuentaCreadaPorSolicitud(opts.db, claims.uid));
+    if (sesionDeSolicitud) {
+      opts.logger.info(
+        { firebaseUid: claims.uid },
+        '/me: cuenta creada por una aprobación; entra por el onboarding',
+      );
+    }
+
+    if (!user && claims.email && claims.emailVerified && !sesionDeSolicitud) {
       const byEmail = await opts.db
         .select()
         .from(users)
@@ -97,9 +113,9 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // para la lista de respaldo: el resto del personal se da de alta en el
     // panel y activa en /activar. Exige que el proveedor haya verificado el
     // correo (`.specs/bordes-autenticacion` SC2), igual que el account linking
-    // de arriba.
+    // de arriba, y que la cuenta no venga de una aprobación (SC6).
     // ---------------------------------------------------------------------
-    if (!user && claims.email && claims.emailVerified) {
+    if (!user && claims.email && claims.emailVerified && !sesionDeSolicitud) {
       if (correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
         const fullName = claims.name?.trim() ?? claims.email.split('@')[0] ?? 'Platform Admin';
         const inserted = await opts.db
