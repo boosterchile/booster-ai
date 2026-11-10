@@ -198,9 +198,9 @@ export function createAuthActivarRoutes(opts: {
 
     // Cuenta Firebase real. La contraseña NO se setea: la credencial de la
     // persona es su clave numérica, que verifica `login-rut` contra nuestra BD.
-    // Una cuenta que ya existía con el correo sintético se reutiliza solo si
-    // está libre (`.specs/correos-solicitudes-panel` SC5). Si no, la misma 503
-    // de una falla del proveedor y nada escrito.
+    // Una cuenta que ya existía con el correo sintético se reutiliza solo si ya
+    // es de esta fila o está libre (`.specs/correos-solicitudes-panel` SC5).
+    // Si no, la misma 503 de una falla del proveedor y nada escrito.
     let firebaseUid: string;
     try {
       const existente = await opts.firebaseAuth

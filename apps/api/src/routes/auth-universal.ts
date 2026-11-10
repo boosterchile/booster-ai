@@ -171,8 +171,9 @@ export function createAuthUniversalRoutes(opts: {
       try {
         const existing = await opts.firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);
         if (existing) {
-          // Se reutiliza solo si está libre (`.specs/correos-solicitudes-panel`
-          // SC5). Si no, la misma 502 de una falla del proveedor, sin escribir.
+          // Se reutiliza solo si ya es de esta fila o está libre
+          // (`.specs/correos-solicitudes-panel` SC5). Si no, la misma 502 de
+          // una falla del proveedor, sin escribir.
           let veredicto: ResultadoReutilizacion;
           try {
             veredicto = await cuentaProveedorReutilizable({

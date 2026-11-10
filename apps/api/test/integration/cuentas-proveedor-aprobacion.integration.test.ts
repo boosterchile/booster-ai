@@ -574,6 +574,53 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
     });
   });
 
+  describe('SC5 — bootstrapPlatformAdmin, cada condición por separado', () => {
+    async function bootstrap(email: string, firebase: ReturnType<typeof authEnMemoria>) {
+      return rutas.bootstrapPlatformAdmin({
+        db: handle.db,
+        firebaseAuth: firebase.auth,
+        logger,
+        allowlist: [email],
+        input: { email, fullName: 'Lista', rut: rutAleatorio(), clave: CLAVE },
+      });
+    }
+
+    test('solo el uid de la cuenta en una solicitud de otro correo: CuentaDeSolicitudError', async () => {
+      const email = `lista-uid-${randomUUID().slice(0, 8)}@test.invalid`;
+      const firebase = authEnMemoria();
+      const uid = firebase.sembrar(email);
+      await solicitudAprobada(`otro-${randomUUID().slice(0, 8)}@test.invalid`, uid);
+
+      await expect(bootstrap(email, firebase)).rejects.toThrow(rutas.CuentaDeSolicitudError);
+    });
+
+    test('una solicitud rechazada con ese correo y sin uid no frena el bootstrap (control del estado)', async () => {
+      const email = `lista-rechazada-${randomUUID().slice(0, 8)}@test.invalid`;
+      const firebase = authEnMemoria();
+      const uid = firebase.sembrar(email);
+      await handle.db.insert(schema.solicitudesRegistro).values({
+        email,
+        nombreCompleto: 'Persona Solicitud',
+        estado: 'rechazado',
+        aprobadoPor: 'admin@test.invalid',
+        aprobadoEn: new Date(),
+      });
+
+      const resultado = await bootstrap(email, firebase);
+
+      expect(resultado.firebase).toBe('existing');
+      expect(resultado.firebaseUid).toBe(uid);
+      const [creada] = await handle.db
+        .select({
+          firebaseUid: schema.users.firebaseUid,
+          isPlatformAdmin: schema.users.isPlatformAdmin,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.email, email));
+      expect(creada).toEqual({ firebaseUid: uid, isPlatformAdmin: true });
+    });
+  });
+
   describe('SC6 — /me', () => {
     function me(a: Hono, claims: { uid: string; email: string }) {
       return a.request('/me', {

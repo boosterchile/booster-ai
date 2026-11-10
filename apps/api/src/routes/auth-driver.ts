@@ -74,7 +74,8 @@ async function crearCuentaFirebaseConductor(
  *      - Verifica el PIN con scrypt timing-safe.
  *      - Crea la cuenta Firebase con el email sintético, sin contraseña.
  *        Si ya existe una con ese email (e.g. retry del mismo activate), la
- *        reusa solo si está libre (`.specs/correos-solicitudes-panel` SC5).
+ *        reusa solo si ya es de esta fila o está libre
+ *        (`.specs/correos-solicitudes-panel` SC5).
  *      - UPDATE usuarios: firebase_uid=real, email=sintético,
  *        activacion_pin_hash=NULL, status='activo'.
  *      - Mint custom token para que el cliente haga signInWithCustomToken.
@@ -103,8 +104,10 @@ async function crearCuentaFirebaseConductor(
  * con predicado. Uno solo entra; el otro recibe la misma 401.
  *
  * Cuenta Firebase que ya existe (`.specs/correos-solicitudes-panel` SC5): se
- * reutiliza solo si está libre, sin proveedor propio y sin ser de otra fila de
- * `usuarios` ni de una solicitud. Si no, 502 `firebase_error` y nada escrito.
+ * reutiliza si su uid ya es el de esta fila, o si está libre (ninguna fila
+ * tiene su uid, sin proveedor propio y sin ser de una solicitud), con sus
+ * sesiones revocadas antes. Si no, 502 `firebase_error` y nada escrito.
+ * Vale también para la cuenta que se vuelve a leer en SC2.
  */
 const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
 
@@ -251,7 +254,8 @@ export function createDriverAuthRoutes(opts: {
       return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
     }
 
-    // 5b. Una cuenta que ya existía se reutiliza solo si está libre
+    // 5b. Una cuenta que ya existía, también la que se vuelve a leer en SC2,
+    //     se reutiliza solo si ya es de esta fila o está libre
     //     (`.specs/correos-solicitudes-panel` SC5). Si no, nada se escribe.
     let firebaseUid: string;
     if (cuenta.tipo === 'creada') {

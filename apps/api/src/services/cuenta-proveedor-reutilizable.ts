@@ -63,10 +63,10 @@ export async function cuentaCreadaPorSolicitud(
  *   - está libre: ninguna fila de `usuarios` tiene su uid, no tiene proveedor
  *     propio y su uid no es el de una solicitud.
  *
- * A una cuenta libre se le revocan antes sus sesiones abiertas: así nadie que
- * la haya usado antes sigue dentro cuando la activación la deja en la fila.
- * Si la revocación falla, el error sube y el caller responde la falla del
- * proveedor sin escribir.
+ * Las sesiones abiertas de una cuenta libre se revocan antes de usarla: la
+ * activación entrega la primera sesión válida de esa cuenta. Si la revocación
+ * falla, el error sube y el caller responde la falla del proveedor sin
+ * escribir.
  */
 export async function cuentaProveedorReutilizable(opts: {
   db: Pick<Db, 'select'>;

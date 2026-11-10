@@ -53,6 +53,7 @@ function proveedorConBarrera(esperados: number) {
     setTimeout(resolve, 3_000);
   });
   const tokens: string[] = [];
+  const revocadas: string[] = [];
   const doble = {
     async getUserByEmail(email: string) {
       llegados += 1;
@@ -81,8 +82,8 @@ function proveedorConBarrera(esperados: number) {
       return cuenta;
     },
     // Como el SDK: una activación revoca las sesiones de una cuenta libre que reutiliza.
-    async revokeRefreshTokens(_uid: string) {
-      return undefined;
+    async revokeRefreshTokens(uid: string) {
+      revocadas.push(uid);
     },
     async createCustomToken(uid: string) {
       const token = `custom-token-${uid}-${tokens.length + 1}`;
@@ -90,7 +91,7 @@ function proveedorConBarrera(esperados: number) {
       return token;
     },
   };
-  return { auth: doble as never as Auth, porEmail, tokens };
+  return { auth: doble as never as Auth, porEmail, tokens, revocadas };
 }
 
 describe('integration: primera activación simultánea del conductor (correos-solicitudes-panel SC2)', () => {
@@ -199,7 +200,12 @@ describe('integration: primera activación simultánea del conductor (correos-so
       .where(eq(schema.users.id, persona.id));
     expect(cuenta?.status).toBe('activo');
     expect(cuenta?.activationPinHash).toBeNull();
-    expect(cuenta?.firebaseUid).toBe([...proveedor.porEmail.values()][0]?.uid);
+    const uidDeLaCuenta = [...proveedor.porEmail.values()][0]?.uid;
+    expect(cuenta?.firebaseUid).toBe(uidDeLaCuenta);
+    // SC5: el pedido que vuelve a leer la cuenta revoca, a lo más, las sesiones
+    // de esa misma cuenta (si la vio libre); ninguna otra.
+    expect(proveedor.revocadas.every((uid) => uid === uidDeLaCuenta)).toBe(true);
+    expect(proveedor.revocadas.length).toBeLessThanOrEqual(1);
     const claveGanadora = r1.status === 200 ? '555555' : '666666';
     const claveOtra = claveGanadora === '555555' ? '666666' : '555555';
     expect(verifyClaveNumerica(claveGanadora, cuenta?.claveNumericaHash ?? '')).toBe(true);
