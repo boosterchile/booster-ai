@@ -44,17 +44,21 @@ function seleccionarOfertas(data: OfertasCache): OfertaInicio[] {
   }));
 }
 
-function seleccionarServicios(filas: AsignacionCache[]): AsignacionInicio[] {
-  return filas.map((fila) => ({
-    ...(fila.id ? { id: fila.id } : {}),
-    status: fila.status,
-    sinConductor: fila.driver == null,
-    pickupInicio: fila.trip.pickup_window_start,
-    direccionOrigen: fila.trip.origin.address_raw,
-    direccionDestino: fila.trip.destination?.address_raw ?? '',
-    patente: fila.vehicle?.plate ?? null,
-    conductor: fila.driver?.full_name ?? null,
-  }));
+export function seleccionarServicios(filas: AsignacionCache[]): AsignacionInicio[] {
+  // `/assignments` también trae las canceladas por el generador (72 h, para
+  // el badge de Servicios); el Inicio muestra solo lo que está en curso.
+  return filas
+    .filter((fila) => fila.status !== 'cancelado')
+    .map((fila) => ({
+      ...(fila.id ? { id: fila.id } : {}),
+      status: fila.status,
+      sinConductor: fila.driver == null,
+      pickupInicio: fila.trip.pickup_window_start,
+      direccionOrigen: fila.trip.origin.address_raw,
+      direccionDestino: fila.trip.destination?.address_raw ?? '',
+      patente: fila.vehicle?.plate ?? null,
+      conductor: fila.driver?.full_name ?? null,
+    }));
 }
 
 function seleccionarCumplimiento(data: CumplimientoCache): CumplimientoInicio {

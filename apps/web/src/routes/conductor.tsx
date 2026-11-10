@@ -96,6 +96,8 @@ export interface DriverAssignment {
     consignee?: { name: string | null; phone_e164: string | null } | null;
     notes?: string | null;
     reference?: string | null;
+    /** editar-anular-cargas §12-P7: el conductor solo sabe que existe, no qué propone. */
+    cambio_pendiente?: { existe: true; creado_en: string | null } | null;
   };
   carrier_empresa: { id: string; legal_name: string | null };
   vehicle: { id: string; plate: string | null; has_teltonika: boolean } | null;
@@ -243,6 +245,9 @@ function AssignmentsSection() {
   const [error, setError] = useState<string | null>(null);
   const [geoPermission, setGeoPermission] = useState<PermissionStatus>('unknown');
   const [refrescando, setRefrescando] = useState(false);
+  // Sube con cada respuesta de `/me/assignments`: libera el bloqueo por un
+  // 409 `cambio_pendiente` cuando la lista nueva ya no trae el cambio.
+  const [versionCarga, setVersionCarga] = useState(0);
 
   // El fetch vive en un callback para poder repetirlo: el conductor recibe
   // servicios mientras tiene la pantalla abierta, y antes no había forma de
@@ -253,6 +258,7 @@ function AssignmentsSection() {
     try {
       const res = await api.get<{ assignments: DriverAssignment[] }>('/me/assignments');
       setAssignments(res.assignments);
+      setVersionCarga((v) => v + 1);
     } catch (err) {
       // Mensajes en lenguaje del conductor: `Error 500: boom` no le sirve a
       // alguien que está en ruta.
@@ -366,7 +372,12 @@ function AssignmentsSection() {
 
   return (
     <section className="mt-6 space-y-4">
-      <AssignmentCard destacado assignment={primero} geoPermission={geoPermission} />
+      <AssignmentCard
+        destacado
+        assignment={primero}
+        geoPermission={geoPermission}
+        versionCarga={versionCarga}
+      />
       {resto.length > 0 ? (
         <div>
           <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
@@ -375,7 +386,11 @@ function AssignmentsSection() {
           <ul className="mt-2 space-y-2">
             {resto.map((item) => (
               <li key={item.id}>
-                <AssignmentCard assignment={item} geoPermission={geoPermission} />
+                <AssignmentCard
+                  assignment={item}
+                  geoPermission={geoPermission}
+                  versionCarga={versionCarga}
+                />
               </li>
             ))}
           </ul>
@@ -651,9 +666,12 @@ export function AssignmentCard({
   sugerenciasRuta = true,
   instruccionesRetiro = true,
   destacado = false,
+  versionCarga,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
+  /** Contador de cargas de `/me/assignments` (ver `useConfirmarRecogida`). */
+  versionCarga?: number;
   /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
   sugerenciasRuta?: boolean;
   /** instrucciones-retiro: false en la preview pública, que no tiene sesión ni viaje real. */
@@ -687,6 +705,8 @@ export function AssignmentCard({
     assignmentId: a.id,
     initialRecogida: a.status === 'recogido',
     geofence: reporter.lastGeofence,
+    cambioPendiente: a.trip.cambio_pendiente?.existe === true,
+    ...(versionCarga !== undefined ? { versionCarga } : {}),
   });
 
   const fase: FaseServicio = entregada
@@ -925,7 +945,15 @@ export function AssignmentCard({
         {fase === 'por_recoger' && (
           <>
             {instruccionesRetiro && <InstruccionesRetiroConductor tripId={a.trip.id} />}
-            {recogida.sugerida && (
+            {recogida.bloqueadaPorCambio && (
+              <output
+                data-testid="cambio-pendiente-conductor"
+                className="block rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900 text-sm"
+              >
+                Hay un cambio pendiente. Espera la respuesta de tu transportista antes de recoger.
+              </output>
+            )}
+            {recogida.sugerida && !recogida.bloqueadaPorCambio && (
               // El geofence solo sugiere: <output> anuncia la llegada al punto
               // de recogida sin disparar nada. El tap sigue siendo del conductor.
               <output
@@ -938,7 +966,7 @@ export function AssignmentCard({
             {/* Confirmarla mueve el viaje a `en_proceso`, que es lo que destraba la
                 posición en el link de tracking del destinatario y lo que hace que
                 su empresa deje de ver «Por recoger» en Servicios. */}
-            {confirmando === 'recogida' ? (
+            {confirmando === 'recogida' && !recogida.bloqueadaPorCambio ? (
               <ConfirmacionInline
                 pregunta="¿Confirmas que ya cargaste esta carga en el camión?"
                 onConfirmar={() => void ejecutarConfirmacion()}
@@ -948,7 +976,7 @@ export function AssignmentCard({
               <button
                 type="button"
                 onClick={() => setConfirmando('recogida')}
-                disabled={recogida.recogiendo}
+                disabled={recogida.recogiendo || recogida.bloqueadaPorCambio}
                 data-testid="confirmar-recogida"
                 className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
               >

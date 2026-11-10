@@ -265,6 +265,13 @@ export const tripRequestCreateInputSchema = z.object({
 export type TripRequestCreateInput = z.infer<typeof tripRequestCreateInputSchema>;
 
 /**
+ * Body de `PUT /trip-requests-v2/:id` (editar-anular-cargas §6.1): el mismo
+ * formulario de creación, con sus reglas, incluidas notas y referencia.
+ */
+export const tripRequestEditInputSchema = tripRequestCreateInputSchema;
+export type TripRequestEditInput = TripRequestCreateInput;
+
+/**
  * Constantes exportadas para que el cliente (form) muestre el mismo
  * mensaje y el mismo lead-time sin duplicar lógica.
  */

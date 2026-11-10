@@ -394,6 +394,12 @@ function Footer() {
         {' · '}
         Logística sostenible certificada
       </p>
+      <p className="mt-1 text-neutral-600 text-xs">
+        Servicio operado por Booster Chile SpA ·{' '}
+        <a href="/legal/terminos" className="text-primary-700 underline">
+          Términos del servicio
+        </a>
+      </p>
     </footer>
   );
 }

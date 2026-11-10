@@ -9,7 +9,9 @@
  * datos del transportista (RUT, plate completa) ni precios.
  *
  * **Datos expuestos por design**:
- *   - Trip: tracking_code, status, origen / destino (texto), tipo de carga
+ *   - Trip: tracking_code, status, zona de origen / destino («Comuna, Región»;
+ *     nunca la dirección: `.specs/seguimiento-publico-minimizacion/` §3.4),
+ *     tipo de carga
  *   - Vehículo: tipo + plate parcial (últimos 4 chars) + posición
  *     reciente (lat/lng + speed) si <30 min vieja, de Teltonika o —si no hay
  *     Teltonika fresco— del móvil del conductor (`posicion-en-vivo.ts`)
@@ -28,6 +30,8 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import { regionLabel } from '@booster-ai/notification-fan-out';
+import { comunaPorCodigo } from '@booster-ai/shared-schemas';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, trips, vehicles } from '../db/schema.js';
@@ -195,6 +199,19 @@ export function computeTokenExpiry(opts: {
   return absolute;
 }
 
+/**
+ * Zona de un extremo del viaje para el público: «Comuna, Región», solo la
+ * región si la carga no tiene comuna (o el código no existe), «—» sin ambas.
+ */
+function zona(comunaCode: string | null, regionCode: string | null): string {
+  const comuna = comunaCode ? comunaPorCodigo(comunaCode)?.name : undefined;
+  if (!regionCode) {
+    return comuna ?? '—';
+  }
+  const region = regionLabel(regionCode);
+  return comuna ? `${comuna}, ${region}` : region;
+}
+
 export async function getPublicTracking(opts: {
   db: Db;
   logger: Logger;
@@ -222,9 +239,12 @@ export async function getPublicTracking(opts: {
       tripId: trips.id,
       tripStatus: trips.status,
       trackingCode: trips.trackingCode,
-      originAddr: trips.originAddressRaw,
+      originRegionCode: trips.originRegionCode,
+      originComunaCode: trips.originComunaCode,
+      // La dirección de destino solo alimenta la hora estimada; no sale en la respuesta.
       destAddr: trips.destinationAddressRaw,
       destRegionCode: trips.destinationRegionCode,
+      destComunaCode: trips.destinationComunaCode,
       cargoType: trips.cargoType,
       vehicleId: vehicles.id,
       vehicleType: vehicles.vehicleType,
@@ -282,8 +302,8 @@ export async function getPublicTracking(opts: {
     trip: {
       tracking_code: row.trackingCode,
       status: row.tripStatus,
-      origin_address: row.originAddr,
-      destination_address: row.destAddr,
+      origin_address: zona(row.originComunaCode, row.originRegionCode),
+      destination_address: zona(row.destComunaCode, row.destRegionCode),
       cargo_type: row.cargoType,
     },
     vehicle: {

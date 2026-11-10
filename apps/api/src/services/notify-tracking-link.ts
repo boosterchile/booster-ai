@@ -199,13 +199,14 @@ export async function notifyTrackingLinkAtAssignment(
 }
 
 /**
- * editar-anular-cargas §12-P8 — reenvía el link de tracking al número nuevo
- * del destinatario cuando el generador lo cambia después del match. Mismo
- * token: el link anterior sigue sirviendo hasta que termine el viaje.
+ * Manda el enlace de seguimiento vigente al teléfono del destinatario cuando
+ * el generador cambia su contacto después del match. Lee el token de la
+ * asignación: si la edición lo reemplazó, el que sale es el nuevo
+ * (`.specs/seguimiento-enlace-destinatario/`).
  *
  * No usa `tracking_link_enviado_en`: esa marca es del primer envío al asignar
  * y ya está tomada. La deduplicación la hace el llamador, que solo llama si el
- * número cambió (comparado dentro de la transacción de la edición). Mismo
+ * contacto cambió (comparado dentro de la transacción de la edición). Mismo
  * contrato que el primer envío: si Twilio falla, el error se propaga y el
  * llamador lo loguea sin revertir la edición.
  */
