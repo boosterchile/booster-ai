@@ -281,7 +281,7 @@ La lógica va en services (`services/editar-carga.ts`, `services/cancelar-carga.
 - Dentro de la tx se compara `destinatario_whatsapp_e164` antes y después.
 - Post-commit:
   - push al transportista y al conductor si hay asignación (§8);
-  - si cambió el teléfono del destinatario a un valor no nulo y el viaje está en `asignado` o `en_proceso`: reenvío del link de tracking al número nuevo, con el mismo token (§8, §12-P8).
+  - si cambió el teléfono del destinatario a un valor no nulo y el viaje está en `asignado` o `en_proceso`: reenvío del link de tracking al número nuevo, con el mismo token (§8, §12-P8). Superado por `.specs/seguimiento-enlace-destinatario/`.
 - Errores: 409 `trip_not_editable` (terminal); 422 `sin_cambios`.
 
 **3. `POST /:id/solicitudes-cambio`**
@@ -478,6 +478,9 @@ Service nuevo: `apps/api/src/services/notify-cambio-carga.ts`, con un mapa tipad
 **WhatsApp.** La v1 sale con push más el estado visible en la app (§12-P5). En paralelo se piden a Meta templates Utility, sin PIN, de cancelación y de cambio propuesto. Se conectan en un PR posterior cuando estén aprobados.
 
 **Teléfono del destinatario cambiado post-match** (§12-P8)
+
+> **Superado el 2026-11-09 por `.specs/seguimiento-enlace-destinatario/`** (decisión del PO): el enlace ya no conserva el token cuando cambia o se quita el contacto que tenía el destinatario, y el correo nuevo también recibe el enlace vigente. Lo que sigue queda como registro.
+
 - Post-commit de `PATCH /datos-libres`, se llama a `notifyTrackingLinkAtAssignment(…, {soloDestinatario: true})` con el número nuevo y el mismo `tracking_token_publico`. No se reenvía al generador.
 - Solo con el viaje en `asignado` o `en_proceso` y token vigente.
 - La idempotencia actual es nominal: la columna `tracking_link_enviado_en` que cita el comentario no existe (§3). El disparador es el propio cambio de número detectado en la tx, así que un número nuevo produce un envío. Repetir el PATCH con el mismo número no reenvía.
@@ -587,7 +590,7 @@ Los templates de WhatsApp de cancelación y cambio (§12-P5) van en un PR poster
 - **P5 — Avisos.** v1 por push más el estado en la app. En paralelo se piden a Meta templates Utility (sin PIN) de cancelación y de cambio, y se conectan en un PR posterior.
 - **P6 — Motivo.** Obligatorio al cancelar después del match (1–500, lo ve el transportista). Opcional al anular antes del match.
 - **P7 — Respuesta obligatoria a la solicitud de cambio.** La solicitud no vence sola. Mientras haya una pendiente, el transportista no puede confirmar la recogida: la ruta responde 409 `cambio_pendiente` para la oficina y para el conductor. El transportista recibe aviso al crearse y recordatorios mientras siga pendiente (job interno con Cloud Scheduler). La solicitud se ve destacada en Servicios, en el detalle de la asignación y en la pantalla del conductor; el conductor ve que existe, pero no los datos propuestos. Una sola pendiente por viaje; el generador la puede retirar; se invalida si se cancela el viaje.
-- **P8 — Teléfono del destinatario cambiado después del match.** Se reenvía el link de tracking al número nuevo, con el mismo token.
+- **P8 — Teléfono del destinatario cambiado después del match.** Se reenvía el link de tracking al número nuevo, con el mismo token. **Superado el 2026-11-09 por `.specs/seguimiento-enlace-destinatario/`.**
 - **P9 — Peso sobre la capacidad del vehículo asignado.** Se puede solicitar. El transportista solo puede aceptarlo si antes asigna un vehículo con capacidad suficiente; si no, rechaza. El servidor bloquea la aceptación con 422 `excede_capacidad_vehiculo`.
 - **P10 — Anuladas históricas.** La regla «cancelado sin asignación = anulada» aplica hacia atrás: las canceladas antiguas salen del historial del generador. El detalle por URL sigue en solo lectura.
 - **P11 — Teléfono del conductor para el generador.** Se ve solo mientras el viaje está en `asignado` o `en_proceso`.

@@ -12,7 +12,11 @@
  *      consultar la BD. Allowlist fail-closed: terminado el viaje el vehículo
  *      puede estar en otra carga (`.specs/tracking-privacy-position-ttl/`).
  *   2. Hay ping Teltonika del vehículo en la ventana fresca → `teltonika`. El
- *      móvil ni se consulta.
+ *      móvil ni se consulta. Teltonika se lee por vehículo, así que solo vale
+ *      como posición de ESTE viaje si el vehículo no está en otro: en estado
+ *      `asignado`, si el vehículo tiene otra asignación con el viaje
+ *      `en_proceso`, este paso se salta
+ *      (`.specs/seguimiento-publico-minimizacion/` §3.2).
  *   3. Si no: pings del móvil del conductor en la misma ventana y de ESTA
  *      asignación → `mobile`. Se acota por `asignacion_id` (además de
  *      `vehiculo_id`, que usa el índice) para no exponer posiciones que el
@@ -33,9 +37,9 @@
  *     tracking se queda en la primera coordenada.
  */
 
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { posicionesMovilConductor, telemetryPoints } from '../db/schema.js';
+import { assignments, posicionesMovilConductor, telemetryPoints, trips } from '../db/schema.js';
 import { coordenadaGpsValidaSql, esCoordenadaGpsValida } from './coordenada-gps.js';
 
 /** Ventana de «posición fresca». Pings más viejos no se exponen en vivo. */
@@ -84,29 +88,31 @@ export async function resolverPosicionEnVivo(opts: {
 
   const cutoff = new Date(nowMs - POSITION_FRESH_MINUTES * 60_000);
 
-  const teltonika = proyectar(
-    await db
-      .select({
-        timestamp: telemetryPoints.timestampDevice,
-        latitude: telemetryPoints.latitude,
-        longitude: telemetryPoints.longitude,
-        speedKmh: telemetryPoints.speedKmh,
-        angleDeg: telemetryPoints.angleDeg,
-      })
-      .from(telemetryPoints)
-      .where(
-        and(
-          eq(telemetryPoints.vehicleId, vehicleId),
-          // Descarta null + «null island» (0,0, GPS sin fix). Ver `coordenada-gps.ts`.
-          coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
-          gte(telemetryPoints.timestampDevice, cutoff),
-        ),
-      )
-      .orderBy(desc(telemetryPoints.timestampDevice), desc(telemetryPoints.id))
-      .limit(MAX_PINGS),
-  );
-  if (teltonika.length > 0) {
-    return { source: 'teltonika', pings: teltonika };
+  if (!(await vehiculoEnOtroViaje({ db, assignmentId, vehicleId, tripStatus }))) {
+    const teltonika = proyectar(
+      await db
+        .select({
+          timestamp: telemetryPoints.timestampDevice,
+          latitude: telemetryPoints.latitude,
+          longitude: telemetryPoints.longitude,
+          speedKmh: telemetryPoints.speedKmh,
+          angleDeg: telemetryPoints.angleDeg,
+        })
+        .from(telemetryPoints)
+        .where(
+          and(
+            eq(telemetryPoints.vehicleId, vehicleId),
+            // Descarta null + «null island» (0,0, GPS sin fix). Ver `coordenada-gps.ts`.
+            coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
+            gte(telemetryPoints.timestampDevice, cutoff),
+          ),
+        )
+        .orderBy(desc(telemetryPoints.timestampDevice), desc(telemetryPoints.id))
+        .limit(MAX_PINGS),
+    );
+    if (teltonika.length > 0) {
+      return { source: 'teltonika', pings: teltonika };
+    }
   }
 
   const mobile = proyectar(
@@ -139,6 +145,35 @@ export async function resolverPosicionEnVivo(opts: {
   }
 
   return SIN_POSICION;
+}
+
+/**
+ * ¿El vehículo está sirviendo OTRO viaje? Solo se pregunta en `asignado`: una
+ * asignación cuyo viaje ya está `en_proceso` es la que el vehículo sirve.
+ */
+async function vehiculoEnOtroViaje(opts: {
+  db: Db;
+  assignmentId: string;
+  vehicleId: string;
+  tripStatus: string;
+}): Promise<boolean> {
+  if (opts.tripStatus !== 'asignado') {
+    return false;
+  }
+  const otras = await opts.db
+    .select({ id: assignments.id })
+    // rls-allowlist: existencia de otra asignación en curso del vehículo del assignment ya autorizado por el caller; solo decide la fuente, no sale en la respuesta
+    .from(assignments)
+    .innerJoin(trips, eq(trips.id, assignments.tripId))
+    .where(
+      and(
+        eq(assignments.vehicleId, opts.vehicleId),
+        ne(assignments.id, opts.assignmentId),
+        eq(trips.status, 'en_proceso'),
+      ),
+    )
+    .limit(1);
+  return otras.length > 0;
 }
 
 /**

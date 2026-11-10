@@ -483,6 +483,27 @@ describe('ConductorDashboardRoute', () => {
     await waitFor(() => expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id));
   });
 
+  // editar-anular-cargas §9: con un cambio pendiente no se recoge; el conductor no ve qué cambia.
+  it('con un cambio pendiente muestra el aviso y deshabilita iniciar el viaje', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00.000Z' },
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByTestId('cambio-pendiente-conductor')).toHaveTextContent(
+      'Hay un cambio pendiente. Espera la respuesta de tu transportista antes de recoger.',
+    );
+    expect(screen.getByTestId('confirmar-recogida')).toBeDisabled();
+  });
+
   it('en ruta sin posición: avisa y ofrece reintentar la ubicación', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });

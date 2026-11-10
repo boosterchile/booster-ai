@@ -31,10 +31,15 @@
  *     motivo `sin_project_id` en vez de fallar el arranque.
  *   - El UPDATE es idempotente: reintentar sobre el mismo viaje reescribe el
  *     mismo valor mientras `origen_direccion_raw` no cambie.
+ *   - Con `soloSiOrigenVigente` (editar-anular-cargas §6.1) el UPDATE exige
+ *     que `origen_direccion_raw` siga siendo la dirección geocodificada y que
+ *     `origin_latitude` siga en NULL: una respuesta atrasada de Routes API no
+ *     pisa un origen editado después. Si no queda fila, degrada con motivo
+ *     `origen_cambio` y no persiste nada.
  */
 
 import type { Logger } from '@booster-ai/logger';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { trips } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
@@ -63,6 +68,7 @@ export type MotivoDegradacionGeocodificacion =
   | 'sin_start_location'
   | 'coordenadas_invalidas'
   | 'error_inesperado'
+  | 'origen_cambio'
   | RoutesApiError['code'];
 
 export interface GeocodificarOrigenOptions {
@@ -73,6 +79,12 @@ export interface GeocodificarOrigenOptions {
   destinationAddress: string;
   /** GCP project para X-Goog-User-Project (ADR-038). Ausente → degrada. */
   routesProjectId?: string | undefined;
+  /**
+   * Persistir solo si el viaje sigue con esta dirección de origen y sin
+   * coordenadas. Lo usan la creación y la edición: entre la llamada a Routes
+   * API y el UPDATE, otra edición pudo cambiar el origen.
+   */
+  soloSiOrigenVigente?: boolean;
 }
 
 /**
@@ -106,6 +118,7 @@ type Outcome =
 
 async function geocodificarOrigenInner(opts: GeocodificarOrigenOptions): Promise<Outcome> {
   const { db, logger, tripId, originAddress, destinationAddress, routesProjectId } = opts;
+  const soloSiOrigenVigente = opts.soloSiOrigenVigente === true;
 
   if (!routesProjectId) {
     logger.info(
@@ -146,15 +159,35 @@ async function geocodificarOrigenInner(opts: GeocodificarOrigenOptions): Promise
       return { ok: false, motivo: 'coordenadas_invalidas' };
     }
 
-    // rls-allowlist: scoped por tripId recién insertado por el generador autenticado en POST /trip-requests-v2
-    await db
-      .update(trips)
-      .set({
-        originLatitude: lat.toFixed(LATLNG_DECIMALS),
-        originLongitude: lng.toFixed(LATLNG_DECIMALS),
-        updatedAt: new Date(),
-      })
-      .where(eq(trips.id, tripId));
+    const coordenadas = {
+      originLatitude: lat.toFixed(LATLNG_DECIMALS),
+      originLongitude: lng.toFixed(LATLNG_DECIMALS),
+      updatedAt: new Date(),
+    };
+    if (soloSiOrigenVigente) {
+      // rls-allowlist: scoped por tripId del generador autenticado (POST/PUT /trip-requests-v2)
+      const persistidas = await db
+        .update(trips)
+        .set(coordenadas)
+        .where(
+          and(
+            eq(trips.id, tripId),
+            eq(trips.originAddressRaw, originAddress),
+            isNull(trips.originLatitude),
+          ),
+        )
+        .returning({ id: trips.id });
+      if (persistidas.length === 0) {
+        logger.info(
+          { tripId, motivo: 'origen_cambio' },
+          'geocodificarOrigen: el origen del viaje cambió o ya tiene coordenadas, no se persiste',
+        );
+        return { ok: false, motivo: 'origen_cambio' };
+      }
+    } else {
+      // rls-allowlist: scoped por tripId recién insertado por el generador autenticado en POST /trip-requests-v2
+      await db.update(trips).set(coordenadas).where(eq(trips.id, tripId));
+    }
 
     logger.info({ tripId, lat, lng }, 'geocodificarOrigen: origen persistido');
     return { ok: true, origen: { lat, lng } };

@@ -180,6 +180,23 @@ export const cargaEditadaPayloadSchema = z.discriminatedUnion('modo', [
     modo: z.literal('libre'),
     campos: z.array(CAMPOS_LIBRES_SCHEMA).min(1),
   }),
+  /**
+   * Edición antes del match (§6.1). `campos` lleva los materiales y los datos
+   * libres que cambiaron; `antes`/`despues` solo los materiales (sin PII).
+   */
+  z.object({
+    modo: z.literal('pre_match'),
+    campos: z.array(z.union([CAMPO_PROPUESTO_SCHEMA, CAMPOS_LIBRES_SCHEMA])).min(1),
+    antes: cambiosGuardadosSchema,
+    despues: cambiosGuardadosSchema,
+    invalidated_offers: z.number().int().nonnegative().optional(),
+    comercial: z
+      .object({
+        comision_pct_antes: z.string().nullable(),
+        comision_pct_despues: z.string().nullable(),
+      })
+      .optional(),
+  }),
   /** El transportista aceptó una solicitud: valores antes y después de esos campos. */
   z.object({
     modo: z.literal('cambio_aceptado'),
