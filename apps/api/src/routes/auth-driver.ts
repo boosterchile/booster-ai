@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { claveNumericaSchema, rutSchema } from '@booster-ai/shared-schemas';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, notInArray, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
@@ -54,7 +54,13 @@ function driverSyntheticEmail(rut: string): string {
  * `es_admin_plataforma = true` se activa solo con un código del panel vigente
  * según `activacion_vence_en`, la misma regla que `/auth/activar`. Si no, la
  * respuesta es la misma 401 de un PIN incorrecto.
+ *
+ * Estado de la cuenta (`.specs/acceso-panel-plataforma` SC10): una cuenta
+ * `suspendido` o `eliminado` no se activa. Responde la misma 401 de un PIN
+ * incorrecto, y la escritura exige que siga sin estar en esos estados.
  */
+const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
+
 const activateBodySchema = z.object({
   rut: z.string().min(1),
   pin: z.string().regex(/^\d{6}$/, 'PIN debe ser 6 dígitos'),
@@ -111,6 +117,7 @@ export function createDriverAuthRoutes(opts: {
         claveNumericaHash: users.claveNumericaHash,
         isPlatformAdmin: users.isPlatformAdmin,
         activacionVenceEn: users.activacionVenceEn,
+        status: users.status,
       })
       .from(users)
       .where(eq(users.rut, rut))
@@ -143,6 +150,13 @@ export function createDriverAuthRoutes(opts: {
     }
     const pinOk = verifyActivationPin(body.pin, user.activationPinHash);
     if (!pinOk) {
+      return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
+    }
+
+    // 3a. Una cuenta suspendida o eliminada no se activa. Va después del PIN:
+    //     la respuesta y el costo son los de un PIN incorrecto.
+    if ((ESTADOS_SIN_ACTIVACION as readonly string[]).includes(user.status)) {
+      opts.logger.info({ userId: user.id }, 'driver-activate: cuenta suspendida o eliminada');
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
 
@@ -203,9 +217,11 @@ export function createDriverAuthRoutes(opts: {
       return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
     }
 
-    // 6. UPDATE local DB.
+    // 6. UPDATE local DB. Exige que la cuenta siga sin estar suspendida ni
+    //    eliminada: si cambió desde la lectura, no se activa ni hay sesión.
+    let escritas: { id: string }[];
     try {
-      await opts.db
+      escritas = await opts.db
         .update(users)
         .set({
           firebaseUid,
@@ -223,7 +239,8 @@ export function createDriverAuthRoutes(opts: {
           lastLoginAt: sql`now()`,
           updatedAt: sql`now()`,
         })
-        .where(eq(users.id, user.id));
+        .where(and(eq(users.id, user.id), notInArray(users.status, [...ESTADOS_SIN_ACTIVACION])))
+        .returning({ id: users.id });
     } catch (err) {
       // Si el UPDATE falla pero Firebase quedó creado, no rollback — el
       // próximo retry pasará por la rama getUserByEmail() y completará.
@@ -232,6 +249,13 @@ export function createDriverAuthRoutes(opts: {
         'DB update failed after Firebase user created',
       );
       return c.json({ error: 'db_error', code: 'db_error' }, 502);
+    }
+    if (escritas.length === 0) {
+      opts.logger.info(
+        { userId: user.id },
+        'driver-activate: la cuenta cambió de estado antes de escribir; no se activa',
+      );
+      return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
 
     // 6b. Promover membership de 'pendiente_invitacion' → 'activa' para

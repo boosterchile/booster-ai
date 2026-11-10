@@ -13,10 +13,16 @@ import { requirePlatformAdmin } from '../../../src/middleware/require-platform-a
 function makeMockContext(opts: {
   userEmail?: string | null;
   hasUserContext?: boolean;
+  isPlatformAdmin?: boolean;
+  status?: string;
 }): Context<any, any, any> {
   const userContext = opts.hasUserContext
     ? {
-        user: { email: opts.userEmail ?? null },
+        user: {
+          email: opts.userEmail ?? null,
+          ...(opts.isPlatformAdmin === undefined ? {} : { isPlatformAdmin: opts.isPlatformAdmin }),
+          ...(opts.status === undefined ? {} : { status: opts.status }),
+        },
       }
     : undefined;
 
@@ -120,5 +126,48 @@ describe('requirePlatformAdmin', () => {
       const status = (result.response as unknown as { status: number }).status;
       expect(status).toBe(401);
     }
+  });
+
+  // .specs/acceso-panel-plataforma — SC1: una sola regla de acceso.
+  it('cuenta marcada y activa fuera de la lista de respaldo → ok', () => {
+    const c = makeMockContext({
+      userEmail: 'ana.soto@boosterchile.com',
+      hasUserContext: true,
+      isPlatformAdmin: true,
+      status: 'activo',
+    });
+    const result = requirePlatformAdmin(c);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.adminEmail).toBe('ana.soto@boosterchile.com');
+    }
+  });
+
+  it.each(['suspendido', 'eliminado', 'pendiente_verificacion'])(
+    'cuenta marcada en estado %s fuera de la lista → 403',
+    (status) => {
+      const c = makeMockContext({
+        userEmail: 'ana.soto@boosterchile.com',
+        hasUserContext: true,
+        isPlatformAdmin: true,
+        status,
+      });
+      const result = requirePlatformAdmin(c);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect((result.response as unknown as { status: number }).status).toBe(403);
+      }
+    },
+  );
+
+  it('cuenta activa sin marca fuera de la lista → 403', () => {
+    const c = makeMockContext({
+      userEmail: 'ana.soto@boosterchile.com',
+      hasUserContext: true,
+      isPlatformAdmin: false,
+      status: 'activo',
+    });
+    const result = requirePlatformAdmin(c);
+    expect(result.ok).toBe(false);
   });
 });

@@ -3,14 +3,12 @@ import type { Logger } from '@booster-ai/logger';
 import { siteConfigSchema } from '@booster-ai/shared-schemas';
 import { Storage } from '@google-cloud/storage';
 import { desc, eq, max } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { configuracionSitio } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
-import type { UserContext } from '../services/user-context.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 
 /**
  * ADR-039 — Site Settings Runtime Configuration.
@@ -20,7 +18,7 @@ import type { UserContext } from '../services/user-context.js';
  * Endpoint público (sin auth, cache 5min en cliente):
  *   GET /public/site-settings → { config: SiteConfig, version }
  *
- * Endpoints admin (auth Firebase + platform-admin allowlist):
+ * Endpoints admin (auth Firebase + `requirePlatformAdmin`):
  *   GET    /admin/site-settings           → publicada + history últimas 20
  *   GET    /admin/site-settings/:version  → versión específica
  *   POST   /admin/site-settings/draft     → crear nueva versión (no publicada)
@@ -81,22 +79,6 @@ export function createSiteSettingsRoutes(opts: {
   publicAssetsBucket: string;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, adminEmail: email };
-  }
 
   /**
    * GET /admin/site-settings — versión publicada + history de 20 más recientes.

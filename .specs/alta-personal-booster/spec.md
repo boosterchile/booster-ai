@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (PO) + agente
 - Date: 2026-10-30
-- Status: Draft — enfoque elegido por el PO en sesión el 2026-10-30 (§10)
+- Status: Draft — enfoque elegido por el PO en sesión el 2026-10-30 (§10). La regla de acceso de §1, §6.1 y §6.2 la reemplazó `.specs/acceso-panel-plataforma/spec.md` el 2026-11-09 (§10)
 - Linked: `.specs/bootstrap-platform-admin/spec.md` (script de bootstrap; esta spec no lo retira), `docs/qa/runbook-bootstrap-platform-admin.md`, `.specs/equipo-de-la-empresa/` (código de un solo uso y `/activar`), `.specs/acceso-usuarios-empresa-panel/spec.md` (spec hermana: login, doble rol), ADR-035 (RUT + clave numérica)
 
 ---
@@ -104,3 +104,4 @@ El paso 3 contradice el principio de identidad (`alta-cliente-autocontenida` §6
 - 2026-11-09 — El PO decide mantener SC3. El panel del personal lo usa solo un platform-admin: responde el vínculo de la persona y, si una cuenta provisoria que ya existía no tiene un código del panel vigente, le emite uno, aunque la haya creado otro flujo. Los flujos de empresa siguen la regla de #874.
 - 2026-11-09 — #885 ocupó `0072` en main (`0072_instrucciones_retiro`): la migración de esta spec pasa a `0073_usuarios_activacion_vence_en`, con su `down/` y su entrada del journal.
 - 2026-11-09 — #887 ocupó `0073` en main (`0073_seguimiento_por_correo`): la migración de esta spec pasa a `0074_usuarios_activacion_vence_en`.
+- 2026-11-09 — Decisión del PO: el acceso al panel lo otorga y lo quita el propio panel de Booster. Esto reemplaza «Terraform + alta en panel» del 2026-10-30: el alta marca la cuenta y le da el acceso, «Quitar acceso» lo quita, la activación del personal pide la marca y un código del panel vigente (ya no la lista), y la lista de Terraform queda como respaldo para el primer admin. Detalle y contratos en `.specs/acceso-panel-plataforma/spec.md`.

@@ -42,12 +42,21 @@ function makeDb(opts: DbOpts = {}) {
   const insertedMemberships: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
 
+  /** Bloqueos de fila pedidos con `.for(...)`, en orden. */
+  const locks: string[] = [];
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        limit: vi.fn(async () => cola.shift() ?? []),
-        orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
-      })),
+      where: vi.fn(() => {
+        const limit = vi.fn(async () => cola.shift() ?? []);
+        return {
+          limit,
+          for: vi.fn((fuerza: string) => {
+            locks.push(fuerza);
+            return { limit };
+          }),
+          orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
+        };
+      }),
       innerJoin: vi.fn(() => ({
         where: vi.fn(() => ({
           orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
@@ -90,6 +99,7 @@ function makeDb(opts: DbOpts = {}) {
     insertedUsers,
     insertedMemberships,
     updates,
+    locks,
   };
 }
 
@@ -123,6 +133,7 @@ function buildApp(
     createMeEmpresaMiembrosRoutes({
       db,
       logger: noopLogger,
+      platformAdminEmails: ['respaldo@boosterchile.com'],
       ...(emailSender ? { emailSender, webAppUrl: 'https://app.boosterchile.com' } : {}),
     }),
   );
@@ -453,5 +464,78 @@ describe('correo de activación del equipo de la empresa', () => {
       (noopLogger.error as ReturnType<typeof vi.fn>).mock.calls,
     ]);
     expect(logs).not.toContain(json.codigo_activacion);
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC7 — la empresa no suma a su equipo una
+ * cuenta del personal de Booster ni deja en una cuenta un correo de la lista
+ * de respaldo.
+ */
+describe('POST /me/empresa/miembros — cuenta del personal de Booster (SC7)', () => {
+  const RESPUESTA = {
+    code: 'cuenta_personal_booster',
+    message: 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+  };
+
+  function invitar(app: Hono, body: Record<string, unknown> = {}) {
+    return app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        full_name: 'Ana Soto',
+        rut: '12345678-5',
+        email: 'ana.soto@empresa.cl',
+        rol: 'despachador',
+        ...body,
+      }),
+    });
+  }
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true, email: 'ana.soto@boosterchile.com' }],
+    [
+      'con un correo de la lista de respaldo',
+      { isPlatformAdmin: false, email: 'RESPALDO@boosterchile.com' },
+    ],
+  ])('RUT de una cuenta %s → 409 y no escribe', async (_caso, cuenta) => {
+    const d = makeDb({ userByRut: [{ id: 'user-ana', ...cuenta }] });
+
+    const res = await invitar(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(d.insertedUsers).toEqual([]);
+    expect(d.insertedMemberships).toEqual([]);
+  });
+
+  // La respuesta no le dice a la empresa qué correos están en la lista.
+  it('persona nueva con un correo de la lista de respaldo → 409 email_already_registered y no inserta', async () => {
+    const d = makeDb();
+
+    const res = await invitar(buildApp(d.db), { email: 'respaldo@boosterchile.com' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('email_already_registered');
+    expect(JSON.stringify(body)).not.toContain('personal de Booster');
+    expect(d.insertedUsers).toEqual([]);
+    expect(d.insertedMemberships).toEqual([]);
+  });
+
+  it('la lectura de la persona por RUT bloquea su fila hasta el commit', async () => {
+    const d = makeDb();
+
+    await invitar(buildApp(d.db));
+
+    expect(d.locks).toEqual(['update']);
+  });
+
+  it('una persona de la empresa con su correo de la empresa se suma igual', async () => {
+    const d = makeDb();
+
+    const res = await invitar(buildApp(d.db));
+
+    expect(res.status).toBe(201);
   });
 });

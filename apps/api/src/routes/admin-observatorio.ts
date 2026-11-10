@@ -1,8 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config as appConfig } from '../config.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import {
@@ -10,7 +9,6 @@ import {
   SECCIONES_OBSERVATORIO,
 } from '../services/observatorio/bigquery.js';
 import { filtrarK } from '../services/observatorio/proyeccion.js';
-import type { UserContext } from '../services/user-context.js';
 
 /**
  * T10-24 / ADR-012 Capa 2 — observatorio urbano, vista interna:
@@ -18,7 +16,7 @@ import type { UserContext } from '../services/user-context.js';
  *   GET /admin/observatorio/:region → { region, k_min_vehiculos, franjas,
  *       emisiones, od, activos }
  *
- * Solo platform-admin (allowlist ADR-076). `:region` es el código romano de
+ * Solo platform-admin (`requirePlatformAdmin`). `:region` es el código romano de
  * `viajes` (IV = Coquimbo). Los datos salen de las vistas materializadas
  * `urban_flow_metrics_*` (k ≥ 10 vehículos por bucket); esta ruta vuelve a
  * aplicar `filtrarK` antes de responder. Sin dataset configurado, 503.
@@ -31,21 +29,6 @@ export function createAdminObservatorioRoutes(opts: {
   lector: Pick<LectorObservatorio, 'porRegion'> | null;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    if (!email || !appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const };
-  }
 
   app.get('/:region', async (c) => {
     const auth = requirePlatformAdmin(c);

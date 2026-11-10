@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { correoEnListaRespaldo, tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
@@ -89,23 +90,15 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     // ---------------------------------------------------------------------
-    // Platform admin auto-provisioning. Si el email Firebase está en la
-    // allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`, el user opera como admin
-    // de plataforma — no tiene empresa propia, su único hub es
-    // /app/platform-admin. Auto-creamos el row en `usuarios` la primera
-    // vez para que `/me` devuelva `needs_onboarding=false` y no quede
-    // bloqueado en el flow tenant de /onboarding.
-    //
-    // Trust boundary: la allowlist (env var) es la fuente de autoridad;
-    // mismo patrón que `requirePlatformAdmin` en admin-seed.ts. Si el
-    // email cambia o sale de la allowlist, el `is_platform_admin=true`
-    // queda como caché en BD (no se revoca automáticamente — eso
-    // requiere intervención manual o un job periódico).
+    // Primer admin (`.specs/acceso-panel-plataforma` SC2). Si el correo de
+    // Firebase está en la lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`
+    // y no hay cuenta, se crea marcada y activa para que `/me` devuelva
+    // `needs_onboarding=false` y no quede en el flujo de /onboarding. Es solo
+    // para la lista de respaldo: el resto del personal se da de alta en el
+    // panel y activa en /activar.
     // ---------------------------------------------------------------------
     if (!user && claims.email) {
-      const adminAllowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-      const isAdminEmail = adminAllowlist.includes(claims.email.toLowerCase());
-      if (isAdminEmail) {
+      if (correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
         const fullName = claims.name?.trim() ?? claims.email.split('@')[0] ?? 'Platform Admin';
         const inserted = await opts.db
           .insert(users)
@@ -270,12 +263,9 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       fichaConductorMismoRut = ficha != null && mismoRut(ficha.rut, user.rut);
     }
 
-    // La allowlist env-var es la fuente de autoridad para platform admin
-    // (mismo patrón que requirePlatformAdmin). Si el email está en la
-    // allowlist, lo devolvemos true aunque el column en BD sea stale.
-    const adminAllowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    const isPlatformAdmin =
-      user.isPlatformAdmin || adminAllowlist.includes(user.email.toLowerCase());
+    // La misma regla que `requirePlatformAdmin` (`.specs/acceso-panel-plataforma`
+    // SC1): la web muestra el panel solo a quien el API deja entrar.
+    const isPlatformAdmin = tieneAccesoPlataforma(user, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS);
 
     return c.json({
       needs_onboarding: false,
@@ -518,7 +508,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         phone: updated.phone,
         whatsapp_e164: updated.whatsappE164,
         rut: updated.rut,
-        is_platform_admin: updated.isPlatformAdmin,
+        is_platform_admin: tieneAccesoPlataforma(updated, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS),
         status: updated.status,
       },
     });

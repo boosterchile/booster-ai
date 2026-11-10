@@ -124,7 +124,10 @@ describe('integration: alta de miembro con RUT existente', () => {
       c.set('userContext', ctx);
       await next();
     });
-    a.route('/me/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: h.db, logger }));
+    a.route(
+      '/me/empresa/miembros',
+      createMeEmpresaMiembrosRoutes({ db: h.db, logger, platformAdminEmails: [] }),
+    );
     a.route(
       '/auth',
       createAuthActivarRoutes({

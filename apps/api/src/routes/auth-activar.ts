@@ -1,13 +1,17 @@
 import type { Logger } from '@booster-ai/logger';
 import { activarCuentaSchema } from '@booster-ai/shared-schemas';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import type { Db } from '../db/client.js';
 import { memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
-import { verifyActivationPin } from '../services/activation-pin.js';
+import {
+  generateActivationPin,
+  hashActivationPin,
+  verifyActivationPin,
+} from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
 import {
   codigoPersonalVigente,
@@ -32,19 +36,25 @@ import {
  * `auth-universal.ts`); la columna `usuarios.email` conserva el correo de la
  * persona, que es el canal de la plataforma con ella.
  *
- * **Sin oráculo**: RUT inexistente, código incorrecto, cuenta ya activada y
- * código vencido devuelven la MISMA respuesta. Un atacante no puede usar este
+ * **Sin oráculo**: RUT inexistente, código incorrecto, cuenta ya activada,
+ * cuenta suspendida o eliminada y código vencido devuelven la MISMA respuesta.
+ * Sin código pendiente, el código se verifica igual contra un hash de relleno,
+ * para que esa respuesta tarde lo mismo que la de un código incorrecto
+ * (`.specs/acceso-panel-plataforma` SC11). Un atacante no puede usar este
  * endpoint para enumerar RUTs ni para saber quién tiene una invitación viva.
  *
- * **Personal de Booster** (`.specs/alta-personal-booster`, SC6). Una cuenta
- * con `es_admin_plataforma = true` se activa solo con un código emitido desde
- * el panel y vigente según `activacion_vence_en`, también si tiene la
- * invitación original vigente: el panel es el único emisor que deja ese
- * vencimiento (`codigoPersonalVigente`). `/auth/driver-activate`, el otro
- * endpoint que consume el código, aplica la misma regla. La persona que el
- * platform-admin dio de alta desde el panel no tiene invitación a una
- * empresa: sin la invitación original vigente, además su correo tiene que
- * estar en la lista de Terraform (`BOOSTER_PLATFORM_ADMIN_EMAILS`), y se
+ * **Estado de la cuenta** (SC10): una cuenta `suspendido` o `eliminado` no se
+ * activa, y la escritura exige que siga sin estar en esos estados.
+ *
+ * **Personal de Booster** (`.specs/alta-personal-booster` SC6,
+ * `.specs/acceso-panel-plataforma` SC6). Una cuenta con
+ * `es_admin_plataforma = true` se activa solo con un código emitido desde el
+ * panel y vigente según `activacion_vence_en`, también si tiene la invitación
+ * original vigente: solo los emisores del panel dejan ese vencimiento
+ * (`codigoPersonalVigente`). `/auth/driver-activate`, el otro endpoint que
+ * consume el código, aplica la misma regla. La persona que el platform-admin
+ * dio de alta desde el panel no tiene invitación a una empresa: sin la
+ * invitación original vigente, la marca y el código del panel bastan, y se
  * activa sin tocar membresías. Si tiene la invitación original (su primera
  * membresía, pendiente y dentro de los 7 días), esa se activa igual que la de
  * cualquier persona. Si falta una condición, la respuesta es la misma.
@@ -60,12 +70,24 @@ function syntheticEmail(rut: string): string {
   return `users+${rut.replace(/[.\-]/g, '')}@boosterchile.invalid`;
 }
 
+/** Estados en los que una cuenta no se activa (SC10). */
+const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
+
+/**
+ * Hash de un código al azar, calculado una vez al cargar el módulo, con los
+ * mismos parámetros de scrypt que los códigos reales. Sin código pendiente, se
+ * verifica contra él para gastar el mismo scrypt que un código incorrecto; su
+ * resultado se descarta.
+ */
+const HASH_DE_RELLENO = hashActivationPin(generateActivationPin());
+function verificarContraRelleno(codigo: string): void {
+  verifyActivationPin(codigo, HASH_DE_RELLENO);
+}
+
 export function createAuthActivarRoutes(opts: {
   db: Db;
   logger: Logger;
   firebaseAuth: Auth;
-  /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de Terraform. */
-  platformAdminEmails: readonly string[];
   /**
    * Límite de intentos por RUT (`createRateLimitPinMiddleware` con cubos
    * propios en `server.ts`). Corre antes de validar y de leer la base, como
@@ -74,9 +96,6 @@ export function createAuthActivarRoutes(opts: {
   rateLimitPerRut: MiddlewareHandler;
 }): Hono {
   const app = new Hono();
-  const listaPersonal = new Set(
-    opts.platformAdminEmails.map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0),
-  );
 
   app.post('/activar', opts.rateLimitPerRut, zValidator('json', activarCuentaSchema), async (c) => {
     const body = c.req.valid('json');
@@ -97,6 +116,7 @@ export function createAuthActivarRoutes(opts: {
         email: users.email,
         isPlatformAdmin: users.isPlatformAdmin,
         activacionVenceEn: users.activacionVenceEn,
+        status: users.status,
       })
       .from(users)
       .where(eq(users.rut, body.rut))
@@ -104,7 +124,9 @@ export function createAuthActivarRoutes(opts: {
     const user = encontrados[0];
 
     if (!user?.activationPinHash) {
-      // No existe, o ya está activada. Misma respuesta para ambos.
+      // No existe, o ya está activada. Misma respuesta para ambos, y el mismo
+      // costo de verificación que un código incorrecto (SC11).
+      verificarContraRelleno(body.codigo);
       opts.logger.info({ rut: body.rut }, 'auth-activar: sin código pendiente');
       return rechazo();
     }
@@ -119,6 +141,12 @@ export function createAuthActivarRoutes(opts: {
     // cuenta que ya eligió la suya, aunque otra empresa haya dejado un hash.
     if (cuentaYaActivada(user)) {
       opts.logger.info({ userId: user.id }, 'auth-activar: cuenta ya viva, la clave no se toca');
+      return rechazo();
+    }
+
+    // Una cuenta suspendida o eliminada no se activa (SC10).
+    if ((ESTADOS_SIN_ACTIVACION as readonly string[]).includes(user.status)) {
+      opts.logger.info({ userId: user.id }, 'auth-activar: cuenta suspendida o eliminada');
       return rechazo();
     }
 
@@ -154,10 +182,10 @@ export function createAuthActivarRoutes(opts: {
       primera?.status === 'pendiente_invitacion' ? invitacionesVigentes([primera]) : [];
     const invitacion = vigentes[0] ?? null;
 
-    // Sin invitación vigente, el único otro camino es el personal de Booster
-    // (el código del panel ya se comprobó arriba).
-    const esPersonalBooster =
-      invitacion === null && user.isPlatformAdmin && listaPersonal.has(user.email.toLowerCase());
+    // Sin invitación vigente, el único otro camino es el personal de Booster:
+    // la marca la pone un platform-admin y el código del panel ya se comprobó
+    // arriba.
+    const esPersonalBooster = invitacion === null && user.isPlatformAdmin;
 
     if (invitacion === null && !esPersonalBooster) {
       opts.logger.info({ rut: body.rut }, 'auth-activar: sin invitación vigente');
@@ -205,6 +233,7 @@ export function createAuthActivarRoutes(opts: {
             eq(users.id, user.id),
             eq(users.activationPinHash, hashVerificado),
             isNull(users.claveNumericaHash),
+            notInArray(users.status, [...ESTADOS_SIN_ACTIVACION]),
           ),
         )
         .returning({ id: users.id });

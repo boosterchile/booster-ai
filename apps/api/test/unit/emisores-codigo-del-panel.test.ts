@@ -9,6 +9,11 @@ import { describe, expect, it } from 'vitest';
  * `activationPinHash` con `hashActivationPin(...)` fija `activacionVenceEn` en
  * el mismo objeto del `.set()`: el panel con su vencimiento, el resto en NULL.
  *
+ * `.specs/acceso-panel-plataforma` SC9: los emisores del panel son el del
+ * personal (`admin-personal-booster.ts`) y la re-emisión del panel de empresas
+ * (`admin-empresa-miembros.ts`), ambos solo de platform-admin. Fuera de esos
+ * dos archivos, el vencimiento va siempre en `null` literal.
+ *
  * Los tests de cada emisor afirman los sitios que existen hoy; este recorre el
  * código para que un UPDATE nuevo tampoco lo omita. Solo quedan fuera los
  * objetos que van directo a un INSERT (`.values()`): la columna nace NULL. Un
@@ -17,6 +22,10 @@ import { describe, expect, it } from 'vitest';
 
 const RAIZ_API = join(import.meta.dirname, '..', '..');
 const CARPETAS = ['src', 'scripts'];
+const EMISORES_DEL_PANEL = new Set([
+  'src/routes/admin-personal-booster.ts',
+  'src/routes/admin-empresa-miembros.ts',
+]);
 
 function archivosTs(dir: string): string[] {
   return readdirSync(dir).flatMap((nombre) => {
@@ -49,10 +58,23 @@ function tienePropiedad(objeto: ts.ObjectLiteralExpression, nombre: string): boo
   );
 }
 
+/** El objeto asigna `nombre: null` literal. */
+function asignaNull(objeto: ts.ObjectLiteralExpression, nombre: string): boolean {
+  return objeto.properties.some(
+    (p) =>
+      ts.isPropertyAssignment(p) &&
+      ts.isIdentifier(p.name) &&
+      p.name.text === nombre &&
+      p.initializer.kind === ts.SyntaxKind.NullKeyword,
+  );
+}
+
 interface Emisor {
+  archivo: string;
   ubicacion: string;
   metodo: string | null;
   fijaVencimiento: boolean;
+  vencimientoNulo: boolean;
 }
 
 function emisores(): Emisor[] {
@@ -77,9 +99,11 @@ function emisores(): Emisor[] {
         ) {
           const { line } = fuente.getLineAndCharacterOfPosition(nodo.getStart(fuente));
           encontrados.push({
+            archivo: relative(RAIZ_API, archivo),
             ubicacion: `${relative(RAIZ_API, archivo)}:${line + 1}`,
             metodo: metodoQueRecibe(nodo.parent),
             fijaVencimiento: tienePropiedad(nodo.parent, 'activacionVenceEn'),
+            vencimientoNulo: asignaNull(nodo.parent, 'activacionVenceEn'),
           });
         }
         ts.forEachChild(nodo, visitar);
@@ -98,6 +122,22 @@ describe('emisores del código de activación (spec §6.6)', () => {
       .filter((e) => e.metodo !== 'values' && !e.fijaVencimiento)
       .map((e) => e.ubicacion);
     expect(sinVencimiento).toEqual([]);
+  });
+
+  it('fuera de los emisores del panel, el UPDATE deja el vencimiento en null (SC9)', () => {
+    const conVencimiento = todos
+      .filter((e) => e.metodo !== 'values' && !EMISORES_DEL_PANEL.has(e.archivo))
+      .filter((e) => !e.vencimientoNulo)
+      .map((e) => e.ubicacion);
+    expect(conVencimiento).toEqual([]);
+  });
+
+  it('la re-emisión del panel de empresas cuenta como código del panel (SC9)', () => {
+    const reemision = todos.filter(
+      (e) => e.archivo === 'src/routes/admin-empresa-miembros.ts' && e.metodo === 'set',
+    );
+    expect(reemision.length).toBeGreaterThan(0);
+    expect(reemision.every((e) => e.fijaVencimiento && !e.vencimientoNulo)).toBe(true);
   });
 
   it('el recorrido encuentra los emisores de UPDATE y de INSERT', () => {

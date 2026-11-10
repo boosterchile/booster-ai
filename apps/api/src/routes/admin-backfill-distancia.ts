@@ -1,9 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
-import { type Context, Hono } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
-import { config as appConfig } from '../config.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import type { BackfillReport } from '../services/backfill-distancia-real.js';
-import type { UserContext } from '../services/user-context.js';
 
 /**
  * Entrypoint del backfill de re-derivación de distancia real (F0-0 paso 1).
@@ -15,7 +14,7 @@ import type { UserContext } from '../services/user-context.js';
  * cambió entre simulación y ejecución, algo cambió y NO debe correr. El camino
  * fácil (POST sin body) es el seguro (dry-run).
  *
- * **Auth:** detrás de `requirePlatformAdmin` (allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`),
+ * **Auth:** detrás de `requirePlatformAdmin` (regla única de acceso al panel),
  * NO del JWT genérico ni del SA de cron: reescribe la huella de toda la flota.
  */
 
@@ -64,22 +63,6 @@ export function createAdminBackfillDistanciaRoutes(opts: {
   correrBackfill: (dryRun: boolean) => Promise<BackfillReport>;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, adminEmail: email };
-  }
 
   app.post('/', async (c) => {
     const auth = requirePlatformAdmin(c);

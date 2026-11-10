@@ -316,4 +316,73 @@ describe('GET /me — platform admin auto-provisioning', () => {
     expect(res.status).toBe(200);
     expect(insertCalls[0]?.fullName).toBe('admin');
   });
+
+  // .specs/acceso-panel-plataforma — SC1: /me usa la misma regla que el guard.
+  it('cuenta marcada pero suspendida, fuera de la lista → is_platform_admin false', async () => {
+    const { db } = makeDbStub({
+      userByFirebaseUid: {
+        id: 'u-1',
+        firebaseUid: 'fb-ana',
+        email: 'ana.soto@boosterchile.com',
+        fullName: 'Ana Soto',
+        phone: null,
+        whatsappE164: null,
+        rut: null,
+        status: 'suspendido',
+        isPlatformAdmin: true,
+      },
+      memberships: [],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({ uid: 'fb-ana', email: 'ana.soto@boosterchile.com' }),
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { is_platform_admin: boolean } };
+    expect(body.user.is_platform_admin).toBe(false);
+  });
+
+  it('cuenta en la lista de respaldo sin marca y suspendida → is_platform_admin true (respaldo)', async () => {
+    const { db } = makeDbStub({
+      userByFirebaseUid: {
+        id: 'u-1',
+        firebaseUid: 'fb-admin',
+        email: 'admin@boosterchile.com',
+        fullName: 'Admin',
+        phone: null,
+        whatsappE164: null,
+        rut: null,
+        status: 'suspendido',
+        isPlatformAdmin: false,
+      },
+      memberships: [],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({ uid: 'fb-admin', email: 'admin@boosterchile.com' }),
+      },
+    });
+    const body = (await res.json()) as { user: { is_platform_admin: boolean } };
+    expect(body.user.is_platform_admin).toBe(true);
+  });
+
+  it('el correo de Firebase sin cuenta y fuera de la lista no crea cuenta (SC2)', async () => {
+    const { db, insertCalls } = makeDbStub({ userByFirebaseUid: null, userByEmail: null });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'fb-ana',
+          email: 'ana.soto@boosterchile.com',
+          emailVerified: true,
+        }),
+      },
+    });
+    const body = (await res.json()) as { needs_onboarding: boolean };
+    expect(body.needs_onboarding).toBe(true);
+    expect(insertCalls).toHaveLength(0);
+  });
 });

@@ -6,11 +6,13 @@ import {
   altaPersonalBoosterResponseSchema,
   altaPersonalBoosterSchema,
   listaPersonalBoosterResponseSchema,
+  quitarAccesoPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
 } from '@booster-ai/shared-schemas';
 import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, esFirebaseUidDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { users } from '../db/schema.js';
@@ -19,6 +21,7 @@ import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarAvisoAccesoPanel } from '../services/notifications/aviso-acceso-panel-email.js';
 import { enviarCorreoActivacionPersonalBooster } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import {
@@ -53,6 +56,8 @@ type ResultadoAlta =
       vinculo: VinculoPersonalBooster;
       /** Si el alta dejó la cuenta con `es_admin_plataforma = true`. */
       marcada: boolean;
+      /** La cuenta no estaba marcada antes de esta alta (o es nueva). */
+      accesoOtorgado: boolean;
       /** Código en claro: solo para la respuesta y el correo. Nunca a un log. */
       codigo: string | null;
       expira: Date | string | null;
@@ -61,25 +66,28 @@ type ResultadoAlta =
     };
 
 /**
- * Alta del personal de Booster desde el panel (`.specs/alta-personal-booster`).
+ * Personal de Booster desde el panel (`.specs/alta-personal-booster` y
+ * `.specs/acceso-panel-plataforma`).
  *
- *   GET  /admin/personal-booster                → lista del personal (SC1)
- *   POST /admin/personal-booster                → alta con correo, nombre y RUT
- *                                                 (SC2–SC4)
- *   POST /admin/personal-booster/:userId/codigo → código nuevo para quien no
- *                                                 activó (SC5)
+ *   GET  /admin/personal-booster                       → lista del personal
+ *   POST /admin/personal-booster                       → alta con correo, nombre
+ *                                                        y RUT: otorga el acceso
+ *   POST /admin/personal-booster/:userId/codigo        → código nuevo para quien
+ *                                                        no activó
+ *   POST /admin/personal-booster/:userId/quitar-acceso → quita el acceso
  *
- * **La lista de Terraform decide el acceso.** `BOOSTER_PLATFORM_ADMIN_EMAILS`
- * sigue siendo la que habilita el panel (`requirePlatformAdmin`, `/me`). Estas
- * rutas no la cambian: crean la cuenta provisoria con
- * `es_admin_plataforma = true` y un código de un solo uso. El alta no exige
- * que el correo esté en la lista, para que el correo quede reservado para esa
- * persona desde el primer paso; la activación sí lo exige (`/auth/activar`).
+ * **El panel otorga y quita el acceso.** La regla de acceso
+ * (`auth/acceso-plataforma.ts`) da el panel a la cuenta marcada con
+ * `es_admin_plataforma = true` y activa, o a un correo de la lista de respaldo
+ * `BOOSTER_PLATFORM_ADMIN_EMAILS` (Terraform, para el primer admin). El alta
+ * marca toda cuenta que registra; la baja la desmarca. Cada alta que otorga el
+ * acceso y cada baja dejan un evento de auditoría y avisan a la lista de
+ * respaldo.
  *
  * **Principio de identidad.** El admin carga datos, nunca la clave. El código
  * se guarda solo como hash con su vencimiento en `activacion_vence_en`, sale
- * una vez en la respuesta y, si el correo ya está en la lista, por correo. No
- * entra a logs, spans ni auditoría. Una cuenta que ya eligió su clave nunca
+ * una vez en la respuesta y por correo a la persona. No entra a logs, spans,
+ * auditoría ni avisos. Una cuenta que ya eligió su clave nunca
  * recibe un código nuevo, y el alta no cambia RUT, nombre ni correo de una
  * cuenta existente.
  *
@@ -89,14 +97,15 @@ type ResultadoAlta =
  * nuevo con su vencimiento: una cuenta marcada se activa solo con un código
  * del panel (`/auth/activar`).
  *
- * **Cuenta ya activa.** Se marca como personal solo si su correo ya está en
- * la lista. `/me` lee la marca para mandar a la persona al panel; sin la
- * lista, el panel le respondería 403 y perdería el inicio de su empresa.
- * Las cuentas provisorias se marcan siempre: la marca es una de las
- * condiciones para activar sin invitación (SC6) y para re-emitir (SC5). Una
- * provisoria marcada que además tiene una invitación vigente a una empresa
- * activa con el código del panel aunque su correo todavía no esté en la
- * lista; desde ahí `/me` la ve como personal.
+ * **Cuenta ya activa.** Queda marcada y con acceso desde el alta. El panel le
+ * pide al admin confirmarlo con la persona, y la lista de respaldo recibe el
+ * aviso.
+ *
+ * **Quitar acceso.** Desmarca la cuenta. No aplica a un correo de la lista de
+ * respaldo (ese acceso se quita en Terraform) ni deja el panel sin nadie con
+ * acceso. La lectura bloquea las cuentas marcadas hasta el commit, para que
+ * dos bajas en paralelo no se salten esa regla. Si la cuenta no activó, su
+ * código del panel deja de servir.
  *
  * Auditoría: log estructurado con `event_type` `personal_booster.*` (qué
  * admin, a quién por `user_id`, qué vínculo), igual que las demás rutas admin.
@@ -104,7 +113,10 @@ type ResultadoAlta =
 export function createAdminPersonalBoosterRoutes(opts: {
   db: Db;
   logger: Logger;
-  /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de Terraform. */
+  /**
+   * `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de respaldo. Recibe los
+   * avisos de acceso otorgado y quitado.
+   */
   platformAdminEmails: readonly string[];
   emailSender: EmailSender;
   /** Base del enlace a `/activar` del correo. */
@@ -236,6 +248,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
                 claveNumericaHash: users.claveNumericaHash,
                 activationPinHash: users.activationPinHash,
                 activacionVenceEn: users.activacionVenceEn,
+                isPlatformAdmin: users.isPlatformAdmin,
               })
               .from(users)
               .where(sql`lower(${users.email}) = ${body.email}`)
@@ -251,35 +264,41 @@ export function createAdminPersonalBoosterRoutes(opts: {
                 return { tipo: 'rechazo', code: 'rut_mismatch' };
               }
               const clasificado = clasificarVinculoPersona(existente);
+              // Se conserva solo un código que el panel del personal emitió a
+              // esta cuenta ya marcada y que sigue vigente. Una provisoria que
+              // todavía no era del personal recibe siempre uno nuevo: el que
+              // tenía lo pudo conocer otra persona
+              // (`.specs/acceso-panel-plataforma` SC3).
+              const conservaCodigo =
+                existente.isPlatformAdmin === true &&
+                codigoPersonalVigente(existente.activacionVenceEn);
               const vinculo: VinculoPersonalBooster =
-                clasificado === 'codigo_vigente' &&
-                !codigoPersonalVigente(existente.activacionVenceEn)
+                clasificado === 'codigo_vigente' && !conservaCodigo
                   ? 'provisoria_sin_codigo'
                   : clasificado;
               const codigo = vinculo === 'provisoria_sin_codigo' ? generateActivationPin() : null;
-              // Una cuenta activa fuera de la lista no se toca (ver arriba).
-              const marcada = vinculo !== 'cuenta_activa' || enLista;
-              if (marcada) {
-                // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
-                await tx
-                  .update(users)
-                  .set({
-                    isPlatformAdmin: true,
-                    ...(codigo === null
-                      ? {}
-                      : {
-                          activationPinHash: hashActivationPin(codigo),
-                          activacionVenceEn: venceEn,
-                        }),
-                    updatedAt: ahora,
-                  })
-                  .where(eq(users.id, existente.id));
-              }
+              // El alta marca toda cuenta que registra: el panel otorga el
+              // acceso (`.specs/acceso-panel-plataforma` SC3).
+              // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+              await tx
+                .update(users)
+                .set({
+                  isPlatformAdmin: true,
+                  ...(codigo === null
+                    ? {}
+                    : {
+                        activationPinHash: hashActivationPin(codigo),
+                        activacionVenceEn: venceEn,
+                      }),
+                  updatedAt: ahora,
+                })
+                .where(eq(users.id, existente.id));
               return {
                 tipo: 'registrada',
                 userId: existente.id,
                 vinculo,
-                marcada,
+                marcada: true,
+                accesoOtorgado: existente.isPlatformAdmin !== true,
                 codigo,
                 expira:
                   codigo !== null
@@ -325,6 +344,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
               userId: creado.id,
               vinculo: 'nueva',
               marcada: true,
+              accesoOtorgado: true,
               codigo,
               expira: venceEn,
               email: body.email,
@@ -364,7 +384,9 @@ export function createAdminPersonalBoosterRoutes(opts: {
           'personal-booster: alta registrada (código no logueado)',
         );
 
-        if (resultado.codigo !== null && enLista) {
+        // El código sale por correo a la persona, esté o no en la lista de
+        // respaldo: la lista ya no es condición para activar (SC3).
+        if (resultado.codigo !== null) {
           await enviarCorreoActivacionPersonalBooster({
             sender: opts.emailSender,
             logger: opts.logger,
@@ -375,6 +397,32 @@ export function createAdminPersonalBoosterRoutes(opts: {
             codigo: resultado.codigo,
             webAppUrl: opts.webAppUrl,
           });
+        }
+
+        if (resultado.accesoOtorgado) {
+          const aviso = await enviarAvisoAccesoPanel({
+            sender: opts.emailSender,
+            logger: opts.logger,
+            accion: 'otorgado',
+            destinatarios: opts.platformAdminEmails,
+            persona: {
+              userId: resultado.userId,
+              nombre: resultado.nombre,
+              email: resultado.email,
+            },
+            actorEmail: admin.adminEmail,
+            webAppUrl: opts.webAppUrl,
+          });
+          opts.logger.info(
+            {
+              event_type: 'personal_booster.acceso_otorgado',
+              actor_user_id: admin.userContext.user.id,
+              user_id: resultado.userId,
+              avisos_destinatarios: aviso.destinatarios,
+              avisos_enviados: aviso.enviados,
+            },
+            'personal-booster: acceso al panel otorgado',
+          );
         }
 
         return c.json(
@@ -484,7 +532,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
           'personal-booster: código reemitido (código no logueado)',
         );
 
-        if (enLista && persona.rut !== null) {
+        if (persona.rut !== null) {
           await enviarCorreoActivacionPersonalBooster({
             sender: opts.emailSender,
             logger: opts.logger,
@@ -505,6 +553,127 @@ export function createAdminPersonalBoosterRoutes(opts: {
             expira_en: venceEn.toISOString(),
             en_lista: enLista,
           }),
+          200,
+        );
+      },
+    );
+  });
+
+  // Sin body a propósito, como la re-emisión.
+  app.post('/:userId/quitar-acceso', zValidator('param', userIdParamSchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+
+    const { userId } = c.req.valid('param');
+    const lista = normalizarLista(opts.platformAdminEmails);
+
+    return await withBusinessSpan(
+      { name: 'personal_booster.quitar_acceso', attributes: { 'booster.user_id': userId } },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('personal_booster_quitar_acceso_total').add(1, { resultado });
+          setResultAttributes(span, { 'personal_booster.resultado': resultado });
+        };
+
+        const resultado = await opts.db.transaction(async (tx) => {
+          // Todas las cuentas marcadas, bloqueadas hasta el commit y en orden
+          // fijo: dos bajas en paralelo se ordenan y la segunda ve lo que dejó
+          // la primera.
+          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+          const marcadas = await tx
+            .select({
+              id: users.id,
+              email: users.email,
+              fullName: users.fullName,
+              firebaseUid: users.firebaseUid,
+              claveNumericaHash: users.claveNumericaHash,
+              activationPinHash: users.activationPinHash,
+              activacionVenceEn: users.activacionVenceEn,
+              status: users.status,
+            })
+            .from(users)
+            .where(eq(users.isPlatformAdmin, true))
+            .orderBy(users.id)
+            .for('update')
+            .limit(LIMITE_PERSONAL);
+
+          const persona = marcadas.find((m) => m.id === userId);
+          if (!persona) {
+            return { tipo: 'no_encontrada' } as const;
+          }
+          if (correoEnListaRespaldo(persona.email, lista)) {
+            return { tipo: 'en_lista_respaldo' } as const;
+          }
+          // Quién conserva el acceso: las otras cuentas marcadas y activas, y
+          // los correos de la lista de respaldo.
+          const otrasConAcceso = marcadas.filter(
+            (m) => m.id !== persona.id && m.status === 'activo',
+          ).length;
+          if (otrasConAcceso + lista.length === 0) {
+            return { tipo: 'ultimo_acceso' } as const;
+          }
+
+          // Si no activó, el código del panel deja de servir: sin la marca ya
+          // no activaría como personal. Un código de otro flujo no se toca.
+          const invalidarCodigo =
+            clasificarVinculoPersona(persona) !== 'cuenta_activa' &&
+            persona.activacionVenceEn !== null;
+          // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+          const escritas = await tx
+            .update(users)
+            .set({
+              isPlatformAdmin: false,
+              ...(invalidarCodigo ? { activationPinHash: null, activacionVenceEn: null } : {}),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(users.id, persona.id), eq(users.isPlatformAdmin, true)))
+            .returning({ id: users.id });
+          if (escritas.length === 0) {
+            return { tipo: 'no_encontrada' } as const;
+          }
+          return { tipo: 'quitado', persona, invalidarCodigo } as const;
+        });
+
+        if (resultado.tipo === 'no_encontrada') {
+          record('personal_not_found');
+          return c.json({ error: 'not_found', code: 'personal_not_found' }, 404);
+        }
+        if (resultado.tipo === 'en_lista_respaldo') {
+          record('en_lista_respaldo');
+          return c.json({ error: 'conflict', code: 'en_lista_respaldo' }, 409);
+        }
+        if (resultado.tipo === 'ultimo_acceso') {
+          record('ultimo_acceso');
+          return c.json({ error: 'conflict', code: 'ultimo_acceso' }, 409);
+        }
+
+        const { persona, invalidarCodigo } = resultado;
+        record('quitado');
+        const aviso = await enviarAvisoAccesoPanel({
+          sender: opts.emailSender,
+          logger: opts.logger,
+          accion: 'quitado',
+          destinatarios: opts.platformAdminEmails,
+          persona: { userId: persona.id, nombre: persona.fullName, email: persona.email },
+          actorEmail: admin.adminEmail,
+          webAppUrl: opts.webAppUrl,
+        });
+        opts.logger.info(
+          {
+            event_type: 'personal_booster.acceso_quitado',
+            actor_user_id: admin.userContext.user.id,
+            user_id: persona.id,
+            codigo_invalidado: invalidarCodigo,
+            avisos_destinatarios: aviso.destinatarios,
+            avisos_enviados: aviso.enviados,
+          },
+          'personal-booster: acceso al panel quitado',
+        );
+
+        return c.json(
+          quitarAccesoPersonalBoosterResponseSchema.parse({ ok: true, user_id: persona.id }),
           200,
         );
       },

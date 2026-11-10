@@ -1,5 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
   type MiembroPendienteAdmin,
   crearEmpresaAdminSchema,
   empresaEstadoPatchSchema,
@@ -90,7 +92,7 @@ function miembroPendienteDe(row: {
  * `/auth/activar` la pasa a `activa`. La trazabilidad queda en
  * `invitado_por_id` / `invitado_en`.
  *
- * Audiencia: platform-admin (allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`).
+ * Audiencia: platform-admin (`requirePlatformAdmin`).
  */
 export function createAdminEmpresaMiembrosRoutes(opts: {
   db: Db;
@@ -819,6 +821,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               estado: memberships.status,
               claveNumericaHash: users.claveNumericaHash,
               firebaseUid: users.firebaseUid,
+              isPlatformAdmin: users.isPlatformAdmin,
               email: users.email,
               nombre: users.fullName,
               rut: users.rut,
@@ -835,6 +838,21 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           if (!fila) {
             record('membership_not_found');
             return c.json({ error: 'not_found', code: 'membership_not_found' }, 404);
+          }
+
+          // El código de una cuenta del personal sale solo del panel del
+          // personal: este código se le entrega a la empresa
+          // (`.specs/acceso-panel-plataforma` SC9).
+          if (fila.isPlatformAdmin) {
+            record(CODIGO_CUENTA_PERSONAL_BOOSTER);
+            return c.json(
+              {
+                error: 'conflict',
+                code: CODIGO_CUENTA_PERSONAL_BOOSTER,
+                message: MENSAJE_CUENTA_PERSONAL_BOOSTER,
+              },
+              409,
+            );
           }
 
           const siguePendiente =
@@ -857,7 +875,12 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               .update(users)
               .set({
                 activationPinHash: hashActivationPin(codigo),
-                activacionVenceEn: null,
+                // Solo un platform-admin re-emite desde aquí: cuenta como
+                // código del panel y deja su vencimiento
+                // (`.specs/acceso-panel-plataforma` SC9). Una cuenta del
+                // personal no llega hasta acá (ver arriba), y si después la
+                // marcan, el alta del personal le emite un código propio.
+                activacionVenceEn: expiraEn,
                 updatedAt: ahora,
               })
               .where(eq(users.id, fila.userId));
