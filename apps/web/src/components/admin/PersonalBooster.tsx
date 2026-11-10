@@ -449,10 +449,10 @@ export function PersonalBooster() {
             <div className="font-semibold text-neutral-900">Confirma el alta</div>
             <p className="mt-1 text-neutral-700 text-sm">
               Revisa los datos. Al crearla, la persona queda marcada como personal de Booster con
-              acceso al panel. Si no tiene cuenta, se crea con un código de activación de un solo
-              uso que vence en 7 días; si ya tiene una activa, entra desde ya con su clave. Si su
-              cuenta ya es de una empresa, queda marcada cuando confirme, con su sesión, el código
-              que le entregues en persona.
+              acceso al panel, salvo que ya tenga cuenta en una empresa. Si no tiene cuenta, se crea
+              con un código de activación de un solo uso que vence en 7 días; si ya tiene una
+              activa, entra desde ya con su clave. Si su cuenta ya es de una empresa, queda marcada
+              cuando confirme, con su sesión, el código que le entregues en persona.
             </p>
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
               <dt className="text-neutral-600">Correo</dt>
@@ -711,7 +711,7 @@ function OrdenDelAlta() {
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-neutral-700 text-sm">
             <li>
               Crea la cuenta aquí con su correo, nombre completo y RUT. Desde ese momento queda
-              marcada como personal de Booster.
+              marcada como personal de Booster, salvo que ya tenga cuenta en una empresa.
             </li>
             <li>
               Entrégale el código o usa «Generar código nuevo» en su fila: también se lo enviamos
@@ -728,8 +728,8 @@ function OrdenDelAlta() {
             Booster. Queda con acceso al panel cuando lo confirma.
           </p>
           <p className="mt-2 text-neutral-600 text-sm">
-            Para quitarle el acceso, usa «Quitar acceso» en su fila. Cada alta y cada baja se avisan
-            a la lista de respaldo.
+            Para quitarle el acceso, usa «Quitar acceso» en su fila. Cada alta que da acceso y cada
+            baja de quien tenía acceso se avisan a la lista de respaldo.
           </p>
         </div>
       </div>
