@@ -2,7 +2,7 @@
 
 - **Author**: agente (Claude), por encargo del PO
 - **Date**: 2026-11-10
-- **Status**: Borrador. Espera la aceptación del PO y un lugar en `docs/frentes-vivos.md`. Sin las dos cosas no se escribe código.
+- **Status**: Aceptada por el PO en el chat del 2026-11-10 («Acepto las cuatro»), con las decisiones de §11. Falta su lugar en `docs/frentes-vivos.md`; sin él no se escribe código.
 - **Linked**: [ADR-088](../../docs/adr/088-ruta-parada-servicio.md) (vigente desde el 2026-11-10), [ADR-089](../../docs/adr/089-reparto-huella-cargas-consolidadas.md), [ADR-090](../../docs/adr/090-matching-desde-la-carga-vehiculo-al-despachar.md), [ADR-061](../../docs/adr/061-trip-lifecycle-tabla-transiciones-pura.md), [ADR-073](../../docs/adr/073-tipologias-flota-configuracion-glec.md), `.specs/editar-anular-cargas/`, `.specs/seguimiento-publico-minimizacion/`
 
 ## 1. Objetivo
@@ -199,8 +199,7 @@ deja al conductor sin ver las paradas.
 ## 8. Fuera de alcance
 
 - Reparto de huella y certificado de cargas consolidadas (ADR-089, spec
-  propia). Hasta que exista, **una ruta con más de un servicio no emite
-  certificados**: sus servicios muestran la estimación.
+  propia). Las partes 5 a 7 no se despliegan sin ella (§9 y §11-1).
 - Aceptar sin vehículo y declararlo al despachar (ADR-090, spec propia). En
   esta spec la asignación sigue naciendo con vehículo y la ruta lo hereda.
 - Transbordo, optimización automática del orden de paradas, rutas con más de
@@ -214,13 +213,9 @@ deja al conductor sin ver las paradas.
    del vehículo y del conductor. Nada cambia para los usuarios.
 2. Spec de ADR-090 (vehículo al despachar): depende de que el vehículo viva en
    la ruta.
-3. Esta spec, partes 5 a 7: el transportista consolida.
-4. Spec de ADR-089 (reparto de huella): depende de que existan rutas con más
-   de un servicio. Sin ella, la consolidación sale sin certificado (§8).
-5. Esta spec, parte 8.
-
-Los pasos 3 y 4 pueden invertirse o salir juntos si el PO prefiere que no
-exista consolidación sin certificado.
+3. Esta spec, partes 5 a 7, junto con la spec de ADR-089 (reparto de huella).
+   Salen en el mismo release: no hay consolidación sin certificado (§11-1).
+4. Esta spec, parte 8.
 
 ## 10. Criterios de éxito
 
@@ -248,11 +243,11 @@ exista consolidación sin certificado.
 `route-planner`, la migración, el relleno y el seguimiento son dominio
 crítico: primero el test, con el rojo en la evidencia del PR.
 
-## 11. Preguntas para el PO
+## 11. Decisiones del PO (2026-11-10)
 
-| # | Pregunta | Recomendación |
+| # | Pregunta | Decisión |
 |---|---|---|
-| 1 | ¿Se acepta salir con consolidación sin certificado mientras no esté ADR-089 (§8 y §9)? | No: sacar los pasos 3 y 4 juntos. Un servicio consolidado sin certificado contradice lo que Booster vende. |
-| 2 | ¿Puede una ruta juntar servicios de más de un generador desde el primer día, o primero solo del mismo generador? | De varios desde el primer día. Es el caso que motiva el ADR y las reglas de privacidad de §4.6 y §4.7 ya lo cubren. |
-| 3 | ¿El conductor puede reordenar paradas, o solo la oficina? | Solo la oficina. El conductor ve el orden y confirma cada parada. |
-| 4 | ¿Qué lugar toma este frente en `docs/frentes-vivos.md`? Hoy la fase activa es la A del programa TRL 10, con sus tres slots ocupados. | Lo decide el PO: reemplazar un slot o declararlo fuera de slot con su razón. |
+| 1 | ¿Se acepta salir con consolidación sin certificado mientras no esté ADR-089? | No. La consolidación y el reparto de huella salen juntos. |
+| 2 | ¿Una ruta puede juntar servicios de más de un generador desde el primer día? | Sí. |
+| 3 | ¿El conductor puede reordenar paradas? | No. Solo la oficina; el conductor ve el orden y confirma cada parada. |
+| 4 | ¿Qué lugar toma este frente en `docs/frentes-vivos.md`? | Pendiente. |
