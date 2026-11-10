@@ -46,13 +46,28 @@ describe('existeCuentaConCorreo', () => {
 });
 
 describe('correoOcupado', () => {
-  it('un correo de la lista, con mayúsculas y espacios, está ocupado sin consultar la base', async () => {
+  it('un correo de la lista, con mayúsculas y espacios, está ocupado y hace la misma consulta que cualquier otro', async () => {
     const d = makeDb([]);
 
     expect(
       await correoOcupado({ db: d.db, email: ' Respaldo@BoosterChile.com ', lista: LISTA }),
     ).toBe(true);
-    expect(d.select).not.toHaveBeenCalled();
+    expect(d.select).toHaveBeenCalledTimes(1);
+    expect(consultaDe(d.where.mock.calls[0]?.[0]).params).toEqual(['respaldo@boosterchile.com']);
+  });
+
+  it.each([
+    ['el de una cuenta por RUT', 'users+123456785@boosterchile.invalid'],
+    [
+      'el de un conductor por RUT, con mayúsculas y espacios',
+      ' Drivers+123456785@BoosterChile.INVALID ',
+    ],
+    ['el relleno del alta vieja', 'pending-rut-123456785@empresa.cl'],
+  ])('un correo reservado (%s) está ocupado y hace la misma consulta', async (_caso, email) => {
+    const d = makeDb([]);
+
+    expect(await correoOcupado({ db: d.db, email, lista: LISTA })).toBe(true);
+    expect(d.select).toHaveBeenCalledTimes(1);
   });
 
   it('fuera de la lista, el correo de una cuenta existente está ocupado', async () => {

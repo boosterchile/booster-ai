@@ -95,7 +95,7 @@ describe('POST /api/v1/signup-request (SC-1.2.1)', () => {
   });
 
   // `.specs/correos-solicitudes-panel` SC1: la ruta pasa la lista de `config`.
-  it('correo de la lista de respaldo → 202 idéntico, sin consultar ni insertar', async () => {
+  it('correo de la lista de respaldo → 202 idéntico, con la misma consulta y sin insertar', async () => {
     const d = makeDb();
     const app = createSignupRequestRoutes({ db: d.db, logger: noopLogger });
 
@@ -107,7 +107,26 @@ describe('POST /api/v1/signup-request (SC-1.2.1)', () => {
 
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ ok: true });
-    expect(d.spies.select).not.toHaveBeenCalled();
+    expect(d.spies.select).toHaveBeenCalledTimes(1);
+    expect(d.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('correo reservado de una cuenta por RUT → 202 idéntico, con la misma consulta y sin insertar', async () => {
+    const d = makeDb();
+    const app = createSignupRequestRoutes({ db: d.db, logger: noopLogger });
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: 'users+123456785@boosterchile.invalid',
+        nombreCompleto: 'Otra Persona',
+      }),
+    });
+
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(d.spies.select).toHaveBeenCalledTimes(1);
     expect(d.spies.insert).not.toHaveBeenCalled();
   });
 

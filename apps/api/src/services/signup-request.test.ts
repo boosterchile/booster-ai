@@ -389,7 +389,7 @@ describe('approveSignupRequest — el correo de la solicitud (correos-solicitude
   it.each(MODOS)(
     'un correo de la lista, con mayúsculas y espacios, no crea la cuenta (%s)',
     async (_modo, provisioned) => {
-      const { db, capturedSets, insertCalls, transaction } = makeDb({
+      const { db, capturedSets, insertCalls, transaction, predicadosCuenta } = makeDb({
         requestRow: { ...REQUEST, email: ' Respaldo@BoosterChile.com ' },
       });
       const auth = makeAuthWithResetLink('https://app.boosterchile.com/__/auth/action?mode=reset');
@@ -413,6 +413,37 @@ describe('approveSignupRequest — el correo de la solicitud (correos-solicitude
       expect(insertCalls).toEqual([]);
       expect(transaction).not.toHaveBeenCalled();
       expect(notifier.notifyUserOfApproval).not.toHaveBeenCalled();
+      // La misma búsqueda de cuenta que cualquier otro correo.
+      expect(predicadosCuenta).toHaveLength(1);
+    },
+  );
+
+  it.each(MODOS)(
+    'un correo reservado de una cuenta por RUT no crea la cuenta (%s)',
+    async (_modo, provisioned) => {
+      const d = makeDb({
+        requestRow: { ...REQUEST, email: 'users+123456785@boosterchile.invalid' },
+      });
+      const auth = makeAuthWithResetLink('https://app.boosterchile.com/__/auth/action?mode=reset');
+      const notifier = makeNotifier();
+
+      const result = await approveSignupRequest(d.db, noopLogger, auth, notifier, {
+        id: SID,
+        approverEmail: 'admin@booster.cl',
+        loginLinkUrl: 'https://app.boosterchile.com/login',
+        correlationId: 'corr-reservado',
+        platformAdminEmails: LISTA,
+        ...(provisioned ? { adminProvisionedOnboarding: provisioned } : {}),
+      });
+
+      expect(result).toEqual({ outcome: 'firebase_user_already_exists' });
+      expect(auth.createUser).not.toHaveBeenCalled();
+      expect(auth.generatePasswordResetLink).not.toHaveBeenCalled();
+      expect(d.capturedSets).toEqual([]);
+      expect(d.insertCalls).toEqual([]);
+      expect(d.transaction).not.toHaveBeenCalled();
+      expect(notifier.notifyUserOfApproval).not.toHaveBeenCalled();
+      expect(d.predicadosCuenta).toHaveLength(1);
     },
   );
 
@@ -518,7 +549,7 @@ describe('submitSignupRequest — correo ocupado (correos-solicitudes-panel SC1,
     expect(d.insert).not.toHaveBeenCalled();
   });
 
-  it('un correo de la lista de respaldo, con mayúsculas y espacios → shadowed, sin consultar ni guardar', async () => {
+  it('un correo de la lista de respaldo, con mayúsculas y espacios → shadowed, con la misma consulta y sin guardar', async () => {
     const d = makeSubmitDb([]);
 
     const res = await submitSignupRequest(
@@ -530,7 +561,26 @@ describe('submitSignupRequest — correo ocupado (correos-solicitudes-panel SC1,
     );
 
     expect(res).toEqual({ outcome: 'shadowed' });
-    expect(d.select).not.toHaveBeenCalled();
+    expect(d.select).toHaveBeenCalledTimes(1);
     expect(d.insert).not.toHaveBeenCalled();
   });
+
+  it.each(['users+123456785@boosterchile.invalid', 'Drivers+123456785@BoosterChile.Invalid'])(
+    'un correo reservado (%s) → shadowed, con la misma consulta y sin guardar',
+    async (email) => {
+      const d = makeSubmitDb([]);
+
+      const res = await submitSignupRequest(
+        d.db,
+        noopLogger,
+        { email, nombreCompleto: 'Otra Persona' },
+        'corr-4',
+        LISTA,
+      );
+
+      expect(res).toEqual({ outcome: 'shadowed' });
+      expect(d.select).toHaveBeenCalledTimes(1);
+      expect(d.insert).not.toHaveBeenCalled();
+    },
+  );
 });

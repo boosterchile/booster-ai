@@ -636,6 +636,30 @@ describe('POST /:id/approve con ADMIN_PROVISIONED_ONBOARDING_ENABLED=true (W1.4 
     expect(n.notifyUserOfApproval).not.toHaveBeenCalled();
   });
 
+  it('con un correo reservado de una cuenta por RUT → 409 firebase_user_already_exists, sin onboarding_link ni access_link', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [{ ...selectRow(), email: 'users+123456785@boosterchile.invalid' }],
+      updateRows: [{ id: REQUEST_ID, email: 'users+123456785@boosterchile.invalid' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'firebase_user_already_exists' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
+    expect(d.spies.update).not.toHaveBeenCalled();
+    expect(n.notifyUserOfApproval).not.toHaveBeenCalled();
+  });
+
   it('T2.0 — si Firebase no puede generar el link de acceso, el approve igual entrega el alta', async () => {
     const mod = await loadModWithAdminProvisionedConfig();
     const d = makeDb({
@@ -923,6 +947,25 @@ describe('POST /exencion — alta por exención (alta-membresia fase 1)', () => 
     const consulta = new PgDialect().sqlToQuery(predicado);
     expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
     expect(consulta.params).toEqual(['ana@cliente.cl']);
+  });
+
+  // `.specs/correos-solicitudes-panel` SC1.
+  it('un correo reservado de un conductor por RUT → 409 email_already_registered sin createUser ni solicitud', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[], [], [approveRow()]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({ ...body, email: 'drivers+123456785@boosterchile.invalid' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'email_already_registered' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(d.spies.insert).not.toHaveBeenCalled();
   });
 
   // `.specs/correos-solicitudes-panel` SC1.

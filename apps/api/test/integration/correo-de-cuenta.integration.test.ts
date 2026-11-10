@@ -13,7 +13,8 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 /**
  * T5 de `.specs/correos-solicitudes-panel/spec.md`, contra Postgres real:
  *   - SC1: la aprobación de una solicitud, la exención y la solicitud pública
- *     tratan un correo de la lista de respaldo como uno ya usado.
+ *     tratan un correo de la lista de respaldo o uno reservado como uno ya
+ *     usado.
  *   - SC3: las altas comparan el correo con las cuentas existentes sin
  *     distinguir mayúsculas, y en las tres invitaciones una alta simultánea
  *     con el mismo correo responde el mismo 409.
@@ -129,6 +130,11 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
   /** Cuenta existente guardada con mayúsculas, como la crea `/me` con el correo de Google. */
   const CORREO_GUARDADO = `Mayus.${sufijo}@Test.Invalid`;
   const VARIANTE = CORREO_GUARDADO.toLowerCase();
+  /**
+   * Correo reservado de una cuenta que se entra por RUT. Cada test usa el
+   * suyo: una alta que lo guardara no cambia el resultado de otro test.
+   */
+  const reservado = (etiqueta: string) => `users+${sufijo}${etiqueta}@boosterchile.invalid`;
   let comoAdmin: UserContext;
   let comoDueno: UserContext;
   let empresaId = '';
@@ -312,6 +318,22 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
     expect(await cuentasConCorreo(RESPALDO_SIN_CUENTA)).toBe(0);
   });
 
+  test('SC1 y SC3: las tres invitaciones rechazan un correo reservado, sin cuenta nueva', async () => {
+    const a = await invitaciones(h.db);
+    const reservados = [
+      `users+${sufijo}1@boosterchile.invalid`,
+      `Drivers+${sufijo}2@BoosterChile.Invalid`,
+      `pending-rut-${sufijo}3@boosterchile.invalid`,
+    ];
+    for (const { ruta, rut, email, init } of cadaInvitacion((i) => reservados[i] ?? '')) {
+      const res = await a.request(ruta, init);
+      expect(res.status, `${ruta}: ${await res.clone().text()}`).toBe(409);
+      expect(await res.json()).toEqual(YA_REGISTRADO);
+      expect(await cuentasConRut(rut), ruta).toBe(0);
+      expect(await cuentasConCorreo(email), ruta).toBe(0);
+    }
+  });
+
   test('SC3: una alta simultánea con el mismo correo responde el mismo 409 en las tres invitaciones', async () => {
     let n = 0;
     const db = conAltaSimultanea(h.db, async (email) => {
@@ -383,10 +405,10 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
     expect(await cuentasConCorreo(VARIANTE)).toBe(1);
   });
 
-  test('SC1 y SC3: la solicitud pública no guarda la variante de una cuenta ni un correo de la lista', async () => {
+  test('SC1 y SC3: la solicitud pública no guarda la variante de una cuenta, un correo de la lista ni uno reservado', async () => {
     const { submitSignupRequest } = await import('../../src/services/signup-request.js');
 
-    for (const email of [VARIANTE, RESPALDO_SIN_CUENTA.toUpperCase()]) {
+    for (const email of [VARIANTE, RESPALDO_SIN_CUENTA.toUpperCase(), reservado('solicitud')]) {
       const resultado = await submitSignupRequest(
         h.db,
         logger,
@@ -407,13 +429,14 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
     const { createAdminSignupRequestsRoutes } = await import(
       '../../src/routes/admin-signup-requests.js'
     );
-    // Solicitudes que ya estaban en la cola: un correo de la lista y la
-    // variante de una cuenta guardada.
+    // Solicitudes que ya estaban en la cola: un correo de la lista, la
+    // variante de una cuenta guardada y un correo reservado.
     const filas = await h.db
       .insert(schema.solicitudesRegistro)
       .values([
         { email: RESPALDO_SIN_CUENTA, nombreCompleto: 'Solicitante Lista' },
         { email: VARIANTE, nombreCompleto: 'Solicitante Variante' },
+        { email: reservado('sinenlace'), nombreCompleto: 'Solicitante Reservado' },
       ])
       .returning({ id: schema.solicitudesRegistro.id });
 
@@ -452,6 +475,7 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
     }
     expect(await cuentasConCorreo(RESPALDO_SIN_CUENTA)).toBe(0);
     expect(await cuentasConCorreo(VARIANTE)).toBe(1);
+    expect(await cuentasConCorreo(reservado('sinenlace'))).toBe(0);
   });
 
   test('SC1: la aprobación con enlace de onboarding tampoco crea la cuenta ni emite el enlace', async () => {
@@ -461,6 +485,7 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
       .values([
         { email: RESPALDO_SIN_CUENTA, nombreCompleto: 'Solicitante Lista' },
         { email: VARIANTE, nombreCompleto: 'Solicitante Variante' },
+        { email: reservado('conenlace'), nombreCompleto: 'Solicitante Reservado' },
       ])
       .returning({ id: schema.solicitudesRegistro.id });
 
@@ -488,10 +513,10 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
     }
   });
 
-  test('SC1 y SC3: la exención rechaza un correo de la lista y la variante de una cuenta, sin solicitud', async () => {
+  test('SC1 y SC3: la exención rechaza un correo de la lista, uno reservado y la variante de una cuenta, sin solicitud', async () => {
     const { emitirAltaExencion } = await import('../../src/services/emitir-alta-exencion.js');
 
-    for (const email of [RESPALDO_SIN_CUENTA.toUpperCase(), VARIANTE]) {
+    for (const email of [RESPALDO_SIN_CUENTA.toUpperCase(), VARIANTE, reservado('exencion')]) {
       const proveedor = proveedorDeIdentidad();
       const antes = await h.db
         .select({ n: sql<number>`count(*)::int` })
