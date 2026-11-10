@@ -18,6 +18,8 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  *   - SC3: las altas comparan el correo con las cuentas existentes sin
  *     distinguir mayúsculas, y en las tres invitaciones una alta simultánea
  *     con el mismo correo responde el mismo 409.
+ *   - Regresión de `bordes-autenticacion` SC5: las invitaciones siguen
+ *     rechazando un correo de la lista con el helper de SC3.
  *
  * `requirePlatformAdmin` y las rutas del panel leen la lista y los flags de
  * `config` al importarse: el env se fija en `vi.hoisted` y las rutas se
@@ -307,7 +309,7 @@ describe('integration: el correo de una cuenta nueva (correos-solicitudes-panel)
     expect(await cuentasConCorreo(VARIANTE)).toBe(1);
   });
 
-  test('SC1: las tres invitaciones rechazan un correo de la lista sin cuenta, con mayúsculas', async () => {
+  test('regresión bordes-autenticacion SC5: las tres invitaciones rechazan un correo de la lista sin cuenta, con mayúsculas', async () => {
     const a = await invitaciones(h.db);
     for (const { ruta, rut, init } of cadaInvitacion(() => RESPALDO_SIN_CUENTA.toUpperCase())) {
       const res = await a.request(ruta, init);
