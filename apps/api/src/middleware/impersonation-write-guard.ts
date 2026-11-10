@@ -1,5 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
+import { eq } from 'drizzle-orm';
 import type { MiddlewareHandler } from 'hono';
+import { z } from 'zod';
+import { tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
+import type { Db } from '../db/client.js';
+import { users } from '../db/schema.js';
 import type { UserContext } from '../services/user-context.js';
 import type { FirebaseClaims } from './firebase-auth.js';
 
@@ -25,6 +30,12 @@ import type { FirebaseClaims } from './firebase-auth.js';
  *     impersona debe bloquearse).
  *   - Sesión normal (sin `impersonated_by`) → passthrough SIEMPRE: no toca la
  *     escritura de usuarios reales.
+ *   - La impersonación vale mientras quien impersona tenga acceso al panel
+ *     (`.specs/bordes-autenticacion` SC4): en cada request impersonada, de
+ *     lectura o de escritura, se lee a quien impersona y se le aplica la regla
+ *     única de acceso (`auth/acceso-plataforma.ts`). Si ya no la cumple, no
+ *     existe o el claim no es un id válido → 401 `impersonation_revoked`. Una
+ *     sesión normal no consulta nada.
  *
  * Atribución: emite un log estructurado con `impersonated_by` en CADA mutación
  * impersonada — bloqueada (`auth.impersonation.write_blocked`) o permitida
@@ -42,6 +53,9 @@ const FORBIDDEN_RESPONSE = {
   error: 'forbidden_impersonation_write',
   code: 'forbidden_impersonation_write',
 } as const;
+const REVOKED_RESPONSE = { error: 'unauthorized', code: 'impersonation_revoked' } as const;
+const REVOKED_LOG_EVENT = 'auth.impersonation.revoked';
+const adminIdSchema = z.string().uuid();
 const IDEMPOTENT_SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const BLOCKED_LOG_EVENT = 'auth.impersonation.write_blocked';
@@ -49,6 +63,10 @@ const ALLOWED_LOG_EVENT = 'auth.impersonation.write_allowed';
 
 export interface ImpersonationWriteGuardOptions {
   logger: Logger;
+  /** Para volver a leer a quien impersona en cada request impersonada. */
+  db: Db;
+  /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de respaldo. */
+  platformAdminEmails: readonly string[];
 }
 
 /**
@@ -85,6 +103,35 @@ export function createImpersonationWriteGuardMiddleware(
     if (!admin) {
       await next();
       return;
+    }
+
+    // Quien impersona tiene que seguir con acceso al panel (SC4).
+    const adminId = adminIdSchema.safeParse(admin);
+    const filas = adminId.success
+      ? // rls-allowlist: lookup del admin que impersona, por su id; no es dato de empresa.
+        await opts.db
+          .select({
+            email: users.email,
+            isPlatformAdmin: users.isPlatformAdmin,
+            status: users.status,
+          })
+          .from(users)
+          .where(eq(users.id, adminId.data))
+          .limit(1)
+      : [];
+    const impersonador = filas[0];
+    if (!impersonador || !tieneAccesoPlataforma(impersonador, opts.platformAdminEmails)) {
+      opts.logger.warn(
+        {
+          event: REVOKED_LOG_EVENT,
+          correlationId: extractCorrelationId(c.req.header('x-cloud-trace-context')),
+          uid: claims?.uid ?? 'unknown',
+          impersonated_by: admin,
+          path: c.req.path,
+        },
+        'impersonation session revoked: the admin no longer has panel access',
+      );
+      return c.json(REVOKED_RESPONSE, 401);
     }
 
     const method = c.req.method.toUpperCase();

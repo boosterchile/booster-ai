@@ -7,6 +7,8 @@ import {
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
@@ -252,6 +254,11 @@ export function createAdminStakeholderOrgsRoutes(opts: {
       userId = existente.id;
       vinculo = VINCULO_PERSONA_EXISTENTE;
     } else {
+      // Una cuenta nueva no recibe un correo de la lista de respaldo del panel
+      // (`.specs/bordes-autenticacion` SC5): misma respuesta que un correo ya usado.
+      if (correoEnListaRespaldo(body.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
+        return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+      }
       vinculo = 'nueva';
       const codigo = generateActivationPin();
       codigoEmitido = codigo;

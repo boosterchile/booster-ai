@@ -13,6 +13,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
@@ -673,6 +675,13 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           // Persona existente: sin código nuevo y sin revelar el estado de su cuenta.
           vinculo = VINCULO_PERSONA_EXISTENTE;
         } else {
+          // Una cuenta nueva no recibe un correo de la lista de respaldo del
+          // panel (`.specs/bordes-autenticacion` SC5): misma respuesta que un
+          // correo ya usado.
+          if (correoEnListaRespaldo(email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
+            record('email_already_registered');
+            return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+          }
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const porEmail = await opts.db
             .select({ id: users.id })

@@ -95,9 +95,11 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // y no hay cuenta, se crea marcada y activa para que `/me` devuelva
     // `needs_onboarding=false` y no quede en el flujo de /onboarding. Es solo
     // para la lista de respaldo: el resto del personal se da de alta en el
-    // panel y activa en /activar.
+    // panel y activa en /activar. Exige que el proveedor haya verificado el
+    // correo (`.specs/bordes-autenticacion` SC2), igual que el account linking
+    // de arriba.
     // ---------------------------------------------------------------------
-    if (!user && claims.email) {
+    if (!user && claims.email && claims.emailVerified) {
       if (correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
         const fullName = claims.name?.trim() ?? claims.email.split('@')[0] ?? 'Platform Admin';
         const inserted = await opts.db

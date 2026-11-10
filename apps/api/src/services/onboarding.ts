@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import type { EmpresaOnboardingInput } from '@booster-ai/shared-schemas';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
 import {
   type EmpresaRow,
@@ -150,6 +151,13 @@ export async function onboardEmpresa(opts: {
   /** Valor del flag `EMPRESA_SELF_ONBOARDING_ENABLED`; consultado solo para `self_service`. */
   selfServiceEnabled: boolean;
   /**
+   * `config.BOOSTER_PLATFORM_ADMIN_EMAILS`, la lista de respaldo del panel. El
+   * alta no crea una cuenta con uno de esos correos
+   * (`.specs/bordes-autenticacion` SC5). Obligatoria: sin ella el chequeo
+   * quedaría apagado sin aviso.
+   */
+  platformAdminEmails: readonly string[];
+  /**
    * onboarding-flow-redesign T1.5a — consumo del token one-shot. REQUERIDO
    * cuando `authorizedBy='admin_provisioned'`. El route (T1.5b) verifica el
    * token (firma+expiración) y pasa el `solicitudId` (sid FIRMADO) + el
@@ -248,6 +256,12 @@ export async function onboardEmpresa(opts: {
       .where(eq(users.email, identidadEmail))
       .limit(1);
     if (existingByEmail.length > 0) {
+      throw new EmailAlreadyInUseError(identidadEmail);
+    }
+    // 2a. Un correo de la lista de respaldo del panel no se usa para una
+    //     cuenta de empresa, en ninguna variante de mayúsculas o espacios.
+    //     Misma respuesta que un correo ya usado (SC5).
+    if (correoEnListaRespaldo(identidadEmail, opts.platformAdminEmails)) {
       throw new EmailAlreadyInUseError(identidadEmail);
     }
 

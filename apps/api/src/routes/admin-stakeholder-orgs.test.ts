@@ -155,6 +155,16 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     expect(d.inserted).toHaveLength(0);
   });
 
+  // `.specs/bordes-autenticacion` SC5.
+  it('persona nueva con un correo de la lista de respaldo → 409 email_already_registered, sin escribir', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], []], [[{ id: 'u-nuevo' }], [{ id: 'm-1' }]]);
+    const res = await invitar(buildApp(mod, d.db), 'Dev@BoosterChile.com');
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(d.inserted).toHaveLength(0);
+  });
+
   it('persona nueva: crea el usuario con el código hasheado y membresía pendiente; devuelve el código', async () => {
     const mod = await loadMod();
     const d = makeDb([[org()], [], []], [[{ id: 'u-nuevo' }], [{ id: 'm-1' }]]);
