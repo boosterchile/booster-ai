@@ -871,32 +871,39 @@ steps:
   # Decision criteria + escalation: docs/qa/signup-canary-rollback.md.
   # =========================================================================
 
+  # Los siete deploys de abajo crean la revisión y después la enrutan con
+  # scripts/deploy/route_to_commit_revision.sh: 100% a la revisión de este
+  # commit, nombrada, y el paso falla si el servicio termina sirviendo otra.
+  # `services update --image` solo no mueve tráfico cuando el servicio lo tiene
+  # fijado a una revisión (queda así tras un rollback con --to-revisions).
   - id: deploy-whatsapp-bot
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-whatsapp-bot
-      - --image=${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-whatsapp-bot \
+          --image=${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-whatsapp-bot '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-whatsapp-bot]
 
   - id: deploy-web
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-web
-      - --image=${_REGISTRY}/web:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-web \
+          --image=${_REGISTRY}/web:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-web '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-web]
 
   # apps/telemetry-processor — Cloud Run PULL consumer (StreamingPull).
@@ -905,34 +912,36 @@ steps:
   # auto-documentación, aunque `update --image` ya preserva la config existente.
   - id: deploy-telemetry-processor
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-telemetry-processor
-      - --image=${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --min-instances=1
-      - --no-cpu-throttling
-      - --cpu=1
-      - --memory=1Gi
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-telemetry-processor \
+          --image=${_REGISTRY}/telemetry-processor:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --min-instances=1 \
+          --no-cpu-throttling \
+          --cpu=1 \
+          --memory=1Gi \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-telemetry-processor '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-telemetry-processor]
 
   - id: deploy-sms-fallback-gateway
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-sms-fallback-gateway
-      - --image=${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-sms-fallback-gateway \
+          --image=${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-sms-fallback-gateway '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-sms-fallback-gateway]
 
   # apps/document-service — consumer de `document.uploaded`, pull o push según
@@ -945,18 +954,19 @@ steps:
   # --to-revisions=<anterior>=100` (docs/runbooks/rollback-drill-microservicios.md).
   - id: deploy-document-service
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-document-service
-      - --image=${_REGISTRY}/document-service:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --cpu=1
-      - --memory=1Gi
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-document-service \
+          --image=${_REGISTRY}/document-service:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --cpu=1 \
+          --memory=1Gi \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-document-service '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-document-service]
 
   # apps/notification-service — Cloud Run PULL consumer de `notification-events`.
@@ -968,19 +978,20 @@ steps:
   # `notifications_via_microservice` del api, no este deploy.
   - id: deploy-notification-service
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-notification-service
-      - --image=${_REGISTRY}/notification-service:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --no-cpu-throttling
-      - --cpu=1
-      - --memory=512Mi
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-notification-service \
+          --image=${_REGISTRY}/notification-service:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --no-cpu-throttling \
+          --cpu=1 \
+          --memory=512Mi \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-notification-service '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-notification-service]
 
   # apps/matching-engine — request-driven. --min-instances NO va aquí: lo
@@ -995,18 +1006,19 @@ steps:
   # divergencia transitoria (runbook service-matching-engine.md).
   - id: deploy-matching-engine
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:591.0.0@sha256:aa2b2728a6f3eaf1d6d37409133fde8220b28460282f6983e3055b1b2c792228
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - services
-      - update
-      - booster-ai-matching-engine
-      - --image=${_REGISTRY}/matching-engine:${_COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --cpu=1
-      - --memory=512Mi
-      - --update-labels=commit=${_COMMIT_SHA}
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run services update booster-ai-matching-engine \
+          --image=${_REGISTRY}/matching-engine:${_COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --cpu=1 \
+          --memory=512Mi \
+          --update-labels=commit=${_COMMIT_SHA}
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-matching-engine '${_REGION}' '${_COMMIT_SHA}'
     waitFor: [push-matching-engine]
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
