@@ -46,9 +46,12 @@ test.describe('stakeholder: alta por el admin → activación → zonas', () => 
     await page.getByTestId(`stakeholder-org-toggle-${orgId}`).click();
     await page.getByTestId(`stakeholder-org-invite-toggle-${orgId}`).click();
     await page.getByTestId(`stakeholder-org-invite-rut-${orgId}`).fill(CREDENCIAL_F.stake.rut);
+    // Un correo no reservado: `boosterchile.invalid` es el dominio de las
+    // cuentas que se entran por RUT y ninguna alta lo acepta
+    // (`.specs/correos-solicitudes-panel` SC1 y SC3).
     await page
       .getByTestId(`stakeholder-org-invite-email-${orgId}`)
-      .fill('stakeholder-e2e@boosterchile.invalid');
+      .fill('stakeholder-e2e@test.invalid');
     await page.getByTestId(`stakeholder-org-invite-name-${orgId}`).fill('Analista Observatorio');
     await page.getByTestId(`stakeholder-org-invite-submit-${orgId}`).click();
 

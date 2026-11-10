@@ -1,3 +1,4 @@
+import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,6 +45,8 @@ function makeDbStub(opts: {
   userByEmail?: Record<string, unknown> | null;
   memberships?: Record<string, unknown>[];
   insertReturning?: Record<string, unknown>[];
+  /** El uid de la sesión es el `firebase_uid` de una solicitud (SC6). */
+  uidDeSolicitud?: boolean;
 }) {
   const selectResults: Array<Record<string, unknown>[]> = [];
   selectResults.push(opts.userByFirebaseUid ? [opts.userByFirebaseUid] : []);
@@ -61,7 +64,16 @@ function makeDbStub(opts: {
     limit,
     then: (resolve: (v: unknown[]) => void) => resolve(selectResults.shift() ?? []),
   }));
-  const from = vi.fn(() => ({ where, innerJoin }));
+  // La consulta a `solicitudes_registro` (SC6) responde aparte, sin la cola:
+  // el resto del handler no cambia de orden.
+  const deSolicitud = {
+    where: vi.fn(() => ({
+      limit: vi.fn(() => Promise.resolve(opts.uidDeSolicitud ? [{ id: 'solicitud-1' }] : [])),
+    })),
+  };
+  const from = vi.fn((tabla: Parameters<typeof getTableName>[0]) =>
+    getTableName(tabla) === 'solicitudes_registro' ? deSolicitud : { where, innerJoin },
+  );
   const select = vi.fn(() => ({ from }));
 
   const insertCalls: Array<Record<string, unknown>> = [];
@@ -396,6 +408,28 @@ describe('GET /me — platform admin auto-provisioning', () => {
           uid: 'fb-admin',
           email: 'admin@boosterchile.com',
           emailVerified: false,
+        }),
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { needs_onboarding: boolean };
+    expect(body.needs_onboarding).toBe(true);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('correo de la lista con una sesión cuyo uid es el de una solicitud → needs_onboarding, sin crear la cuenta (correos-solicitudes-panel SC6)', async () => {
+    const { db, insertCalls } = makeDbStub({
+      userByFirebaseUid: null,
+      userByEmail: null,
+      uidDeSolicitud: true,
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'fb-de-solicitud',
+          email: 'admin@boosterchile.com',
+          emailVerified: true,
         }),
       },
     });

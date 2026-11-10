@@ -1,3 +1,4 @@
+import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,6 +49,8 @@ function makeDbStub(opts: {
   userByEmail?: Record<string, unknown> | null;
   memberships?: Record<string, unknown>[];
   updateReturning?: Record<string, unknown>[];
+  /** El uid de la sesión es el `firebase_uid` de una solicitud (SC6). */
+  uidDeSolicitud?: boolean;
 }) {
   const selectResults: Array<Record<string, unknown>[]> = [];
   selectResults.push(opts.userByFirebaseUid ? [opts.userByFirebaseUid] : []); // by firebase_uid
@@ -60,7 +63,20 @@ function makeDbStub(opts: {
     where: vi.fn(() => Promise.resolve(selectResults.shift() ?? [])),
   }));
   const where = vi.fn(() => ({ limit, innerJoin }));
-  const from = vi.fn(() => ({ where, innerJoin }));
+  // La consulta a `solicitudes_registro` (SC6) responde aparte, sin la cola:
+  // el resto del handler no cambia de orden.
+  const consultasSolicitud: unknown[] = [];
+  const deSolicitud = {
+    where: vi.fn((predicado: unknown) => {
+      consultasSolicitud.push(predicado);
+      return {
+        limit: vi.fn(() => Promise.resolve(opts.uidDeSolicitud ? [{ id: 'solicitud-1' }] : [])),
+      };
+    }),
+  };
+  const from = vi.fn((tabla: Parameters<typeof getTableName>[0]) =>
+    getTableName(tabla) === 'solicitudes_registro' ? deSolicitud : { where, innerJoin },
+  );
   const select = vi.fn(() => ({ from }));
 
   const insertCalls: Array<Record<string, unknown>> = [];
@@ -86,6 +102,7 @@ function makeDbStub(opts: {
     >[0]['db'],
     insertCalls,
     updateCalls,
+    consultasSolicitud,
   };
 }
 
@@ -200,5 +217,78 @@ describe('GET /me — camino Google del onboarding (T1.8)', () => {
     expect(body.needs_onboarding).toBe(false);
     expect(updateCalls).toHaveLength(1); // re-vinculó la fila existente (su propia fila)
     expect(insertCalls).toHaveLength(0); // linking != provisioning
+  });
+
+  it('fila existente por email + sesión cuyo uid es el de una solicitud → no vincula y pide onboarding (correos-solicitudes-panel SC6)', async () => {
+    const { db, insertCalls, updateCalls, consultasSolicitud } = makeDbStub({
+      userByFirebaseUid: null,
+      userByEmail: {
+        id: 'u-existing',
+        firebaseUid: 'pending-rut:12345678-5',
+        email: 'dueno@empresa.cl',
+        status: 'pendiente_verificacion',
+        isPlatformAdmin: false,
+      },
+      uidDeSolicitud: true,
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'fb-de-solicitud',
+          email: 'dueno@empresa.cl',
+          emailVerified: true,
+        }),
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { needs_onboarding: boolean };
+    expect(body.needs_onboarding).toBe(true);
+    expect(updateCalls).toHaveLength(0);
+    expect(insertCalls).toHaveLength(0);
+    expect(consultasSolicitud).toHaveLength(1);
+  });
+
+  it('sin cuenta con ese correo y fuera de la lista, /me no consulta la solicitud (correos-solicitudes-panel SC6)', async () => {
+    const { db, consultasSolicitud } = makeDbStub({ userByFirebaseUid: null, userByEmail: null });
+    const app = await buildApp(db);
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'google-uid-x',
+          email: 'nuevo@empresa.cl',
+          emailVerified: true,
+        }),
+      },
+    });
+    expect(((await res.json()) as { needs_onboarding: boolean }).needs_onboarding).toBe(true);
+    expect(consultasSolicitud).toHaveLength(0);
+  });
+
+  it('con una cuenta con ese correo, /me consulta la solicitud una vez antes de vincular (correos-solicitudes-panel SC6)', async () => {
+    const existing = {
+      id: 'u-existing',
+      firebaseUid: 'old-uid',
+      email: 'dueno@empresa.cl',
+      status: 'activo',
+      isPlatformAdmin: false,
+    };
+    const { db, updateCalls, consultasSolicitud } = makeDbStub({
+      userByFirebaseUid: null,
+      userByEmail: existing,
+      updateReturning: [{ ...existing, firebaseUid: 'google-uid-x' }],
+    });
+    const app = await buildApp(db);
+    await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'google-uid-x',
+          email: 'dueno@empresa.cl',
+          emailVerified: true,
+        }),
+      },
+    });
+    expect(consultasSolicitud).toHaveLength(1);
+    expect(updateCalls).toHaveLength(1);
   });
 });

@@ -44,13 +44,23 @@ function makeDbStub(opts: {
    * cuenta ya no cumplía el predicado cuando llegó la escritura.
    */
   filasActualizadas?: unknown[];
+  /**
+   * Filas de los selects que siguen al del conductor. Con una cuenta del
+   * proveedor ya existente, los dos primeros son los de SC5: otra fila de
+   * `usuarios` con ese uid y una solicitud con ese uid.
+   */
+  filasDespues?: Array<Record<string, unknown>[]>;
 }) {
   const userQueueRows = opts.userRow === null ? [] : [opts.userRow ?? {}];
   const conductorQueueRows = opts.conductorRow === null ? [] : [opts.conductorRow ?? {}];
 
   // Cada select() debe ir consumiendo de la cola — los dos selects del
   // handler son: 1) buscar user, 2) buscar conductor. Encolamos en orden.
-  const queue: Array<Record<string, unknown>[]> = [userQueueRows, conductorQueueRows];
+  const queue: Array<Record<string, unknown>[]> = [
+    userQueueRows,
+    conductorQueueRows,
+    ...(opts.filasDespues ?? []),
+  ];
 
   const limit = vi.fn(() => Promise.resolve(queue.shift() ?? []));
   const where = vi.fn(() => ({ limit }));
@@ -91,15 +101,18 @@ function makeDbStub(opts: {
 
 function makeFirebaseStub(opts: {
   existingUserUid?: string | null;
+  /** Proveedores de la cuenta existente. Por defecto ninguno, como las que crean las activaciones. */
+  existingProviderData?: { providerId: string }[];
   createUid?: string;
   createCustomTokenError?: Error;
 }) {
   const auth: Partial<Auth> = {
     getUserByEmail: vi.fn(() =>
       opts.existingUserUid
-        ? Promise.resolve({ uid: opts.existingUserUid } as Awaited<
-            ReturnType<Auth['getUserByEmail']>
-          >)
+        ? Promise.resolve({
+            uid: opts.existingUserUid,
+            providerData: opts.existingProviderData ?? [],
+          } as unknown as Awaited<ReturnType<Auth['getUserByEmail']>>)
         : Promise.reject(new Error('user-not-found')),
     ),
     createUser: vi.fn(() =>
@@ -108,6 +121,7 @@ function makeFirebaseStub(opts: {
       >),
     ),
     updateUser: vi.fn(() => Promise.resolve({} as Awaited<ReturnType<Auth['updateUser']>>)),
+    revokeRefreshTokens: vi.fn(() => Promise.resolve()),
     createCustomToken: vi.fn(() =>
       opts.createCustomTokenError
         ? Promise.reject(opts.createCustomTokenError)
@@ -778,5 +792,324 @@ describe('POST /auth/driver-activate — bordes (bordes-autenticacion)', () => {
     expect(consulta.sql).toContain('"usuarios"."activacion_pin_hash" = ');
     expect(consulta.sql).toContain('"usuarios"."clave_numerica_hash" is null');
     expect(consulta.params).toContain(hash);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC2 — primera activación con dos pedidos
+ * simultáneos: los dos leen que no hay cuenta del proveedor y los dos la
+ * crean. El proveedor acepta una y rechaza la otra con
+ * `auth/email-already-exists`. El pedido rechazado vuelve a leer la cuenta y
+ * sigue a la escritura con predicado, que decide quién entra.
+ */
+describe('POST /auth/driver-activate — primera activación simultánea (correos-solicitudes-panel SC2)', () => {
+  const HASH_DEL_PIN = hashActivationPin('123456');
+  const SINTETICO = 'drivers+111111111@boosterchile.invalid';
+
+  function stubPendiente(
+    filasActualizadas?: unknown[],
+    filasDespues?: Array<Record<string, unknown>[]>,
+  ) {
+    return makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'conductor.real@gmail.com',
+        rut: VALID_RUT,
+        activationPinHash: HASH_DEL_PIN,
+        claveNumericaHash: null,
+        isPlatformAdmin: false,
+        activacionVenceEn: null,
+        status: 'pendiente_verificacion',
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+      ...(filasActualizadas ? { filasActualizadas } : {}),
+      ...(filasDespues ? { filasDespues } : {}),
+    });
+  }
+
+  /** La cuenta del proveedor la creó el otro pedido entre la lectura y la creación. */
+  function proveedorConCuentaDelOtroPedido(
+    uidDelOtro: string,
+    providerData: { providerId: string }[] = [],
+  ) {
+    const getUserByEmail = vi
+      .fn<Auth['getUserByEmail']>()
+      .mockRejectedValueOnce(Object.assign(new Error('no user'), { code: 'auth/user-not-found' }))
+      .mockResolvedValue({ uid: uidDelOtro, providerData } as unknown as Awaited<
+        ReturnType<Auth['getUserByEmail']>
+      >);
+    const createUser = vi
+      .fn<Auth['createUser']>()
+      .mockRejectedValue(
+        Object.assign(new Error('email exists'), { code: 'auth/email-already-exists' }),
+      );
+    const createCustomToken = vi.fn<Auth['createCustomToken']>(
+      async (uid: string) => `custom-token-${uid}`,
+    );
+    const revokeRefreshTokens = vi.fn<Auth['revokeRefreshTokens']>(async () => undefined);
+    const auth: Partial<Auth> = {
+      getUserByEmail,
+      createUser,
+      createCustomToken,
+      revokeRefreshTokens,
+    };
+    return {
+      auth: auth as Auth,
+      getUserByEmail,
+      createUser,
+      createCustomToken,
+      revokeRefreshTokens,
+    };
+  }
+
+  function activar(app: Hono) {
+    return app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
+    });
+  }
+
+  it('si la escritura del otro pedido entró primero → la misma 401, sin sesión ni membresías', async () => {
+    const stub = stubPendiente([]);
+    const proveedor = proveedorConCuentaDelOtroPedido('fb-del-otro');
+    const app = await buildApp({ db: stub.db, firebaseAuth: proveedor.auth });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: 'invalid_credentials',
+      code: 'invalid_credentials',
+    });
+    expect(proveedor.getUserByEmail).toHaveBeenCalledTimes(2);
+    expect(proveedor.getUserByEmail).toHaveBeenLastCalledWith(SINTETICO);
+    expect(proveedor.createCustomToken).not.toHaveBeenCalled();
+    // Solo el UPDATE de la cuenta, que no tomó filas.
+    expect(stub.capturedUpdates).toHaveLength(1);
+    // El otro pedido escribió entre la revisión de SC5 y este UPDATE: la
+    // revisión vio la cuenta libre y revocó sus sesiones (decisión anotada en
+    // la spec: quien entró por el otro pedido vuelve a entrar con RUT y clave).
+    expect(proveedor.revokeRefreshTokens).toHaveBeenCalledWith('fb-del-otro');
+  });
+
+  it('si el otro pedido ya dejó el uid en esta fila al revisar → no revoca y la misma 401, sin sesión (SC5)', async () => {
+    const stub = stubPendiente([], [[{ id: USER_ID }]]);
+    const proveedor = proveedorConCuentaDelOtroPedido('fb-del-otro');
+    const app = await buildApp({ db: stub.db, firebaseAuth: proveedor.auth });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: 'invalid_credentials',
+      code: 'invalid_credentials',
+    });
+    expect(proveedor.revokeRefreshTokens).not.toHaveBeenCalled();
+    expect(proveedor.createCustomToken).not.toHaveBeenCalled();
+    expect(stub.capturedUpdates).toHaveLength(1);
+  });
+
+  it('en la relectura, una cuenta con un proveedor propio → 502, sin escribir ni sesión (SC5)', async () => {
+    const stub = stubPendiente();
+    const proveedor = proveedorConCuentaDelOtroPedido('fb-con-clave', [{ providerId: 'password' }]);
+    const app = await buildApp({ db: stub.db, firebaseAuth: proveedor.auth });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(stub.capturedUpdates).toHaveLength(0);
+    expect(proveedor.createCustomToken).not.toHaveBeenCalled();
+    expect(proveedor.revokeRefreshTokens).not.toHaveBeenCalled();
+  });
+
+  it('si su escritura entra primero → activa con la cuenta del proveedor que ya existe', async () => {
+    const stub = stubPendiente();
+    const proveedor = proveedorConCuentaDelOtroPedido('fb-del-otro');
+    const app = await buildApp({ db: stub.db, firebaseAuth: proveedor.auth });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      custom_token: 'custom-token-fb-del-otro',
+      synthetic_email: SINTETICO,
+    });
+    expect(stub.capturedUpdates[0]?.firebaseUid).toBe('fb-del-otro');
+  });
+
+  it('otro error del proveedor al crear la cuenta → 502 firebase_error, sin escribir', async () => {
+    const stub = stubPendiente();
+    const firebase = makeFirebaseStub({ existingUserUid: null });
+    vi.mocked(firebase.createUser).mockRejectedValueOnce(
+      Object.assign(new Error('quota'), { code: 'auth/internal-error' }),
+    );
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(firebase.getUserByEmail).toHaveBeenCalledTimes(1);
+    expect(stub.capturedUpdates).toHaveLength(0);
+  });
+
+  it('si la cuenta del proveedor no se puede volver a leer → 502 firebase_error, sin escribir', async () => {
+    const stub = stubPendiente();
+    const proveedor = proveedorConCuentaDelOtroPedido('fb-del-otro');
+    proveedor.getUserByEmail.mockReset();
+    proveedor.getUserByEmail.mockRejectedValue(
+      Object.assign(new Error('no user'), { code: 'auth/user-not-found' }),
+    );
+    const app = await buildApp({ db: stub.db, firebaseAuth: proveedor.auth });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(stub.capturedUpdates).toHaveLength(0);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC5: la cuenta del proveedor que se
+ * encuentra por el correo sintético se reutiliza solo si está libre. Si no,
+ * la misma 502 de una falla del proveedor, sin escribir la cuenta ni sesión.
+ */
+describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (correos-solicitudes-panel SC5)', () => {
+  function stubPendiente(filasDespues?: Array<Record<string, unknown>[]>) {
+    return makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'conductor.real@gmail.com',
+        rut: VALID_RUT,
+        activationPinHash: hashActivationPin('123456'),
+        claveNumericaHash: null,
+        isPlatformAdmin: false,
+        activacionVenceEn: null,
+        status: 'pendiente_verificacion',
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+      ...(filasDespues ? { filasDespues } : {}),
+    });
+  }
+
+  function activar(app: Hono) {
+    return app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
+    });
+  }
+
+  async function esperarFallaSinEscribir(
+    res: Response,
+    stub: ReturnType<typeof makeDbStub>,
+    firebase: Auth,
+  ) {
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(stub.capturedUpdates).toHaveLength(0);
+    expect(firebase.createCustomToken).not.toHaveBeenCalled();
+    expect(firebase.createUser).not.toHaveBeenCalled();
+  }
+
+  it('una cuenta libre se reutiliza y antes se revocan sus sesiones', async () => {
+    const stub = stubPendiente([[], []]);
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-libre' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+    expect(stub.capturedUpdates[0]?.firebaseUid).toBe('fb-libre');
+    const revocar = vi.mocked(firebase.revokeRefreshTokens);
+    expect(revocar).toHaveBeenCalledWith('fb-libre');
+    const token = vi.mocked(firebase.createCustomToken);
+    expect(revocar.mock.invocationCallOrder[0]).toBeLessThan(
+      token.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('si revocar las sesiones de la cuenta libre falla → 502, sin escribir ni sesión', async () => {
+    const stub = stubPendiente([[], []]);
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-libre' });
+    vi.mocked(firebase.revokeRefreshTokens).mockRejectedValueOnce(
+      Object.assign(new Error('quota'), { code: 'auth/internal-error' }),
+    );
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await esperarFallaSinEscribir(await activar(app), stub, firebase);
+  });
+
+  it.each([['password'], ['google.com']])(
+    'con el proveedor propio %s → 502, sin escribir ni sesión',
+    async (providerId) => {
+      const stub = stubPendiente();
+      const firebase = makeFirebaseStub({
+        existingUserUid: 'fb-con-proveedor',
+        existingProviderData: [{ providerId }],
+      });
+      const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+      await esperarFallaSinEscribir(await activar(app), stub, firebase);
+    },
+  );
+
+  it('con el uid de otra fila de usuarios → 502, sin escribir ni sesión', async () => {
+    const stub = stubPendiente([[{ id: 'user-otro' }]]);
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-de-otro' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await esperarFallaSinEscribir(await activar(app), stub, firebase);
+  });
+
+  it('con el uid de una solicitud → 502, sin escribir ni sesión', async () => {
+    const stub = stubPendiente([[], [{ id: 'solicitud-1' }]]);
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-de-solicitud' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await esperarFallaSinEscribir(await activar(app), stub, firebase);
+  });
+
+  it('una cuenta con una forma que no se reconoce → 502, sin escribir ni sesión', async () => {
+    const stub = stubPendiente();
+    const firebase = makeFirebaseStub({ existingUserUid: null });
+    vi.mocked(firebase.getUserByEmail).mockResolvedValueOnce({
+      uid: 'fb-sin-proveedores',
+    } as Awaited<ReturnType<Auth['getUserByEmail']>>);
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await esperarFallaSinEscribir(await activar(app), stub, firebase);
+  });
+
+  it('si la revisión de la cuenta en la base falla → la misma 502, sin escribir ni sesión', async () => {
+    const stub = stubPendiente();
+    const select = vi.mocked(stub.db.select);
+    const original = select.getMockImplementation();
+    if (!original) {
+      throw new Error('fixture: el doble de select no tiene implementación');
+    }
+    // Las dos primeras consultas son la cuenta y el conductor; la tercera, la de SC5.
+    let llamadas = 0;
+    select.mockImplementation((...args: Parameters<typeof original>) => {
+      llamadas += 1;
+      if (llamadas === 3) {
+        throw new Error('db caída');
+      }
+      return original(...args);
+    });
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-libre' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(stub.capturedUpdates).toHaveLength(0);
+    expect(firebase.createCustomToken).not.toHaveBeenCalled();
   });
 });

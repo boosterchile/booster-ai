@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -40,20 +42,33 @@ function usuario(over: Record<string, unknown>) {
   };
 }
 
-function makeDb(selects: unknown[][], returning: unknown[][]) {
+function makeDb(
+  selects: unknown[][],
+  returning: unknown[][],
+  opts: { insertUserError?: unknown } = {},
+) {
   const selectQueue = [...selects];
   const returningQueue = [...returning];
   const inserted: Array<Record<string, unknown>> = [];
   const sets: Array<Record<string, unknown>> = [];
+  /** Predicados de cada `select().from().where(...)`, en orden. */
+  const wheres: unknown[] = [];
   const select = vi.fn(() => {
     const chain: Record<string, unknown> = {};
     chain.from = vi.fn(() => chain);
-    chain.where = vi.fn(() => chain);
+    chain.where = vi.fn((predicado: unknown) => {
+      wheres.push(predicado);
+      return chain;
+    });
     chain.limit = vi.fn(async () => selectQueue.shift() ?? []);
     return chain;
   });
   const insert = vi.fn(() => ({
     values: vi.fn((vals: Record<string, unknown>) => {
+      // La cuenta trae `rut`; la membresía no.
+      if ('rut' in vals && opts.insertUserError) {
+        return { returning: vi.fn(async () => Promise.reject(opts.insertUserError)) };
+      }
       inserted.push(vals);
       return { returning: vi.fn(async () => returningQueue.shift() ?? []) };
     }),
@@ -64,7 +79,7 @@ function makeDb(selects: unknown[][], returning: unknown[][]) {
       return { where: vi.fn(async () => undefined) };
     }),
   }));
-  return { db: { select, insert, update } as never, inserted, sets, update };
+  return { db: { select, insert, update } as never, inserted, sets, update, wheres };
 }
 
 function buildApp(
@@ -245,6 +260,71 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     const res = await invitar(buildApp(mod, d.db));
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'already_member', membership_id: 'm-0' });
+    expect(d.inserted).toHaveLength(0);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo de la persona nueva se
+ * compara con las cuentas existentes sin distinguir mayúsculas, y una alta
+ * simultánea con el mismo correo responde el mismo 409.
+ */
+describe('POST /admin/stakeholder-orgs/:id/invitar — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  const YA_REGISTRADO = { error: 'conflict', code: 'email_already_registered' };
+
+  it('persona nueva: la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], [], []], [[{ id: 'u-nuevo' }], [{ id: 'm-1' }]]);
+
+    const res = await invitar(buildApp(mod, d.db), 'Persona@Acme.cl');
+
+    expect(res.status).toBe(201);
+    // 0 = organización, 1 = persona por RUT, 2 = cuenta por correo.
+    const predicado = d.wheres[2];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['persona@acme.cl']);
+  });
+
+  it('el correo es de otra cuenta guardada con otras mayúsculas → 409 sin crear cuenta ni membresía', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], [{ id: 'u-mayus' }]], [[{ id: 'u-nuevo' }], [{ id: 'm-1' }]]);
+
+    const res = await invitar(buildApp(mod, d.db), 'persona@acme.cl');
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.inserted).toHaveLength(0);
+  });
+
+  it('el UNIQUE del correo en el INSERT (alta simultánea) → el mismo 409, sin membresía', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], [], []], [[{ id: 'm-1' }]], {
+      insertUserError: Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'usuarios_email_key',
+      }),
+    });
+
+    const res = await invitar(buildApp(mod, d.db), 'persona@acme.cl');
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.inserted).toHaveLength(0);
+  });
+
+  it('otro error del INSERT de la persona no se traduce a 409: sube', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], [], []], [[{ id: 'm-1' }]], {
+      insertUserError: Object.assign(new Error('otra restricción'), { code: '23514' }),
+    });
+
+    const res = await invitar(buildApp(mod, d.db), 'persona@acme.cl');
+
+    expect(res.status).toBe(500);
     expect(d.inserted).toHaveLength(0);
   });
 });
