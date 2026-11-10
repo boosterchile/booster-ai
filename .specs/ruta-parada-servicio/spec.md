@@ -2,7 +2,7 @@
 
 - **Author**: agente (Claude), por encargo del PO
 - **Date**: 2026-11-10
-- **Status**: Aceptada por el PO en el chat del 2026-11-10 («Acepto las cuatro»), con las decisiones de §11. Falta su lugar en `docs/frentes-vivos.md`; sin él no se escribe código.
+- **Status**: Aceptada por el PO en el chat del 2026-11-10 («Acepto las cuatro»), con las decisiones de §11. Frente fuera de slot en `docs/frentes-vivos.md`.
 - **Linked**: [ADR-088](../../docs/adr/088-ruta-parada-servicio.md) (vigente desde el 2026-11-10), [ADR-089](../../docs/adr/089-reparto-huella-cargas-consolidadas.md), [ADR-090](../../docs/adr/090-matching-desde-la-carga-vehiculo-al-despachar.md), [ADR-061](../../docs/adr/061-trip-lifecycle-tabla-transiciones-pura.md), [ADR-073](../../docs/adr/073-tipologias-flota-configuracion-glec.md), `.specs/editar-anular-cargas/`, `.specs/seguimiento-publico-minimizacion/`
 
 ## 1. Objetivo
@@ -250,4 +250,4 @@ crítico: primero el test, con el rojo en la evidencia del PR.
 | 1 | ¿Se acepta salir con consolidación sin certificado mientras no esté ADR-089? | No. La consolidación y el reparto de huella salen juntos. |
 | 2 | ¿Una ruta puede juntar servicios de más de un generador desde el primer día? | Sí. |
 | 3 | ¿El conductor puede reordenar paradas? | No. Solo la oficina; el conductor ve el orden y confirma cada parada. |
-| 4 | ¿Qué lugar toma este frente en `docs/frentes-vivos.md`? | Pendiente. |
+| 4 | ¿Qué lugar toma este frente en `docs/frentes-vivos.md`? | Fuera de slot, por pedido del PO. Los tres slots de la fase A no cambian. |
