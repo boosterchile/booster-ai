@@ -112,6 +112,15 @@ function confirmacion(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Quien emitió el código, tal como lo lee la confirmación. Por defecto, una
+ * cuenta marcada y activa cuyo correo no está en la lista de respaldo.
+ */
+const CORREO_EMISOR = 'carla.rios@boosterchile.com';
+function emisor(overrides: Record<string, unknown> = {}) {
+  return { email: CORREO_EMISOR, isPlatformAdmin: true, status: 'activo', ...overrides };
+}
+
 interface DbOpts {
   /** Respuestas de `select().from().where()…limit()`, en orden. */
   lookups?: unknown[][];
@@ -253,7 +262,7 @@ beforeEach(() => {
 describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
   it('código correcto y vigente: marca la cuenta, consume la confirmación y responde ok', async () => {
     const d = makeDb({
-      lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]],
+      lookups: [[persona()], [confirmacion()], [emisor()]],
     });
     const app = await buildApp({ db: d.db });
 
@@ -281,7 +290,7 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
   });
 
   it('bloquea la fila de la cuenta y después la de la confirmación hasta el commit (SC6)', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]] });
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], [emisor()]] });
     const app = await buildApp({ db: d.db });
 
     await confirmar(app);
@@ -295,7 +304,7 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
   });
 
   it('avisa a la lista de respaldo con quien entregó el código, sin el código (SC7)', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]] });
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], [emisor()]] });
     const { sender, send } = makeSender();
     const app = await buildApp({ db: d.db, sender });
 
@@ -305,12 +314,12 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
     const msg = send.mock.calls[0]?.[0];
     expect(msg?.subject).toBe('Booster: acceso al panel otorgado a Ana Soto');
     expect(msg?.text).toContain(`Ana Soto (${CORREO}) confirmó desde su sesión`);
-    expect(msg?.text).toContain(ADMIN_EMAIL);
+    expect(msg?.text).toContain(CORREO_EMISOR);
     expect(JSON.stringify(send.mock.calls)).not.toContain(CODIGO);
   });
 
   it('auditoría: acceso_otorgado con quien emitió, a quién y via confirmacion, sin el código (SC7)', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]] });
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], [emisor()]] });
     const logger = makeLogger();
     const app = await buildApp({ db: d.db, logger });
 
@@ -333,7 +342,7 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
   });
 
   it('métrica y span con el resultado, sin el código (SC13)', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]] });
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], [emisor()]] });
     const app = await buildApp({ db: d.db });
 
     await confirmar(app);
@@ -350,20 +359,9 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
     expect(JSON.stringify(observabilidad)).not.toContain(CODIGO);
   });
 
-  it('sin el correo de quien emitió el código, el aviso lo nombra como un admin de Booster', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion()], []] });
-    const { sender, send } = makeSender();
-    const app = await buildApp({ db: d.db, sender });
-
-    const res = await confirmar(app);
-
-    expect(res.status).toBe(200);
-    expect(send.mock.calls[0]?.[0].text).toContain('el código que le entregó un admin de Booster.');
-  });
-
   it('el evento y el aviso salen aunque la base no responda después del commit (SC7)', async () => {
     const d = makeDb({
-      lookups: [[persona()], [confirmacion()], [{ email: ADMIN_EMAIL }]],
+      lookups: [[persona()], [confirmacion()], [emisor()]],
       fueraDeLaTransaccion: 'falla',
     });
     const { sender, send } = makeSender();
@@ -384,11 +382,13 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
       expect.any(String),
     );
     expect(send.mock.calls.map((c) => c[0].to)).toEqual(LISTA);
-    expect(send.mock.calls[0]?.[0].text).toContain(`el código que le entregó ${ADMIN_EMAIL}.`);
+    expect(send.mock.calls[0]?.[0].text).toContain(`el código que le entregó ${CORREO_EMISOR}.`);
   });
 
   it('una cuenta que ya estaba marcada consume la confirmación sin avisar de nuevo', async () => {
-    const d = makeDb({ lookups: [[persona({ isPlatformAdmin: true })], [confirmacion()]] });
+    const d = makeDb({
+      lookups: [[persona({ isPlatformAdmin: true })], [confirmacion()], [emisor()]],
+    });
     const { sender, send } = makeSender();
     const app = await buildApp({ db: d.db, sender });
 
@@ -401,7 +401,9 @@ describe('POST /me/confirmar-acceso-booster — confirma (SC4)', () => {
 
 describe('POST /me/confirmar-acceso-booster — rechazos con la misma respuesta (SC5, SC6)', () => {
   it('código incorrecto: 400 codigo_invalido y suma un intento fallido, sin marcar', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion({ intentosFallidos: 2 })]] });
+    const d = makeDb({
+      lookups: [[persona()], [confirmacion({ intentosFallidos: 2 })], [emisor()]],
+    });
     const app = await buildApp({ db: d.db });
 
     const res = await confirmar(app, '111111');
@@ -443,7 +445,9 @@ describe('POST /me/confirmar-acceso-booster — rechazos con la misma respuesta 
   });
 
   it('el quinto código incorrecto deja la confirmación con cinco intentos y lo registra', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion({ intentosFallidos: 4 })]] });
+    const d = makeDb({
+      lookups: [[persona()], [confirmacion({ intentosFallidos: 4 })], [emisor()]],
+    });
     const logger = makeLogger();
     const app = await buildApp({ db: d.db, logger });
 
@@ -474,7 +478,10 @@ describe('POST /me/confirmar-acceso-booster — rechazos con la misma respuesta 
   });
 
   it('una confirmación que otra request consumió en el intervalo: la misma 400, sin marcar', async () => {
-    const d = makeDb({ lookups: [[persona()], [confirmacion()]], filasActualizadas: [] });
+    const d = makeDb({
+      lookups: [[persona()], [confirmacion()], [emisor()]],
+      filasActualizadas: [],
+    });
     const app = await buildApp({ db: d.db });
 
     const res = await confirmar(app);
@@ -531,7 +538,7 @@ describe('POST /me/confirmar-acceso-booster — rechazos con la misma respuesta 
 
   it.each([
     ['sin_codigo', [[persona()], []], CODIGO],
-    ['incorrecto', [[persona()], [confirmacion()]], '111111'],
+    ['incorrecto', [[persona()], [confirmacion()], [emisor()]], '111111'],
     ['vencido', [[persona()], [confirmacion({ venceEn: new Date(Date.now() - 1000) })]], CODIGO],
     ['agotado', [[persona()], [confirmacion({ intentosFallidos: 5 })]], CODIGO],
   ])('motivo %s: counter y evento de rechazo, sin el código', async (motivo, lookups, codigo) => {
@@ -556,6 +563,104 @@ describe('POST /me/confirmar-acceso-booster — rechazos con la misma respuesta 
     );
     expect(textoDeLogs(logger)).not.toContain(codigo);
     expect(JSON.stringify(observabilidad)).not.toContain(codigo);
+  });
+});
+
+describe('POST /me/confirmar-acceso-booster — quien emitió el código sigue con acceso al panel (SC5)', () => {
+  it.each([
+    ['ya no está marcada', emisor({ isPlatformAdmin: false })],
+    ['está marcada pero suspendida', emisor({ status: 'suspendido' })],
+  ])(
+    'si la cuenta de quien emitió el código %s: la misma 400, sin escrituras ni aviso',
+    async (_caso, fila) => {
+      const d = makeDb({ lookups: [[persona()], [confirmacion()], [fila]] });
+      const { sender, send } = makeSender();
+      const logger = makeLogger();
+      const app = await buildApp({ db: d.db, sender, logger });
+
+      const res = await confirmar(app);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(d.updates).toEqual([]);
+      expect(send).not.toHaveBeenCalled();
+      // El código se verifica igual: la respuesta tarda lo mismo.
+      expect(pin.verificaciones).toHaveLength(1);
+      expect(observabilidad.contadores).toEqual([
+        {
+          nombre: 'personal_booster_confirmacion_total',
+          labels: { resultado: 'emisor_sin_acceso' },
+        },
+      ]);
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: 'personal_booster.confirmacion_rechazada',
+          user_id: PERSONA_ID,
+          motivo: 'emisor_sin_acceso',
+          intentos_fallidos: 0,
+        }),
+        expect.any(String),
+      );
+      expect(textoDeLogs(logger)).not.toContain(CODIGO);
+    },
+  );
+
+  it('con un código incorrecto tampoco suma un intento: la confirmación ya no sirve', async () => {
+    const d = makeDb({
+      lookups: [[persona()], [confirmacion()], [emisor({ isPlatformAdmin: false })]],
+    });
+    const app = await buildApp({ db: d.db });
+
+    const res = await confirmar(app, '111111');
+
+    expect(res.status).toBe(400);
+    expect(d.updates).toEqual([]);
+  });
+
+  it('si la cuenta de quien emitió el código ya no está: la misma 400, sin escrituras', async () => {
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], []] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender });
+
+    const res = await confirmar(app);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual(RECHAZO);
+    expect(d.updates).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('quien emitió el código entra por la lista de respaldo: la confirmación sirve', async () => {
+    const d = makeDb({
+      lookups: [
+        [persona()],
+        [confirmacion()],
+        [emisor({ email: 'Ops@BoosterChile.com', isPlatformAdmin: false })],
+      ],
+    });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender });
+
+    const res = await confirmar(app);
+
+    expect(res.status).toBe(200);
+    expect(d.updates.find((u) => u.tabla === users)?.valores.isPlatformAdmin).toBe(true);
+    expect(send.mock.calls[0]?.[0].text).toContain(
+      'el código que le entregó ops@boosterchile.com.',
+    );
+  });
+
+  it('lee a quien emitió el código por su id, sin bloquear su fila', async () => {
+    const d = makeDb({ lookups: [[persona()], [confirmacion()], [emisor()]] });
+    const app = await buildApp({ db: d.db });
+
+    await confirmar(app);
+
+    expect(d.selectWheres).toHaveLength(3);
+    const lectura = sqlDe(d.selectWheres[2]);
+    expect(lectura.sql).toContain('"usuarios"."id" = $1');
+    expect(lectura.params).toEqual([ADMIN_ID]);
+    expect(d.locks).toEqual(['update', 'update']);
   });
 });
 
@@ -625,6 +730,58 @@ describe('POST /me/confirmar-acceso-booster — sesión e impersonación (SC4, S
     const res = await confirmar(app);
 
     expect(res.status).toBe(403);
+    expect(dbGuard.select).toHaveBeenCalledTimes(1);
+    expect(d.select).not.toHaveBeenCalled();
+  });
+
+  it('con el guard del server delante: si quien impersona ya no tiene acceso → 401 impersonation_revoked', async () => {
+    const d = makeDb({ lookups: [[persona()], [confirmacion()]] });
+    const mod = await import('./me-confirmar-acceso-booster.js');
+    const logger = makeLogger() as never as Logger;
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      c.set(
+        'firebaseClaims' as never,
+        {
+          uid: 'fb-ana',
+          email: undefined,
+          emailVerified: false,
+          name: undefined,
+          picture: undefined,
+          custom: { impersonated_by: ADMIN_QUE_IMPERSONA },
+        } as never,
+      );
+      await next();
+    });
+    const limitAdmin = vi.fn(async () => [
+      { email: 'ex.admin@boosterchile.com', isPlatformAdmin: false, status: 'activo' },
+    ]);
+    const dbGuard = {
+      select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: limitAdmin }) }) })),
+    };
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger,
+        db: dbGuard as never,
+        platformAdminEmails: LISTA,
+      }),
+    );
+    app.route(
+      '/',
+      mod.createMeConfirmarAccesoBoosterRoutes({
+        db: d.db,
+        logger,
+        platformAdminEmails: LISTA,
+        emailSender: makeSender().sender,
+        webAppUrl: 'https://app.boosterchile.com',
+      }),
+    );
+
+    const res = await confirmar(app);
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthorized', code: 'impersonation_revoked' });
     expect(dbGuard.select).toHaveBeenCalledTimes(1);
     expect(d.select).not.toHaveBeenCalled();
   });

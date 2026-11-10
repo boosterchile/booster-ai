@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { SQL, type Table, getTableName } from 'drizzle-orm';
+import { type Column, SQL, type Table, getTableName } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -111,9 +111,12 @@ function avisos(send: ReturnType<typeof makeSender>['send']) {
 }
 
 interface DbOpts {
-  /** Respuestas de `select().from().where().limit()`, en orden. */
+  /**
+   * Respuestas de `select().from().where().limit()`, en orden. Una búsqueda
+   * ordenada de una sola fila (`orderBy().limit(1)`) también sale de aquí.
+   */
   lookups?: unknown[][];
-  /** Filas del listado (`select().from().where().orderBy().limit()`). */
+  /** Filas del listado (`select().from().where().orderBy().limit(n > 1)`). */
   listRows?: unknown[];
   /** Error que lanza el INSERT de `usuarios` (carrera de UNIQUE). */
   insertError?: unknown;
@@ -157,9 +160,19 @@ function makeDb(opts: DbOpts = {}) {
   const deletes: Array<{ tabla: unknown; predicado: unknown }> = [];
   /** Orden de las escrituras sobre confirmaciones. */
   const operaciones: string[] = [];
+  /** Columnas del `orderBy` de cada select (`tabla.columna`), en orden. */
+  const ordenes: string[][] = [];
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
-    const orderBy = vi.fn(() => chain);
+    const orden: string[] = [];
+    ordenes.push(orden);
+    const orderBy = vi.fn((...columnas: unknown[]) => {
+      for (const col of columnas) {
+        const c = col as Column;
+        orden.push(`${getTableName(c.table)}.${c.name}`);
+      }
+      return chain;
+    });
     const join = vi.fn((tabla: unknown, on: unknown) => {
       joins.push({ tabla, on });
       return chain;
@@ -176,8 +189,8 @@ function makeDb(opts: DbOpts = {}) {
       locks.push(strength);
       return chain;
     });
-    chain.limit = vi.fn(async () => {
-      if (orderBy.mock.calls.length > 0) {
+    chain.limit = vi.fn(async (n?: number) => {
+      if (orderBy.mock.calls.length > 0 && n !== 1) {
         return opts.listRows ?? [];
       }
       return lookups.shift() ?? [];
@@ -248,6 +261,7 @@ function makeDb(opts: DbOpts = {}) {
     selectWheres,
     joins,
     locks,
+    ordenes,
   };
 }
 
@@ -1896,7 +1910,7 @@ const CON_VINCULO = [{ id: PERSONA_ID }];
 describe('POST /admin/personal-booster — cuenta activa con vínculos con una empresa (SC1)', () => {
   it('no la marca: emite un código de confirmación de 24 horas, guardado solo como hash, y lo devuelve una vez', async () => {
     const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
-    const app = await buildApp({ db: d.db });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
 
     const res = await app.request('/', postJson(BODY));
 
@@ -1913,7 +1927,7 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
       ok: true,
       user_id: PERSONA_ID,
       vinculo: 'cuenta_activa_por_confirmar',
-      en_lista: true,
+      en_lista: false,
     });
     expect(json.codigo_activacion).toMatch(/^\d{6}$/);
     cercaDe(json.expira_en, Date.now() + VEINTICUATRO_HORAS_MS);
@@ -1935,7 +1949,7 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
 
   it('emitir borra antes la confirmación pendiente de esa persona (una sola por persona, SC3)', async () => {
     const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
-    const app = await buildApp({ db: d.db });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
 
     const res = await app.request('/', postJson(BODY));
 
@@ -1953,7 +1967,7 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
 
   it('la consulta de vínculos mira membresías con empresa en cualquier estado y filas de conductores', async () => {
     const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
-    const app = await buildApp({ db: d.db });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
 
     await app.request('/', postJson(BODY));
 
@@ -1969,7 +1983,7 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
   it('el código de confirmación no sale por correo ni avisa a la lista: todavía no hay acceso', async () => {
     const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
     const { sender, send } = makeSender();
-    const app = await buildApp({ db: d.db, sender });
+    const app = await buildApp({ db: d.db, sender, lista: [ADMIN_EMAIL] });
 
     const res = await app.request('/', postJson(BODY));
 
@@ -1980,7 +1994,7 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
   it('auditoría, métrica y span con el vínculo, sin el código ni su hash', async () => {
     const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
     const logger = makeLogger();
-    const app = await buildApp({ db: d.db, logger });
+    const app = await buildApp({ db: d.db, logger, lista: [ADMIN_EMAIL] });
 
     const res = await app.request('/', postJson(BODY));
     const json = (await res.json()) as { codigo_activacion: string };
@@ -2007,7 +2021,11 @@ describe('POST /admin/personal-booster — cuenta activa con vínculos con una e
 
     expect(observabilidad.contadores).toContainEqual({
       nombre: 'personal_booster_alta_total',
-      labels: { resultado: 'registrada', en_lista: 'true', vinculo: 'cuenta_activa_por_confirmar' },
+      labels: {
+        resultado: 'registrada',
+        en_lista: 'false',
+        vinculo: 'cuenta_activa_por_confirmar',
+      },
     });
     const span = observabilidad.spans.find((s) => s.nombre === 'personal_booster.alta');
     expect(span?.atributos['personal_booster.vinculo']).toBe('cuenta_activa_por_confirmar');
@@ -2028,6 +2046,36 @@ describe('POST /admin/personal-booster — las demás cuentas siguen como en #89
     expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(true);
     expect(d.insertedConfirmaciones).toEqual([]);
     expect(d.deletes).toEqual([]);
+  });
+
+  it('cuenta activa con vínculos y el correo en la lista de respaldo: el alta la marca, sin confirmación', async () => {
+    // Su correo ya le da el panel por la lista: el alta solo pone la marca.
+    const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({
+      db: d.db,
+      sender,
+      lista: [ADMIN_EMAIL, 'Ana.Soto@BoosterChile.com'],
+    });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      vinculo: 'cuenta_activa',
+      codigo_activacion: null,
+      en_lista: true,
+    });
+    expect(d.updates).toHaveLength(1);
+    expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(true);
+    // No consulta vínculos ni emite una confirmación.
+    expect(d.selectWheres).toHaveLength(1);
+    expect(d.insertedConfirmaciones).toEqual([]);
+    expect(d.deletes).toEqual([]);
+    expect(avisos(send).map((m) => m.subject)).toEqual([
+      'Booster: acceso al panel otorgado a Ana Soto',
+      'Booster: acceso al panel otorgado a Ana Soto',
+    ]);
   });
 
   it('cuenta activa ya marcada: cuenta_activa, sin consultar vínculos ni emitir confirmación', async () => {
@@ -2054,6 +2102,20 @@ describe('POST /admin/personal-booster — las demás cuentas siguen como en #89
     expect(d.selectWheres).toHaveLength(1);
     expect(d.insertedConfirmaciones).toEqual([]);
     expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(true);
+  });
+});
+
+describe('POST /admin/personal-booster — la cuenta se busca por correo en orden fijo (SC1, SC2)', () => {
+  it('ordena por id: con filas que difieren solo en mayúsculas, el alta toma siempre la misma', async () => {
+    const d = makeDb({ lookups: [[activa()], []] });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(sqlDe(d.selectWheres[0]).sql).toContain('lower("usuarios"."email")');
+    expect(d.ordenes[0]).toEqual(['usuarios.id']);
+    expect(d.locks[0]).toBe('update');
   });
 });
 
@@ -2405,7 +2467,7 @@ describe('POST /admin/personal-booster — una cuenta por confirmar no avisa a l
   it('el aviso de acceso otorgado no sale en el alta por confirmar', async () => {
     const d = makeDb({ lookups: [[activa()], CON_VINCULO] });
     const { sender, send } = makeSender();
-    const app = await buildApp({ db: d.db, sender });
+    const app = await buildApp({ db: d.db, sender, lista: [ADMIN_EMAIL] });
 
     await app.request('/', postJson(BODY));
 

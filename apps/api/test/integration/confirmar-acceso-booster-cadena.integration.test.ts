@@ -270,10 +270,11 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
     };
   }
 
-  async function alta(p: { email: string; fullName: string; rut: string | null }) {
+  /** Alta en el panel del personal; por defecto la hace el admin de la lista. */
+  async function alta(p: { email: string; fullName: string; rut: string | null }, uid = adminUid) {
     const res = await app().request(
       '/admin/personal-booster',
-      req('POST', { email: p.email, full_name: p.fullName, rut: p.rut }, adminUid),
+      req('POST', { email: p.email, full_name: p.fullName, rut: p.rut }, uid),
     );
     const body = (await res.json()) as {
       user_id: string;
@@ -705,6 +706,80 @@ describe('integration: la persona confirma desde su sesión el acceso al panel',
     );
     expect(reemision.status).toBe(404);
   });
+
+  /** Un segundo admin: marcado, activo y fuera de la lista de respaldo. */
+  async function adminMarcado(tag: string) {
+    const s = randomUUID().slice(0, 8);
+    const [u] = await handle.db
+      .insert(schema.users)
+      .values({
+        firebaseUid: `fb-${tag}-${s}`,
+        email: `${tag}-${s}@test.invalid`,
+        fullName: 'Admin que emite',
+        isPlatformAdmin: true,
+        status: 'activo',
+      })
+      .returning();
+    if (!u) {
+      throw new Error('fixture: admin marcado');
+    }
+    return u;
+  }
+
+  test('el código vale mientras quien lo emitió tiene acceso al panel: la confirmación lo nombra en el aviso', async () => {
+    const emisor = await adminMarcado('emisor-con-acceso');
+    const p = await crearPersonaActiva('emisor-con-acceso', 'membresia_activa');
+    const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut }, emisor.firebaseUid);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.vinculo).toBe('cuenta_activa_por_confirmar');
+    expect((await pendientes(p.id))[0]?.emitidoPorUsuarioId).toBe(emisor.id);
+    const antes = correo.enviados.length;
+
+    const res = await confirmar(p.firebaseUid, r.body.codigo_activacion ?? '');
+
+    expect(res.status).toBe(200);
+    expect((await cuenta(p.id)).isPlatformAdmin).toBe(true);
+    expect((await panel(p.firebaseUid)).status).toBe(200);
+    const avisos = correo.enviados.slice(antes);
+    expect(avisos.map((m) => m.to)).toEqual(LISTA);
+    expect(avisos[0]?.text).toContain(`el código que le entregó ${emisor.email}.`);
+  });
+
+  test('si a quien emitió el código le quitan el acceso, el código deja de servir hasta que se emita otro', async () => {
+    const emisor = await adminMarcado('emisor-sin-acceso');
+    const p = await crearPersonaActiva('emisor-sin-acceso', 'membresia_activa');
+    const r = await alta({ email: p.email, fullName: p.fullName, rut: p.rut }, emisor.firebaseUid);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.vinculo).toBe('cuenta_activa_por_confirmar');
+    const bueno = r.body.codigo_activacion ?? '';
+    expect((await pendientes(p.id))[0]?.emitidoPorUsuarioId).toBe(emisor.id);
+
+    const baja = await app().request(
+      `/admin/personal-booster/${emisor.id}/quitar-acceso`,
+      req('POST', undefined, adminUid),
+    );
+    expect(baja.status).toBe(200);
+
+    const res = await confirmar(p.firebaseUid, bueno);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'codigo_invalido', code: 'codigo_invalido' });
+    expect((await cuenta(p.id)).isPlatformAdmin).toBe(false);
+    expect((await panel(p.firebaseUid)).status).toBe(403);
+    const filas = await pendientes(p.id);
+    expect(filas).toHaveLength(1);
+    expect(filas[0]?.intentosFallidos).toBe(0);
+
+    const reemision = await app().request(
+      `/admin/personal-booster/${p.id}/codigo`,
+      req('POST', undefined, adminUid),
+    );
+    const nuevo = ((await reemision.json()) as { codigo_activacion: string }).codigo_activacion;
+    expect(reemision.status).toBe(200);
+    expect((await pendientes(p.id))[0]?.emitidoPorUsuarioId).toBe(adminId);
+    expect((await confirmar(p.firebaseUid, nuevo)).status).toBe(200);
+    expect((await cuenta(p.id)).isPlatformAdmin).toBe(true);
+  });
+
   describe('en paralelo contra Postgres (SC6, SC10)', () => {
     test('varias confirmaciones con el código correcto: exactamente una marca la cuenta', async () => {
       const p = await crearPersonaActiva('paralelo-bueno', 'membresia_activa');
