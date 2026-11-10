@@ -79,6 +79,7 @@ function makeFirebaseStub() {
   const updateUser = vi
     .fn()
     .mockResolvedValue({ uid: 'fb-uid-new' } as Awaited<ReturnType<Auth['updateUser']>>);
+  const revokeRefreshTokens = vi.fn().mockResolvedValue(undefined);
 
   return {
     auth: {
@@ -86,8 +87,9 @@ function makeFirebaseStub() {
       getUserByEmail,
       createUser,
       updateUser,
+      revokeRefreshTokens,
     } as unknown as Auth,
-    spies: { createCustomToken, getUserByEmail, createUser, updateUser },
+    spies: { createCustomToken, getUserByEmail, createUser, updateUser, revokeRefreshTokens },
   };
 }
 
@@ -443,6 +445,21 @@ describe('POST /auth/login-rut — cuenta del proveedor que ya existe (correos-s
     expect(fb.spies.createCustomToken).toHaveBeenCalledWith('fb-libre', expect.anything());
     const escrito = updateSet.mock.calls[0]?.[0] as { firebaseUid?: string } | undefined;
     expect(escrito?.firebaseUid).toBe('fb-libre');
+    expect(fb.spies.revokeRefreshTokens).toHaveBeenCalledWith('fb-libre');
+  });
+
+  it('si revocar las sesiones de la cuenta libre falla → 502, sin escribir ni sesión', async () => {
+    const { db, updateSet } = makeDbStub({ userRow: PROVISORIA, filasDespues: [[], []] });
+    const fb = conCuentaExistente({ uid: 'fb-libre', providerData: [] });
+    fb.spies.revokeRefreshTokens.mockRejectedValueOnce(new Error('quota'));
+    const app = await buildApp(db, fb.auth);
+
+    const res = await entrar(app);
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
+    expect(updateSet).not.toHaveBeenCalled();
+    expect(fb.spies.createCustomToken).not.toHaveBeenCalled();
   });
 
   it.each([

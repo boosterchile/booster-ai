@@ -249,10 +249,10 @@ describe('GET /me — camino Google del onboarding (T1.8)', () => {
     expect(consultasSolicitud).toHaveLength(1);
   });
 
-  it('una sesión sin cuenta y con el correo verificado consulta la solicitud una vez (correos-solicitudes-panel SC6)', async () => {
+  it('sin cuenta con ese correo y fuera de la lista, /me no consulta la solicitud (correos-solicitudes-panel SC6)', async () => {
     const { db, consultasSolicitud } = makeDbStub({ userByFirebaseUid: null, userByEmail: null });
     const app = await buildApp(db);
-    await app.request('/me', {
+    const res = await app.request('/me', {
       headers: {
         'x-test-claims': JSON.stringify({
           uid: 'google-uid-x',
@@ -261,6 +261,34 @@ describe('GET /me — camino Google del onboarding (T1.8)', () => {
         }),
       },
     });
+    expect(((await res.json()) as { needs_onboarding: boolean }).needs_onboarding).toBe(true);
+    expect(consultasSolicitud).toHaveLength(0);
+  });
+
+  it('con una cuenta con ese correo, /me consulta la solicitud una vez antes de vincular (correos-solicitudes-panel SC6)', async () => {
+    const existing = {
+      id: 'u-existing',
+      firebaseUid: 'old-uid',
+      email: 'dueno@empresa.cl',
+      status: 'activo',
+      isPlatformAdmin: false,
+    };
+    const { db, updateCalls, consultasSolicitud } = makeDbStub({
+      userByFirebaseUid: null,
+      userByEmail: existing,
+      updateReturning: [{ ...existing, firebaseUid: 'google-uid-x' }],
+    });
+    const app = await buildApp(db);
+    await app.request('/me', {
+      headers: {
+        'x-test-claims': JSON.stringify({
+          uid: 'google-uid-x',
+          email: 'dueno@empresa.cl',
+          emailVerified: true,
+        }),
+      },
+    });
     expect(consultasSolicitud).toHaveLength(1);
+    expect(updateCalls).toHaveLength(1);
   });
 });

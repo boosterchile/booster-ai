@@ -149,9 +149,10 @@ function makeAuth(opts: { existente?: Record<string, unknown> } = {}) {
   const createUser = vi.fn(async (_props: Record<string, unknown>) => ({ uid: 'fb-nuevo' }));
   const createCustomToken = vi.fn(async (_uid: string, _claims?: unknown) => 'ct-activacion');
   const getUserByEmail = vi.fn(async () => opts.existente ?? null);
+  const revokeRefreshTokens = vi.fn(async (_uid: string) => undefined);
   return {
-    auth: { createUser, createCustomToken, getUserByEmail } as unknown as Auth,
-    spies: { createUser, createCustomToken },
+    auth: { createUser, createCustomToken, getUserByEmail, revokeRefreshTokens } as unknown as Auth,
+    spies: { createUser, createCustomToken, revokeRefreshTokens },
   };
 }
 
@@ -761,6 +762,20 @@ describe('POST /auth/activar — cuenta del proveedor que ya existe (correos-sol
     expect(a.spies.createUser).not.toHaveBeenCalled();
     expect(a.spies.createCustomToken).toHaveBeenCalledWith('fb-libre', expect.any(Object));
     expect(d.userUpdates[0]?.firebaseUid).toBe('fb-libre');
+    expect(a.spies.revokeRefreshTokens).toHaveBeenCalledWith('fb-libre');
+  });
+
+  it('si revocar las sesiones de la cuenta libre falla → 503, sin escribir ni sesión', async () => {
+    const d = makeDb({ filasDespues: [[], []] });
+    const a = makeAuth({ existente: { uid: 'fb-libre', providerData: [] } });
+    a.spies.revokeRefreshTokens.mockRejectedValueOnce(new Error('quota'));
+
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'service_unavailable', code: 'firebase_error' });
+    expect(d.userUpdates).toHaveLength(0);
+    expect(a.spies.createCustomToken).not.toHaveBeenCalled();
   });
 
   it.each([

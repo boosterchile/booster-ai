@@ -80,6 +80,10 @@ function proveedorConBarrera(esperados: number) {
       porEmail.set(props.email, cuenta);
       return cuenta;
     },
+    // Como el SDK: una activación revoca las sesiones de una cuenta libre que reutiliza.
+    async revokeRefreshTokens(_uid: string) {
+      return undefined;
+    },
     async createCustomToken(uid: string) {
       const token = `custom-token-${uid}-${tokens.length + 1}`;
       tokens.push(token);

@@ -54,6 +54,7 @@ interface CuentaFake {
 function authEnMemoria() {
   const porEmail = new Map<string, CuentaFake>();
   const creadas: string[] = [];
+  const revocadas: string[] = [];
   const auth = {
     async getUserByEmail(email: string) {
       const cuenta = porEmail.get(email);
@@ -75,6 +76,9 @@ function authEnMemoria() {
       creadas.push(props.email);
       return cuenta;
     },
+    async revokeRefreshTokens(uid: string) {
+      revocadas.push(uid);
+    },
     async createCustomToken(uid: string) {
       return `custom-token-${uid}`;
     },
@@ -85,7 +89,7 @@ function authEnMemoria() {
     porEmail.set(email, { uid, email, providerData });
     return uid;
   }
-  return { auth: auth as never as Auth, sembrar, creadas };
+  return { auth: auth as never as Auth, sembrar, creadas, revocadas };
 }
 
 function compacto(rut: string): string {
@@ -98,12 +102,13 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
   let empresaId = '';
 
   async function cargarRutas() {
-    const [driver, activar, universal, me, bootstrap] = await Promise.all([
+    const [driver, activar, universal, me, bootstrap, regla] = await Promise.all([
       import('../../src/routes/auth-driver.js'),
       import('../../src/routes/auth-activar.js'),
       import('../../src/routes/auth-universal.js'),
       import('../../src/routes/me.js'),
       import('../../src/services/bootstrap-platform-admin.js'),
+      import('../../src/services/cuenta-proveedor-reutilizable.js'),
     ]);
     return {
       createDriverAuthRoutes: driver.createDriverAuthRoutes,
@@ -112,6 +117,7 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
       createMeRoutes: me.createMeRoutes,
       bootstrapPlatformAdmin: bootstrap.bootstrapPlatformAdmin,
       CuentaDeSolicitudError: bootstrap.CuentaDeSolicitudError,
+      cuentaProveedorReutilizable: regla.cuentaProveedorReutilizable,
     };
   }
 
@@ -119,6 +125,11 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
     handle = createTestDb();
     rutas = await cargarRutas();
     const { db } = handle;
+    // La base local se reutiliza entre corridas: el correo de la lista empieza sin cuenta ni solicitud.
+    await db.delete(schema.users).where(sql`lower(${schema.users.email}) = ${LISTA_EMAIL}`);
+    await db
+      .delete(schema.solicitudesRegistro)
+      .where(sql`lower(${schema.solicitudesRegistro.email}) = ${LISTA_EMAIL}`);
     const sufijo = randomUUID().slice(0, 8);
     await db
       .insert(schema.plans)
@@ -213,6 +224,17 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
       tokenHash: `hash-${randomUUID()}`,
       expiraEn: new Date(Date.now() + 24 * 60 * 60 * 1000),
       firebaseUid,
+    });
+  }
+
+  /** Solicitud aprobada en el modo sin enlace: sin token ni uid guardado. */
+  async function solicitudAprobadaSinEnlace(email: string) {
+    await handle.db.insert(schema.solicitudesRegistro).values({
+      email,
+      nombreCompleto: 'Persona Solicitud',
+      estado: 'aprobado',
+      aprobadoPor: 'admin@test.invalid',
+      aprobadoEn: new Date(),
     });
   }
 
@@ -353,7 +375,7 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
       expect((await fila(persona.id)).firebaseUid).toBe(`pending-rut:${persona.rut}`);
     });
 
-    test('una cuenta libre se reutiliza: 200 con ese uid', async () => {
+    test('una cuenta libre se reutiliza: 200 con ese uid y sus sesiones revocadas', async () => {
       const persona = await conductorPendiente();
       const firebase = authEnMemoria();
       const uid = firebase.sembrar(persona.sintetico);
@@ -363,6 +385,50 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
       expect(res.status).toBe(200);
       expect((await fila(persona.id)).firebaseUid).toBe(uid);
       expect(firebase.creadas).toHaveLength(0);
+      expect(firebase.revocadas).toEqual([uid]);
+    });
+  });
+
+  describe('SC5 — la regla contra Postgres', () => {
+    test('el uid ya escrito en la fila que se activa → reutilizable, sin revocar', async () => {
+      const persona = await conductorPendiente();
+      const uid = `fb-propia-${randomUUID().slice(0, 8)}`;
+      await handle.db
+        .update(schema.users)
+        .set({ firebaseUid: uid })
+        .where(eq(schema.users.id, persona.id));
+      const firebase = authEnMemoria();
+
+      const r = await rutas.cuentaProveedorReutilizable({
+        db: handle.db,
+        auth: firebase.auth,
+        cuenta: { uid, providerData: [] },
+        usuarioId: persona.id,
+      });
+
+      expect(r).toEqual({ reutilizable: true, uid });
+      expect(firebase.revocadas).toHaveLength(0);
+    });
+
+    test('el uid escrito en otra fila → de_otra_cuenta', async () => {
+      const persona = await conductorPendiente();
+      const otra = await conductorPendiente();
+      const uid = `fb-de-otra-${randomUUID().slice(0, 8)}`;
+      await handle.db
+        .update(schema.users)
+        .set({ firebaseUid: uid })
+        .where(eq(schema.users.id, otra.id));
+      const firebase = authEnMemoria();
+
+      const r = await rutas.cuentaProveedorReutilizable({
+        db: handle.db,
+        auth: firebase.auth,
+        cuenta: { uid, providerData: [] },
+        usuarioId: persona.id,
+      });
+
+      expect(r).toEqual({ reutilizable: false, motivo: 'de_otra_cuenta' });
+      expect(firebase.revocadas).toHaveLength(0);
     });
   });
 
@@ -399,6 +465,30 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
 
       expect(res.status).toBe(200);
       expect((await fila(persona.id)).firebaseUid).toBe(uid);
+      expect(firebase.revocadas).toEqual([uid]);
+    });
+
+    test('una cuenta con el uid de otra fila de usuarios no se reutiliza: 503 y nada escrito', async () => {
+      const persona = await personalPendiente();
+      const firebase = authEnMemoria();
+      const uid = firebase.sembrar(persona.sintetico);
+      await handle.db.insert(schema.users).values({
+        firebaseUid: uid,
+        email: `aprobada-${randomUUID().slice(0, 8)}@test.invalid`,
+        fullName: 'Fila de una aprobación',
+        status: 'pendiente_verificacion',
+      });
+
+      const res = await app(firebase.auth).request('/auth/activar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rut: persona.rut, codigo: PIN, clave_numerica: CLAVE }),
+      });
+
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: 'service_unavailable', code: 'firebase_error' });
+      expect((await fila(persona.id)).claveNumericaHash).toBeNull();
+      expect(firebase.revocadas).toHaveLength(0);
     });
   });
 
@@ -418,6 +508,23 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
       expect(res.status).toBe(502);
       expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
       expect((await fila(persona.id)).firebaseUid).toBe(`pending-rut:${persona.rut}`);
+    });
+
+    test('una cuenta libre se reutiliza: 200 con ese uid y sus sesiones revocadas', async () => {
+      const persona = await provisoriaConClave();
+      const firebase = authEnMemoria();
+      const uid = firebase.sembrar(persona.sintetico);
+
+      const res = await app(firebase.auth).request('/auth/login-rut', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rut: persona.rut, clave: CLAVE }),
+      });
+
+      expect(res.status).toBe(200);
+      expect((await fila(persona.id)).firebaseUid).toBe(uid);
+      expect(firebase.creadas).toHaveLength(0);
+      expect(firebase.revocadas).toEqual([uid]);
     });
   });
 
@@ -440,6 +547,29 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
         .select({ id: schema.users.id })
         .from(schema.users)
         .where(sql`lower(${schema.users.email}) = ${LISTA_EMAIL}`);
+      expect(filas).toHaveLength(0);
+    });
+
+    test('una solicitud aprobada sin uid guardado (modo sin enlace) con ese correo: CuentaDeSolicitudError, sin fila', async () => {
+      const email = `lista-sin-enlace-${randomUUID().slice(0, 8)}@test.invalid`;
+      const firebase = authEnMemoria();
+      firebase.sembrar(email);
+      // El correo de la solicitud con otras mayúsculas y espacios: es el mismo correo.
+      await solicitudAprobadaSinEnlace(`  ${email.toUpperCase()} `);
+
+      await expect(
+        rutas.bootstrapPlatformAdmin({
+          db: handle.db,
+          firebaseAuth: firebase.auth,
+          logger,
+          allowlist: [email],
+          input: { email, fullName: 'Lista', rut: rutAleatorio(), clave: CLAVE },
+        }),
+      ).rejects.toThrow(rutas.CuentaDeSolicitudError);
+      const filas = await handle.db
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(sql`lower(${schema.users.email}) = ${email}`);
       expect(filas).toHaveLength(0);
     });
   });
@@ -491,6 +621,20 @@ describe('integration: cuentas del proveedor de una aprobación (correos-solicit
         .from(schema.users)
         .where(eq(schema.users.firebaseUid, uid));
       expect(filas).toHaveLength(0);
+    });
+
+    test('una sesión sin solicitud y con el correo de la lista sigue creando la cuenta (control de la lista)', async () => {
+      const uid = `fb-lista-${randomUUID().slice(0, 8)}`;
+
+      const res = await me(app(authEnMemoria().auth), { uid, email: LISTA_EMAIL });
+
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { needs_onboarding: boolean }).needs_onboarding).toBe(false);
+      const [creada] = await handle.db
+        .select({ isPlatformAdmin: schema.users.isPlatformAdmin })
+        .from(schema.users)
+        .where(eq(schema.users.firebaseUid, uid));
+      expect(creada?.isPlatformAdmin).toBe(true);
     });
 
     test('una sesión sin solicitud sigue vinculando por correo verificado', async () => {

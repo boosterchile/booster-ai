@@ -121,6 +121,7 @@ function makeFirebaseStub(opts: {
       >),
     ),
     updateUser: vi.fn(() => Promise.resolve({} as Awaited<ReturnType<Auth['updateUser']>>)),
+    revokeRefreshTokens: vi.fn(() => Promise.resolve()),
     createCustomToken: vi.fn(() =>
       opts.createCustomTokenError
         ? Promise.reject(opts.createCustomTokenError)
@@ -846,8 +847,20 @@ describe('POST /auth/driver-activate — primera activación simultánea (correo
     const createCustomToken = vi.fn<Auth['createCustomToken']>(
       async (uid: string) => `custom-token-${uid}`,
     );
-    const auth: Partial<Auth> = { getUserByEmail, createUser, createCustomToken };
-    return { auth: auth as Auth, getUserByEmail, createUser, createCustomToken };
+    const revokeRefreshTokens = vi.fn<Auth['revokeRefreshTokens']>(async () => undefined);
+    const auth: Partial<Auth> = {
+      getUserByEmail,
+      createUser,
+      createCustomToken,
+      revokeRefreshTokens,
+    };
+    return {
+      auth: auth as Auth,
+      getUserByEmail,
+      createUser,
+      createCustomToken,
+      revokeRefreshTokens,
+    };
   }
 
   function activar(app: Hono) {
@@ -969,7 +982,7 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
     expect(firebase.createUser).not.toHaveBeenCalled();
   }
 
-  it('una cuenta libre se reutiliza', async () => {
+  it('una cuenta libre se reutiliza y antes se revocan sus sesiones', async () => {
     const stub = stubPendiente([[], []]);
     const firebase = makeFirebaseStub({ existingUserUid: 'fb-libre' });
     const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
@@ -978,6 +991,38 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
 
     expect(res.status).toBe(200);
     expect(stub.capturedUpdates[0]?.firebaseUid).toBe('fb-libre');
+    const revocar = vi.mocked(firebase.revokeRefreshTokens);
+    expect(revocar).toHaveBeenCalledWith('fb-libre');
+    const token = vi.mocked(firebase.createCustomToken);
+    expect(revocar.mock.invocationCallOrder[0]).toBeLessThan(
+      token.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('la cuenta cuyo uid ya es el de esta fila (la carrera de SC2) se reutiliza sin revocar sesiones', async () => {
+    const stub = stubPendiente([[{ id: USER_ID }]]);
+    const firebase = makeFirebaseStub({
+      existingUserUid: 'fb-de-esta-fila',
+      existingProviderData: [{ providerId: 'password' }],
+    });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    const res = await activar(app);
+
+    expect(res.status).toBe(200);
+    expect(stub.capturedUpdates[0]?.firebaseUid).toBe('fb-de-esta-fila');
+    expect(firebase.revokeRefreshTokens).not.toHaveBeenCalled();
+  });
+
+  it('si revocar las sesiones de la cuenta libre falla → 502, sin escribir ni sesión', async () => {
+    const stub = stubPendiente([[], []]);
+    const firebase = makeFirebaseStub({ existingUserUid: 'fb-libre' });
+    vi.mocked(firebase.revokeRefreshTokens).mockRejectedValueOnce(
+      Object.assign(new Error('quota'), { code: 'auth/internal-error' }),
+    );
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await esperarFallaSinEscribir(await activar(app), stub, firebase);
   });
 
   it.each([['password'], ['google.com']])(
@@ -1063,9 +1108,15 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
         Object.assign(new Error('email exists'), { code: 'auth/email-already-exists' }),
       );
     const createCustomToken = vi.fn<Auth['createCustomToken']>(async () => 'ct');
+    const revokeRefreshTokens = vi.fn<Auth['revokeRefreshTokens']>(async () => undefined);
     const app = await buildApp({
       db: stub.db,
-      firebaseAuth: { getUserByEmail, createUser, createCustomToken } as unknown as Auth,
+      firebaseAuth: {
+        getUserByEmail,
+        createUser,
+        createCustomToken,
+        revokeRefreshTokens,
+      } as unknown as Auth,
     });
 
     const res = await activar(app);
@@ -1074,5 +1125,6 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
     expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
     expect(stub.capturedUpdates).toHaveLength(0);
     expect(createCustomToken).not.toHaveBeenCalled();
+    expect(revokeRefreshTokens).not.toHaveBeenCalled();
   });
 });
