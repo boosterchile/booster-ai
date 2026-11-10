@@ -5,19 +5,17 @@ import {
   rutSchema,
 } from '@booster-ai/shared-schemas';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import type { UserContext } from '../services/user-context.js';
 import { VINCULO_PERSONA_EXISTENTE, type VinculoPersona } from '../services/vinculo-persona.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
@@ -25,8 +23,7 @@ const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 /**
  * Endpoints admin para gestión de organizaciones stakeholder (ADR-034).
  *
- * Audiencia: platform-admin de Booster Chile SpA (allowlist
- * `BOOSTER_PLATFORM_ADMIN_EMAILS`).
+ * Audiencia: platform-admin de Booster Chile SpA (`requirePlatformAdmin`).
  *
  *   GET    /admin/stakeholder-orgs                   → lista
  *   POST   /admin/stakeholder-orgs                   → crear
@@ -53,22 +50,6 @@ export function createAdminStakeholderOrgsRoutes(opts: {
   webAppUrl?: string;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, userContext, adminEmail: email, adminUserId: userContext.user.id };
-  }
 
   // GET /admin/stakeholder-orgs?include_deleted=false
   app.get('/', async (c) => {
@@ -115,7 +96,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
         tipo: body.tipo,
         regionAmbito: body.region_ambito ?? null,
         sectorAmbito: body.sector_ambito ?? null,
-        createdByAdminId: auth.adminUserId,
+        createdByAdminId: auth.userContext.user.id,
       })
       .returning();
 
@@ -321,7 +302,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
         organizacionStakeholderId: orgId,
         role: STAKEHOLDER_MEMBERSHIP_ROLE,
         status: 'pendiente_invitacion',
-        invitedByUserId: auth.adminUserId,
+        invitedByUserId: auth.userContext.user.id,
         invitedAt: new Date(),
         joinedAt: null,
       })

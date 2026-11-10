@@ -375,7 +375,10 @@ describe('integration: aislamiento entre dos empresas', () => {
       await next();
     });
     app.route('/vehiculos', rutas.createVehiculosRoutes({ db, logger }));
-    app.route('/conductores', rutas.createConductoresRoutes({ db, logger }));
+    app.route(
+      '/conductores',
+      rutas.createConductoresRoutes({ db, logger, platformAdminEmails: [] }),
+    );
     app.route('/sucursales', rutas.createSucursalesRoutes({ db, logger }));
     app.route('/trip-requests-v2', rutas.createTripRequestsV2Routes({ db, logger }));
     const assignmentsRouter = rutas.createAssignmentsRoutes({ db, logger, geofenceRadiusM: 150 });
@@ -388,7 +391,10 @@ describe('integration: aislamiento entre dos empresas', () => {
     const meRouter = new Hono();
     meRouter.route('/', rutas.createMeLiquidacionesRoutes({ db, logger }));
     meRouter.route('/', rutas.createCobraHoyMeRoutes({ db, logger }));
-    meRouter.route('/empresa/miembros', rutas.createMeEmpresaMiembrosRoutes({ db, logger }));
+    meRouter.route(
+      '/empresa/miembros',
+      rutas.createMeEmpresaMiembrosRoutes({ db, logger, platformAdminEmails: [] }),
+    );
     app.route('/me', meRouter);
     app.route(
       '/admin/dispositivos-pendientes',

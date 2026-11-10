@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
   altaPersonalBoosterResponseSchema,
   altaPersonalBoosterSchema,
   listaPersonalBoosterResponseSchema,
   personalBoosterErrorCodeSchema,
   personalBoosterEstadoSchema,
+  quitarAccesoPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
   vinculoPersonalBoosterSchema,
 } from './personal-booster.js';
@@ -187,13 +190,40 @@ describe('reemitirCodigoPersonalBoosterResponseSchema', () => {
 });
 
 describe('personalBoosterErrorCodeSchema', () => {
-  it('nombra los cinco rechazos de las rutas del personal', () => {
+  it('nombra los siete rechazos de las rutas del personal', () => {
     expect(personalBoosterErrorCodeSchema.options).toEqual([
       'rut_mismatch',
       'rut_already_registered',
       'email_already_registered',
       'already_activated',
       'personal_not_found',
+      'en_lista_respaldo',
+      'ultimo_acceso',
     ]);
+  });
+});
+
+// `.specs/acceso-panel-plataforma` SC4.
+describe('quitarAccesoPersonalBoosterResponseSchema', () => {
+  it('trae ok y el user_id, sin más campos', () => {
+    expect(quitarAccesoPersonalBoosterResponseSchema.parse({ ok: true, user_id: USER_ID })).toEqual(
+      {
+        ok: true,
+        user_id: USER_ID,
+      },
+    );
+    expect(
+      quitarAccesoPersonalBoosterResponseSchema.safeParse({ ok: true, user_id: 'no-uuid' }).success,
+    ).toBe(false);
+  });
+});
+
+// `.specs/acceso-panel-plataforma` SC7 y SC8.
+describe('cuenta del personal en los flujos de empresa', () => {
+  it('el código del 409 y el mensaje que muestra la web', () => {
+    expect(CODIGO_CUENTA_PERSONAL_BOOSTER).toBe('cuenta_personal_booster');
+    expect(MENSAJE_CUENTA_PERSONAL_BOOSTER).toBe(
+      'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+    );
   });
 });

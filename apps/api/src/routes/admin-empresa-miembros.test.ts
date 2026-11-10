@@ -981,8 +981,10 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
     const inviteUpdate = d.updates.find((u) => 'invitedAt' in u);
     expect(pinUpdate?.activationPinHash).toEqual(expect.any(String));
     expect(pinUpdate?.activationPinHash).not.toBe(json.codigo_activacion);
-    // Solo el panel del personal deja `activacion_vence_en`; este código la limpia.
-    expect(pinUpdate).toHaveProperty('activacionVenceEn', null);
+    // `.specs/acceso-panel-plataforma` SC9: la re-emisión es solo de
+    // platform-admin y cuenta como código del panel: deja su vencimiento.
+    expect(pinUpdate?.activacionVenceEn).toBeInstanceOf(Date);
+    expect((pinUpdate?.activacionVenceEn as Date).getTime()).toBe(expira);
     expect(inviteUpdate?.invitedAt).toBeInstanceOf(Date);
     expect(d.updates.some((u) => u.status === 'activa')).toBe(false);
     expect(d.updates.some((u) => 'claveNumericaHash' in u)).toBe(false);
@@ -1015,6 +1017,23 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
       expect(((await res.json()) as { code: string }).code).toBe('already_activated');
       expect(d.updates).toHaveLength(0);
     }
+  });
+
+  // `.specs/acceso-panel-plataforma` SC9: el código de una cuenta del personal
+  // sale solo del panel del personal, no de la re-emisión de una empresa.
+  it('409 cuenta_personal_booster si la cuenta es del personal de Booster, sin escribir', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ joinedMembershipRows: [filaPendienteReemision({ isPlatformAdmin: true })] });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros/${MEMBERSHIP_ID}/codigo`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'cuenta_personal_booster' });
+    expect(d.updates).toHaveLength(0);
   });
 
   it('404 membership_not_found si el join no trae la membresía', async () => {

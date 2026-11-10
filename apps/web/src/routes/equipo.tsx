@@ -1,4 +1,9 @@
-import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
+  ensureRutHasDash,
+  rutSchema,
+} from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
@@ -364,6 +369,9 @@ function FormAlta({
       const code = (err as { code?: string } | null)?.code;
       if (code === 'already_member') {
         setError('Esa persona ya forma parte de tu equipo.');
+      } else if (code === CODIGO_CUENTA_PERSONAL_BOOSTER) {
+        // `.specs/acceso-panel-plataforma` SC8.
+        setError(MENSAJE_CUENTA_PERSONAL_BOOSTER);
       } else if (code === 'rut_already_registered') {
         setError(
           'Ese RUT ya está registrado en Booster con otro correo. Revisa el RUT o escribe a soporte.',

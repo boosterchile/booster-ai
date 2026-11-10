@@ -372,6 +372,14 @@ describe('Equipo — 400 del servidor bajo cada campo (TRK-005)', () => {
     );
   });
 
+  // `.specs/acceso-panel-plataforma` SC8.
+  it('409 cuenta_personal_booster → explica que la cuenta se gestiona desde Booster', async () => {
+    rechazo(409, 'cuenta_personal_booster');
+    expect(await enviar()).toHaveTextContent(
+      'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+    );
+  });
+
   it('403 no_es_empresa → genérico', async () => {
     rechazo(403, 'no_es_empresa');
     expect(await enviar()).toHaveTextContent('Algo salió mal. Intenta de nuevo');

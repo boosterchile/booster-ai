@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { zValidator } from '../lib/validation.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { emitirAltaExencion } from '../services/emitir-alta-exencion.js';
@@ -16,7 +17,6 @@ import {
   listPendingSignupRequests,
   rejectSignupRequest,
 } from '../services/signup-request.js';
-import type { UserContext } from '../services/user-context.js';
 
 /**
  * T10 SEC-001 Sprint 2b — `/admin/signup-requests` endpoints
@@ -26,7 +26,7 @@ import type { UserContext } from '../services/user-context.js';
  *   POST /admin/signup-requests/:id/approve → approve via Admin SDK createUser
  *   POST /admin/signup-requests/:id/reject  → mark rechazado (no user creado)
  *
- * Audiencia: platform-admin Booster (BOOSTER_PLATFORM_ADMIN_EMAILS allowlist).
+ * Audiencia: platform-admin Booster (`requirePlatformAdmin`).
  * Auth chain (wireada en server.ts): firebaseAuthMiddleware + userContext.
  * Cada handler valida el role via
  * `requirePlatformAdmin` helper (paridad admin-stakeholder-orgs).
@@ -108,22 +108,6 @@ export function createAdminSignupRequestsRoutes(opts: {
   notifier: SignupRequestNotifier;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, adminEmail: email };
-  }
 
   function requireFlowActivated(c: Context, correlationId: string) {
     if (!appConfig.SIGNUP_REQUEST_FLOW_ACTIVATED) {

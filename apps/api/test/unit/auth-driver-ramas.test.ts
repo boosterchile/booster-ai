@@ -60,8 +60,16 @@ function makeDb(opts: {
       sets.push(vals);
       updates += 1;
       const falla = opts.userUpdateFails === true && updates === 1;
+      const resultado = <T>(valor: T): Promise<T> =>
+        falla ? Promise.reject(new Error('db down')) : Promise.resolve(valor);
+      // `where` se espera directo (membresía) o sigue con `returning()` (cuenta).
+      // La promesa se crea al consumirla, para no dejar un rechazo sin manejar.
       return {
-        where: () => (falla ? Promise.reject(new Error('db down')) : Promise.resolve(undefined)),
+        where: () => ({
+          then: (ok: (v: undefined) => unknown, mal: (e: unknown) => unknown) =>
+            resultado(undefined).then(ok, mal),
+          returning: () => resultado([{ id: 'u-1' }]),
+        }),
       };
     },
   }));

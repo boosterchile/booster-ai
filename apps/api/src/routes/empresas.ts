@@ -2,6 +2,8 @@ import type { Logger } from '@booster-ai/logger';
 import { empresaOnboardingInputSchema } from '@booster-ai/shared-schemas';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
+import { tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { zValidator } from '../lib/validation.js';
 import { hashOnboardingToken, verifyOnboardingToken } from '../services/onboarding-token.js';
@@ -27,7 +29,11 @@ function onboardingResponseBody(result: OnboardingResult) {
       full_name: result.user.fullName,
       phone: result.user.phone,
       rut: result.user.rut,
-      is_platform_admin: result.user.isPlatformAdmin,
+      // Misma regla que `/me` (`.specs/acceso-panel-plataforma` SC1).
+      is_platform_admin: tieneAccesoPlataforma(
+        result.user,
+        appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+      ),
       status: result.user.status,
     },
     empresa: {

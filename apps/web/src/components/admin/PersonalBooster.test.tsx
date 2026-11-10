@@ -9,8 +9,9 @@ import { PersonalBooster } from './PersonalBooster.js';
  * del personal de Booster en `/app/platform-admin/personal`.
  *
  * Cubre la lista con sus estados, el alta con confirmación, el código que se
- * muestra una sola vez junto a la dirección de `/activar`, el aviso de la lista
- * de Terraform, la re-emisión por fila y los mensajes de error por código.
+ * muestra una sola vez junto a la dirección de `/activar`, la re-emisión por
+ * fila, «Quitar acceso» (`.specs/acceso-panel-plataforma` SC12) y los mensajes
+ * de error por código.
  */
 
 vi.mock('../../lib/logger.js', () => ({
@@ -68,8 +69,6 @@ const DANI = {
 
 const LISTA = { personal: [ANA, BETO, CARLA, DANI] };
 
-const AVISO_TERRAFORM =
-  'Agrega este correo a la lista de Terraform (booster_platform_admin_emails) y aplica; recién entonces la persona podrá activar. Si el código vence antes, genera uno nuevo aquí.';
 const AVISO_CORREO =
   'Intentamos enviarle el código por correo a esa dirección. Si no le llega, entrégaselo tú: cópialo antes de cerrar.';
 
@@ -109,7 +108,7 @@ beforeEach(() => {
 });
 
 describe('PersonalBooster — lista (SC1)', () => {
-  it('lista al personal con correo, nombre, RUT, la lista de Terraform y el estado legible', async () => {
+  it('lista al personal con correo, nombre, RUT, la lista de respaldo y el estado legible', async () => {
     const get = await renderConLista();
 
     expect(get).toHaveBeenCalledWith('/admin/personal-booster');
@@ -118,16 +117,24 @@ describe('PersonalBooster — lista (SC1)', () => {
     expect(within(ana).getByText('Ana Rojas')).toBeInTheDocument();
     expect(within(ana).getByText(/ana@boosterchile\.com/)).toBeInTheDocument();
     expect(within(ana).getByText(/11\.111\.111-1/)).toBeInTheDocument();
-    expect(within(ana).getByText('En la lista de Terraform: sí')).toBeInTheDocument();
+    expect(
+      within(ana).getByText(
+        /En la lista de respaldo: para quitarle el acceso, sácalo de Terraform/,
+      ),
+    ).toBeInTheDocument();
     expect(within(ana).getByText('Activa')).toBeInTheDocument();
 
     const beto = fila(BETO.email);
     expect(within(beto).getByText('Pendiente de activar')).toBeInTheDocument();
-    expect(within(beto).getByText('En la lista de Terraform: no')).toBeInTheDocument();
+    expect(within(beto).queryByText(/lista de respaldo/)).not.toBeInTheDocument();
 
     const carla = fila(CARLA.email);
     expect(within(carla).getByText('Sin cuenta')).toBeInTheDocument();
-    expect(within(carla).getByText('En la lista de Terraform: sí')).toBeInTheDocument();
+    expect(
+      within(carla).getByText(
+        /En la lista de respaldo: para quitarle el acceso, sácalo de Terraform/,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('muestra el vencimiento, marca el código vencido y el último ingreso', async () => {
@@ -217,17 +224,18 @@ describe('PersonalBooster — lista (SC1)', () => {
   });
 });
 
-describe('PersonalBooster — orden del alta (SC10)', () => {
-  it('explica el orden: cuenta en el panel, lista de Terraform y recién ahí la activación', async () => {
+describe('PersonalBooster — orden del alta (acceso-panel-plataforma SC12)', () => {
+  it('explica el orden: cuenta en el panel, /activar y login, sin paso de Terraform', async () => {
     await renderConLista();
 
     const orden = screen.getByTestId('personal-orden-alta');
     const pasos = within(orden).getAllByRole('listitem');
     expect(pasos).toHaveLength(3);
     expect(pasos[0]).toHaveTextContent('Crea la cuenta aquí');
-    expect(pasos[1]).toHaveTextContent('booster_platform_admin_emails');
-    expect(pasos[2]).toHaveTextContent('/activar');
-    expect(orden).toHaveTextContent('no le enviamos el código por correo');
+    expect(pasos[1]).toHaveTextContent('/activar');
+    expect(pasos[2]).toHaveTextContent('/login');
+    expect(orden).not.toHaveTextContent('booster_platform_admin_emails');
+    expect(orden).toHaveTextContent('Quitar acceso');
   });
 });
 
@@ -269,7 +277,8 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(within(confirmacion).getByText('eva@boosterchile.com')).toBeInTheDocument();
     expect(within(confirmacion).getByText('Eva Muñoz')).toBeInTheDocument();
     expect(within(confirmacion).getByText('22.222.222-2')).toBeInTheDocument();
-    expect(confirmacion).toHaveTextContent('Este correo todavía no está en la lista de Terraform');
+    expect(confirmacion).toHaveTextContent('queda marcada como personal de Booster');
+    expect(confirmacion).not.toHaveTextContent('Terraform');
     expect(post).not.toHaveBeenCalled();
 
     fireEvent.click(within(confirmacion).getByRole('button', { name: 'Corregir datos' }));
@@ -302,7 +311,8 @@ describe('PersonalBooster — alta (SC2)', () => {
       `${window.location.origin}/activar`,
     );
     expect(within(panel).getByText(/Vence el/)).toBeInTheDocument();
-    expect(within(panel).getByTestId('personal-aviso-lista')).toHaveTextContent(AVISO_TERRAFORM);
+    // La lista ya no es condición: el código sale por correo igual.
+    expect(within(panel).getByTestId('personal-aviso-lista')).toHaveTextContent(AVISO_CORREO);
     expect(panel).toHaveTextContent('Se muestra una sola vez');
 
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
@@ -350,18 +360,18 @@ describe('PersonalBooster — alta (SC2)', () => {
     const panel = await screen.findByTestId('personal-vinculo-panel');
     expect(panel).toHaveTextContent('Esta persona ya tiene cuenta');
     expect(panel).toHaveTextContent('su clave no cambia');
-    expect(panel).toHaveTextContent('booster_platform_admin_emails');
-    // Fuera de la lista la API no la marca: el panel no dice que lo hizo.
-    expect(panel).toHaveTextContent('no la marcamos como personal');
-    expect(panel).toHaveTextContent('repite el alta');
-    expect(panel).not.toHaveTextContent('La marcamos como personal de Booster');
+    // SC3 y SC12: queda con acceso desde ya, y el panel pide confirmarlo.
+    expect(panel).toHaveTextContent('La marcamos como personal de Booster');
+    expect(panel).toHaveTextContent('Confirma con la persona que esta cuenta es suya');
+    expect(panel).toHaveTextContent('Quitar acceso');
+    expect(panel).not.toHaveTextContent('booster_platform_admin_emails');
     expect(screen.queryByTestId('personal-codigo')).not.toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByTestId('personal-vinculo-panel')).not.toBeInTheDocument();
   });
 
-  it('cuenta_activa en la lista no pide agregar el correo', async () => {
+  it('cuenta_activa en la lista dice lo mismo: no hay paso de Terraform', async () => {
     await renderConLista();
     vi.spyOn(api, 'post').mockResolvedValue({
       ok: true,
@@ -396,7 +406,6 @@ describe('PersonalBooster — alta (SC2)', () => {
       nombre: 'Beto Soto',
       rut: '12345678-5',
     });
-    expect(confirmacion).toHaveTextContent('Este correo todavía no está en la lista de Terraform');
     fireEvent.click(within(confirmacion).getByRole('button', { name: 'Crear cuenta' }));
 
     const panel = await screen.findByTestId('personal-vinculo-panel');
@@ -407,7 +416,7 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(panel).not.toHaveTextContent('Si no se lo entregaste tú');
     expect(panel).not.toHaveTextContent('vencido');
     expect(panel).toHaveTextContent(/Vence el/);
-    expect(panel).toHaveTextContent(AVISO_TERRAFORM);
+    expect(panel).not.toHaveTextContent('Terraform');
     expect(screen.queryByTestId('personal-codigo')).not.toBeInTheDocument();
   });
 
@@ -430,7 +439,7 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(panel).not.toHaveTextContent('booster_platform_admin_emails');
   });
 
-  it('Dar de alta en una fila sin cuenta precarga el correo y la confirmación sabe que está en la lista', async () => {
+  it('Dar de alta en una fila sin cuenta precarga el correo y lleva a la confirmación', async () => {
     await renderConLista();
 
     fireEvent.click(within(fila(CARLA.email)).getByRole('button', { name: 'Dar de alta' }));
@@ -444,23 +453,7 @@ describe('PersonalBooster — alta (SC2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Revisar datos' }));
 
     const confirmacion = await screen.findByTestId('personal-confirmacion');
-    expect(confirmacion).toHaveTextContent('Este correo ya está en la lista de Terraform');
-  });
-});
-
-describe('PersonalBooster — confirmación y lista de Terraform', () => {
-  it('reconoce el correo en la lista aunque la cuenta lo tenga guardado con mayúsculas', async () => {
-    await renderConLista({
-      personal: [ANA, { ...BETO, email: 'Beto.Mayus@BoosterChile.com', en_lista: true }],
-    });
-
-    const confirmacion = await altaHastaConfirmar({
-      email: 'beto.mayus@boosterchile.com',
-      nombre: 'Beto Soto',
-      rut: '12345678-5',
-    });
-
-    expect(confirmacion).toHaveTextContent('Este correo ya está en la lista de Terraform');
+    expect(within(confirmacion).getByText(CARLA.email)).toBeInTheDocument();
   });
 });
 
@@ -581,7 +574,7 @@ describe('PersonalBooster — Generar código nuevo (SC5)', () => {
     expect(within(panel).getByTestId('personal-url-activar')).toHaveTextContent(
       `${window.location.origin}/activar`,
     );
-    expect(within(panel).getByTestId('personal-aviso-lista')).toHaveTextContent(AVISO_TERRAFORM);
+    expect(within(panel).getByTestId('personal-aviso-lista')).toHaveTextContent(AVISO_CORREO);
 
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
     expect(within(fila(BETO.email)).getByTestId('personal-codigo-panel')).toBeInTheDocument();
@@ -640,7 +633,7 @@ describe('PersonalBooster — Generar código nuevo (SC5)', () => {
 
     const aviso = await within(hugo).findByTestId('personal-aviso-lista');
     expect(aviso).toHaveTextContent('no tiene RUT registrado');
-    expect(aviso).not.toHaveTextContent(AVISO_TERRAFORM);
+    expect(aviso).not.toHaveTextContent(AVISO_CORREO);
   });
 
   it('el código nuevo de otra fila reemplaza al panel anterior: nunca hay dos códigos en pantalla', async () => {
@@ -743,5 +736,91 @@ describe('PersonalBooster — copiar el código', () => {
     expect(
       await within(panel).findByText('No pudimos copiar. Selecciona el código y cópialo a mano.'),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC12 — «Quitar acceso» en las cuentas
+ * marcadas que no están en la lista de respaldo, con confirmación.
+ */
+describe('PersonalBooster — Quitar acceso (acceso-panel-plataforma SC12)', () => {
+  it('aparece solo en las cuentas fuera de la lista de respaldo', async () => {
+    await renderConLista();
+
+    expect(
+      within(fila(BETO.email)).getByRole('button', { name: 'Quitar acceso' }),
+    ).toBeInTheDocument();
+    for (const persona of [ANA, CARLA, DANI]) {
+      expect(
+        within(fila(persona.email)).queryByRole('button', { name: 'Quitar acceso' }),
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it('pide confirmación y cancelar no llama al POST', async () => {
+    await renderConLista();
+    const post = vi.spyOn(api, 'post');
+
+    const beto = fila(BETO.email);
+    fireEvent.click(within(beto).getByRole('button', { name: 'Quitar acceso' }));
+    const confirmacion = within(beto).getByTestId('personal-quitar-confirmacion');
+    expect(confirmacion).toHaveTextContent('¿Quitar el acceso al panel a Beto Soto?');
+    expect(confirmacion).toHaveTextContent('Su cuenta y su clave no cambian');
+
+    fireEvent.click(within(confirmacion).getByRole('button', { name: 'Cancelar' }));
+    expect(within(beto).queryByTestId('personal-quitar-confirmacion')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('al confirmar llama al POST sin body, avisa y recarga la lista', async () => {
+    const get = await renderConLista();
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ ok: true, user_id: USER_PENDIENTE });
+
+    const beto = fila(BETO.email);
+    fireEvent.click(within(beto).getByRole('button', { name: 'Quitar acceso' }));
+    fireEvent.click(within(beto).getByRole('button', { name: 'Sí, quitar acceso' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Quitamos el acceso al panel a Beto Soto. Avisamos a la lista de respaldo.',
+    );
+    expect(post.mock.calls).toEqual([[`/admin/personal-booster/${USER_PENDIENTE}/quitar-acceso`]]);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    [
+      'ultimo_acceso',
+      new ApiError(409, 'ultimo_acceso', {}, 'conflict'),
+      'No puedes quitar este acceso: el panel quedaría sin nadie que pueda entrar.',
+    ],
+    [
+      'en_lista_respaldo',
+      new ApiError(409, 'en_lista_respaldo', {}, 'conflict'),
+      'Su correo está en la lista de respaldo: primero sácalo de Terraform y aplica; después quítale el acceso aquí.',
+    ],
+  ])('traduce %s en la fila', async (_caso, err, mensaje) => {
+    await renderConLista();
+    vi.spyOn(api, 'post').mockRejectedValue(err);
+
+    const beto = fila(BETO.email);
+    fireEvent.click(within(beto).getByRole('button', { name: 'Quitar acceso' }));
+    fireEvent.click(within(beto).getByRole('button', { name: 'Sí, quitar acceso' }));
+
+    expect(await within(beto).findByRole('alert')).toHaveTextContent(mensaje);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('una respuesta con formato inesperado se reporta y no dice que lo quitó', async () => {
+    await renderConLista();
+    vi.spyOn(api, 'post').mockResolvedValue({ ok: true });
+
+    const beto = fila(BETO.email);
+    fireEvent.click(within(beto).getByRole('button', { name: 'Quitar acceso' }));
+    fireEvent.click(within(beto).getByRole('button', { name: 'Sí, quitar acceso' }));
+
+    expect(await within(beto).findByRole('alert')).toHaveTextContent(
+      'La respuesta del servidor no tiene el formato esperado.',
+    );
+    expect(logger.error).toHaveBeenCalled();
   });
 });

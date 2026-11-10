@@ -1,10 +1,19 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hashActivationPin } from '../services/activation-pin.js';
+import { hashActivationPin, verifyActivationPin } from '../services/activation-pin.js';
 import { createAuthActivarRoutes } from './auth-activar.js';
+
+// SC11 (`.specs/acceso-panel-plataforma`): se observa cuántas veces se
+// verifica un código, sin cambiar el resultado.
+vi.mock('../services/activation-pin.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../services/activation-pin.js')>();
+  return { ...real, verifyActivationPin: vi.fn(real.verifyActivationPin) };
+});
 
 /**
  * equipo-de-la-empresa Fase A — `POST /auth/activar`.
@@ -75,6 +84,8 @@ function makeDb(opts: DbOpts = {}) {
   const cola: unknown[][] = [user ? [user] : [], membresia ? [membresia] : []];
   const userUpdates: Record<string, unknown>[] = [];
   const membresiaUpdates: Record<string, unknown>[] = [];
+  /** Predicado de cada UPDATE de `usuarios`, en orden. */
+  const userWheres: unknown[] = [];
 
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
@@ -97,9 +108,14 @@ function makeDb(opts: DbOpts = {}) {
       const filas = esMembresia ? [] : (opts.filasActualizadas ?? [{ id: 'user-1' }]);
       // `where` se puede esperar directo o seguir con `returning()`.
       return {
-        where: vi.fn(() =>
-          Object.assign(Promise.resolve(undefined), { returning: vi.fn(async () => filas) }),
-        ),
+        where: vi.fn((predicado: unknown) => {
+          if (!esMembresia) {
+            userWheres.push(predicado);
+          }
+          return Object.assign(Promise.resolve(undefined), {
+            returning: vi.fn(async () => filas),
+          });
+        }),
       };
     }),
     _t: table,
@@ -115,6 +131,7 @@ function makeDb(opts: DbOpts = {}) {
     select,
     userUpdates,
     membresiaUpdates,
+    userWheres,
   };
 }
 
@@ -135,7 +152,6 @@ const sinLimite: MiddlewareHandler = async (_c, next) => {
 function buildApp(
   db: ReturnType<typeof makeDb>['db'],
   auth: Auth,
-  platformAdminEmails: readonly string[] = [],
   rateLimitPerRut: MiddlewareHandler = sinLimite,
 ) {
   const app = new Hono();
@@ -145,7 +161,6 @@ function buildApp(
       db,
       logger: noopLogger,
       firebaseAuth: auth,
-      platformAdminEmails,
       rateLimitPerRut,
     }),
   );
@@ -336,7 +351,7 @@ describe('POST /auth/activar — límite de intentos por RUT', () => {
     const limite: MiddlewareHandler = async (c) =>
       c.json({ error: 'too_many_attempts', code: 'too_many_attempts' }, 429);
 
-    const res = await activar(buildApp(d.db, a.auth, [], limite));
+    const res = await activar(buildApp(d.db, a.auth, limite));
 
     expect(res.status).toBe(429);
     expect(d.select).not.toHaveBeenCalled();
@@ -353,7 +368,7 @@ describe('POST /auth/activar — límite de intentos por RUT', () => {
       await next();
     };
 
-    const res = await activar(buildApp(d.db, a.auth, [], limite));
+    const res = await activar(buildApp(d.db, a.auth, limite));
 
     expect(paso).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(200);
@@ -364,14 +379,14 @@ describe('POST /auth/activar — límite de intentos por RUT', () => {
  * SC6 de `.specs/alta-personal-booster/spec.md` — la persona del personal de
  * Booster no tiene invitación a una empresa: el plazo de su código vive en
  * `usuarios.activacion_vence_en`. Activa solo si la cuenta está marcada como
- * personal, su correo está en la lista de Terraform y el código sigue vigente.
+ * personal y el código del panel sigue vigente; desde
+ * `.specs/acceso-panel-plataforma` la lista de respaldo ya no es condición.
  * Una cuenta marcada activa solo con un código emitido desde el panel y
  * vigente, también cuando tiene invitaciones a empresas. Cualquier otra
  * combinación responde lo mismo que un código malo.
  */
 describe('POST /auth/activar — personal de Booster (SC6)', () => {
   const CORREO_PERSONAL = 'ana.soto@boosterchile.com';
-  const LISTA = ['dev@boosterchile.com', CORREO_PERSONAL];
   const EN_TRES_DIAS = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
 
   function personal(overrides: Record<string, unknown> = {}) {
@@ -395,7 +410,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   it('con las tres condiciones y sin invitación: activa, devuelve sesión y consume el código', async () => {
     const d = makeDb({ user: personal(), membresia: null });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, LISTA));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; activated: boolean; custom_token: string };
@@ -416,24 +431,33 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
     expect(d.membresiaUpdates).toEqual([]);
   });
 
-  it('el correo de la cuenta se compara con la lista sin distinguir mayúsculas', async () => {
-    const d = makeDb({ user: personal({ email: 'Ana.Soto@BoosterChile.com' }), membresia: null });
+  // `.specs/acceso-panel-plataforma` SC6: la marca y el código del panel
+  // bastan; la lista de respaldo ya no es condición para activar.
+  it('cuenta marcada sin invitación cuyo correo no está en la lista de respaldo: activa con el código del panel vigente', async () => {
+    const d = makeDb({
+      user: personal({ email: 'otra.persona@boosterchile.com' }),
+      membresia: null,
+    });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, LISTA));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(200);
+    expect(((await res.json()) as { custom_token: string }).custom_token).toBe('ct-activacion');
+    const u = d.userUpdates[0] as Record<string, unknown>;
+    expect(u.status).toBe('activo');
+    expect(u.activationPinHash).toBeNull();
+    expect(u.activacionVenceEn).toBeNull();
+    expect(d.membresiaUpdates).toEqual([]);
   });
 
   it.each([
-    ['la cuenta no está marcada como personal', { isPlatformAdmin: false }, LISTA],
-    ['el correo no está en la lista de Terraform', {}, ['dev@boosterchile.com']],
-    ['la lista está vacía', {}, []],
-    ['el código venció', { activacionVenceEn: new Date(Date.now() - 60 * 1000) }, LISTA],
-    ['activacion_vence_en es NULL', { activacionVenceEn: null }, LISTA],
-  ])('%s → la misma 401 genérica, sin escrituras', async (_caso, overrides, lista) => {
+    ['la cuenta no está marcada como personal', { isPlatformAdmin: false }],
+    ['el código venció', { activacionVenceEn: new Date(Date.now() - 60 * 1000) }],
+    ['activacion_vence_en es NULL', { activacionVenceEn: null }],
+  ])('%s → la misma 401 genérica, sin escrituras', async (_caso, overrides) => {
     const d = makeDb({ user: personal(overrides), membresia: null });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, lista));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual(RECHAZO);
@@ -446,7 +470,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   it('código incorrecto con las tres condiciones → 401 genérica, sin escrituras', async () => {
     const d = makeDb({ user: personal(), membresia: null });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, LISTA), { codigo: '999999' });
+    const res = await activar(buildApp(d.db, a.auth), { codigo: '999999' });
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual(RECHAZO);
@@ -459,7 +483,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
       membresia: null,
     });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, LISTA));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(401);
     expect(d.userUpdates).toEqual([]);
@@ -469,7 +493,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   it('si además tiene una invitación vigente a empresa, la membresía se activa igual que hoy', async () => {
     const d = makeDb({ user: personal() });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, LISTA));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(200);
     const m = d.membresiaUpdates[0] as Record<string, unknown>;
@@ -495,14 +519,14 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   ] as const;
 
   it.each(PRIMERA_NO_VIGENTE)(
-    'cuenta marcada en la lista, con el código del panel vigente y %s: activa la cuenta sin tocar membresías',
+    'cuenta marcada con el código del panel vigente y %s: activa la cuenta sin tocar membresías',
     async (_caso, primera) => {
       const d = makeDb({
         user: personal(),
         membresia: { id: 'membresia-1', empresaId: 'empresa-1', ...primera },
       });
       const a = makeAuth();
-      const res = await activar(buildApp(d.db, a.auth, LISTA));
+      const res = await activar(buildApp(d.db, a.auth));
 
       expect(res.status).toBe(200);
       expect(((await res.json()) as { custom_token: string }).custom_token).toBe('ct-activacion');
@@ -518,24 +542,6 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
     },
   );
 
-  it.each(PRIMERA_NO_VIGENTE)(
-    'cuenta marcada fuera de la lista, con el código del panel vigente y %s → la misma 401 genérica, sin escrituras',
-    async (_caso, primera) => {
-      const d = makeDb({
-        user: personal(),
-        membresia: { id: 'membresia-1', empresaId: 'empresa-1', ...primera },
-      });
-      const a = makeAuth();
-      const res = await activar(buildApp(d.db, a.auth, ['dev@boosterchile.com']));
-
-      expect(res.status).toBe(401);
-      expect(await res.json()).toEqual(RECHAZO);
-      expect(d.userUpdates).toEqual([]);
-      expect(d.membresiaUpdates).toEqual([]);
-      expect(a.spies.createUser).not.toHaveBeenCalled();
-    },
-  );
-
   it.each([
     ['activacion_vence_en es NULL', { activacionVenceEn: null }],
     ['el código del panel venció', { activacionVenceEn: new Date(Date.now() - 60 * 1000) }],
@@ -544,7 +550,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
     async (_caso, overrides) => {
       const d = makeDb({ user: personal(overrides) });
       const a = makeAuth();
-      const res = await activar(buildApp(d.db, a.auth, LISTA));
+      const res = await activar(buildApp(d.db, a.auth));
 
       expect(res.status).toBe(401);
       expect(await res.json()).toEqual(RECHAZO);
@@ -558,7 +564,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   it('cuenta marcada con invitación vigente y código del panel vigente: activa la cuenta y la membresía aunque la lista no la nombre', async () => {
     const d = makeDb({ user: personal() });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, []));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(200);
     expect(((await res.json()) as { custom_token: string }).custom_token).toBe('ct-activacion');
@@ -572,7 +578,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   it('invitación vigente a empresa sin ser personal: activa como hoy aunque la lista no la nombre', async () => {
     const d = makeDb({ user: personal({ isPlatformAdmin: false, activacionVenceEn: null }) });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, []));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(200);
     expect((d.membresiaUpdates[0] as Record<string, unknown>).status).toBe('activa');
@@ -586,7 +592,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
       }),
     });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, []));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(200);
     expect((d.membresiaUpdates[0] as Record<string, unknown>).status).toBe('activa');
@@ -595,7 +601,7 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
   it('personal: si el código cambió antes de escribir → 401 genérica y sin sesión', async () => {
     const d = makeDb({ user: personal(), membresia: null, filasActualizadas: [] });
     const a = makeAuth();
-    const res = await activar(buildApp(d.db, a.auth, LISTA));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual(RECHAZO);
@@ -606,9 +612,124 @@ describe('POST /auth/activar — personal de Booster (SC6)', () => {
     const d = makeDb({ user: personal(), membresia: null });
     const a = makeAuth();
     a.spies.createUser.mockRejectedValueOnce(new Error('firebase down'));
-    const res = await activar(buildApp(d.db, a.auth, LISTA));
+    const res = await activar(buildApp(d.db, a.auth));
 
     expect(res.status).toBe(503);
     expect(d.userUpdates).toEqual([]);
+  });
+});
+
+describe('POST /auth/activar — estado de la cuenta (acceso-panel-plataforma SC10)', () => {
+  const RECHAZO = { error: 'invalid_credentials', code: 'invalid_credentials' };
+
+  it.each(['suspendido', 'eliminado'])(
+    'invitado de empresa con la cuenta %s y el código correcto → la misma 401 genérica, sin escrituras',
+    async (status) => {
+      const d = makeDb({
+        user: {
+          id: 'user-1',
+          rut: RUT,
+          email: 'gobe00@gmail.com',
+          fullName: 'Gabriel Barros',
+          firebaseUid: `pending-rut:${RUT}`,
+          activationPinHash: hashActivationPin(CODIGO),
+          claveNumericaHash: null,
+          isPlatformAdmin: false,
+          activacionVenceEn: null,
+          status,
+        },
+      });
+      const a = makeAuth();
+      const res = await activar(buildApp(d.db, a.auth));
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(d.userUpdates).toEqual([]);
+      expect(d.membresiaUpdates).toEqual([]);
+      expect(a.spies.createUser).not.toHaveBeenCalled();
+      expect(a.spies.createCustomToken).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['suspendido', 'eliminado'])(
+    'cuenta del personal %s con el código del panel vigente → la misma 401 genérica, sin escrituras',
+    async (status) => {
+      const d = makeDb({
+        user: {
+          id: 'user-personal',
+          rut: RUT,
+          email: 'ana.soto@boosterchile.com',
+          fullName: 'Ana Soto',
+          firebaseUid: `pending-rut:${RUT}`,
+          activationPinHash: hashActivationPin(CODIGO),
+          claveNumericaHash: null,
+          isPlatformAdmin: true,
+          activacionVenceEn: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          status,
+        },
+        membresia: null,
+      });
+      const a = makeAuth();
+      const res = await activar(buildApp(d.db, a.auth));
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual(RECHAZO);
+      expect(d.userUpdates).toEqual([]);
+      expect(a.spies.createUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it('el UPDATE exige que la cuenta no esté suspendida ni eliminada', async () => {
+    const d = makeDb();
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(200);
+    const predicado = d.userWheres[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la activación no pasó un predicado SQL al UPDATE');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toContain('"usuarios"."estado" not in');
+    expect(consulta.params).toEqual(expect.arrayContaining(['suspendido', 'eliminado']));
+  });
+});
+
+describe('POST /auth/activar — tiempo de respuesta parejo (acceso-panel-plataforma SC11)', () => {
+  it('RUT inexistente: el código se verifica igual, contra un hash de relleno', async () => {
+    const d = makeDb({ user: null });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(401);
+    expect(vi.mocked(verifyActivationPin)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(verifyActivationPin).mock.calls[0]?.[0]).toBe(CODIGO);
+  });
+
+  it('cuenta sin código pendiente: el código se verifica igual, contra un hash de relleno', async () => {
+    const d = makeDb({
+      user: {
+        id: 'user-1',
+        rut: RUT,
+        email: 'gobe00@gmail.com',
+        firebaseUid: 'fb-real',
+        activationPinHash: null,
+        status: 'activo',
+      },
+    });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(401);
+    expect(vi.mocked(verifyActivationPin)).toHaveBeenCalledTimes(1);
+  });
+
+  it('el hash de relleno no acepta ningún código: la respuesta es la 401 genérica', async () => {
+    const d = makeDb({ user: null });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(vi.mocked(verifyActivationPin).mock.results[0]?.value).toBe(false);
+    expect(await res.json()).toEqual({ error: 'invalid_credentials', code: 'invalid_credentials' });
   });
 });

@@ -79,6 +79,20 @@ function makeSender() {
   return { sender, send };
 }
 
+const ASUNTO_ACTIVACION = 'Activa tu acceso al panel de Booster';
+
+/** Correos con el código de activación, en orden. */
+function correosDeActivacion(send: ReturnType<typeof makeSender>['send']) {
+  return send.mock.calls.map((c) => c[0]).filter((m) => m.subject === ASUNTO_ACTIVACION);
+}
+
+/** Avisos a la lista de respaldo (`.specs/acceso-panel-plataforma` SC5), en orden. */
+function avisos(send: ReturnType<typeof makeSender>['send']) {
+  return send.mock.calls
+    .map((c) => c[0])
+    .filter((m) => m.subject.startsWith('Booster: acceso al panel'));
+}
+
 interface DbOpts {
   /** Respuestas de `select().from().where().limit()`, en orden. */
   lookups?: unknown[][];
@@ -500,7 +514,8 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
     }
   });
 
-  it('cuenta activa con el correo fuera de la lista: no la marca y responde cuenta_activa', async () => {
+  // `.specs/acceso-panel-plataforma` SC3: el panel otorga el acceso.
+  it('cuenta activa con el correo fuera de la lista: la marca igual y queda con acceso', async () => {
     const d = makeDb({
       lookups: [[existente({ firebaseUid: 'fb-real', claveNumericaHash: 'hash-clave' })]],
     });
@@ -518,14 +533,14 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
       expira_en: null,
       en_lista: false,
     });
-    // Sin la lista, la marca no se escribe: la cuenta sigue como estaba.
-    expect(d.updates).toEqual([]);
+    expect(d.updates).toHaveLength(1);
+    expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(true);
     expect(d.insertedUsers).toEqual([]);
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({
         event_type: 'personal_booster.alta',
         vinculo: 'cuenta_activa',
-        marcada: false,
+        marcada: true,
       }),
       expect.any(String),
     );
@@ -577,8 +592,8 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
       expect(cambios.activacionVenceEn).toBeInstanceOf(Date);
       cercaDe((cambios.activacionVenceEn as Date).toISOString(), Date.now() + SIETE_DIAS_MS);
       expect(d.insertedUsers).toEqual([]);
-      // El correo está en la lista: el código nuevo sale también por correo.
-      expect(send).toHaveBeenCalledTimes(1);
+      // El código nuevo sale también por correo a la persona.
+      expect(correosDeActivacion(send).map((m) => m.to)).toEqual([CORREO]);
     },
   );
 
@@ -586,7 +601,13 @@ describe('POST /admin/personal-booster — persona que ya existe (SC3)', () => {
     const vence = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
     const d = makeDb({
       lookups: [
-        [existente({ activationPinHash: hashActivationPin('246810'), activacionVenceEn: vence })],
+        [
+          existente({
+            isPlatformAdmin: true,
+            activationPinHash: hashActivationPin('246810'),
+            activacionVenceEn: vence,
+          }),
+        ],
       ],
     });
     const app = await buildApp({ db: d.db });
@@ -1032,6 +1053,17 @@ describe('admin-personal-booster — impersonación (SC8)', () => {
     expect(d.insert).not.toHaveBeenCalled();
   });
 
+  it('quitar acceso en una sesión de impersonación → 403 y nada escrito (acceso-panel-plataforma SC4)', async () => {
+    const d = makeDb({ listRows: [existente({ isPlatformAdmin: true, status: 'activo' })] });
+    const app = await appImpersonada(d);
+
+    const res = await app.request(`/${PERSONA_ID}/quitar-acceso`, { method: 'POST' });
+
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('forbidden_impersonation_write');
+    expect(d.update).not.toHaveBeenCalled();
+  });
+
   it('la re-emisión en una sesión de impersonación → 403 y nada escrito', async () => {
     const d = makeDb({ lookups: [[existente({ isPlatformAdmin: true })]] });
     const app = await appImpersonada(d);
@@ -1054,15 +1086,16 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
     expect(res.status).toBe(201);
     const { codigo_activacion } = (await res.json()) as { codigo_activacion: string };
 
-    expect(send).toHaveBeenCalledTimes(1);
-    const msg = (send.mock.calls[0] as unknown[])[0] as { to: string; text: string };
+    const activacion = correosDeActivacion(send);
+    expect(activacion).toHaveLength(1);
+    const msg = activacion[0] as { to: string; text: string };
     expect(msg.to).toBe(CORREO);
     expect(msg.text).toContain(`${WEB_APP_URL}/activar`);
     expect(msg.text).toContain(codigo_activacion);
     expect(msg.text).toContain(RUT);
   });
 
-  it('alta con el correo fuera de la lista: no se envía correo', async () => {
+  it('alta con el correo fuera de la lista: el código sale igual por correo a la persona (SC3)', async () => {
     const d = makeDb({ lookups: [[], []] });
     const { sender, send } = makeSender();
     const app = await buildApp({ db: d.db, sender, lista: [ADMIN_EMAIL] });
@@ -1070,7 +1103,10 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
     const res = await app.request('/', postJson(BODY));
 
     expect(res.status).toBe(201);
-    expect(send).not.toHaveBeenCalled();
+    const { codigo_activacion } = (await res.json()) as { codigo_activacion: string };
+    const activacion = correosDeActivacion(send);
+    expect(activacion.map((m) => m.to)).toEqual([CORREO]);
+    expect(activacion[0]?.text).toContain(codigo_activacion);
   });
 
   it('sin código emitido (cuenta activa o código del panel vigente) no se envía correo', async () => {
@@ -1088,6 +1124,7 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
       lookups: [
         [
           existente({
+            isPlatformAdmin: true,
             activationPinHash: hashActivationPin('111111'),
             activacionVenceEn: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
           }),
@@ -1101,10 +1138,10 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
     expect(resVigente.status).toBe(200);
     expect(((await resVigente.json()) as { vinculo: string }).vinculo).toBe('codigo_vigente');
 
-    expect(send).not.toHaveBeenCalled();
+    expect(correosDeActivacion(send)).toEqual([]);
   });
 
-  it('re-emisión con el correo en la lista envía el código nuevo; fuera de la lista, no', async () => {
+  it('re-emisión: el código nuevo sale por correo, esté o no el correo en la lista (SC3)', async () => {
     const { sender, send } = makeSender();
     const enLista = makeDb({ lookups: [[existente({ isPlatformAdmin: true })]] });
     const res = await (await buildApp({ db: enLista.db, sender })).request(
@@ -1125,8 +1162,12 @@ describe('admin-personal-booster — correo, logs y auditoría (SC9)', () => {
       { method: 'POST' },
     );
     expect(res2.status).toBe(200);
-    expect(((await res2.json()) as { en_lista: boolean }).en_lista).toBe(false);
-    expect(send).not.toHaveBeenCalled();
+    const json2 = (await res2.json()) as { en_lista: boolean; codigo_activacion: string };
+    expect(json2.en_lista).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(((send.mock.calls[0] as unknown[])[0] as { text: string }).text).toContain(
+      json2.codigo_activacion,
+    );
   });
 
   it('el alta deja un evento de auditoría con el admin, la persona y el vínculo, sin el código', async () => {
@@ -1185,6 +1226,7 @@ describe('admin-personal-booster — métrica de negocio y span (SC9)', () => {
       [
         [
           existente({
+            isPlatformAdmin: true,
             activationPinHash: hashActivationPin('111111'),
             activacionVenceEn: EN_DOS_DIAS(),
           }),
@@ -1342,5 +1384,367 @@ describe('admin-personal-booster — métrica de negocio y span (SC9)', () => {
         },
       },
     ]);
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC5 — el alta que otorga el acceso deja un
+ * evento de auditoría y avisa a cada correo de la lista de respaldo.
+ */
+/**
+ * `.specs/acceso-panel-plataforma` SC3: una provisoria que todavía no era del
+ * personal recibe siempre un código nuevo del panel al darla de alta. Un
+ * código que ya tenía, aunque tenga vencimiento, lo pudo conocer otra persona.
+ */
+describe('POST /admin/personal-booster — provisoria que no estaba marcada (SC3)', () => {
+  it('con un vencimiento vigente que no dejó el panel del personal: emite uno nuevo', async () => {
+    const hashAnterior = hashActivationPin('246810');
+    const d = makeDb({
+      lookups: [
+        [
+          existente({
+            isPlatformAdmin: false,
+            activationPinHash: hashAnterior,
+            activacionVenceEn: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          }),
+        ],
+      ],
+    });
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { vinculo: string; codigo_activacion: string | null };
+    expect(json.vinculo).toBe('provisoria_sin_codigo');
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    const cambios = d.updates[0] as Record<string, unknown>;
+    expect(cambios.isPlatformAdmin).toBe(true);
+    expect(cambios.activationPinHash).not.toBe(hashAnterior);
+    expect(cambios.activacionVenceEn).toBeInstanceOf(Date);
+  });
+});
+
+describe('POST /admin/personal-booster — aviso y auditoría del acceso otorgado (SC5)', () => {
+  it('persona nueva: avisa a cada correo de la lista, sin el código', async () => {
+    const d = makeDb({ lookups: [[], []] });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger });
+
+    const res = await app.request('/', postJson(BODY));
+    const { codigo_activacion } = (await res.json()) as { codigo_activacion: string };
+
+    const enviados = avisos(send);
+    expect(enviados.map((m) => m.to)).toEqual(LISTA);
+    for (const m of enviados) {
+      expect(m.subject).toBe('Booster: acceso al panel otorgado a Ana Soto');
+      expect(m.text).toContain(ADMIN_EMAIL);
+      expect(m.text).toContain(`Ana Soto (${CORREO})`);
+      expect(m.text).not.toContain(codigo_activacion);
+    }
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event_type: 'personal_booster.acceso_otorgado',
+        actor_user_id: ADMIN_ID,
+        user_id: NUEVO_ID,
+        avisos_destinatarios: 2,
+        avisos_enviados: 2,
+      },
+      expect.any(String),
+    );
+  });
+
+  it('cuenta activa sin marca: el alta la marca y avisa', async () => {
+    const d = makeDb({
+      lookups: [
+        [existente({ firebaseUid: 'fb-real', claveNumericaHash: 'h', isPlatformAdmin: false })],
+      ],
+    });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender, lista: [ADMIN_EMAIL] });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(avisos(send).map((m) => m.to)).toEqual([ADMIN_EMAIL]);
+  });
+
+  it('cuenta que ya estaba marcada: el alta no avisa ni deja evento de acceso otorgado', async () => {
+    const d = makeDb({
+      lookups: [
+        [
+          existente({
+            isPlatformAdmin: true,
+            activationPinHash: hashActivationPin('111111'),
+            activacionVenceEn: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          }),
+        ],
+      ],
+    });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(200);
+    expect(avisos(send)).toEqual([]);
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain(
+      'personal_booster.acceso_otorgado',
+    );
+  });
+
+  it('un rechazo del alta no avisa', async () => {
+    const d = makeDb({ lookups: [[existente({ rut: '22222222-2' })]] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender });
+
+    const res = await app.request('/', postJson(BODY));
+
+    expect(res.status).toBe(409);
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC4 — «Quitar acceso» desde el panel. La
+ * consulta bloquea las cuentas marcadas hasta el commit; la persona tiene que
+ * estar entre ellas.
+ */
+describe('POST /admin/personal-booster/:userId/quitar-acceso (SC4)', () => {
+  const OTRO_ID = '5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a';
+
+  /** Cuenta marcada, tal como la lee la baja. */
+  function marcada(overrides: Record<string, unknown> = {}) {
+    return {
+      id: PERSONA_ID,
+      email: 'carlos.rojas@boosterchile.com',
+      fullName: 'Carlos Rojas',
+      firebaseUid: 'fb-carlos',
+      claveNumericaHash: 'hash',
+      activationPinHash: null,
+      activacionVenceEn: null,
+      status: 'activo',
+      ...overrides,
+    };
+  }
+
+  const ADMIN_MARCADO = marcada({ id: ADMIN_ID, email: ADMIN_EMAIL, fullName: 'Felipe Vicencio' });
+
+  function quitar(app: Hono, userId = PERSONA_ID) {
+    return app.request(`/${userId}/quitar-acceso`, { method: 'POST' });
+  }
+
+  it('desmarca la cuenta y responde ok', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, user_id: PERSONA_ID });
+    expect(d.updates).toHaveLength(1);
+    const cambios = d.updates[0] as Record<string, unknown>;
+    expect(cambios.isPlatformAdmin).toBe(false);
+    // Una cuenta activa conserva su clave: solo pierde el acceso al panel.
+    for (const campo of ['activationPinHash', 'activacionVenceEn', 'claveNumericaHash', 'status']) {
+      expect(cambios).not.toHaveProperty(campo);
+    }
+  });
+
+  it('la lectura bloquea las cuentas marcadas hasta el commit', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    await quitar(app);
+
+    expect(d.locks).toEqual(['update']);
+  });
+
+  it('el UPDATE exige que la cuenta siga marcada', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    await quitar(app);
+
+    const predicado = d.updateWheres[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la baja no pasó un predicado SQL al UPDATE');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toContain('"usuarios"."id" = $1');
+    expect(consulta.sql).toContain('"usuarios"."es_admin_plataforma" = $2');
+    expect(consulta.params).toEqual([PERSONA_ID, true]);
+  });
+
+  it('provisoria con un código del panel: el código deja de servir', async () => {
+    const d = makeDb({
+      listRows: [
+        ADMIN_MARCADO,
+        marcada({
+          firebaseUid: `pending-rut:${RUT}`,
+          claveNumericaHash: null,
+          activationPinHash: hashActivationPin('123456'),
+          activacionVenceEn: new Date(Date.now() + SIETE_DIAS_MS),
+          status: 'pendiente_verificacion',
+        }),
+      ],
+    });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(200);
+    expect(d.updates[0]).toMatchObject({
+      isPlatformAdmin: false,
+      activationPinHash: null,
+      activacionVenceEn: null,
+    });
+  });
+
+  it('provisoria con un código que no emitió el panel: ese código no se toca', async () => {
+    const d = makeDb({
+      listRows: [
+        ADMIN_MARCADO,
+        marcada({
+          firebaseUid: `pending-rut:${RUT}`,
+          claveNumericaHash: null,
+          activationPinHash: hashActivationPin('123456'),
+          activacionVenceEn: null,
+          status: 'pendiente_verificacion',
+        }),
+      ],
+    });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    await quitar(app);
+
+    expect(d.updates[0]).not.toHaveProperty('activationPinHash');
+  });
+
+  it('cuenta que no está marcada → 404 personal_not_found, sin escrituras', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found', code: 'personal_not_found' });
+    expect(d.update).not.toHaveBeenCalled();
+  });
+
+  it('correo de la lista de respaldo → 409 en_lista_respaldo, sin escrituras', async () => {
+    const d = makeDb({
+      listRows: [ADMIN_MARCADO, marcada({ email: 'Carlos.Rojas@BoosterChile.com' })],
+    });
+    const app = await buildApp({
+      db: d.db,
+      lista: [ADMIN_EMAIL, 'carlos.rojas@boosterchile.com'],
+    });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'en_lista_respaldo' });
+    expect(d.update).not.toHaveBeenCalled();
+  });
+
+  it('quitárselo a uno mismo siendo el último con acceso → 409 ultimo_acceso', async () => {
+    const d = makeDb({
+      listRows: [ADMIN_MARCADO, marcada({ id: OTRO_ID, status: 'suspendido' })],
+    });
+    const app = await buildApp({ db: d.db, lista: [] });
+
+    const res = await quitar(app, ADMIN_ID);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'ultimo_acceso' });
+    expect(d.update).not.toHaveBeenCalled();
+  });
+
+  it('quitárselo a uno mismo cuando otra cuenta activa conserva el acceso → 200', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada({ id: OTRO_ID })] });
+    const app = await buildApp({ db: d.db, lista: [] });
+
+    const res = await quitar(app, ADMIN_ID);
+
+    expect(res.status).toBe(200);
+    expect((d.updates[0] as Record<string, unknown>).isPlatformAdmin).toBe(false);
+  });
+
+  it('el UPDATE que no encuentra la cuenta marcada → 404, sin aviso', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()], filasActualizadas: [] });
+    const { sender, send } = makeSender();
+    const app = await buildApp({ db: d.db, sender, lista: [ADMIN_EMAIL] });
+
+    const res = await quitar(app);
+
+    expect(res.status).toBe(404);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('avisa a la lista de respaldo y deja el evento de auditoría (SC5)', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO, marcada()] });
+    const { sender, send } = makeSender();
+    const logger = makeLogger();
+    const app = await buildApp({ db: d.db, sender, logger, lista: [ADMIN_EMAIL] });
+
+    await quitar(app);
+
+    const enviados = avisos(send);
+    expect(enviados.map((m) => m.to)).toEqual([ADMIN_EMAIL]);
+    expect(enviados[0]?.subject).toBe('Booster: acceso al panel quitado a Carlos Rojas');
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event_type: 'personal_booster.acceso_quitado',
+        actor_user_id: ADMIN_ID,
+        user_id: PERSONA_ID,
+        codigo_invalidado: false,
+        avisos_destinatarios: 1,
+        avisos_enviados: 1,
+      },
+      expect.any(String),
+    );
+  });
+
+  it('counter y span con el resultado', async () => {
+    const d = makeDb({ listRows: [ADMIN_MARCADO] });
+    const app = await buildApp({ db: d.db, lista: [ADMIN_EMAIL] });
+
+    await quitar(app);
+
+    expect(observabilidad.contadores).toEqual([
+      {
+        nombre: 'personal_booster_quitar_acceso_total',
+        labels: { resultado: 'personal_not_found' },
+      },
+    ]);
+    expect(observabilidad.spans).toEqual([
+      {
+        nombre: 'personal_booster.quitar_acceso',
+        atributos: {
+          'booster.user_id': PERSONA_ID,
+          'personal_booster.resultado': 'personal_not_found',
+        },
+      },
+    ]);
+  });
+
+  it('userId que no es UUID → 400', async () => {
+    const d = makeDb();
+    const app = await buildApp({ db: d.db });
+
+    const res = await app.request('/no-es-uuid/quitar-acceso', { method: 'POST' });
+
+    expect(res.status).toBe(400);
+    expect(d.update).not.toHaveBeenCalled();
+  });
+
+  it('sin sesión → 401 y un usuario que no es platform-admin → 403', async () => {
+    const sinSesion = await buildApp({ db: makeDb().db, sesion: null });
+    expect((await quitar(sinSesion)).status).toBe(401);
+    const otro = await buildApp({ db: makeDb().db, sesion: 'otra.persona@empresa.cl' });
+    expect((await quitar(otro)).status).toBe(403);
   });
 });
