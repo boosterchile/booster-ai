@@ -7,6 +7,11 @@
  * correo (sin distinguir mayúsculas) recibe uno solo. Los correos sintéticos
  * de dominio `.invalid` no son buzones reales y se descartan.
  *
+ * Contenido (`.specs/seguimiento-publico-minimizacion/` §3.3): la patente va
+ * enmascarada como en la página pública; el nombre de la empresa transportista
+ * va solo al generador, que ya lo ve en su panel. Si ambos comparten correo,
+ * sale una vez con el texto del generador.
+ *
  * Idempotencia propia (`asignaciones.tracking_link_email_enviado_en`),
  * independiente del WhatsApp: si un canal está caído, el otro sale igual. La
  * marca se toma con un UPDATE condicional antes de enviar, así dos despachos
@@ -22,6 +27,7 @@ import type { Db } from '../db/client.js';
 import { assignments, empresas, trips, users, vehicles } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { maskPlate } from './get-public-tracking.js';
 import type { EmailMessage, EmailSender } from './notifications/email-sender.js';
 
 export interface NotifyTrackingLinkEmailDeps {
@@ -66,12 +72,17 @@ function armarCorreo(datos: {
   transportista: string | null;
   patente: string | null;
   url: string;
+  /** Primera línea; por defecto, la del aviso al asignar. */
+  encabezado?: string;
 }): EmailMessage {
+  const encabezado = datos.encabezado ?? `Tu carga ${datos.trackingCode} ya tiene transportista.`;
   const lineaTransporte = datos.transportista
     ? `Transporta: ${datos.transportista}${datos.patente ? ` (patente ${datos.patente})` : ''}.`
-    : null;
+    : datos.patente
+      ? `Vehículo: patente ${datos.patente}.`
+      : null;
   const text = [
-    `Tu carga ${datos.trackingCode} ya tiene transportista.`,
+    encabezado,
     `Ruta: ${datos.origen} → ${datos.destino}.`,
     ...(lineaTransporte ? [lineaTransporte] : []),
     '',
@@ -80,7 +91,7 @@ function armarCorreo(datos: {
     'Booster',
   ].join('\n');
   const html = [
-    `<p>Tu carga <strong>${escaparHtml(datos.trackingCode)}</strong> ya tiene transportista.</p>`,
+    `<p>${escaparHtml(encabezado)}</p>`,
     `<p>Ruta: ${escaparHtml(datos.origen)} → ${escaparHtml(datos.destino)}.</p>`,
     ...(lineaTransporte ? [`<p>${escaparHtml(lineaTransporte)}</p>`] : []),
     `<p><a href="${escaparHtml(datos.url)}">Ver el seguimiento en vivo</a></p>`,
@@ -153,10 +164,15 @@ async function enviarCorreoTracking(
     return { assignmentId, skipped: true, reason: 'no_token' };
   }
 
-  const destinatarios: string[] = [];
-  for (const candidato of [correoUsable(row.shipperEmail), correoUsable(row.consigneeEmail)]) {
-    if (candidato && !destinatarios.some((d) => d.toLowerCase() === candidato.toLowerCase())) {
-      destinatarios.push(candidato);
+  // El generador va primero: si comparte correo con el destinatario, gana su texto.
+  const destinatarios: Array<{ to: string; esGenerador: boolean }> = [];
+  for (const candidato of [
+    { to: correoUsable(row.shipperEmail), esGenerador: true },
+    { to: correoUsable(row.consigneeEmail), esGenerador: false },
+  ]) {
+    const to = candidato.to;
+    if (to && !destinatarios.some((d) => d.to.toLowerCase() === to.toLowerCase())) {
+      destinatarios.push({ to, esGenerador: candidato.esGenerador });
     }
   }
   if (destinatarios.length === 0) {
@@ -180,15 +196,16 @@ async function enviarCorreoTracking(
 
   const url = `${webAppUrl.replace(/\/$/, '')}/tracking/${row.publicToken}`;
   let enviados = 0;
-  for (const to of destinatarios) {
+  const patente = row.vehiclePlate ? maskPlate(row.vehiclePlate) : null;
+  for (const destinatario of destinatarios) {
     const resultado = await emailSender.send(
       armarCorreo({
-        to,
+        to: destinatario.to,
         trackingCode: row.trackingCode,
         origen: regionLabel(row.originRegion),
         destino: regionLabel(row.destRegion),
-        transportista: row.carrierName,
-        patente: row.vehiclePlate,
+        transportista: destinatario.esGenerador ? row.carrierName : null,
+        patente,
         url,
       }),
     );
@@ -215,4 +232,86 @@ async function enviarCorreoTracking(
     'tracking por correo enviado',
   );
   return { assignmentId, skipped: false, enviados };
+}
+
+/**
+ * Reenvía el enlace vigente solo al correo del destinatario, cuando el
+ * generador cambia su contacto (`.specs/seguimiento-enlace-destinatario/`
+ * §3.2). Texto del destinatario: patente enmascarada y sin el nombre de la
+ * transportista. No usa la marca del envío al asignar.
+ */
+export async function reenviarTrackingLinkEmailADestinatario(
+  deps: NotifyTrackingLinkEmailDeps,
+  opts: { assignmentId: string; correo: string },
+): Promise<NotifyTrackingLinkEmailResult> {
+  return await withBusinessSpan(
+    {
+      name: 'notificaciones.tracking_correo_reenvio',
+      attributes: { 'booster.assignment_id': opts.assignmentId },
+    },
+    async (span) => {
+      const resultado = await reenviarCorreoTracking(deps, opts);
+      const outcome = resultado.skipped ? resultado.reason : 'sent';
+      setResultAttributes(span, { 'booster.outcome': outcome });
+      getBusinessCounter('notificaciones_tracking_correo').add(1, { outcome, tipo: 'reenvio' });
+      return resultado;
+    },
+  );
+}
+
+async function reenviarCorreoTracking(
+  deps: NotifyTrackingLinkEmailDeps,
+  opts: { assignmentId: string; correo: string },
+): Promise<NotifyTrackingLinkEmailResult> {
+  const { db, logger, emailSender, webAppUrl } = deps;
+  const { assignmentId } = opts;
+  const to = correoUsable(opts.correo);
+  if (!to) {
+    return { assignmentId, skipped: true, reason: 'no_email' };
+  }
+
+  const rows = await db
+    .select({
+      publicToken: assignments.publicTrackingToken,
+      trackingCode: trips.trackingCode,
+      originRegion: trips.originRegionCode,
+      destRegion: trips.destinationRegionCode,
+      vehiclePlate: vehicles.plate,
+    })
+    // rls-allowlist: notificador server-side; assignmentId de la carga que el generador acaba de editar.
+    .from(assignments)
+    .innerJoin(trips, eq(trips.id, assignments.tripId))
+    .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .where(eq(assignments.id, assignmentId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    logger.warn({ assignmentId }, 'reenvío de tracking por correo: asignación no encontrada');
+    return { assignmentId, skipped: true, reason: 'assignment_not_found' };
+  }
+  if (!row.publicToken) {
+    return { assignmentId, skipped: true, reason: 'no_token' };
+  }
+
+  const resultado = await emailSender.send(
+    armarCorreo({
+      to,
+      trackingCode: row.trackingCode,
+      origen: regionLabel(row.originRegion),
+      destino: regionLabel(row.destRegion),
+      transportista: null,
+      patente: row.vehiclePlate ? maskPlate(row.vehiclePlate) : null,
+      url: `${webAppUrl.replace(/\/$/, '')}/tracking/${row.publicToken}`,
+      encabezado: `Este es el enlace vigente para seguir la carga ${row.trackingCode}.`,
+    }),
+  );
+  if (!resultado.enviado) {
+    logger.warn(
+      { assignmentId, motivo: resultado.motivo },
+      'reenvío de tracking por correo: el correo no salió',
+    );
+    return { assignmentId, skipped: true, reason: 'send_failed' };
+  }
+  logger.info({ assignmentId, trackingCode: row.trackingCode }, 'tracking por correo reenviado');
+  return { assignmentId, skipped: false, enviados: 1 };
 }

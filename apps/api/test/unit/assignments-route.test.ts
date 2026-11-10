@@ -134,6 +134,7 @@ const ASSIGNMENT_DETAIL_ROW = {
   vehiclePlate: 'AB-CD-12',
   vehicleStatus: 'activo',
   vehicleType: 'camion_pequeno',
+  vehicleCapacityKg: 5000,
   driverUserId: 'driver-uuid',
   driverName: 'Pedro Conductor',
   tripId: TRIP_ID,
@@ -288,6 +289,25 @@ describe('GET /assignments/:id', () => {
     createdAt: new Date('2026-11-09T15:00:00Z'),
     closedAt: null,
   };
+
+  it('expone la capacidad del vehículo asignado (y null sin vehículo)', async () => {
+    const conVehiculo = makeDb({ selects: [[ASSIGNMENT_DETAIL_ROW], [], []] });
+    const app1 = await buildApp({ db: conVehiculo });
+    const r1 = (await (
+      await app1.request(`/assignments/${ASSIGNMENT_ID}`, {
+        headers: { 'x-test-userctx': VALID_CTX },
+      })
+    ).json()) as { assignment: { vehicle_capacity_kg: number | null } };
+    expect(r1.assignment.vehicle_capacity_kg).toBe(5000);
+    const sinVehiculo = makeDb({ selects: [[{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null }], []] });
+    const app2 = await buildApp({ db: sinVehiculo });
+    const r2 = (await (
+      await app2.request(`/assignments/${ASSIGNMENT_ID}`, {
+        headers: { 'x-test-userctx': VALID_CTX },
+      })
+    ).json()) as { assignment: { vehicle_capacity_kg: number | null } };
+    expect(r2.assignment.vehicle_capacity_kg).toBeNull();
+  });
 
   it('con cambio pendiente, la oficina ve el diff completo', async () => {
     const db = makeDb({
@@ -1044,6 +1064,70 @@ describe('GET /assignments', () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json()) as { assignments: unknown[] }).toEqual({ assignments: [] });
+  });
+
+  // editar-anular-cargas §9 + §6.11: la oficina se entera de la cancelación del generador.
+  it('una cancelada por el generador trae `cancelacion`; una activa trae null', async () => {
+    const app = await buildApp({
+      db: makeDb({
+        selects: [
+          [
+            {
+              ...LISTA_ROW,
+              assignmentStatus: 'cancelado',
+              tripStatus: 'cancelado',
+              cancelledByActor: 'generador_carga',
+              cancellationReason: 'Se cayó la venta',
+              cancelledAt: new Date('2026-11-09T12:00:00Z'),
+            },
+            { ...LISTA_ROW, assignmentId: 'otro' },
+          ],
+        ],
+      }),
+    });
+    const res = await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    const body = (await res.json()) as {
+      assignments: Array<{ status: string; cancelacion: unknown; trip: { cancelacion: unknown } }>;
+    };
+    const esperada = {
+      por_actor: 'generador_carga',
+      razon: 'Se cayó la venta',
+      en: '2026-11-09T12:00:00.000Z',
+    };
+    expect(body.assignments[0]?.status).toBe('cancelado');
+    expect(body.assignments[0]?.cancelacion).toEqual(esperada);
+    expect(body.assignments[0]?.trip.cancelacion).toEqual(esperada);
+    expect(body.assignments[1]?.cancelacion).toBeNull();
+    expect(body.assignments[1]?.trip.cancelacion).toBeNull();
+  });
+
+  it('el filtro incluye las canceladas por el generador de las últimas 72 horas', async () => {
+    const { PgDialect } = await import('drizzle-orm/pg-core');
+    const db = makeDb({ selects: [[]] });
+    const wheres: unknown[] = [];
+    const select = db.select;
+    db.select = vi.fn(() => {
+      const chain = select() as Record<string, unknown> & { where: (w: unknown) => unknown };
+      const where = chain.where;
+      chain.where = vi.fn((w: unknown) => {
+        wheres.push(w);
+        return where(w);
+      });
+      return chain;
+    }) as typeof db.select;
+    const antes = Date.now();
+    const app = await buildApp({ db });
+    await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    expect(wheres).toHaveLength(1);
+    const q = new PgDialect().sqlToQuery(wheres[0] as never);
+    expect(q.sql).toContain('"cancelado_por_actor"');
+    expect(q.sql).toContain('"cancelado_en"');
+    expect(q.params).toEqual(expect.arrayContaining([CARRIER_EMP, 'cancelado', 'generador_carga']));
+    const desde = q.params.find((p) => typeof p === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(p));
+    expect(desde).toBeDefined();
+    const ms = antes - new Date(desde as string).getTime();
+    expect(ms).toBeGreaterThanOrEqual(72 * 3600_000 - 5_000);
+    expect(ms).toBeLessThanOrEqual(72 * 3600_000 + 5_000);
   });
 
   it('una fecha inválida no rompe la respuesta entera', async () => {

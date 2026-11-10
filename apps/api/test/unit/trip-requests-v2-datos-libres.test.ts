@@ -16,8 +16,12 @@ vi.mock('../../src/services/editar-datos-libres.js', () => ({
 vi.mock('../../src/services/notify-cambio-carga.js', () => ({
   notifyCambioCarga: (...a: unknown[]) => notifyMock(...(a as [])),
 }));
+const reenviarCorreoMock = vi.fn(async () => ({ assignmentId: 'asg-1', skipped: false }));
 vi.mock('../../src/services/notify-tracking-link.js', () => ({
   reenviarTrackingLinkADestinatario: (...a: unknown[]) => reenviarMock(...(a as [])),
+}));
+vi.mock('../../src/services/notify-tracking-link-email.js', () => ({
+  reenviarTrackingLinkEmailADestinatario: (...a: unknown[]) => reenviarCorreoMock(...(a as [])),
 }));
 
 const { createTripRequestsV2Routes } = await import('../../src/routes/trip-requests-v2.js');
@@ -34,8 +38,9 @@ const logger = {
 } as never;
 
 const NOTIFY_TRACKING = { twilioClient: null, contentSidTracking: null };
+const NOTIFY_CORREO = { emailSender: { send: vi.fn() }, webAppUrl: 'https://app.test' };
 
-function app(role = 'dueno') {
+function app(role = 'dueno', conCorreo = true) {
   const a = new Hono();
   a.use('*', async (c, next) => {
     c.set('userContext', {
@@ -54,6 +59,7 @@ function app(role = 'dueno') {
       db: {} as never,
       logger,
       notifyTrackingLink: NOTIFY_TRACKING as never,
+      ...(conCorreo ? { notifyTrackingLinkEmail: NOTIFY_CORREO as never } : {}),
     }),
   );
   return a;
@@ -69,7 +75,8 @@ const patch = (a: Hono, body: unknown) =>
 const OK_CON_ASIGNACION = {
   ok: true,
   campos: ['consignee'],
-  telefonoDestinatarioNuevo: '+56922222222',
+  enlaceRenovado: false,
+  reenviarEnlace: { telefono: '+56922222222', correo: null },
   asignacion: { id: 'asg-1', status: 'asignado', empresaId: 'emp-t', driverUserId: 'u-c' },
 };
 
@@ -82,7 +89,9 @@ describe('PATCH /trip-requests-v2/:id/datos-libres', () => {
     editarMock.mockResolvedValue(OK_CON_ASIGNACION);
     const res = await patch(app(), { consignee: { phone_e164: '+56922222222' } });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ trip_request: { id: 'trip-1', campos: ['consignee'] } });
+    expect(await res.json()).toEqual({
+      trip_request: { id: 'trip-1', campos: ['consignee'], enlace_seguimiento_renovado: false },
+    });
     expect(editarMock).toHaveBeenCalledWith(expect.anything(), {
       tripId: 'trip-1',
       empresaId: 'emp-1',
@@ -98,13 +107,53 @@ describe('PATCH /trip-requests-v2/:id/datos-libres', () => {
       assignmentId: 'asg-1',
       telefono: '+56922222222',
     });
+    expect(reenviarCorreoMock).not.toHaveBeenCalled();
+  });
+
+  it('enlace reemplazado: lo dice la respuesta y reenvía por WhatsApp y por correo', async () => {
+    editarMock.mockResolvedValue({
+      ...OK_CON_ASIGNACION,
+      enlaceRenovado: true,
+      reenviarEnlace: { telefono: '+56922222222', correo: 'recepcion@cliente.cl' },
+    });
+    const res = await patch(app(), { consignee: { phone_e164: '+56922222222' } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      trip_request: { id: 'trip-1', campos: ['consignee'], enlace_seguimiento_renovado: true },
+    });
+    expect(reenviarMock).toHaveBeenCalledWith(expect.objectContaining(NOTIFY_TRACKING), {
+      assignmentId: 'asg-1',
+      telefono: '+56922222222',
+    });
+    expect(reenviarCorreoMock).toHaveBeenCalledWith(expect.objectContaining(NOTIFY_CORREO), {
+      assignmentId: 'asg-1',
+      correo: 'recepcion@cliente.cl',
+    });
+  });
+
+  it('solo correo que reenviar: no toca WhatsApp; sin proveedor de correo no falla', async () => {
+    editarMock.mockResolvedValue({
+      ...OK_CON_ASIGNACION,
+      reenviarEnlace: { telefono: null, correo: 'recepcion@cliente.cl' },
+    });
+    expect((await patch(app(), { consignee: { email: 'recepcion@cliente.cl' } })).status).toBe(200);
+    expect(reenviarMock).not.toHaveBeenCalled();
+    expect(reenviarCorreoMock).toHaveBeenCalledTimes(1);
+
+    reenviarCorreoMock.mockClear();
+    const sinCorreo = app('dueno', false);
+    expect((await patch(sinCorreo, { consignee: { email: 'recepcion@cliente.cl' } })).status).toBe(
+      200,
+    );
+    expect(reenviarCorreoMock).not.toHaveBeenCalled();
   });
 
   it('sin asignación no avisa ni reenvía', async () => {
     editarMock.mockResolvedValue({
       ok: true,
       campos: ['notes'],
-      telefonoDestinatarioNuevo: null,
+      enlaceRenovado: false,
+      reenviarEnlace: { telefono: null, correo: null },
       asignacion: null,
     });
     expect((await patch(app(), { notes: 'Andén 4' })).status).toBe(200);
@@ -113,9 +162,13 @@ describe('PATCH /trip-requests-v2/:id/datos-libres', () => {
   });
 
   it('si el aviso falla, la edición responde 200 igual', async () => {
-    editarMock.mockResolvedValue(OK_CON_ASIGNACION);
+    editarMock.mockResolvedValue({
+      ...OK_CON_ASIGNACION,
+      reenviarEnlace: { telefono: '+56922222222', correo: 'recepcion@cliente.cl' },
+    });
     notifyMock.mockRejectedValueOnce(new Error('db caída'));
     reenviarMock.mockRejectedValueOnce(new Error('twilio 503'));
+    reenviarCorreoMock.mockRejectedValueOnce(new Error('db caída'));
     expect((await patch(app(), { consignee: { phone_e164: '+56922222222' } })).status).toBe(200);
   });
 

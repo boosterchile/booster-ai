@@ -1,3 +1,7 @@
+import {
+  type CambioPendienteOficina,
+  CambioPropuestoCard,
+} from '../components/cambios/CambioPropuestoCard.js';
 import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 /**
  * /app/asignaciones/:id — pantalla carrier-side de un assignment activo.
@@ -47,6 +51,13 @@ interface AssignmentDetail {
     consignee?: { name: string | null; phone_e164: string | null } | null;
     notes?: string | null;
     reference?: string | null;
+    /**
+     * editar-anular-cargas §6.11: la oficina recibe el diff completo; el
+     * conductor solo `{ existe, creado_en }`.
+     */
+    cambio_pendiente?:
+      | (Partial<CambioPendienteOficina> & { existe: true; creado_en: string })
+      | null;
   };
   assignment: {
     id: string;
@@ -57,6 +68,7 @@ interface AssignmentDetail {
     vehicle_plate: string | null;
     vehicle_status?: string | null;
     vehicle_type: string | null;
+    vehicle_capacity_kg?: number | null;
     driver_user_id: string | null;
     driver_name: string | null;
     cancelled_at?: string | null;
@@ -94,6 +106,7 @@ export function AsignacionDetalleRoute() {
             canWriteDocs={flags.documentos}
             puedeAsignar={flags.asignar}
             puedeCobraHoy={flags.pedirCobraHoy}
+            puedeResponderCambio={flags.responderCambioCarga}
             viewerUserId={ctx.me.user.id}
           />
         );
@@ -106,11 +119,13 @@ function AsignacionDetallePage({
   canWriteDocs,
   puedeAsignar,
   puedeCobraHoy,
+  puedeResponderCambio,
   viewerUserId,
 }: {
   canWriteDocs: boolean;
   puedeAsignar: boolean;
   puedeCobraHoy: boolean;
+  puedeResponderCambio: boolean;
   viewerUserId: string;
 }) {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
@@ -182,6 +197,24 @@ function AsignacionDetallePage({
           driver_user_id=NULL y no había forma de setearlo después.
           Sin conductor asignado, el endpoint /assignments/:id/driver-position
           rechaza con 403 y el conductor no puede reportar GPS. */}
+      {/* editar-anular-cargas §9: el cambio propuesto va arriba de todo. */}
+      {trip?.cambio_pendiente?.id &&
+        trip.cambio_pendiente.cambios &&
+        trip.cambio_pendiente.valores_anteriores && (
+          <CambioPropuestoCard
+            assignmentId={assignmentId}
+            cambio={{
+              id: trip.cambio_pendiente.id,
+              cambios: trip.cambio_pendiente.cambios,
+              valores_anteriores: trip.cambio_pendiente.valores_anteriores,
+              creado_en: trip.cambio_pendiente.creado_en,
+            }}
+            puedeResponder={puedeResponderCambio}
+            vehiclePlate={assignment?.vehicle_plate ?? null}
+            vehicleCapacityKg={assignment?.vehicle_capacity_kg ?? null}
+          />
+        )}
+
       {assignment?.status === 'cancelado' &&
         assignment.cancelled_by_actor === 'generador_carga' &&
         assignment.cancelled_at && (

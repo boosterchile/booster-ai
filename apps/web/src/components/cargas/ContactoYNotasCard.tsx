@@ -43,6 +43,7 @@ export function ContactoYNotasCard({
   editable: boolean;
 }) {
   const [editando, setEditando] = useState(false);
+  const [enlaceRenovado, setEnlaceRenovado] = useState(false);
   return (
     <section
       aria-labelledby={`contacto-${tripId}`}
@@ -55,7 +56,10 @@ export function ContactoYNotasCard({
         {editable && !editando && (
           <button
             type="button"
-            onClick={() => setEditando(true)}
+            onClick={() => {
+              setEnlaceRenovado(false);
+              setEditando(true);
+            }}
             className="shrink-0 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
           >
             Editar
@@ -63,9 +67,24 @@ export function ContactoYNotasCard({
         )}
       </div>
       {editando ? (
-        <Formulario tripId={tripId} datos={datos} onListo={() => setEditando(false)} />
+        <Formulario
+          tripId={tripId}
+          datos={datos}
+          onGuardado={(renovado) => {
+            setEnlaceRenovado(renovado);
+            setEditando(false);
+          }}
+          onCancelar={() => setEditando(false)}
+        />
       ) : (
-        <Resumen datos={datos} />
+        <>
+          {enlaceRenovado && (
+            <output className="mt-3 block rounded-md bg-neutral-100 px-3 py-2 text-neutral-800 text-sm">
+              El enlace de seguimiento cambió. El anterior dejó de funcionar.
+            </output>
+          )}
+          <Resumen datos={datos} />
+        </>
       )}
     </section>
   );
@@ -99,11 +118,13 @@ function Resumen({ datos }: { datos: DatosLibresCarga }) {
 function Formulario({
   tripId,
   datos,
-  onListo,
+  onGuardado,
+  onCancelar,
 }: {
   tripId: string;
   datos: DatosLibresCarga;
-  onListo: () => void;
+  onGuardado: (enlaceRenovado: boolean) => void;
+  onCancelar: () => void;
 }) {
   const queryClient = useQueryClient();
   const [nombre, setNombre] = useState(datos.consignee.name ?? '');
@@ -126,15 +147,17 @@ function Formulario({
               ...(e ? { email: e } : {}),
             }
           : null;
-      return api.patch(`/trip-requests-v2/${tripId}/datos-libres`, {
+      return api.patch<{
+        trip_request: { enlace_seguimiento_renovado?: boolean };
+      }>(`/trip-requests-v2/${tripId}/datos-libres`, {
         consignee,
         notes: notas,
         reference: referencia,
       });
     },
-    onSuccess: () => {
+    onSuccess: (respuesta) => {
       queryClient.invalidateQueries({ queryKey: ['cargas', tripId] });
-      onListo();
+      onGuardado(respuesta.trip_request.enlace_seguimiento_renovado === true);
     },
     onError: (err) => setError(mensajeErrorDatosLibres(err)),
   });
@@ -223,7 +246,7 @@ function Formulario({
         </button>
         <button
           type="button"
-          onClick={onListo}
+          onClick={onCancelar}
           className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm"
         >
           Cancelar

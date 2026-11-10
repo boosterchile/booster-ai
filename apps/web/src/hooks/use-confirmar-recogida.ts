@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api-client.js';
 import type { GeofenceLectura } from './use-driver-position-reporter.js';
 
@@ -31,6 +31,18 @@ export interface UseConfirmarRecogidaOptions {
   initialRecogida: boolean;
   /** Última lectura del geofence del reporter GPS (null si no hay). */
   geofence: GeofenceLectura | null;
+  /**
+   * editar-anular-cargas §9: hay un cambio de carga sin responder (dato de
+   * `/me/assignments`). La recogida queda bloqueada hasta que se responda.
+   */
+  cambioPendiente?: boolean;
+  /**
+   * Contador de cargas de `/me/assignments`: cambia con cada respuesta nueva
+   * de la lista. Un 409 `cambio_pendiente` recibido cuando la lista decía que
+   * no había cambio solo se libera con una carga nueva (si la siguiente sigue
+   * sin cambio, el transportista ya respondió).
+   */
+  versionCarga?: number;
 }
 
 export interface UseConfirmarRecogidaResult {
@@ -42,6 +54,12 @@ export interface UseConfirmarRecogidaResult {
   /** ISO del instante del cruce (primera lectura `dentro`); null si no hubo. */
   enteredAt: string | null;
   confirmar: () => Promise<void>;
+  /**
+   * La recogida está bloqueada por un cambio pendiente: lo dijo
+   * `/me/assignments` o el API respondió 409 `cambio_pendiente`. No se
+   * reintenta sola; se libera con la próxima carga del servicio.
+   */
+  bloqueadaPorCambio: boolean;
 }
 
 /**
@@ -58,6 +76,8 @@ export function mensajeDeRecogida(err: unknown): string {
         return 'Este viaje no está a tu nombre. Avísale a tu empresa.';
       case 'assignment_not_found':
         return 'No encontramos este viaje. Actualiza la lista.';
+      case 'cambio_pendiente':
+        return 'Hay un cambio pendiente en este servicio. Espera la respuesta de tu transportista antes de recoger.';
       case 'invalid_picked_up_at':
         return 'La hora de llegada registrada no es válida. Vuelve a intentar: se usará la hora actual.';
       default:
@@ -70,10 +90,31 @@ export function mensajeDeRecogida(err: unknown): string {
 export function useConfirmarRecogida(
   opts: UseConfirmarRecogidaOptions,
 ): UseConfirmarRecogidaResult {
-  const { assignmentId, initialRecogida, geofence } = opts;
+  const {
+    assignmentId,
+    initialRecogida,
+    geofence,
+    cambioPendiente = false,
+    versionCarga = 0,
+  } = opts;
   const [recogida, setRecogida] = useState(initialRecogida);
   const [recogiendo, setRecogiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 409 `cambio_pendiente` recibido; se limpia con cada carga de la lista que
+  // vuelva sin cambio (no solo cuando `cambioPendiente` pasa de true a false:
+  // tras un 409 con la lista en false, ese valor no cambia nunca).
+  const [bloqueoApi, setBloqueoApi] = useState(false);
+  const bloqueoApiRef = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: versionCarga es el disparador (carga nueva de la lista), no un valor que se lea.
+  useEffect(() => {
+    if (!cambioPendiente && bloqueoApiRef.current) {
+      bloqueoApiRef.current = false;
+      setBloqueoApi(false);
+      // El mensaje del 409 ya no es cierto.
+      setError(null);
+    }
+  }, [cambioPendiente, versionCarga]);
+  const bloqueadaPorCambio = cambioPendiente || bloqueoApi;
   const [enteredAt, setEnteredAt] = useState<string | null>(null);
 
   // Primer cruce: se fija una sola vez.
@@ -84,6 +125,9 @@ export function useConfirmarRecogida(
   }, [geofence, enteredAt]);
 
   const confirmar = useCallback(async () => {
+    if (bloqueadaPorCambio) {
+      return;
+    }
     setError(null);
     setRecogiendo(true);
     try {
@@ -96,11 +140,15 @@ export function useConfirmarRecogida(
       }
       setRecogida(true);
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'cambio_pendiente') {
+        bloqueoApiRef.current = true;
+        setBloqueoApi(true);
+      }
       setError(mensajeDeRecogida(err));
     } finally {
       setRecogiendo(false);
     }
-  }, [assignmentId, enteredAt]);
+  }, [assignmentId, enteredAt, bloqueadaPorCambio]);
 
   return {
     recogida,
@@ -109,5 +157,6 @@ export function useConfirmarRecogida(
     sugerida: !recogida && enteredAt !== null,
     enteredAt,
     confirmar,
+    bloqueadaPorCambio,
   };
 }
