@@ -261,15 +261,18 @@ export function createDriverAuthRoutes(opts: {
       try {
         veredicto = await cuentaProveedorReutilizable({
           db: opts.db,
+          auth: opts.firebaseAuth,
           cuenta: cuenta.cuenta,
-          usuario: { id: user.id, firebaseUid: user.firebaseUid },
+          usuarioId: user.id,
         });
       } catch (err) {
+        // La revisión lee la base y revoca sesiones en el proveedor: si falla,
+        // la misma 502 de una falla del proveedor y nada escrito.
         opts.logger.error(
           { err, userId: user.id },
-          'driver-activate: no se pudo revisar la cuenta',
+          'driver-activate: no se pudo revisar la cuenta del proveedor encontrada',
         );
-        return c.json({ error: 'db_error', code: 'db_error' }, 502);
+        return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
       }
       if (!veredicto.reutilizable) {
         opts.logger.error(

@@ -13,7 +13,10 @@ import {
   verifyActivationPin,
 } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
-import { cuentaProveedorReutilizable } from '../services/cuenta-proveedor-reutilizable.js';
+import {
+  type ResultadoReutilizacion,
+  cuentaProveedorReutilizable,
+} from '../services/cuenta-proveedor-reutilizable.js';
 import {
   codigoPersonalVigente,
   cuentaYaActivada,
@@ -204,11 +207,21 @@ export function createAuthActivarRoutes(opts: {
         .getUserByEmail(syntheticEmail(body.rut))
         .catch(() => null);
       if (existente) {
-        const veredicto = await cuentaProveedorReutilizable({
-          db: opts.db,
-          cuenta: existente,
-          usuario: { id: user.id, firebaseUid: user.firebaseUid },
-        });
+        let veredicto: ResultadoReutilizacion;
+        try {
+          veredicto = await cuentaProveedorReutilizable({
+            db: opts.db,
+            auth: opts.firebaseAuth,
+            cuenta: existente,
+            usuarioId: user.id,
+          });
+        } catch (err) {
+          opts.logger.error(
+            { err, userId: user.id },
+            'auth-activar: no se pudo revisar la cuenta del proveedor encontrada',
+          );
+          return c.json({ error: 'service_unavailable', code: 'firebase_error' }, 503);
+        }
         if (!veredicto.reutilizable) {
           opts.logger.error(
             { userId: user.id, motivo: veredicto.motivo },

@@ -1066,7 +1066,7 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
     await esperarFallaSinEscribir(await activar(app), stub, firebase);
   });
 
-  it('si la revisión de la cuenta en la base falla → 502 db_error, sin escribir ni sesión', async () => {
+  it('si la revisión de la cuenta en la base falla → la misma 502, sin escribir ni sesión', async () => {
     const stub = stubPendiente();
     const select = vi.mocked(stub.db.select);
     const original = select.getMockImplementation();
@@ -1088,7 +1088,7 @@ describe('POST /auth/driver-activate — cuenta del proveedor que ya existe (cor
     const res = await activar(app);
 
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'db_error', code: 'db_error' });
+    expect(await res.json()).toEqual({ error: 'firebase_error', code: 'firebase_error' });
     expect(stub.capturedUpdates).toHaveLength(0);
     expect(firebase.createCustomToken).not.toHaveBeenCalled();
   });

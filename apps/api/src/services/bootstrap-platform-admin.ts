@@ -1,12 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, or, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
-import { users } from '../db/schema.js';
+import { solicitudesRegistro, users } from '../db/schema.js';
 import { hashClaveNumerica, isValidClaveFormat } from './clave-numerica.js';
-import { cuentaCreadaPorSolicitud } from './cuenta-proveedor-reutilizable.js';
 
 /**
  * Gap A del alta de usuarios (diagnóstico hito CORFO §7,
@@ -111,8 +110,7 @@ export class FirebaseUidConflictError extends Error {
 export class CuentaDeSolicitudError extends Error {
   constructor(email: string) {
     super(
-      `La cuenta Firebase de ${email} la creó la aprobación de una solicitud de registro. ` +
-        'El bootstrap no la reutiliza (`.specs/correos-solicitudes-panel` SC5). Abort sin escrituras; resolver manualmente antes de re-correr.',
+      `La cuenta Firebase de ${email} es de una solicitud de registro aprobada (por su uid o por su correo). El bootstrap no la reutiliza (correos-solicitudes-panel SC5). Abort sin escrituras; resolver manualmente antes de re-correr.`,
     );
     this.name = 'CuentaDeSolicitudError';
   }
@@ -213,10 +211,28 @@ export async function bootstrapPlatformAdmin(opts: {
       if (uidOwnerEmail) {
         throw new FirebaseUidConflictError(firebaseUid, uidOwnerEmail);
       }
-      // 4b'. Una cuenta existente que creó una aprobación no se reutiliza
-      //      (`.specs/correos-solicitudes-panel` SC5).
-      if (firebase === 'existing' && (await cuentaCreadaPorSolicitud(tx, firebaseUid))) {
-        throw new CuentaDeSolicitudError(email);
+      // 4b'. Una cuenta existente que pudo crear una aprobación no se
+      //      reutiliza (`.specs/correos-solicitudes-panel` SC5): su uid es el
+      //      de una solicitud, o hay una solicitud aprobada con este correo
+      //      (el modo sin enlace no guarda el uid en la solicitud).
+      if (firebase === 'existing') {
+        // rls-allowlist: el bootstrap es un script del operador, fuera del contexto de una empresa.
+        const deSolicitud = await tx
+          .select({ id: solicitudesRegistro.id })
+          .from(solicitudesRegistro)
+          .where(
+            or(
+              eq(solicitudesRegistro.firebaseUid, firebaseUid),
+              and(
+                eq(solicitudesRegistro.estado, 'aprobado'),
+                sql`lower(trim(${solicitudesRegistro.email})) = ${email}`,
+              ),
+            ),
+          )
+          .limit(1);
+        if (deSolicitud.length > 0) {
+          throw new CuentaDeSolicitudError(email);
+        }
       }
     }
 

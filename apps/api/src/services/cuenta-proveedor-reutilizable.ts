@@ -1,4 +1,5 @@
-import { and, eq, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import type { Auth } from 'firebase-admin/auth';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { solicitudesRegistro, users } from '../db/schema.js';
@@ -57,37 +58,45 @@ export async function cuentaCreadaPorSolicitud(
 /**
  * Una activación reutiliza la cuenta del proveedor que encontró por el correo
  * sintético del RUT solo en dos casos (SC5):
- *   - su uid ya es el `firebase_uid` de la cuenta que se activa;
- *   - está libre: sin proveedor propio, su uid no es el de otra fila de
- *     `usuarios` y no es el de una solicitud.
+ *   - su uid ya es el `firebase_uid` de la fila que se activa (p. ej. otro
+ *     pedido de la misma primera activación lo escribió primero, SC2);
+ *   - está libre: ninguna fila de `usuarios` tiene su uid, no tiene proveedor
+ *     propio y su uid no es el de una solicitud.
+ *
+ * A una cuenta libre se le revocan antes sus sesiones abiertas: así nadie que
+ * la haya usado antes sigue dentro cuando la activación la deja en la fila.
+ * Si la revocación falla, el error sube y el caller responde la falla del
+ * proveedor sin escribir.
  */
 export async function cuentaProveedorReutilizable(opts: {
   db: Pick<Db, 'select'>;
+  auth: Pick<Auth, 'revokeRefreshTokens'>;
   cuenta: unknown;
-  usuario: { id: string; firebaseUid: string };
+  /** `usuarios.id` de la fila que se activa. */
+  usuarioId: string;
 }): Promise<ResultadoReutilizacion> {
   const leida = cuentaProveedorSchema.safeParse(opts.cuenta);
   if (!leida.success) {
     return { reutilizable: false, motivo: 'forma_desconocida' };
   }
   const { uid, providerData } = leida.data;
-  if (uid === opts.usuario.firebaseUid) {
-    return { reutilizable: true, uid };
+  // rls-allowlist: el uid de una cuenta del proveedor es único en toda la plataforma.
+  const [duena] = await opts.db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.firebaseUid, uid))
+    .limit(1);
+  if (duena) {
+    return duena.id === opts.usuarioId
+      ? { reutilizable: true, uid }
+      : { reutilizable: false, motivo: 'de_otra_cuenta' };
   }
   if (providerData.length > 0) {
     return { reutilizable: false, motivo: 'con_proveedor_propio' };
   }
-  // rls-allowlist: el uid de una cuenta del proveedor es único en toda la plataforma.
-  const deOtraCuenta = await opts.db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.firebaseUid, uid), ne(users.id, opts.usuario.id)))
-    .limit(1);
-  if (deOtraCuenta.length > 0) {
-    return { reutilizable: false, motivo: 'de_otra_cuenta' };
-  }
   if (await cuentaCreadaPorSolicitud(opts.db, uid)) {
     return { reutilizable: false, motivo: 'de_una_solicitud' };
   }
+  await opts.auth.revokeRefreshTokens(uid);
   return { reutilizable: true, uid };
 }

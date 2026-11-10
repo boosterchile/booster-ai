@@ -67,26 +67,31 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // Una cuenta del proveedor creada al aprobar una solicitud entra solo por
     // el onboarding (`.specs/correos-solicitudes-panel` SC6): ni este vínculo
     // ni la cuenta de la lista de abajo. Se reconoce porque su uid es el
-    // `firebase_uid` de una solicitud.
+    // `firebase_uid` de una solicitud, y se consulta solo cuando /me está por
+    // vincular o por crear la cuenta de la lista.
     // ---------------------------------------------------------------------
-    const sinCuentaConCorreoVerificado = !user && Boolean(claims.email) && claims.emailVerified;
-    const sesionDeSolicitud =
-      sinCuentaConCorreoVerificado && (await cuentaCreadaPorSolicitud(opts.db, claims.uid));
-    if (sesionDeSolicitud) {
-      opts.logger.info(
-        { firebaseUid: claims.uid },
-        '/me: cuenta creada por una aprobación; entra por el onboarding',
-      );
-    }
+    let deSolicitud: boolean | undefined;
+    const esCuentaDeSolicitud = async (): Promise<boolean> => {
+      if (deSolicitud === undefined) {
+        deSolicitud = await cuentaCreadaPorSolicitud(opts.db, claims.uid);
+        if (deSolicitud) {
+          opts.logger.info(
+            { firebaseUid: claims.uid },
+            '/me: cuenta creada por una aprobación; entra por el onboarding',
+          );
+        }
+      }
+      return deSolicitud;
+    };
 
-    if (!user && claims.email && claims.emailVerified && !sesionDeSolicitud) {
+    if (!user && claims.email && claims.emailVerified) {
       const byEmail = await opts.db
         .select()
         .from(users)
         .where(eq(users.email, claims.email))
         .limit(1);
       const existing = byEmail[0];
-      if (existing) {
+      if (existing && !(await esCuentaDeSolicitud())) {
         opts.logger.info(
           {
             userId: existing.id,
@@ -115,8 +120,11 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // correo (`.specs/bordes-autenticacion` SC2), igual que el account linking
     // de arriba, y que la cuenta no venga de una aprobación (SC6).
     // ---------------------------------------------------------------------
-    if (!user && claims.email && claims.emailVerified && !sesionDeSolicitud) {
-      if (correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS)) {
+    if (!user && claims.email && claims.emailVerified) {
+      if (
+        correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS) &&
+        !(await esCuentaDeSolicitud())
+      ) {
         const fullName = claims.name?.trim() ?? claims.email.split('@')[0] ?? 'Platform Admin';
         const inserted = await opts.db
           .insert(users)
