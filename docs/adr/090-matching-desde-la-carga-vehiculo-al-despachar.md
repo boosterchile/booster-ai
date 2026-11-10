@@ -1,6 +1,6 @@
 # ADR-090 — El matching parte de la carga y el vehículo se fija al despachar
 
-**Estado**: Borrador para decisión del PO. Pasa a `Vigente` con su visto en el PR que lo mergea. No se mergea con decisiones abiertas (sección final).
+**Estado**: Vigente. El PO cerró las decisiones de la sección final el 2026-11-10. El anexo de tipos de carga sigue sin validar y no rige.
 **Fecha**: 2026-11-09
 **Decider**: Felipe Vicencio (Product Owner).
 **Acota a**:
@@ -60,9 +60,11 @@ Consecuencias: una transportista que sí puede llevar la carga con tracto y semi
 - **Mantener el vehículo fijado y permitir cambiarlo después.** Sigue ofreciendo según un solo camión y sigue sin contar el carro.
 - **Filtrar por carrocería dentro del puntaje.** Una carrocería que no sirve no es un candidato peor: no es candidato.
 
-## Decisiones abiertas para el PO
+## Decisiones del PO
 
-| # | Pregunta | Recomendación |
+El PO aceptó las cuatro recomendaciones el 2026-11-10. La decisión 4 deja el anexo sin aprobar: la lista de tipos no rige hasta validarla contra las normas indicadas, y su aprobación va en un ADR o una spec posterior.
+
+| # | Pregunta | Decisión |
 |---|---|---|
 | 1 | ¿Hasta cuándo puede la transportista declarar el vehículo? | Hasta el inicio de la ventana de recogida, con recordatorios a la oficina. Pasado ese momento, aviso al generador. |
 | 2 | ¿Se acepta un camión de un tercero (subcontratado)? | Sí, registrado por la transportista como unidad de tercero, con patente y tipología. La responsabilidad ante el generador sigue siendo de quien aceptó. La huella se calcula con ese vehículo y su nivel de certificación sale de la fuente de posición disponible (ADR-077). |
