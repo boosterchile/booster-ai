@@ -2,6 +2,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type BootstrapPlatformAdminInput,
+  CuentaDeSolicitudError,
   FirebaseUidConflictError,
   InvalidBootstrapInputError,
   NotInAllowlistError,
@@ -47,15 +48,22 @@ interface Row {
 
 /**
  * Stub del tx de Drizzle. Los `select` se resuelven por orden de llamada
- * (el service hace: 1º dueño-del-rut, 2º fila-por-email, 3º dueño-del-uid).
+ * (el service hace: 1º dueño-del-rut, 2º fila-por-email, 3º dueño-del-uid y,
+ * con una cuenta Firebase existente, 4º la solicitud con ese uid).
  */
 function makeDbStub(opts: {
   rutOwner?: Row[];
   existing?: Row[];
   uidOwner?: Row[];
+  solicitud?: Row[];
   insertReturns?: Row[];
 }) {
-  const selectQueue: Row[][] = [opts.rutOwner ?? [], opts.existing ?? [], opts.uidOwner ?? []];
+  const selectQueue: Row[][] = [
+    opts.rutOwner ?? [],
+    opts.existing ?? [],
+    opts.uidOwner ?? [],
+    opts.solicitud ?? [],
+  ];
   const limit = vi.fn(() => Promise.resolve(selectQueue.shift() ?? []));
   const where = vi.fn(() => ({ limit }));
   const from = vi.fn(() => ({ where }));
@@ -152,6 +160,24 @@ describe('bootstrapPlatformAdmin — Firebase', () => {
     expect(result.firebase).toBe('existing');
     expect(result.firebaseUid).toBe('fb-uid-existente');
     expect(spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('no reutiliza una cuenta cuyo uid es el de una solicitud: aborta sin escrituras (correos-solicitudes-panel SC5)', async () => {
+    const { auth } = makeAuthStub({ existingUid: 'fb-de-solicitud' });
+    const { db, spies } = makeDbStub({ solicitud: [{ id: 'solicitud-1' }] });
+    await expect(bootstrapPlatformAdmin(baseOpts({ db, firebaseAuth: auth }))).rejects.toThrow(
+      CuentaDeSolicitudError,
+    );
+    expect(spies.insert).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('una cuenta existente que no es de una solicitud se reutiliza y consulta la solicitud', async () => {
+    const { auth } = makeAuthStub({ existingUid: 'fb-uid-existente' });
+    const { db, spies } = makeDbStub({});
+    const result = await bootstrapPlatformAdmin(baseOpts({ db, firebaseAuth: auth }));
+    expect(result.firebase).toBe('existing');
+    expect(spies.select).toHaveBeenCalledTimes(4);
   });
 
   it('propaga errores de Firebase que no sean user-not-found', async () => {

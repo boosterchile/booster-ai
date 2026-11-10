@@ -142,6 +142,7 @@ Salida esperada: mismo reporte del dry-run pero sin el prefijo `dry-run:`, con `
 | `RutConflictError` | El RUT pertenece a OTRO usuario | Ese RUT no es del admin — verifica el dato; jamás se reasigna un RUT ajeno |
 | `RutImmutableError` | La fila del admin ya declara otro RUT | Cambiar un RUT declarado no es alcance del bootstrap; escala al PO |
 | `FirebaseUidConflictError` | El uid Firebase vive en la fila de otro email | Estado inconsistente (cuenta compartida) — diagnóstico manual antes de re-correr |
+| `CuentaDeSolicitudError` | La cuenta Firebase de ese correo es de una solicitud de registro aprobada (por su uid o por su correo) | No se reutiliza (`.specs/correos-solicitudes-panel` SC5) — resolver desde soporte antes de re-correr |
 | `InvalidBootstrapInputError` | RUT o clave con formato inválido | Corrige el input (RUT con DV correcto; clave = exactamente 6 dígitos) |
 | `role "..." does not exist` (psql/script) con credenciales válidas | **Okupa en el puerto del túnel**: hay OTRO Postgres local escuchando en 5433 y estás hablando con él, no con prod | `lsof -nP -i :5433` e identificá el proceso; detenelo por su data-dir (`pg_ctl -D <dir> stop -m fast`) o usá otro puerto (`LOCAL_PORT`/`--local-host-port`). Causa raíz del incidente 2026-07-07 |
 

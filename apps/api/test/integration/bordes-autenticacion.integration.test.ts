@@ -33,7 +33,7 @@ const RECHAZO = { error: 'invalid_credentials', code: 'invalid_credentials' };
 /** Firebase en memoria con un gancho que corre dentro del próximo `createUser`. */
 function authEnMemoria() {
   const ganchos: { antesDeCrear: (() => Promise<void>) | null } = { antesDeCrear: null };
-  const porEmail = new Map<string, { uid: string }>();
+  const porEmail = new Map<string, { uid: string; providerData: { providerId: string }[] }>();
   const fake = {
     async getUserByEmail(email: string) {
       const u = porEmail.get(email);
@@ -48,9 +48,13 @@ function authEnMemoria() {
       if (gancho) {
         await gancho();
       }
-      const u = { uid: `fb-${randomUUID().slice(0, 8)}` };
+      const u = { uid: `fb-${randomUUID().slice(0, 8)}`, providerData: [] };
       porEmail.set(props.email, u);
       return u;
+    },
+    // Como el SDK: una activación revoca las sesiones de una cuenta libre que reutiliza.
+    async revokeRefreshTokens(_uid: string) {
+      return undefined;
     },
     async createCustomToken(uid: string) {
       return `custom-token-${uid}`;
