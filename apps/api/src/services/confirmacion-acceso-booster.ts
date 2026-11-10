@@ -3,6 +3,7 @@ import {
   CONFIRMACION_ACCESO_BOOSTER_VIGENCIA_HORAS,
 } from '@booster-ai/shared-schemas';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
 import { conductores, confirmacionesAccesoBooster, memberships, users } from '../db/schema.js';
 import { generateActivationPin, hashActivationPin, verifyActivationPin } from './activation-pin.js';
@@ -23,6 +24,8 @@ import { generateActivationPin, hashActivationPin, verifyActivationPin } from '.
  * - Una sola confirmación pendiente (`consumido_en` NULL) por persona: emitir
  *   una nueva borra la anterior en la misma transacción. Una consumida queda
  *   como registro.
+ * - El código vale mientras quien lo emitió tenga acceso al panel
+ *   (`tieneAccesoPlataforma`): si lo perdió, otro admin emite uno nuevo.
  * - Orden de bloqueo: primero la fila de `usuarios`, después la de la
  *   confirmación. El alta y la re-emisión bloquean la cuenta antes de emitir,
  *   «Quitar acceso» antes de borrar, y la confirmación bloquea las dos antes
@@ -140,6 +143,7 @@ export function codigoConfirmacionUsable(
 export type MotivoRechazoConfirmacion =
   | 'sin_codigo'
   | 'cuenta_no_activa'
+  | 'emisor_sin_acceso'
   | 'incorrecto'
   | 'vencido'
   | 'agotado';
@@ -155,11 +159,8 @@ export type ResultadoConfirmacion =
       tipo: 'confirmada';
       persona: { id: string; email: string; fullName: string };
       emitidoPorUsuarioId: string;
-      /**
-       * Correo de quien emitió el código, en minúsculas, leído en la misma
-       * transacción; null si la cuenta ya no está.
-       */
-      emitidoPorEmail: string | null;
+      /** Correo de quien emitió el código, en minúsculas, leído en la misma transacción. */
+      emitidoPorEmail: string;
       /** La cuenta ya estaba marcada antes de confirmar. */
       yaMarcada: boolean;
     };
@@ -174,12 +175,21 @@ export type ResultadoConfirmacion =
  *   escribe.
  * - Cuenta que no está `activo`: no escribe; la confirmación sigue pendiente.
  * - Sin intentos o vencida: no escribe.
+ * - Quien emitió el código ya no tiene acceso al panel: no escribe ni suma
+ *   un intento; la confirmación sigue pendiente hasta que otro admin emita
+ *   un código nuevo.
  * - Código incorrecto: suma un intento fallido.
  * - Código correcto: consume la confirmación y marca la cuenta.
  */
 export async function confirmarAccesoBooster(
   tx: Escritura,
-  opts: { usuarioId: string; codigo: string; ahora: Date },
+  opts: {
+    usuarioId: string;
+    codigo: string;
+    ahora: Date;
+    /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: la lista de respaldo del panel. */
+    platformAdminEmails: readonly string[];
+  },
 ): Promise<ResultadoConfirmacion> {
   const cuentas = await tx
     .select({
@@ -231,6 +241,24 @@ export async function confirmarAccesoBooster(
   if (!codigoConfirmacionUsable(pendiente, opts.ahora.getTime())) {
     return { tipo: 'rechazada', motivo: 'vencido', intentosFallidos: pendiente.intentosFallidos };
   }
+
+  // Quien emitió el código, en la misma transacción: el evento y el aviso
+  // usan su correo, y el código solo vale mientras tenga acceso al panel.
+  // rls-allowlist: cuenta de quien emitió el código, por su id, para la regla única de acceso.
+  const emisores = await tx
+    .select({ email: users.email, isPlatformAdmin: users.isPlatformAdmin, status: users.status })
+    .from(users)
+    .where(eq(users.id, pendiente.emitidoPorUsuarioId))
+    .limit(1);
+  const emisor = emisores[0];
+  if (!emisor || !tieneAccesoPlataforma(emisor, opts.platformAdminEmails)) {
+    return {
+      tipo: 'rechazada',
+      motivo: 'emisor_sin_acceso',
+      intentosFallidos: pendiente.intentosFallidos,
+    };
+  }
+
   if (!coincide) {
     // rls-allowlist: la persona confirma su propia cuenta; la fila es su confirmación bloqueada.
     await tx
@@ -263,20 +291,11 @@ export async function confirmarAccesoBooster(
     .set({ isPlatformAdmin: true, updatedAt: opts.ahora })
     .where(eq(users.id, cuenta.id));
 
-  // Dentro de la transacción: después del commit no queda ninguna lectura de
-  // la que dependan el evento de auditoría y el aviso a la lista.
-  // rls-allowlist: correo de quien emitió el código, para el aviso a la lista de respaldo.
-  const emisores = await tx
-    .select({ email: users.email })
-    .from(users)
-    .where(eq(users.id, pendiente.emitidoPorUsuarioId))
-    .limit(1);
-
   return {
     tipo: 'confirmada',
     persona: { id: cuenta.id, email: cuenta.email, fullName: cuenta.fullName },
     emitidoPorUsuarioId: pendiente.emitidoPorUsuarioId,
-    emitidoPorEmail: emisores[0]?.email.toLowerCase() ?? null,
+    emitidoPorEmail: emisor.email.toLowerCase(),
     yaMarcada: cuenta.isPlatformAdmin === true,
   };
 }

@@ -3264,7 +3264,7 @@ export const certificadosViaje = pgTable(
 
 /**
  * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
- * migración `NNNN_confirmaciones_acceso_booster`). Cuando el panel del
+ * migración `0078_confirmaciones_acceso_booster`). Cuando el panel del
  * personal da de alta una cuenta que ya tiene clave y vínculos con una
  * empresa, el acceso lo confirma la persona desde su sesión con un código de
  * 6 dígitos que el admin le entrega en persona. El código se guarda solo como

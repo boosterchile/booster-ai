@@ -22,9 +22,6 @@ const ESCRITURA_IMPERSONADA = {
 
 const CODIGO_INVALIDO: ConfirmarAccesoBoosterErrorCode = 'codigo_invalido';
 
-/** Si no se encuentra el correo de quien emitió el código, el aviso dice esto. */
-const EMISOR_SIN_CORREO = 'un admin de Booster';
-
 /**
  * `POST /me/confirmar-acceso-booster` (`.specs/confirmar-acceso-booster`).
  *
@@ -40,7 +37,7 @@ const EMISOR_SIN_CORREO = 'un admin de Booster';
  *   (403), también si la empresa activa es de prueba.
  * - Todo rechazo es la misma 400 `codigo_invalido`: sin confirmación
  *   pendiente, cuenta que no está activa, código incorrecto, vencido o sin
- *   intentos.
+ *   intentos, o quien emitió el código ya no tiene acceso al panel.
  * - Cinco intentos fallidos por código; al quinto el admin emite otro.
  * - La confirmación deja el evento `personal_booster.acceso_otorgado` y avisa
  *   a la lista de respaldo. Todo lo que necesitan se lee en la transacción:
@@ -50,7 +47,10 @@ const EMISOR_SIN_CORREO = 'un admin de Booster';
 export function createMeConfirmarAccesoBoosterRoutes(opts: {
   db: Db;
   logger: Logger;
-  /** `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: recibe el aviso de acceso otorgado. */
+  /**
+   * `config.BOOSTER_PLATFORM_ADMIN_EMAILS`: recibe el aviso de acceso otorgado
+   * y entra en la regla de acceso de quien emitió el código.
+   */
   platformAdminEmails: readonly string[];
   emailSender: EmailSender;
   /** Base del enlace al panel del personal en el aviso. */
@@ -89,7 +89,12 @@ export function createMeConfirmarAccesoBoosterRoutes(opts: {
 
         const ahora = new Date();
         const resultado = await opts.db.transaction((tx) =>
-          confirmarAccesoBooster(tx, { usuarioId, codigo, ahora }),
+          confirmarAccesoBooster(tx, {
+            usuarioId,
+            codigo,
+            ahora,
+            platformAdminEmails: opts.platformAdminEmails,
+          }),
         );
 
         if (resultado.tipo === 'rechazada') {
@@ -128,7 +133,7 @@ export function createMeConfirmarAccesoBoosterRoutes(opts: {
             accion: 'confirmado',
             destinatarios: opts.platformAdminEmails,
             persona: { userId: persona.id, nombre: persona.fullName, email: persona.email },
-            actorEmail: emitidoPorEmail ?? EMISOR_SIN_CORREO,
+            actorEmail: emitidoPorEmail,
             webAppUrl: opts.webAppUrl,
           });
           opts.logger.info(

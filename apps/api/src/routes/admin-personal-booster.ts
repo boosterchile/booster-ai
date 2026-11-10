@@ -301,6 +301,9 @@ export function createAdminPersonalBoosterRoutes(opts: {
               })
               .from(users)
               .where(sql`lower(${users.email}) = ${body.email}`)
+              // En orden fijo: con filas que difieren solo en mayúsculas, el
+              // alta toma siempre la misma.
+              .orderBy(users.id)
               // La fila queda bloqueada hasta el commit: una activación o una
               // re-emisión en paralelo espera y ve el estado que deja esta.
               .for('update')
@@ -316,10 +319,13 @@ export function createAdminPersonalBoosterRoutes(opts: {
               // Una cuenta con clave, sin marca y con un vínculo con una empresa
               // no se marca en el alta: recibe un código de confirmación que la
               // persona confirma desde su sesión (`.specs/confirmar-acceso-booster`
-              // SC1). Emitirlo reemplaza la confirmación pendiente anterior.
+              // SC1). Emitirlo reemplaza la confirmación pendiente anterior. Si
+              // su correo está en la lista de respaldo, la lista ya le da el
+              // panel y el alta la marca como cualquier otra (SC2).
               if (
                 clasificado === 'cuenta_activa' &&
                 existente.isPlatformAdmin !== true &&
+                !enLista &&
                 (await tieneVinculoConEmpresa(tx, existente.id))
               ) {
                 const confirmacion = await emitirConfirmacionAccesoBooster(tx, {
