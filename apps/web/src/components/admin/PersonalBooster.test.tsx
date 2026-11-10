@@ -285,6 +285,21 @@ describe('PersonalBooster — orden del alta (acceso-panel-plataforma SC12)', ()
     const orden = screen.getByTestId('personal-orden-alta');
     expect(orden).toHaveTextContent('Si ya tiene cuenta en una empresa');
     expect(orden).toHaveTextContent('Confirmar acceso de Booster');
+    // El primer paso no promete la marca a una cuenta que ya es de una empresa.
+    const pasos = within(orden).getAllByRole('listitem');
+    expect(pasos[0]).toHaveTextContent(
+      'Desde ese momento queda marcada como personal de Booster, salvo que ya tenga cuenta en una empresa.',
+    );
+  });
+
+  it('dice qué se avisa a la lista de respaldo: el alta que da acceso y la baja de quien lo tenía (confirmar-acceso-booster SC1, SC10)', async () => {
+    await renderConLista();
+
+    const orden = screen.getByTestId('personal-orden-alta');
+    expect(orden).toHaveTextContent(
+      'Cada alta que da acceso y cada baja de quien tenía acceso se avisan a la lista de respaldo.',
+    );
+    expect(orden).not.toHaveTextContent('Cada alta y cada baja se avisan');
   });
 });
 
@@ -326,7 +341,9 @@ describe('PersonalBooster — alta (SC2)', () => {
     expect(within(confirmacion).getByText('eva@boosterchile.com')).toBeInTheDocument();
     expect(within(confirmacion).getByText('Eva Muñoz')).toBeInTheDocument();
     expect(within(confirmacion).getByText('22.222.222-2')).toBeInTheDocument();
-    expect(confirmacion).toHaveTextContent('queda marcada como personal de Booster');
+    expect(confirmacion).toHaveTextContent(
+      'queda marcada como personal de Booster con acceso al panel, salvo que ya tenga cuenta en una empresa.',
+    );
     // confirmar-acceso-booster SC16: la cuenta de una empresa confirma con un código.
     expect(confirmacion).toHaveTextContent('Si su cuenta ya es de una empresa');
     expect(confirmacion).not.toHaveTextContent('Terraform');
