@@ -2,6 +2,7 @@ import { cn } from '@booster-ai/ui-components';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { LogOut, Settings, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { signOutUser } from '../hooks/use-auth.js';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useSwitchCompany } from '../hooks/use-switch-company.js';
 import { volverAlPanel } from '../lib/vista-admin.js';
@@ -60,7 +61,8 @@ function BadgeNavPill({ badge, testId }: { badge: BadgeNav; testId: string }) {
 export function Sidebar({ me, onNavigate }: { me: MeOnboarded; onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { switchTo, isPending } = useSwitchCompany();
-  const sections = navSectionsForMe(me);
+  const { flags } = useFeatureFlags();
+  const sections = navSectionsForMe(me, { rutas: flags.rutas_api_activada });
   const activeEmpresaId = me.active_membership?.empresa?.id ?? null;
   const esTransportista = Boolean(me.active_membership?.empresa?.is_transportista);
   const badges = useBadgesTransporte(esTransportista);

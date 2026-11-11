@@ -41,6 +41,8 @@ describe('GET /feature-flags (ADR-035 + ADR-036)', () => {
     expect(body).toHaveProperty('auth_universal_v1_activated');
     expect(body).toHaveProperty('wake_word_voice_activated');
     expect(body).toHaveProperty('matching_algorithm_v2_activated');
+    // Apagada por defecto: la web no muestra «Rutas» hasta que el PO la encienda.
+    expect(body.rutas_api_activada).toBe(false);
     expect(typeof body.auth_universal_v1_activated).toBe('boolean');
     expect(typeof body.wake_word_voice_activated).toBe('boolean');
     expect(typeof body.matching_algorithm_v2_activated).toBe('boolean');

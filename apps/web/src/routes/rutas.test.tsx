@@ -1,0 +1,365 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MeResponse } from '../hooks/use-me.js';
+
+/**
+ * `/app/rutas` — la oficina arma la ruta de un camión (ruta-parada-servicio
+ * parte 6, spec §4.2 y §4.5): agrupa cargas ya aceptadas, las quita y ordena
+ * las paradas. Las reglas las decide el API; la pantalla las explica.
+ */
+
+type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
+
+let providedContext: { kind: string; me?: MeOnboarded } = { kind: 'unmanaged' };
+vi.mock('../components/ProtectedRoute.js', () => ({
+  ProtectedRoute: ({ children }: { children: (ctx: unknown) => ReactNode }) =>
+    children(providedContext),
+}));
+vi.mock('../components/Layout.js', () => ({
+  Layout: ({ children, title }: { children: ReactNode; title?: string }) => (
+    <main data-testid="layout" data-title={title}>
+      {children}
+    </main>
+  ),
+}));
+
+const apiGet = vi.fn();
+const apiPost = vi.fn();
+const apiPut = vi.fn();
+const apiDelete = vi.fn();
+vi.mock('../lib/api-client.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('../lib/api-client.js')>('../lib/api-client.js');
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      get: (...a: unknown[]) => apiGet(...a),
+      post: (...a: unknown[]) => apiPost(...a),
+      put: (...a: unknown[]) => apiPut(...a),
+      delete: (...a: unknown[]) => apiDelete(...a),
+    },
+  };
+});
+
+const { ApiError } = await import('../lib/api-client.js');
+const { RutasRoute } = await import('./rutas.js');
+
+function makeMe(over: { role?: string; transportista?: boolean } = {}): MeOnboarded {
+  return {
+    needs_onboarding: false,
+    user: { id: 'u1', email: 'jefa@x.cl', full_name: 'Jefa', rut: '11111111-1' },
+    memberships: [],
+    active_membership: {
+      role: over.role ?? 'despachador',
+      empresa: {
+        id: 'e1',
+        legal_name: 'Transportes X',
+        is_transportista: over.transportista ?? true,
+        is_generador_carga: false,
+      },
+    },
+  } as unknown as MeOnboarded;
+}
+
+const parada = (
+  id: string,
+  orden: number,
+  tipo: 'recogida' | 'entrega',
+  codigo: string,
+  over: Record<string, unknown> = {},
+) => ({
+  id,
+  orden,
+  tipo,
+  resuelta_en: null,
+  servicio: {
+    asignacion_id: `asig-${codigo}`,
+    viaje_id: `viaje-${codigo}`,
+    codigo_seguimiento: codigo,
+    cancelado: false,
+    direccion: tipo === 'recogida' ? `Bodega ${codigo}` : `Cliente ${codigo}`,
+    ventana: null,
+    peso_kg: 1000,
+    volumen_m3: null,
+  },
+  ...over,
+});
+const tramo = (desde: number, masa: number) => ({
+  desde,
+  hasta: desde + 1,
+  masa_kg: masa,
+  volumen_m3: null,
+  vacio: masa === 0,
+});
+const resumen = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  estado: 'planificada',
+  vehiculo: { id: 'v1', patente: 'ABCD12' },
+  unidad_arrastre: null,
+  conductor: { id: 'c1', nombre: 'Juan Pérez' },
+  servicios: 1,
+  paradas_pendientes: 2,
+  creada_en: '2026-11-11T12:00:00Z',
+  ...over,
+});
+const RUTA_A = {
+  id: 'ruta-a',
+  estado: 'planificada',
+  vehiculo: { id: 'v1', patente: 'ABCD12' },
+  unidad_arrastre: null,
+  conductor: { id: 'c1', nombre: 'Juan Pérez' },
+  capacidad: { kg: 5000, m3: null },
+  paradas: [
+    parada('p1', 0, 'recogida', 'BOO-AAA111'),
+    parada('p2', 1, 'recogida', 'BOO-BBB222'),
+    parada('p3', 2, 'entrega', 'BOO-BBB222'),
+    parada('p4', 3, 'entrega', 'BOO-AAA111'),
+  ],
+  tramos: [tramo(0, 1000), tramo(1, 2000), tramo(2, 1000)],
+  avisos: [],
+};
+const RUTA_B = {
+  ...RUTA_A,
+  id: 'ruta-b',
+  paradas: [parada('p5', 0, 'recogida', 'BOO-CCC333'), parada('p6', 1, 'entrega', 'BOO-CCC333')],
+  tramos: [tramo(0, 1000)],
+};
+
+/** GET por ruta: flags, lista y detalle. */
+function servir(
+  opts: { activada?: boolean; rutas?: unknown[]; detalle?: Record<string, unknown> } = {},
+) {
+  apiGet.mockImplementation(async (path: string) => {
+    if (path === '/feature-flags') {
+      return { rutas_api_activada: opts.activada ?? true };
+    }
+    if (path.startsWith('/rutas?') || path === '/rutas') {
+      return {
+        rutas: opts.rutas ?? [
+          resumen('ruta-a', { servicios: 2, paradas_pendientes: 4 }),
+          resumen('ruta-b'),
+        ],
+      };
+    }
+    const id = path.replace('/rutas/', '');
+    const ruta = (opts.detalle ?? { 'ruta-a': RUTA_A, 'ruta-b': RUTA_B })[id];
+    if (!ruta) {
+      throw new ApiError(404, 'ruta_not_found', null);
+    }
+    return { ruta };
+  });
+}
+
+function renderRoute() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <RutasRoute />
+    </QueryClientProvider>,
+  );
+}
+
+async function abrir(codigoRuta = 'ABCD12 · 2 cargas') {
+  renderRoute();
+  await userEvent.click(await screen.findByRole('button', { name: new RegExp(codigoRuta) }));
+  return screen.findByRole('region', { name: 'Paradas de la ruta' });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  providedContext = { kind: 'onboarded', me: makeMe() };
+  servir();
+});
+
+describe('/app/rutas', () => {
+  it('con la función apagada lo dice y no consulta rutas', async () => {
+    servir({ activada: false });
+    renderRoute();
+    expect(await screen.findByText(/todavía no está disponible/)).toBeInTheDocument();
+    expect(apiGet).not.toHaveBeenCalledWith(expect.stringMatching(/^\/rutas/), expect.anything());
+  });
+
+  it('una empresa que no es transportista ve el aviso', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe({ transportista: false }) };
+    renderRoute();
+    expect(await screen.findByText(/no opera como transportista/)).toBeInTheDocument();
+  });
+
+  it('lista las rutas con su camión, conductor y cargas', async () => {
+    renderRoute();
+    const a = await screen.findByRole('button', { name: /ABCD12 · 2 cargas/ });
+    expect(a).toHaveTextContent('Juan Pérez');
+    expect(a).toHaveTextContent('4 paradas pendientes');
+    expect(screen.getByRole('button', { name: /ABCD12 · 1 carga$/ })).toBeInTheDocument();
+  });
+
+  it('sin rutas, lo explica', async () => {
+    servir({ rutas: [] });
+    renderRoute();
+    expect(await screen.findByText('No tienes rutas activas')).toBeInTheDocument();
+  });
+
+  it('al abrir una ruta muestra las paradas en orden y el peso a bordo entre paradas', async () => {
+    const region = await abrir();
+    const items = within(region).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/^1.*Recoger.*BOO-AAA111.*Bodega BOO-AAA111/),
+      expect.stringMatching(/^2.*Recoger.*BOO-BBB222/),
+      expect.stringMatching(/^3.*Entregar.*BOO-BBB222/),
+      expect.stringMatching(/^4.*Entregar.*BOO-AAA111/),
+    ]);
+    expect(within(region).getByText('Capacidad: 5.000 kg')).toBeInTheDocument();
+    expect(
+      within(region)
+        .getAllByText(/a bordo/)
+        .map((e) => e.textContent),
+    ).toEqual(['1.000 kg a bordo', '2.000 kg a bordo', '1.000 kg a bordo']);
+  });
+
+  it('un tramo sin carga a bordo dice que el camión va vacío', async () => {
+    servir({
+      detalle: { 'ruta-a': { ...RUTA_A, tramos: [tramo(0, 1000), tramo(1, 0), tramo(2, 1000)] } },
+    });
+    const region = await abrir();
+    expect(within(region).getByText('Camión vacío')).toBeInTheDocument();
+    expect(within(region).queryByText('0 kg a bordo')).toBeNull();
+  });
+
+  it('bajar una parada pide el orden nuevo por ids y muestra el resultado', async () => {
+    const reordenada = {
+      ...RUTA_A,
+      paradas: [RUTA_A.paradas[1], RUTA_A.paradas[0], RUTA_A.paradas[2], RUTA_A.paradas[3]],
+    };
+    apiPut.mockResolvedValue({ ruta: reordenada });
+    const region = await abrir();
+    await userEvent.click(
+      within(region).getByRole('button', { name: 'Bajar la parada 1: recoger BOO-AAA111' }),
+    );
+    expect(apiPut).toHaveBeenCalledWith(
+      '/rutas/ruta-a/paradas',
+      { paradas: ['p2', 'p1', 'p3', 'p4'] },
+      expect.anything(),
+    );
+    await waitFor(() =>
+      expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent('BOO-BBB222'),
+    );
+  });
+
+  it('la primera no sube, la última no baja y una parada hecha no se mueve', async () => {
+    servir({
+      detalle: {
+        'ruta-a': {
+          ...RUTA_A,
+          estado: 'en_curso',
+          paradas: [
+            parada('p1', 0, 'recogida', 'BOO-AAA111', { resuelta_en: '2026-11-12T13:00:00Z' }),
+            ...RUTA_A.paradas.slice(1),
+          ],
+        },
+      },
+    });
+    const region = await abrir();
+    expect(within(region).queryByRole('button', { name: /la parada 1:/ })).toBeNull();
+    expect(within(region).getByRole('button', { name: /Subir la parada 2:/ })).toBeDisabled();
+    expect(within(region).getByRole('button', { name: /Bajar la parada 4:/ })).toBeDisabled();
+    expect(within(region).getAllByRole('listitem')[0]).toHaveTextContent('Hecha');
+  });
+
+  it('quitar una carga la devuelve a su propia ruta y avisa', async () => {
+    apiDelete.mockResolvedValue({ ruta: RUTA_B, ruta_nueva_id: 'ruta-nueva' });
+    const region = await abrir();
+    await userEvent.click(
+      within(region).getByRole('button', { name: 'Quitar BOO-BBB222 de la ruta' }),
+    );
+    expect(apiDelete).toHaveBeenCalledWith(
+      '/rutas/ruta-a/servicios/asig-BOO-BBB222',
+      expect.anything(),
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'BOO-BBB222 volvió a una ruta propia.',
+    );
+  });
+
+  it('agregar una carga la pone al final de la ruta', async () => {
+    apiPost.mockResolvedValue({ ruta: RUTA_A });
+    await abrir();
+    const otras = await screen.findByRole('region', { name: 'Cargas para agregar' });
+    await userEvent.click(
+      within(otras).getByRole('button', { name: 'Agregar BOO-CCC333 a la ruta' }),
+    );
+    expect(apiPost).toHaveBeenCalledWith(
+      '/rutas/ruta-a/servicios',
+      { asignacion_id: 'asig-BOO-CCC333', posicion: { recogida: 4, entrega: 5 } },
+      expect.anything(),
+    );
+  });
+
+  it('un rechazo por peso se explica con las cifras', async () => {
+    apiPost.mockRejectedValue(
+      new ApiError(422, 'ruta_invalida', {
+        code: 'ruta_invalida',
+        violaciones: [
+          { motivo: 'capacidad_peso_excedida', tramo: 1, masa_kg: 6000, capacidad_kg: 5000 },
+        ],
+      }),
+    );
+    await abrir();
+    const otras = await screen.findByRole('region', { name: 'Cargas para agregar' });
+    await userEvent.click(within(otras).getByRole('button', { name: /Agregar BOO-CCC333/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No cabe: entre las paradas 2 y 3 irían 6.000 kg y el camión lleva 5.000 kg.',
+    );
+  });
+
+  it.each([
+    ['servicio_ya_recogido', 'Esa carga ya se recogió'],
+    ['entrega_antes_de_recogida', 'La entrega de una carga no puede ir antes de su recogida'],
+    ['parada_resuelta_movida', 'Una parada ya hecha no se puede mover'],
+    ['recogida_antes_de_parada_resuelta', 'ya hechas'],
+    ['servicio_sin_peso_en_ruta_consolidada', 'sin peso declarado'],
+    ['carroceria_incompatible', 'carrocería'],
+    ['motivo_que_no_existe', 'No se pudo hacer el cambio'],
+  ])('rechazo %s → mensaje para la oficina', async (motivo, texto) => {
+    apiPut.mockRejectedValue(new ApiError(422, 'ruta_invalida', { violaciones: [{ motivo }] }));
+    const region = await abrir();
+    await userEvent.click(within(region).getByRole('button', { name: /Bajar la parada 1:/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(texto);
+  });
+
+  it('un error que no es de reglas pide reintentar', async () => {
+    apiPut.mockRejectedValue(new Error('red'));
+    const region = await abrir();
+    await userEvent.click(within(region).getByRole('button', { name: /Bajar la parada 1:/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Intenta de nuevo');
+  });
+
+  it('quien solo mira no tiene botones para cambiar la ruta', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe({ role: 'visualizador' }) };
+    const region = await abrir();
+    expect(within(region).getAllByRole('listitem')).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: /Bajar|Subir|Quitar|Agregar/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Cargas para agregar' })).toBeNull();
+  });
+
+  it('una carga cancelada se muestra tachada y sin acciones', async () => {
+    servir({
+      detalle: {
+        'ruta-a': {
+          ...RUTA_A,
+          paradas: RUTA_A.paradas.map((p) =>
+            p.servicio.codigo_seguimiento === 'BOO-BBB222'
+              ? { ...p, servicio: { ...p.servicio, cancelado: true } }
+              : p,
+          ),
+        },
+      },
+    });
+    const region = await abrir();
+    expect(within(region).getAllByRole('listitem')[1]).toHaveTextContent('Cancelada');
+    expect(within(region).queryByRole('button', { name: /BOO-BBB222/ })).toBeNull();
+  });
+});

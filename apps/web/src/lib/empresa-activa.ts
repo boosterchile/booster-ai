@@ -25,6 +25,7 @@ export type DominioEmpresa =
   | 'certificates'
   | 'cargas'
   | 'assignments'
+  | 'rutas'
   | 'offers'
   | 'liquidaciones'
   | 'cobra-hoy';
