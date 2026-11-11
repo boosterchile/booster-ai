@@ -720,6 +720,23 @@ variable "matching_shadow" {
   default     = false
 }
 
+# ADR-090 — elegibilidad por carga (spec matching-desde-la-carga).
+# `vigente`: solo la regla de hoy. `sombra`: decide la regla de hoy y la nueva
+# se calcula al lado; la diferencia queda en el log `matching: elegibilidad por
+# carga` y en la métrica `matching_elegibilidad_comparaciones_total`. `activa`:
+# decide la regla nueva; es una activación en producción y la decide el PO.
+# Rollback: volver a `vigente` y re-aplicar.
+variable "matching_elegibilidad_modo" {
+  description = "Modo de la elegibilidad por carga en el matching del api: vigente, sombra o activa."
+  type        = string
+  default     = "sombra"
+
+  validation {
+    condition     = contains(["vigente", "sombra", "activa"], var.matching_elegibilidad_modo)
+    error_message = "matching_elegibilidad_modo debe ser vigente, sombra o activa."
+  }
+}
+
 variable "matching_via_microservice" {
   description = "El ranking que decide las offers lo calcula matching-engine (timeout 3 s, fallback local). Precede a matching_shadow."
   type        = bool
