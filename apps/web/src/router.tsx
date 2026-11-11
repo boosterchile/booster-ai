@@ -97,6 +97,13 @@ const serviciosRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/servicios.js'), 'ServiciosRoute'),
 });
 
+// Rutas con varias cargas (ADR-088): la oficina agrupa y ordena paradas.
+const rutasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/rutas',
+  component: lazyRouteComponent(() => import('./routes/rutas.js'), 'RutasRoute'),
+});
+
 const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/perfil',
@@ -655,6 +662,7 @@ const routeTree = rootRoute.addChildren([
   appRoute,
   ofertasRoute,
   serviciosRoute,
+  rutasRoute,
   perfilRoute,
   empresaRoute,
   conductorDashboardRoute,

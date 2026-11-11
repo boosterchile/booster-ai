@@ -16,6 +16,7 @@ import {
   Truck,
   UserCog,
   Users,
+  Waypoints,
 } from 'lucide-react';
 import type { MeResponse } from '../hooks/use-me.js';
 import { flagsDe } from '../lib/capacidades.js';
@@ -45,7 +46,10 @@ const INICIO: NavItem = { label: 'Inicio', to: '/app', icon: Home };
  * El conductor y el platform-admin NO usan este shell (tienen shell propio), así
  * que no se modelan acá.
  */
-export function navSectionsForMe(me: MeOnboarded): NavSection[] {
+export function navSectionsForMe(
+  me: MeOnboarded,
+  opciones: { rutas?: boolean } = {},
+): NavSection[] {
   const empresa = me.active_membership?.empresa;
   const role = me.active_membership?.role;
   const flags = flagsDe(me);
@@ -90,6 +94,11 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Conductores', to: '/app/conductores', icon: Users },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
     ];
+    // Rutas va después de Servicios: primero se acepta la carga y se le pone
+    // conductor; después se junta con otras. Solo con la API encendida.
+    if (opciones.rutas) {
+      transporte.splice(3, 0, { label: 'Rutas', to: '/app/rutas', icon: Waypoints });
+    }
     // CHEQUEOS_REEMPLAZADOS nav-gestion / inicio-plata: la plata es dueño y admin.
     if (flags.verFinanzas) {
       transporte.push(

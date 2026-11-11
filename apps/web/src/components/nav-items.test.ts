@@ -163,4 +163,18 @@ describe('navSectionsForMe', () => {
     const l = labels(navSectionsForMe(buildMe({ stakeholder: true })));
     expect(l).toEqual(['Inicio', 'Zonas']);
   });
+
+  it('«Rutas» aparece después de Servicios solo con la API de rutas encendida', () => {
+    const me = buildMe({ transportista: true, role: 'despachador' });
+    expect(labels(navSectionsForMe(me))).not.toContain('Rutas');
+    const con = labels(navSectionsForMe(me, { rutas: true }));
+    expect(con.slice(con.indexOf('Servicios'), con.indexOf('Servicios') + 2)).toEqual([
+      'Servicios',
+      'Rutas',
+    ]);
+    // Una empresa que solo genera carga no la ve aunque esté encendida.
+    expect(labels(navSectionsForMe(buildMe({ generador: true }), { rutas: true }))).not.toContain(
+      'Rutas',
+    );
+  });
 });
