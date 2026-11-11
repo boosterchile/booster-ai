@@ -1178,6 +1178,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     expect(setArg.precisionMethod).toBe('modelado');
     expect(setArg.routeDataSource).toBe('teltonika_gps');
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo, 6);
+    // El factor y la versión guardados son los del cálculo real: el
+    // certificado imprime ese factor junto a esas emisiones.
+    expect(setArg.emissionFactorUsed).toBe(esperado.factorEmisionUsado.toString());
+    expect(setArg.glecVersion).toBe(esperado.versionGlec);
     expect(counter('huella_segmento_total')?.add).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ resultado: 'medida', fuente: 'teltonika_gps' }),
@@ -1253,6 +1257,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     expect(setArg.routeDataSource).toBe('teltonika_gps');
     expect(setArg.certificationLevel).toBe('secundario_modeled');
     expect(Number(setArg.coveragePct)).toBeLessThan(80);
+    // Sin huella real el certificado usa la estimación: el factor guardado
+    // sigue siendo el de esa estimación y el cierre no lo toca.
+    expect(setArg).not.toHaveProperty('emissionFactorUsed');
+    expect(setArg).not.toHaveProperty('glecVersion');
     expect(counter('huella_cobertura_degradada_total')?.add).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ fuente: 'teltonika_gps', motivo: 'cobertura_bajo_umbral' }),
@@ -1398,6 +1406,8 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       );
       // HC-003 T1: el desglose persistido es el del cálculo REAL, no el estimado.
       expect(setArg.emisionesKgco2eTtw).toBe(esperado.emisionesKgco2eTtw.toString());
+      expect(setArg.emissionFactorUsed).toBe(esperado.factorEmisionUsado.toString());
+      expect(setArg.glecVersion).toBe(esperado.versionGlec);
       expect(setArg.emisionesKgco2eWtt).toBe(esperado.emisionesKgco2eWtt.toString());
       expect(setArg.intensidadGco2ePorTkm).toBe(esperado.intensidadGco2ePorTonKm.toString());
       expect(setArg.factoresFuente).toBe(esperado.fuenteFactores);

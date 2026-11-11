@@ -126,3 +126,28 @@ export async function revertirVersion(db: Db, tripId: string): Promise<Certifica
     return vuelta;
   });
 }
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/**
+ * Registra la versión 1 de un certificado recién emitido
+ * (`.specs/reemision-certificado/` §3.1). Va en la transacción de la emisión:
+ * quien llama espeja después `metricas_viaje` con el id que devuelve.
+ *
+ * Si el viaje ya tiene una versión, falla por las restricciones de la tabla
+ * (una versión 1 y una sola vigente por viaje) y la emisión no se registra.
+ */
+export async function registrarPrimeraVersion(
+  tx: Tx,
+  nueva: NuevaVersionCertificado,
+): Promise<CertificadoViaje> {
+  // rls-allowlist: versión del certificado de un viaje ya validado por la emisión (tripId)
+  const [creada] = await tx
+    .insert(certificadosViaje)
+    .values({ ...nueva, version: 1, estado: 'vigente' })
+    .returning();
+  if (!creada) {
+    throw new Error('registrarPrimeraVersion: el INSERT no devolvió fila');
+  }
+  return creada;
+}

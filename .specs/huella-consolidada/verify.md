@@ -200,3 +200,34 @@ con la salvedad del certificado 1.
   asignación y no guarda métricas.
 - **El cierre real del viaje** ahora escribe en una transacción (antes era un
   solo UPDATE): el viaje y su ruta quedan iguales o no se escribe ninguno.
+
+## Arreglo: el cierre guarda el factor con que calculó (2026-11-11)
+
+Hallazgo 2 de la investigación del desvío. `metricas_viaje.factor_emision_usado`
+y `version_glec` se escribían solo al estimar. Si los factores cambiaban entre
+la asignación y el cierre, las emisiones reales quedaban calculadas con el
+factor nuevo y la columna seguía diciendo el anterior. El certificado imprime
+esa columna junto a las emisiones.
+
+Ahora, cuando el cierre calcula emisiones reales, guarda también el factor y
+la versión de ese cálculo. Sin emisiones reales (cobertura bajo el umbral o
+peso ausente) el certificado usa la estimación, y el factor guardado sigue
+siendo el de esa estimación.
+
+### Alcance en producción
+
+De los 8 certificados emitidos, tres tienen emisiones reales:
+
+| Certificado | Estimado con | Cerrado con | Factor guardado |
+|---|---|---|---|
+| 1 | 3,25 | 3,25 | 3,25, coincide |
+| 7 | 3,25 | 3,25 | 3,25, coincide |
+| 8 | 3,25 (2026-10-30) | 3,24 (2026-11-03) | 3,25, **no coincide** |
+
+El certificado 8 es el único afectado: su cifra (590,746 kg CO₂e) sale de
+182,33 L × 3,24, y la columna dice 3,25. Por el código, el PDF emitido el
+2026-11-03 imprimió 3,25; no abrí el PDF para confirmarlo.
+
+Este arreglo no toca filas existentes ni certificados emitidos. Corregir el
+certificado 8 sería una reemisión, que decide el PO.
+
