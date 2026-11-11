@@ -519,8 +519,8 @@ export const apiEnvSchema = commonEnvSchema
      * ADR-090, spec matching-desde-la-carga parte 2 — qué elegibilidad decide
      * a qué empresas se ofrece una carga.
      *   - `vigente` (default): un vehículo activo con capacidad para el peso.
-     *   - `sombra`: decide el vigente; la elegibilidad por carga (carrocería,
-     *     volumen y configuraciones con arrastre) se calcula al lado y la
+     *   - `sombra`: decide el vigente; la elegibilidad por carga (carrocería
+     *     y configuraciones con arrastre; el volumen solo avisa) se calcula al lado y la
      *     diferencia queda en el log `matching: elegibilidad por carga` y en
      *     la métrica `matching_elegibilidad_comparaciones_total`.
      *   - `activa`: decide la elegibilidad por carga.

@@ -43,6 +43,11 @@ export interface ConfiguracionElegible {
   readonly capacidadUtilKg: number;
   /** Nulo cuando alguna unidad que aporta capacidad no declara volumen. */
   readonly capacidadUtilM3: number | null;
+  /**
+   * La carga y la configuración declaran volumen y el de la configuración no
+   * alcanza. Es un aviso: no la descarta (spec §11-5).
+   */
+  readonly volumenInsuficiente: boolean;
 }
 
 /**
@@ -93,22 +98,20 @@ function unidadesQueCargan(
   return arrastre ? [motriz, arrastre] : [motriz];
 }
 
-function alcanza(carga: RequisitosDeCarga, c: ConfiguracionElegible): boolean {
-  if (c.capacidadUtilKg < (carga.weightKg ?? 0)) {
-    return false;
-  }
-  // El volumen se compara solo cuando la carga y la configuración lo declaran.
-  if (carga.volumeM3 !== null && c.capacidadUtilM3 !== null) {
-    return c.capacidadUtilM3 >= carga.volumeM3;
-  }
-  return true;
+/**
+ * El volumen declarado no descarta: en la flota real ese dato es poco
+ * confiable (decisión del PO del 2026-11-11, spec §11-5). Se compara solo
+ * cuando la carga y la configuración lo declaran, y el resultado es un aviso.
+ */
+function volumenNoAlcanza(carga: RequisitosDeCarga, capacidadUtilM3: number | null): boolean {
+  return carga.volumeM3 !== null && capacidadUtilM3 !== null && capacidadUtilM3 < carga.volumeM3;
 }
 
 /**
  * Las configuraciones de la flota que pueden llevar la carga: capacidad útil
- * suficiente, volumen suficiente cuando los dos lados lo declaran, y
- * carrocería compatible. Vienen de menor a mayor capacidad útil; la primera
- * es la sugerencia para la oferta (spec §3.6).
+ * suficiente para el peso y carrocería compatible. Primero las que no tienen
+ * aviso de volumen y, dentro de cada grupo, de menor a mayor capacidad útil;
+ * la primera es la sugerencia para la oferta (spec §3.6).
  */
 export function configuracionesElegibles(
   carga: RequisitosDeCarga,
@@ -128,19 +131,21 @@ export function configuracionesElegibles(
       if (!capacidad) {
         continue;
       }
-      const configuracion = {
+      if (capacidad.capacidadUtilKg < (carga.weightKg ?? 0)) {
+        continue;
+      }
+      elegibles.push({
         motrizId: motriz.id,
         arrastreId: arrastre?.id ?? null,
         ...capacidad,
-      };
-      if (alcanza(carga, configuracion)) {
-        elegibles.push(configuracion);
-      }
+        volumenInsuficiente: volumenNoAlcanza(carga, capacidad.capacidadUtilM3),
+      });
     }
   }
 
   return elegibles.sort(
     (a, b) =>
+      Number(a.volumenInsuficiente) - Number(b.volumenInsuficiente) ||
       a.capacidadUtilKg - b.capacidadUtilKg ||
       a.motrizId.localeCompare(b.motrizId) ||
       (a.arrastreId ?? '').localeCompare(b.arrastreId ?? ''),

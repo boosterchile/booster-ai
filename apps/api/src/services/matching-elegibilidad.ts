@@ -1,5 +1,5 @@
 import {
-  type CandidataPorFlota,
+  type CandidataPorCarga,
   type UnidadDeFlota,
   candidatasPorCarga,
 } from '@booster-ai/matching-algorithm';
@@ -34,7 +34,7 @@ export async function cargarCandidatasPorCarga(
     readonly trip: Pick<TripRow, 'cargoType' | 'cargoWeightKg' | 'cargoVolumeM3'>;
     readonly empresaIds: readonly string[];
   },
-): Promise<CandidataPorFlota[]> {
+): Promise<CandidataPorCarga[]> {
   const { trip, empresaIds } = opts;
   if (empresaIds.length === 0) {
     return [];

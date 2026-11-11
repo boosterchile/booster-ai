@@ -214,6 +214,7 @@ describe('integration: elegibilidad por carga en el matching', () => {
       soloVigente: [e.transportistaId],
       soloPorCarga: [],
       vehiculoDistinto: [],
+      volumenInsuficiente: [],
     });
   });
 
@@ -313,13 +314,35 @@ describe('integration: elegibilidad por carga en el matching', () => {
     expect(evento?.payload).toMatchObject({ reason: 'no_vehicle_with_capacity' });
   });
 
-  test('activa: el volumen declarado en los dos lados descarta al vehículo que no lo alcanza', async () => {
+  test('activa: el volumen declarado que no alcanza no descarta; queda registrado como aviso', async () => {
     const e = await escenario({
       flota: [{ capacityKg: 28_000, capacityM3: 50 }],
       carga: { cargoType: 'carga_seca', cargoWeightKg: 22_000, cargoVolumeM3: 100 },
     });
     await runMatching({ db: handle.db, logger, tripId: e.tripId, elegibilidad: 'activa' });
 
-    expect(await ofertas(e.tripId)).toEqual([]);
+    expect(await ofertas(e.tripId)).toEqual([
+      { empresaId: e.transportistaId, suggestedVehicleId: e.vehiculos[0] },
+    ]);
+    expect(comparacion()).toMatchObject({
+      coinciden: true,
+      volumenInsuficiente: [e.transportistaId],
+    });
+  });
+
+  test('activa: entre dos vehículos que sirven, sugiere el que alcanza el volumen', async () => {
+    const e = await escenario({
+      flota: [
+        { capacityKg: 6_000, capacityM3: 10 },
+        { capacityKg: 9_000, capacityM3: 40 },
+      ],
+      carga: { cargoType: 'carga_seca', cargoWeightKg: 5_000, cargoVolumeM3: 30 },
+    });
+    await runMatching({ db: handle.db, logger, tripId: e.tripId, elegibilidad: 'activa' });
+
+    expect(await ofertas(e.tripId)).toEqual([
+      { empresaId: e.transportistaId, suggestedVehicleId: e.vehiculos[1] },
+    ]);
+    expect(comparacion()).toMatchObject({ volumenInsuficiente: [] });
   });
 });

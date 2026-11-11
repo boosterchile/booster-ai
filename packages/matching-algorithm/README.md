@@ -20,8 +20,9 @@ Placeholder package. Ver ADR relacionado en `docs/adr/` para diseño detallado.
   (`.specs/matching-desde-la-carga/plan.md` §1.1). Un vehículo sin carrocería
   declarada sirve solo para `carga_seca` y `otra`.
 - `configuracionesElegibles(carga, flota)`: las configuraciones (motriz sola o
-  motriz con arrastre) con capacidad, volumen y carrocería para la carga, de
-  menor a mayor capacidad útil.
+  motriz con arrastre) con capacidad y carrocería para la carga. El volumen
+  declarado no descarta: si no alcanza, la configuración lleva
+  `volumenInsuficiente` y queda después de las que sí alcanzan.
 - `empresaEsCandidata(carga, flota)`.
 
 Todavía no la usa el matching que corre en producción: eso es la parte 2 de la
