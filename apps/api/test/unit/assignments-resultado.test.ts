@@ -278,6 +278,29 @@ describe('GET /assignments/:id/certificate/download', () => {
     );
   });
 
+  it('certificado reemitido → la URL firmada es la de la versión vigente', async () => {
+    signedUrlSpy.mockClear();
+    const reemitido = {
+      ...ROW,
+      certificatePdfUrl: 'gs://bucket/certificates/shipper-emp/BOO-BKAXIK.v2.pdf',
+    };
+    const app = await buildApp(makeDb([[reemitido]]), certConfig);
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/download`, {
+      headers: { 'x-test-userctx': ctx(DRIVER_USER, 'conductor') },
+    });
+    expect(res.status).toBe(200);
+    expect(signedUrlSpy).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }));
+  });
+
+  it('certificado emitido antes de la reemisión → versión 1', async () => {
+    signedUrlSpy.mockClear();
+    const app = await buildApp(makeDb([[ROW]]), certConfig);
+    await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/download`, {
+      headers: { 'x-test-userctx': ctx(DRIVER_USER, 'conductor') },
+    });
+    expect(signedUrlSpy).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }));
+  });
+
   it('certificado aún no emitido → 404 certificate_not_issued', async () => {
     const app = await buildApp(
       makeDb([[{ ...ROW, certificateIssuedAt: null, certificatePdfUrl: null }]]),

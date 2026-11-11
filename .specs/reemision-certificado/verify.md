@@ -73,3 +73,70 @@ sin versión al terminar. Se cumple en la copia.
 El orden con #929 importa en un solo sentido: si el relleno corre antes del
 despliegue, basta repetirlo después.
 
+
+## Parte 3 — migración 0082 y servicio de reemisión (2026-11-11)
+
+`apps/api/src/services/reemitir-certificado.ts`. Sin job ni endpoint: lo usará
+el job de la parte 5.
+
+### Migración 0082 (`expand`)
+
+- `certificados_viaje.motivo_reemision varchar(40)`, opcional.
+- `ck_certificados_viaje_motivo`: la versión 1 no lleva motivo; una posterior
+  lleva uno de la lista cerrada (hoy solo `factor_impreso_no_corresponde`). El
+  `IS NOT NULL` es explícito: sin él, un `IN` con nulo deja pasar la fila.
+- `tipo_evento_viaje` suma `certificado_reemitido` (también en
+  `shared-schemas`).
+- En producción hay 1 fila en la tabla, versión 1 sin motivo: la restricción
+  la acepta.
+
+### Qué hace el servicio
+
+1. Comprueba que el viaje está entregado, que el certificado está emitido y
+   que su versión vigente es la que espejan las métricas.
+2. Comprueba que el factor guardado es el anterior indicado, que el nuevo es
+   distinto y que los litros por el nuevo factor dan las emisiones guardadas
+   (tolerancia del redondeo de litros y emisiones).
+3. Genera, firma y sube el PDF con el factor corregido, en memoria.
+4. En una transacción: corrige el factor con guarda sobre el valor anterior y
+   la huella vigente, registra la versión nueva con su motivo y deja el
+   evento con las dos huellas y quién lo pidió.
+
+### Cambios fuera de lo que lista la spec
+
+- **Ruta por versión en el bucket**: la versión 1 sigue en `{tracking}.pdf`;
+  la n en `{tracking}.v{n}.pdf`. Los tres lectores de PDF y firma
+  (`assignments`, `trip-requests-v2`, `certificates`) leen la versión desde la
+  URI guardada.
+- **El número de versión sale de la mayor registrada**, no de la vigente:
+  después de revertir una reemisión la vigente vuelve a ser la 1, pero la 2 ya
+  tiene su PDF. La transacción comprueba que la versión registrada sea la del
+  PDF subido.
+- **Desde la versión 2 la subida no pisa un objeto existente**
+  (`ifGenerationMatch: 0` en GCS; el bucket local imita la precondición). Dos
+  reemisiones concurrentes no se sobrescriben: la segunda falla y no registra
+  nada. La versión 1 sube como siempre.
+- `armarDatosEmision` se extrajo de `emitirCertificadoViaje` para generar el
+  PDF con el dato corregido sin escribir en la base.
+
+### Criterios de la spec
+
+- **3**: `test/integration/reemitir-certificado.integration.test.ts` (15
+  tests) — crea la versión 2 con el factor corregido y deja la 1
+  `reemplazado`; el evento; con el factor anterior distinto o un factor nuevo
+  que no explica la cifra no escribe; si generar, firmar o subir falla la base
+  no cambia; si el certificado cambió en medio, no registra nada.
+- **4**: mismo archivo — la verificación pública con la huella de la 1
+  responde reemplazada por la 2.
+- **6**: la versión 2 va a otra ruta y la subida no sobrescribe
+  (`storage.test.ts`, `backend-local.test.ts`). Sin un bucket real, no hay
+  test que liste el bucket después de reemitir.
+- **7**: ver la evidencia del PR.
+
+El criterio 5 (lo que imprime el certificado reemitido) es la parte 4.
+
+### Lo que no cubre
+
+- KMS y el bucket se simulan; no hay test que firme y suba a GCS.
+- Si la transacción falla después de subir, el PDF queda huérfano en el
+  bucket (spec §9) y se registra en el log.

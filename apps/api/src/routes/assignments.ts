@@ -16,7 +16,7 @@
  * ahí ve el assignment como sub-objeto.
  */
 
-import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
+import { generarSignedUrlPdf, versionDePdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -1029,6 +1029,8 @@ export function createAssignmentsRoutes(opts: {
       bucket: opts.certConfig.certificatesBucket,
       empresaId: row.generadorEmpresaId,
       trackingCode: row.trackingCode,
+      // La versión vigente: la URI guardada es la de su PDF (reemision-certificado).
+      version: versionDePdf(row.certificatePdfUrl),
       ttlSeconds: 300,
     });
     return c.json({

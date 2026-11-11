@@ -72,6 +72,8 @@ export const tripEventTypeSchema = z.enum([
   'carga_editada',
   'cambio_solicitado',
   'cambio_respondido',
+  // reemision-certificado (migración 0082): una versión nueva del certificado.
+  'certificado_reemitido',
 ]);
 export type TripEventType = z.infer<typeof tripEventTypeSchema>;
 

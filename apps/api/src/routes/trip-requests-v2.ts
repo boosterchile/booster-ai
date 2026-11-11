@@ -1,4 +1,4 @@
-import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
+import { generarSignedUrlPdf, versionDePdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import {
   MENSAJES,
@@ -848,6 +848,8 @@ export function createTripRequestsV2Routes(opts: {
       bucket: opts.certConfig.certificatesBucket,
       empresaId,
       trackingCode: row.trackingCode,
+      // La versión vigente: la URI guardada es la de su PDF (reemision-certificado).
+      version: versionDePdf(row.certificatePdfUrl),
       ttlSeconds: 300,
     });
 

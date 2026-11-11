@@ -16,7 +16,7 @@
  *   // resultado.pdfGcsUri, .sigGcsUri, .pdfSha256, .kmsKeyVersion
  */
 
-export { emitirCertificado } from './emitir-certificado.js';
+export { emitirCertificado, type ParametrosEmisionCertificado } from './emitir-certificado.js';
 export { generarPdfBase } from './generar-pdf-base.js';
 export { firmarPades } from './firmar-pades.js';
 export { obtenerOEmitirCertSelfSigned } from './ca-self-signed.js';
@@ -25,6 +25,9 @@ export {
   subirArtefactosCertificado,
   generarSignedUrlPdf,
   descargarSidecar,
+  ArtefactoYaSubidoError,
+  rutaPdfCertificado,
+  versionDePdf,
 } from './storage.js';
 
 export type {
