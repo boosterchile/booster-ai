@@ -156,6 +156,7 @@ describe('cancelarCarga — después del match (cancelar)', () => {
       ofertasInvalidadas: 0,
       asignacion: ASG,
       motivo: 'El cliente postergó el pedido',
+      rutaCerradaId: null,
     });
     expect(sets[0]).toMatchObject({ tabla: 'viajes', valores: { status: 'cancelado' } });
     expect(sets[1]).toMatchObject({
@@ -182,6 +183,38 @@ describe('cancelarCarga — después del match (cancelar)', () => {
       expect.anything(),
       expect.objectContaining({ origen: 'carga_cancelada' }),
     );
+  });
+
+  it('avisa cuál ruta dejó cerrada: era lo último pendiente de una ruta con cargas entregadas', async () => {
+    sincronizarRutaMock.mockResolvedValueOnce({
+      tipo: 'conciliada',
+      rutaId: 'ruta-9',
+      desde: 'en_curso',
+      hacia: 'cerrada',
+    } as never);
+    const { db } = makeDb({
+      viaje: { status: 'asignado', trackingCode: 'BOO-1' },
+      asignacion: ASG,
+      updates: [[{ id: TRIP }], [{ id: 'asg-1' }]],
+    });
+    const r = await cancelar(db, 'motivo');
+    expect(r).toMatchObject({ ok: true, tipo: 'cancelacion', rutaCerradaId: 'ruta-9' });
+  });
+
+  it('una ruta que queda cancelada o sigue en curso no es una ruta cerrada', async () => {
+    sincronizarRutaMock.mockResolvedValueOnce({
+      tipo: 'conciliada',
+      rutaId: 'ruta-9',
+      desde: 'planificada',
+      hacia: 'cancelada',
+    } as never);
+    const { db } = makeDb({
+      viaje: { status: 'asignado', trackingCode: 'BOO-1' },
+      asignacion: ASG,
+      updates: [[{ id: TRIP }], [{ id: 'asg-1' }]],
+    });
+    const r = await cancelar(db, 'motivo');
+    expect(r).toMatchObject({ ok: true, tipo: 'cancelacion', rutaCerradaId: null });
   });
 
   it('invalida la solicitud de cambio pendiente con su evento (§6.6)', async () => {

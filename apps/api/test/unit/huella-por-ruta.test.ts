@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { metricasRuta, tripMetrics } from '../../src/db/schema.js';
 import {
   type ParametrosServicioSolo,
+  calcularHuellaDeRuta,
   calcularHuellaDeServicioSolo,
   guardarMetricasDeRuta,
 } from '../../src/services/huella-por-ruta.js';
@@ -408,5 +409,102 @@ describe('guardarMetricasDeRuta', () => {
       nivel: NIVEL,
     });
     expect(t.ruta()).toMatchObject({ distanceKmActual: null });
+  });
+});
+
+/**
+ * huella-consolidada parte 4: la ruta con varios servicios. La emisión de la
+ * ruta se reparte por toneladas-kilómetro de distancia directa (§3.3) y las
+ * partes publicadas suman el total (§3.4).
+ */
+describe('calcularHuellaDeRuta: varios servicios', () => {
+  const SERVICIOS = [
+    { servicioId: 'viaje-a', masaKg: 8_000, distanciaDirectaKm: 120 },
+    { servicioId: 'viaje-b', masaKg: 5_000, distanciaDirectaKm: 60 },
+    { servicioId: 'viaje-c', masaKg: 3_000, distanciaDirectaKm: 200 },
+  ];
+  const TRAMOS = [
+    { distanciaKm: 40, cargaKg: 8_000 },
+    { distanciaKm: 35, cargaKg: 13_000 },
+    { distanciaKm: 50, cargaKg: 16_000 },
+    { distanciaKm: 20, cargaKg: 0 },
+    { distanciaKm: 90, cargaKg: 3_000 },
+  ];
+  const suma = (valores: number[]) => Math.round(valores.reduce((a, b) => a + b, 0) * 1000) / 1000;
+
+  it.each([
+    ['modelado', { metodo: 'modelado', tramos: TRAMOS, vehiculo: VEHICULO }],
+    [
+      'combustible medido',
+      { metodo: 'exacto_canbus', tramos: TRAMOS, combustibleConsumido: 81.4, vehiculo: VEHICULO },
+    ],
+    ['por defecto', { metodo: 'por_defecto', tramos: TRAMOS, tipoVehiculo: 'camion_pesado' }],
+  ] as const)(
+    '%s: las partes suman la huella de la ruta, componente por componente',
+    (_n, params) => {
+      const { ruta, servicios } = calcularHuellaDeRuta(params, SERVICIOS);
+      expect(servicios.map((s) => s.servicioId)).toEqual(['viaje-a', 'viaje-b', 'viaje-c']);
+      expect(suma(servicios.map((s) => s.huella.emisiones.emisionesKgco2eWtw))).toBe(
+        ruta.emisionesKgco2eWtw,
+      );
+      expect(suma(servicios.map((s) => s.huella.emisiones.emisionesKgco2eTtw))).toBe(
+        ruta.emisionesKgco2eTtw,
+      );
+      expect(suma(servicios.map((s) => s.huella.emisiones.emisionesKgco2eWtt))).toBe(
+        ruta.emisionesKgco2eWtt,
+      );
+      expect(suma(servicios.map((s) => s.huella.emisiones.combustibleConsumido))).toBe(
+        ruta.combustibleConsumido,
+      );
+      expect(suma(servicios.map((s) => s.huella.reparto.participacionPct))).toBe(100);
+      for (const s of servicios) {
+        expect(s.huella.ruta).toBe(ruta);
+        expect(s.huella.emisiones.metodoPrecision).toBe(ruta.metodoPrecision);
+        expect(s.huella.emisiones.factorEmisionUsado).toBe(ruta.factorEmisionUsado);
+      }
+    },
+  );
+
+  it('cada servicio se lleva su proporción de toneladas-kilómetro de distancia directa', () => {
+    const { servicios } = calcularHuellaDeRuta(
+      { metodo: 'modelado', tramos: TRAMOS, vehiculo: VEHICULO },
+      SERVICIOS,
+    );
+    // a = 960, 300 y 600 tkm sobre 1.860.
+    expect(servicios.map((s) => s.huella.reparto.actividadTkm)).toEqual([960, 300, 600]);
+    expect(servicios.map((s) => s.huella.reparto.participacionPct)).toEqual([51.61, 16.13, 32.26]);
+  });
+
+  it('el servicio publica su distancia directa y la intensidad de su parte', () => {
+    const { servicios } = calcularHuellaDeRuta(
+      { metodo: 'modelado', tramos: TRAMOS, vehiculo: VEHICULO },
+      SERVICIOS,
+    );
+    for (const [i, s] of servicios.entries()) {
+      const esperado = SERVICIOS[i];
+      expect(s.huella.emisiones.distanciaKm).toBe(esperado?.distanciaDirectaKm);
+      expect(s.huella.emisiones.intensidadGco2ePorTonKm).toBe(
+        Math.round(
+          ((s.huella.emisiones.emisionesKgco2eWtw * 1000) / s.huella.reparto.actividadTkm) * 100,
+        ) / 100,
+      );
+    }
+  });
+
+  it('el resultado no depende del orden en que llegan los servicios', () => {
+    const params = { metodo: 'modelado', tramos: TRAMOS, vehiculo: VEHICULO } as const;
+    expect(calcularHuellaDeRuta(params, [...SERVICIOS].reverse())).toEqual(
+      calcularHuellaDeRuta(params, SERVICIOS),
+    );
+  });
+
+  it.each(CASOS)('%s: con un servicio es el cálculo del servicio solo (§3.5)', (_n, params) => {
+    const tramos = [{ distanciaKm: params.distanciaKm, cargaKg: params.cargaKg }];
+    const { metodo: _m, distanciaKm: _d, cargaKg: _c, ...resto } = params;
+    const { servicios } = calcularHuellaDeRuta(
+      { ...resto, metodo: params.metodo, tramos } as Parameters<typeof calcularHuellaDeRuta>[0],
+      [{ servicioId: 'viaje-1', masaKg: params.cargaKg, distanciaDirectaKm: params.distanciaKm }],
+    );
+    expect(servicios[0]?.huella).toEqual(calcularHuellaDeServicioSolo('viaje-1', params));
   });
 });

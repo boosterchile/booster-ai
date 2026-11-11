@@ -40,6 +40,13 @@ export type ResultadoCancelacion =
       ofertasInvalidadas: 0;
       asignacion: { id: string; empresaId: string; driverUserId: string | null };
       motivo: string;
+      /**
+       * La ruta que esta cancelación dejó cerrada: la carga cancelada era la
+       * única parada pendiente de una ruta con otras cargas ya entregadas.
+       * Quien llama calcula su huella y emite los certificados después del
+       * commit (huella-consolidada §3.9).
+       */
+      rutaCerradaId: string | null;
     }
   | { ok: false; code: 'trip_not_found' }
   | { ok: false; code: 'trip_not_cancellable'; currentStatus: string }
@@ -150,12 +157,18 @@ export async function cancelarCarga(
         throw new Error(`no se pudo cancelar la asignación ${asignacion.id} (estado cambió)`);
       }
       // La ruta sigue a la asignación (ADR-088): queda `cancelada`.
-      await sincronizarRutaDeAsignacion(tx, {
+      const sincronizada = await sincronizarRutaDeAsignacion(tx, {
         asignacionId: asignacion.id,
         origen: 'carga_cancelada',
         userId,
         logger,
       });
+      const rutaCerradaId =
+        sincronizada.tipo === 'conciliada' &&
+        sincronizada.hacia === 'cerrada' &&
+        sincronizada.desde !== 'cerrada'
+          ? sincronizada.rutaId
+          : null;
       // Una solicitud de cambio pendiente ya no tiene a quién aplicarse (§6.6).
       const solicitudInvalidada = await invalidarSolicitudPendiente(tx, {
         tripId,
@@ -191,6 +204,7 @@ export async function cancelarCarga(
         ofertasInvalidadas: 0,
         asignacion,
         motivo,
+        rutaCerradaId,
       } as const;
     }
 

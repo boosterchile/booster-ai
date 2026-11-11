@@ -38,6 +38,7 @@ import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from 
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { registrarPrimeraVersion } from './certificados-versionados.js';
+import { rutaCompartidaDelViaje } from './ruta-compartida.js';
 
 /**
  * Métrica de negocio T10-15 (ADR-082): certificados por resultado.
@@ -68,7 +69,9 @@ export type EmitirResult =
         | 'trip_not_delivered'
         | 'metrics_missing'
         | 'already_issued'
-        | 'no_shipper';
+        | 'no_shipper'
+        /** La carga viaja con otras y su ruta sigue abierta (huella-consolidada §3.9). */
+        | 'ruta_no_cerrada';
     }
   | {
       skipped: false;
@@ -332,6 +335,18 @@ async function emitirCertificadoViajeInner(
       'emitirCertificadoViaje skipped: certificado ya emitido (idempotente)',
     );
     return { skipped: true, reason: 'already_issued' };
+  }
+
+  // Una carga consolidada recibe su certificado cuando la ruta se cierra: hasta
+  // entonces la huella de la ruta no está medida ni repartida (ADR-089). Vale
+  // para cualquier camino que llegue aquí, también el job de relleno.
+  const compartida = await rutaCompartidaDelViaje(db, tripId);
+  if (compartida && !compartida.cerrada) {
+    logger.info(
+      { tripId, rutaId: compartida.rutaId },
+      'emitirCertificadoViaje skipped: la ruta de la carga sigue abierta',
+    );
+    return { skipped: true, reason: 'ruta_no_cerrada' };
   }
 
   const armado = await armarDatosEmision({ db, logger, trip, metrics });
