@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./routes-api.js', () => ({ computeRoutes: vi.fn() }));
 vi.mock('./posicion-segmento.js', () => ({ cargarPingsVentana: vi.fn() }));
+// La huella de la ruta se guarda en la misma transacción; aquí solo se comprueba que se pide.
+vi.mock('./huella-por-ruta.js', () => ({ guardarMetricasDeRuta: vi.fn(async () => null) }));
 
 import {
   type CandidatoBackfill,
@@ -9,6 +11,7 @@ import {
   reconstruirTripBackfill,
 } from './backfill-distancia-adapters.js';
 import type { ReconstruccionTrip } from './backfill-distancia-real.js';
+import { guardarMetricasDeRuta } from './huella-por-ruta.js';
 import { cargarPingsVentana } from './posicion-segmento.js';
 import { computeRoutes } from './routes-api.js';
 
@@ -50,13 +53,20 @@ describe('persistirBackfill', () => {
     await persistirBackfill(db, okR);
     expect(insert).toHaveBeenCalledTimes(1); // bitacora
     expect(update).toHaveBeenCalledTimes(1); // metricas_viaje
+    // La ruta del viaje queda con la misma distancia y el mismo nivel.
+    expect(guardarMetricasDeRuta).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tripId: okR.tripId, momento: 'nivel', huella: null }),
+    );
   });
 
   it('ABORT → SOLO journal INSERT, NUNCA UPDATE de metricas (distancia sigue null → reintentable)', async () => {
     const { db, insert, update } = makeTxDb();
+    vi.mocked(guardarMetricasDeRuta).mockClear();
     await persistirBackfill(db, abortR);
     expect(insert).toHaveBeenCalledTimes(1); // el journal captura el abort (motivo + llamadas)
     expect(update).not.toHaveBeenCalled(); // metricas_viaje INTACTO
+    expect(guardarMetricasDeRuta).not.toHaveBeenCalled();
   });
 
   it('ABORT → el journal registra el motivo y las llamadas a Routes', async () => {

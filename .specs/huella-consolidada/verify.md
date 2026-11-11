@@ -99,3 +99,76 @@ siendo por viaje hasta la parte 3.
 El PR #904, abierto, también usa el número 0080. El que entre segundo
 renumera a 0081.
 
+
+## Parte 3 — el cálculo pasa por la ruta (2026-11-11)
+
+`apps/api/src/services/huella-por-ruta.ts`:
+
+- `calcularHuellaDeServicioSolo`: emisión de la ruta (`calcularEmisionesRuta`,
+  un tramo) y reparto entre un único servicio (`repartirPorActividad`). Lo usan
+  las dos escrituras de `calcular-metricas-viaje.ts`, la estimada y la del
+  cierre, en lugar de `calcularEmisionesViaje`.
+- `guardarMetricasDeRuta`: en la misma transacción que `metricas_viaje`,
+  guarda `metricas_ruta` y deja en el viaje su ruta, su actividad, su
+  participación (100,00) y la versión del reparto.
+
+El nivel se deriva con `derivarNivelRuta`. El relleno de distancia
+(`backfill-distancia-adapters.ts`) también deja la ruta igual al viaje.
+
+### Qué no cambia
+
+Con una carga por ruta, las cifras del viaje son las mismas de antes: lo
+prueban los tests de propiedad de la parte 1 y, aquí, 5 casos más los insumos
+de los 8 certificados emitidos. Los 80 tests unitarios del cálculo y los de
+integración del cierre pasan sin cambiar sus expectativas.
+
+### El criterio 3 de la spec no se puede cumplir como está escrito
+
+El criterio pide que, para los 8 certificados emitidos en producción, el
+cálculo por ruta dé «las mismas cifras publicadas». Con los insumos leídos de
+producción el 2026-11-11:
+
+| Certificado | Publicado (kg CO₂e) | Calculador de hoy, por viaje y por ruta | Diferencia |
+|---|---|---|---|
+| 1 | 2,691 | 2,576 | −4,27 % |
+| 2 | 385,938 | 384,750 | −0,31 % |
+| 3 | 23,004 | 22,933 | −0,31 % |
+| 4 y 5 | 22,562 | 22,493 | −0,31 % |
+| 6 | 517,437 | 515,844 | −0,31 % |
+| 7 | 224,092 | 223,398 | −0,31 % |
+| 8 | 590,746 | 590,750 | 0,00 % (4 gramos) |
+
+Por ruta y por viaje dan exactamente lo mismo en los 8. Lo que no se reproduce
+es la cifra publicada, y tampoco la reproduce el cálculo por viaje que estaba
+antes de este cambio: los certificados se emitieron con una versión anterior
+del cálculo o con otro perfil del vehículo. El certificado 8, el más reciente,
+difiere en 4 gramos, lo que calza con que la distancia se guarda con 2
+decimales.
+
+No investigué qué cambió entre la emisión de cada certificado y hoy; eso es
+una inferencia a partir de las cifras. La spec deja fuera recalcular
+certificados emitidos (§7), y este cambio no toca ninguno.
+
+**Propuesta para el PO:** reescribir el criterio 3 como «con los insumos de
+los 8 certificados emitidos, el cálculo por ruta da exactamente lo mismo que
+el cálculo por viaje». Es lo que este cambio puede garantizar y lo que queda
+probado. El test además fija cuánto se aleja hoy cada certificado, para que
+un cambio futuro del calculador se note.
+
+### Otras notas
+
+- **Asignación sin ruta.** Un viaje cuya asignación todavía no tiene ruta
+  (anterior a la 0078, antes del relleno) se calcula igual y no escribe
+  `metricas_ruta`. Después del relleno, la próxima vez que se calcule queda
+  anotada.
+- **Las filas que ya existen no se rellenan.** Las 10 de `metricas_viaje` en
+  producción quedan sin `ruta_id` hasta que se recalculen. Un relleno aparte
+  tocaría datos y necesitaría el visto del PO.
+- **Combustible inválido.** Un test usaba `diesel_b5`, que no existe en el enum
+  `tipo_combustible`. El cálculo anterior devolvía NaN y lo guardaba; el
+  reparto exige totales finitos y ahora falla. Corregí el fixture a `diesel`.
+- **Lo que sigue calculando por viaje:** la vista previa de la eco-ruta en una
+  oferta (`eco-route-preview.ts`), que estima antes de que exista una
+  asignación y no guarda métricas.
+- **El cierre real del viaje** ahora escribe en una transacción (antes era un
+  solo UPDATE): el viaje y su ruta quedan iguales o no se escribe ninguno.

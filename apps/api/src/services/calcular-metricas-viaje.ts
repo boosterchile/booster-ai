@@ -6,10 +6,9 @@ import {
   type RouteDataSource,
   THRESHOLD_SECUNDARIO_MODELED_PCT,
   type TipoCombustible,
-  calcularEmisionesViaje,
   calcularEmptyBackhaul,
   calcularFactorIncertidumbre,
-  derivarNivelCertificacion,
+  derivarNivelRuta,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
@@ -30,6 +29,11 @@ import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
+import {
+  type HuellaDeServicio,
+  calcularHuellaDeServicioSolo,
+  guardarMetricasDeRuta,
+} from './huella-por-ruta.js';
 import {
   type VehiculoFuentePosicion,
   cargarLecturasConsumoCan,
@@ -111,18 +115,23 @@ export function desgloseEmisiones(
   };
 }
 
-function emisionesSegunPerfil(opts: {
+/**
+ * Huella del viaje, calculada por su ruta (ADR-089): mientras el servicio
+ * viaje solo, la ruta es un tramo y él se lleva el 100 %.
+ */
+function huellaSegunPerfil(opts: {
+  tripId: string;
   veh: PerfilEnergeticoVehiculo | undefined;
   distanciaKm: number;
   cargaKg: number;
-}): ResultadoEmisiones {
-  const { veh, distanciaKm, cargaKg } = opts;
+}): HuellaDeServicio {
+  const { tripId, veh, distanciaKm, cargaKg } = opts;
   if (veh) {
     const consumoBase = veh.consumptionLPer100kmBaseline
       ? Number(veh.consumptionLPer100kmBaseline)
       : null;
     if (veh.fuelType && consumoBase != null) {
-      return calcularEmisionesViaje({
+      return calcularHuellaDeServicioSolo(tripId, {
         metodo: 'modelado',
         distanciaKm,
         cargaKg,
@@ -134,14 +143,14 @@ function emisionesSegunPerfil(opts: {
         },
       });
     }
-    return calcularEmisionesViaje({
+    return calcularHuellaDeServicioSolo(tripId, {
       metodo: 'por_defecto',
       distanciaKm,
       cargaKg,
       tipoVehiculo: veh.vehicleType,
     });
   }
-  return calcularEmisionesViaje({
+  return calcularHuellaDeServicioSolo(tripId, {
     metodo: 'por_defecto',
     distanciaKm,
     cargaKg,
@@ -370,7 +379,8 @@ async function calcularMetricasEstimadasInner(
   // se trata como 0 (es un preview pre-asignación); la huella REAL del cierre
   // exige peso declarado (T13, `recalcularNivelPostEntrega`).
   const cargaKg = trip.cargoWeightKg ?? 0;
-  const emisiones = emisionesSegunPerfil({ veh, distanciaKm, cargaKg });
+  const huellaEstimada = huellaSegunPerfil({ tripId, veh, distanciaKm, cargaKg });
+  const { emisiones } = huellaEstimada;
 
   // (4) Persistencia — tx corta con todo pre-computado.
   return await db.transaction(async (tx) => {
@@ -393,11 +403,12 @@ async function calcularMetricasEstimadasInner(
     // se llamará de nuevo (post-entrega) y los valores se actualizarán.
     const routeDataSource: RouteDataSource = 'maps_directions';
     const coveragePct = 0;
-    const certificationLevel = derivarNivelCertificacion({
+    // El nivel es el de la ruta (spec huella-consolidada §3.8); con un tramo
+    // es la misma matriz de siempre.
+    const certificationLevel = derivarNivelRuta({
       precisionMethod: emisiones.metodoPrecision,
-      routeDataSource,
-      coveragePct,
-    });
+      tramos: [{ distanciaKm: emisiones.distanciaKm, routeDataSource, coveragePct }],
+    }).nivel;
     const uncertaintyFactor = calcularFactorIncertidumbre({
       nivelCertificacion: certificationLevel,
       coveragePct,
@@ -455,6 +466,13 @@ async function calcularMetricasEstimadasInner(
         .set({ ...valuesToWrite, updatedAt: sql`now()` })
         .where(eq(tripMetrics.tripId, tripId));
     }
+    // La huella es de la ruta: se guarda ahí, y el viaje anota de cuál sale.
+    await guardarMetricasDeRuta(tx, {
+      tripId,
+      momento: 'estimado',
+      huella: huellaEstimada,
+      nivel: { routeDataSource, coveragePct, certificationLevel, uncertaintyFactor },
+    });
 
     logger.info(
       {
@@ -813,7 +831,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       ...resumenCan,
       can83Omitido: lee83 && ventanaExcede ? 'ventana_excede_tope' : null,
       consumoBasePor100km: consumoBase,
-      // Igual que emisionesSegunPerfil: sin combustible + consumo base es por_defecto.
+      // Igual que huellaSegunPerfil: sin combustible + consumo base es por_defecto.
       perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
       pesoDeclarado: trip.cargoWeightKg !== null,
     });
@@ -879,7 +897,7 @@ async function recalcularNivelPostEntregaInner(opts: {
   // El umbral es el mismo de la matriz de certificación (fuente única).
   let huella: ResultadoHuella = 'opt_in_inactivo';
   let motivoDegradacion: string | null = null;
-  let emisionesReales: ResultadoEmisiones | null = null;
+  let huellaReal: HuellaDeServicio | null = null;
   if (huellaActiva) {
     if (
       !reconstruida ||
@@ -912,9 +930,9 @@ async function recalcularNivelPostEntregaInner(opts: {
           motivo: decision?.motivoFallback ?? 'decision_no_registrada',
         });
       }
-      emisionesReales =
+      huellaReal =
         litrosCan !== null && vehiculo.fuelType
-          ? calcularEmisionesViaje({
+          ? calcularHuellaDeServicioSolo(tripId, {
               metodo: 'exacto_canbus',
               distanciaKm: distanciaKmReal,
               combustibleConsumido: litrosCan,
@@ -928,7 +946,8 @@ async function recalcularNivelPostEntregaInner(opts: {
                 capacidadKg: vehiculo.capacityKg,
               },
             })
-          : emisionesSegunPerfil({
+          : huellaSegunPerfil({
+              tripId,
               veh: vehiculo,
               distanciaKm: distanciaKmReal,
               cargaKg: trip.cargoWeightKg,
@@ -936,17 +955,17 @@ async function recalcularNivelPostEntregaInner(opts: {
       huella = 'medida';
     }
   }
+  const emisionesReales: ResultadoEmisiones | null = huellaReal?.emisiones ?? null;
   huellaSegmentoCounter.add(1, { resultado: huella, fuente });
 
   // El nivel se deriva con el método FINAL: el medido si hubo huella real
   // (`exacto_canbus` solo así llega a `primario_verificable`, ADR-077 §2),
   // si no el estimado del viaje.
   const metodoFinal = emisionesReales?.metodoPrecision ?? precisionMethod;
-  const certificationLevel = derivarNivelCertificacion({
+  const certificationLevel = derivarNivelRuta({
     precisionMethod: metodoFinal,
-    routeDataSource,
-    coveragePct,
-  });
+    tramos: [{ distanciaKm: distanciaKmReal ?? 0, routeDataSource, coveragePct }],
+  }).nivel;
   const uncertaintyFactor = calcularFactorIncertidumbre({
     nivelCertificacion: certificationLevel,
     coveragePct,
@@ -957,40 +976,50 @@ async function recalcularNivelPostEntregaInner(opts: {
   // en UN solo UPDATE (todo-o-nada). Un write a medias dejaría cobertura que
   // no corresponde a la distancia → el cert declararía "medido X%" sobre un
   // número que no es esa X.
-  await db
-    .update(tripMetrics)
-    .set({
-      distanceKmActual: distanciaKmReal === null ? null : distanciaKmReal.toString(),
-      routeDataSource,
-      coveragePct: coveragePct.toString(),
-      certificationLevel,
-      uncertaintyFactor: uncertaintyFactor.toString(),
-      ...columnasDecision,
-      ...(huellaActiva
-        ? {
-            carbonEmissionsKgco2eActual:
-              emisionesReales === null ? null : emisionesReales.emisionesKgco2eWtw.toString(),
-            fuelConsumedLActual:
-              emisionesReales !== null && emisionesReales.unidadCombustible === 'L'
-                ? emisionesReales.combustibleConsumido.toString()
-                : null,
-            // Sin huella real el desglose queda en null: TTW+WTT no debe venir de un
-            // cálculo real anterior que ya no respalda el WTW del certificado.
-            ...(emisionesReales !== null
-              ? {
-                  precisionMethod: emisionesReales.metodoPrecision,
-                  ...desgloseEmisiones(emisionesReales, trip.cargoWeightKg, vehiculo.fuelType),
-                }
-              : {
-                  emisionesKgco2eTtw: null,
-                  emisionesKgco2eWtt: null,
-                  intensidadGco2ePorTkm: null,
-                }),
-          }
-        : {}),
-      updatedAt: sql`now()`,
-    })
-    .where(eq(tripMetrics.tripId, tripId));
+  // La misma transacción deja igual la huella de la ruta (ADR-089).
+  await db.transaction(async (tx) => {
+    await tx
+      .update(tripMetrics)
+      .set({
+        distanceKmActual: distanciaKmReal === null ? null : distanciaKmReal.toString(),
+        routeDataSource,
+        coveragePct: coveragePct.toString(),
+        certificationLevel,
+        uncertaintyFactor: uncertaintyFactor.toString(),
+        ...columnasDecision,
+        ...(huellaActiva
+          ? {
+              carbonEmissionsKgco2eActual:
+                emisionesReales === null ? null : emisionesReales.emisionesKgco2eWtw.toString(),
+              fuelConsumedLActual:
+                emisionesReales !== null && emisionesReales.unidadCombustible === 'L'
+                  ? emisionesReales.combustibleConsumido.toString()
+                  : null,
+              // Sin huella real el desglose queda en null: TTW+WTT no debe venir de un
+              // cálculo real anterior que ya no respalda el WTW del certificado.
+              ...(emisionesReales !== null
+                ? {
+                    precisionMethod: emisionesReales.metodoPrecision,
+                    ...desgloseEmisiones(emisionesReales, trip.cargoWeightKg, vehiculo.fuelType),
+                  }
+                : {
+                    emisionesKgco2eTtw: null,
+                    emisionesKgco2eWtt: null,
+                    intensidadGco2ePorTkm: null,
+                  }),
+            }
+          : {}),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(tripMetrics.tripId, tripId));
+    await guardarMetricasDeRuta(tx, {
+      tripId,
+      momento: huellaActiva ? 'real' : 'nivel',
+      huella: huellaReal,
+      nivel: { routeDataSource, coveragePct, certificationLevel, uncertaintyFactor },
+      distanciaKmReal,
+    });
+  });
 
   logger.info(
     {
