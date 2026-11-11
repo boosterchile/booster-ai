@@ -2,7 +2,7 @@
 
 - **Spec**: [spec.md](./spec.md) (aceptada el 2026-11-10)
 - **Date**: 2026-11-11
-- **Status**: Propuesta. Espera el visto del PO para el contrato de §3 y las decisiones de §4.
+- **Status**: Aprobado por el PO en el chat del 2026-11-11 («Apruebo todo»): el contrato de §3, las decisiones D1 a D5 de §4 con la recomendación de cada una, y la entrega en tres PRs de §5.
 
 La spec §5 pide fijar aquí los nombres de las rutas y los campos de la API antes
 del PR que los introduce. Este plan cubre la parte 5. Las partes 6 a 8 se
@@ -177,7 +177,7 @@ un span `rutas.<operacion>` y suma 1 a `rutas_operaciones_total`, con
 
 ## 4. Decisiones del PO
 
-| # | Pregunta | Recomendación |
+| # | Pregunta | Decisión (aprobada como se recomendó) |
 |---|---|---|
 | D1 | Con la ruta `en_curso`, ¿se puede cambiar el conductor (relevo)? | **Sí, solo el conductor.** El vehículo no, porque cambiarlo con carga a bordo es un transbordo y queda fuera de la spec (§8). Hoy `asignar-conductor` ya permite el relevo con la carga recogida, y quitarlo rompería la operación. |
 | D2 | ¿El volumen rechaza o solo avisa al armar la ruta? | **Solo avisa**, igual que la decisión §11-5 de matching del 2026-11-11: los volúmenes de la flota no son confiables. El peso sí rechaza. El aviso va en `avisos` y no bloquea. |
