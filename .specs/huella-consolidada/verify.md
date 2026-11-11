@@ -55,3 +55,47 @@ La spec §3.8 no decía cómo se resumen los tramos. `derivarNivelRuta` usa la
 cobertura ponderada por distancia y la fuente más débil entre los tramos. El
 PO la confirmó el 2026-11-11 (spec §3.8 y §11-5), frente a la alternativa de
 ponderar también la fuente por distancia.
+
+## Parte 2 — migración `expand` 0080 (2026-11-11)
+
+`apps/api/drizzle/0080_metricas_ruta.sql`:
+
+- tabla nueva `metricas_ruta`, una fila por ruta: distancia, actividad de
+  transporte, emisiones estimadas y reales con su desglose, intensidad,
+  combustible, método, factores, fuente, cobertura, nivel de certificación,
+  incertidumbre y versión del método de reparto;
+- en `metricas_viaje`: `ruta_id`, `actividad_tkm`, `participacion` y
+  `version_metodo_reparto`, todas opcionales, más un índice por `ruta_id`.
+
+No toca filas existentes. Ningún código las escribe todavía: el cálculo sigue
+siendo por viaje hasta la parte 3.
+
+### Decisiones
+
+- **Mismos tipos numéricos que `metricas_viaje`.** Una ruta de un solo servicio
+  guarda las mismas cifras en los dos lados (spec §3.5).
+- **`participacion` es porcentaje con 2 decimales**, entre 0 y 100, igual que
+  la publica `repartirPorActividad`. La spec nombra la columna sin decir la
+  unidad.
+- **`metricas_ruta` guarda estimado y real**, como `metricas_viaje`: la
+  estimación de una carga antes del cierre de la ruta sale del mismo reparto
+  sobre la emisión estimada (spec §3.9).
+- **Restricciones:** actividad no negativa, participación y cobertura entre 0 y
+  100. La ruta no se puede borrar mientras tenga métricas.
+- **Sin `empresa_id`.** Se lee por `ruta_id` de una ruta ya validada contra la
+  empresa; queda documentada en `docs/rls-exemptions.md` junto a las otras
+  tablas de ruta.
+
+### Seguridad del despliegue
+
+- **Rollback de código:** seguro; una revisión anterior no conoce la tabla ni
+  las columnas.
+- **Reverso del esquema:** manual, en `down/`, con las dos consultas previas.
+- **Bloqueo:** agregar la llave foránea y las dos restricciones a
+  `metricas_viaje` valida las filas existentes. En producción son 10.
+
+### Numeración
+
+El PR #904, abierto, también usa el número 0080. El que entre segundo
+renumera a 0081.
+

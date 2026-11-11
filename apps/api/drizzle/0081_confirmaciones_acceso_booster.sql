@@ -1,4 +1,4 @@
--- Migration 0080 — confirmaciones del acceso al panel de Booster.
+-- Migration 0081 — confirmaciones del acceso al panel de Booster.
 --
 -- `.specs/confirmar-acceso-booster`: cuando el panel del personal da de alta
 -- una cuenta que ya tiene clave y vínculos con una empresa, el acceso lo

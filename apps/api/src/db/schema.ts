@@ -1957,6 +1957,18 @@ export const tripMetrics = pgTable(
     pesoDeclarado: boolean('peso_declarado'),
     /** HC-001 parte 2: ALERTAS_DECISION (p. ej. discrepancia_can); '{}' = sin alertas. */
     alertasDecision: varchar('alertas_decision', { length: 40 }).array(),
+    /**
+     * Reparto de la huella de la ruta (migración 0080, ADR-089). La ruta de la
+     * que sale la parte de este servicio; NULL mientras el cálculo sea por
+     * viaje (hasta la parte 3 de la spec huella-consolidada).
+     */
+    rutaId: uuid('ruta_id').references((): AnyPgColumn => rutas.id, { onDelete: 'restrict' }),
+    /** Actividad del servicio: toneladas × km de distancia directa. */
+    actividadTkm: numeric('actividad_tkm', { precision: 14, scale: 3 }),
+    /** Participación del servicio en la huella de su ruta, en porcentaje [0, 100]. */
+    participacion: numeric('participacion', { precision: 5, scale: 2 }),
+    /** `VERSION_METODO_REPARTO` de carbon-calculator con que se repartió. */
+    versionMetodoReparto: varchar('version_metodo_reparto', { length: 40 }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1964,8 +1976,84 @@ export const tripMetrics = pgTable(
     precisionIdx: index('idx_metricas_viaje_metodo_precision').on(table.precisionMethod),
     calculatedIdx: index('idx_metricas_viaje_calculado').on(table.calculatedAt),
     behaviorScoreIdx: index('idx_metricas_viaje_puntaje_conduccion').on(table.behaviorScore),
+    rutaIdx: index('idx_metricas_viaje_ruta').on(table.rutaId),
+    actividadCheck: check(
+      'ck_metricas_viaje_actividad',
+      sql`${table.actividadTkm} IS NULL OR ${table.actividadTkm} >= 0`,
+    ),
+    participacionCheck: check(
+      'ck_metricas_viaje_participacion',
+      sql`${table.participacion} IS NULL OR (${table.participacion} >= 0 AND ${table.participacion} <= 100)`,
+    ),
   }),
 );
+
+/**
+ * Huella de una ruta completa (migración 0080, ADR-089, spec
+ * huella-consolidada §3.1 y §4). Se calcula una vez por ruta y se reparte
+ * entre sus servicios; la parte de cada uno queda en `metricas_viaje`.
+ *
+ * Los tipos numéricos repiten los de `metricas_viaje`: una ruta de un solo
+ * servicio guarda las mismas cifras en los dos lados.
+ *
+ * No tiene `empresa_id`: se lee siempre por `ruta_id`, de una ruta ya validada
+ * contra la empresa.
+ */
+export const metricasRuta = pgTable(
+  'metricas_ruta',
+  {
+    rutaId: uuid('ruta_id')
+      .primaryKey()
+      .references(() => rutas.id, { onDelete: 'restrict' }),
+    distanceKmEstimated: numeric('distancia_km_estimada', { precision: 10, scale: 2 }),
+    distanceKmActual: numeric('distancia_km_real', { precision: 10, scale: 2 }),
+    /** Actividad de transporte de la ruta: Σ toneladas a bordo × km de cada tramo. */
+    actividadTkm: numeric('actividad_tkm', { precision: 14, scale: 3 }),
+    carbonEmissionsKgco2eEstimated: numeric('emisiones_kgco2e_estimadas', {
+      precision: 10,
+      scale: 3,
+    }),
+    carbonEmissionsKgco2eActual: numeric('emisiones_kgco2e_reales', { precision: 10, scale: 3 }),
+    /** Desglose del cálculo vigente (real si existe, si no estimado). */
+    emisionesKgco2eTtw: numeric('emisiones_kgco2e_ttw', { precision: 10, scale: 3 }),
+    emisionesKgco2eWtt: numeric('emisiones_kgco2e_wtt', { precision: 10, scale: 3 }),
+    intensidadGco2ePorTkm: numeric('intensidad_gco2e_por_tkm', { precision: 12, scale: 3 }),
+    fuelConsumedLEstimated: numeric('combustible_consumido_l_estimado', {
+      precision: 10,
+      scale: 2,
+    }),
+    fuelConsumedLActual: numeric('combustible_consumido_l_real', { precision: 10, scale: 2 }),
+    precisionMethod: precisionMethodEnum('metodo_precision'),
+    glecVersion: varchar('version_glec', { length: 10 }),
+    emissionFactorUsed: numeric('factor_emision_usado', { precision: 8, scale: 5 }),
+    factoresFuente: text('factores_fuente'),
+    /** La fuente más débil entre los tramos de la ruta (spec §3.8). */
+    routeDataSource: routeDataSourceEnum('fuente_dato_ruta'),
+    /** Cobertura de los tramos ponderada por distancia, en porcentaje [0, 100]. */
+    coveragePct: numeric('cobertura_pct', { precision: 5, scale: 2 }),
+    /** Derivado por `derivarNivelRuta`; lo heredan todos los servicios de la ruta. */
+    certificationLevel: certificationLevelEnum('nivel_certificacion'),
+    uncertaintyFactor: numeric('factor_incertidumbre', { precision: 4, scale: 3 }),
+    versionMetodoReparto: varchar('version_metodo_reparto', { length: 40 }),
+    calculatedAt: timestamp('calculado_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    calculatedIdx: index('idx_metricas_ruta_calculado').on(table.calculatedAt),
+    actividadCheck: check(
+      'ck_metricas_ruta_actividad',
+      sql`${table.actividadTkm} IS NULL OR ${table.actividadTkm} >= 0`,
+    ),
+    coberturaCheck: check(
+      'ck_metricas_ruta_cobertura',
+      sql`${table.coveragePct} IS NULL OR (${table.coveragePct} >= 0 AND ${table.coveragePct} <= 100)`,
+    ),
+  }),
+);
+
+export type MetricasRutaRow = typeof metricasRuta.$inferSelect;
+export type NewMetricasRutaRow = typeof metricasRuta.$inferInsert;
 
 // =============================================================================
 // SOSTENIBILIDAD (Stakeholders + consentimientos)
@@ -3387,7 +3475,7 @@ export const certificadosViaje = pgTable(
 
 /**
  * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
- * migración `0080_confirmaciones_acceso_booster`). Cuando el panel del
+ * migración `0081_confirmaciones_acceso_booster`). Cuando el panel del
  * personal da de alta una cuenta que ya tiene clave y vínculos con una
  * empresa, el acceso lo confirma la persona desde su sesión con un código de
  * 6 dígitos que el admin le entrega en persona. El código se guarda solo como
