@@ -95,6 +95,9 @@ importers:
       '@booster-ai/pricing-engine':
         specifier: workspace:*
         version: link:../../packages/pricing-engine
+      '@booster-ai/route-planner':
+        specifier: workspace:*
+        version: link:../../packages/route-planner
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
