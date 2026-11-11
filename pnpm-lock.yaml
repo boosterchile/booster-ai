@@ -1283,6 +1283,9 @@ importers:
         specifier: workspace:*
         version: link:../matching-algorithm
     devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.19.18
       '@vitest/coverage-v8':
         specifier: ^4.0.18
         version: 4.1.12(vitest@4.1.12)
