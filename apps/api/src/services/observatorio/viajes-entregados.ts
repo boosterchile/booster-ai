@@ -1,6 +1,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Db } from '../../db/client.js';
+import { vehiculoDeAsignacion } from '../../db/configuracion-de-asignacion.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../../db/schema.js';
 import type { ViajeEntregado } from './proyeccion.js';
 
@@ -16,7 +17,7 @@ export async function leerViajesEntregados(db: Db): Promise<ViajeEntregado[]> {
   return await db
     .select({
       viajeId: trips.id,
-      vehiculoId: assignments.vehicleId,
+      vehiculoId: vehiculoDeAsignacion,
       origenRegion: trips.originRegionCode,
       origenComuna: trips.originComunaCode,
       destinoRegion: trips.destinationRegionCode,
@@ -31,7 +32,7 @@ export async function leerViajesEntregados(db: Db): Promise<ViajeEntregado[]> {
     })
     .from(trips)
     .innerJoin(assignments, eq(assignments.tripId, trips.id))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .innerJoin(generador, eq(generador.id, trips.generadorCargaEmpresaId))
     .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
     .where(

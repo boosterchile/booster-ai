@@ -32,6 +32,11 @@ import {
 } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import {
+  asignacionConConductor,
+  conductorDeAsignacion,
+  vehiculoDeAsignacion,
+} from '../db/configuracion-de-asignacion.js';
+import {
   assignments,
   empresas as empresasTable,
   posicionesMovilConductor,
@@ -224,7 +229,7 @@ export function createAssignmentsRoutes(opts: {
       return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
     }
     const filtroConductor = veSoloSuViaje(ctxLista)
-      ? [eq(assignments.driverUserId, auth.userContext.user.id)]
+      ? [asignacionConConductor(auth.userContext.user.id)]
       : [];
     const rows = await opts.db
       .select({
@@ -236,9 +241,9 @@ export function createAssignmentsRoutes(opts: {
         cancelledAt: assignments.cancelledAt,
         cancelledByActor: assignments.cancelledByActor,
         cancellationReason: assignments.cancellationReason,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         driverName: usersTable.fullName,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         tripId: trips.id,
         trackingCode: trips.trackingCode,
@@ -265,8 +270,8 @@ export function createAssignmentsRoutes(opts: {
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .leftJoin(usersTable, eq(usersTable.id, conductorDeAsignacion))
       .where(
         and(
           eq(assignments.empresaId, auth.activeMembership.empresa.id),
@@ -388,13 +393,13 @@ export function createAssignmentsRoutes(opts: {
         cancellationReason: assignments.cancellationReason,
         empresaIdAssign: assignments.empresaId,
         empresaLegalName: empresasTable.legalName,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         vehicleStatus: vehicles.vehicleStatus,
         vehicleType: vehicles.vehicleType,
         // editar-anular-cargas §9: avisar antes de aceptar un peso que no cabe.
         vehicleCapacityKg: vehicles.capacityKg,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         driverName: usersTable.fullName,
         // trip
         tripId: trips.id,
@@ -421,8 +426,8 @@ export function createAssignmentsRoutes(opts: {
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
       .leftJoin(empresaShipper, eq(empresaShipper.id, trips.generadorCargaEmpresaId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .leftJoin(usersTable, eq(usersTable.id, conductorDeAsignacion))
       .where(eq(assignments.id, assignmentId))
       .limit(1);
 
@@ -636,7 +641,7 @@ export function createAssignmentsRoutes(opts: {
           // ¿Es el conductor de este servicio? Se resuelve contra la fila, no
           // contra lo que el cliente diga.
           const rows = await opts.db
-            .select({ driverUserId: assignments.driverUserId })
+            .select({ driverUserId: conductorDeAsignacion })
             .from(assignments)
             .where(eq(assignments.id, assignmentId))
             .limit(1);
@@ -741,7 +746,7 @@ export function createAssignmentsRoutes(opts: {
       .select({
         tripId: assignments.tripId,
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
@@ -870,7 +875,7 @@ export function createAssignmentsRoutes(opts: {
       .select({
         assignmentId: assignments.id,
         assignmentStatus: assignments.status,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         empresaId: assignments.empresaId,
         pickedUpAt: assignments.pickedUpAt,
         deliveredAt: assignments.deliveredAt,
@@ -891,14 +896,14 @@ export function createAssignmentsRoutes(opts: {
         certificateSha256: tripMetrics.certificateSha256,
         certificateKmsKeyVersion: tripMetrics.certificateKmsKeyVersion,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         teltonikaImei: vehicles.teltonikaImei,
         teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
       .where(eq(assignments.id, assignmentId))
       .limit(1);
     return rows[0];
@@ -1047,8 +1052,8 @@ export function createAssignmentsRoutes(opts: {
     const [assignment] = await opts.db
       .select({
         id: assignments.id,
-        driverUserId: assignments.driverUserId,
-        vehicleId: assignments.vehicleId,
+        driverUserId: conductorDeAsignacion,
+        vehicleId: vehiculoDeAsignacion,
         status: assignments.status,
         originLatitude: trips.originLatitude,
         originLongitude: trips.originLongitude,
@@ -1197,7 +1202,7 @@ export function createAssignmentsRoutes(opts: {
     const rows = await opts.db
       .select({
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))

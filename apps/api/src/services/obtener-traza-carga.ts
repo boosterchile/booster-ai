@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { calcularCoberturaPura } from './calcular-cobertura-telemetria.js';
 import { cargarTrazaPoints, construirResumen, downsampleTraza } from './obtener-traza-vehiculo.js';
@@ -60,7 +61,7 @@ export async function obtenerTrazaCarga(opts: {
 
   const [row] = await db
     .select({
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       plate: vehicles.plate,
       tripId: assignments.tripId,
       pickup: trips.pickupWindowStart,
@@ -70,7 +71,7 @@ export async function obtenerTrazaCarga(opts: {
     })
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .leftJoin(tripMetrics, eq(tripMetrics.tripId, assignments.tripId))
     .where(and(eq(assignments.id, assignmentId), eq(assignments.empresaId, empresaId)))
     .limit(1);

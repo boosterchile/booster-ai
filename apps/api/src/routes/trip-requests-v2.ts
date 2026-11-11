@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { ctxDeUserContext, denegarEditarCarga, denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   configuracionComercial,
@@ -653,10 +654,10 @@ export function createTripRequestsV2Routes(opts: {
         cancellation_reason: assignments.cancellationReason,
         empresa_id: assignments.empresaId,
         empresa_legal_name: empresasTable.legalName,
-        vehicle_id: assignments.vehicleId,
+        vehicle_id: vehiculoDeAsignacion,
         vehicle_plate: vehicles.plate,
         vehicle_type: vehicles.vehicleType,
-        driver_user_id: assignments.driverUserId,
+        driver_user_id: conductorDeAsignacion,
         driver_name: usersTable.fullName,
         driver_phone: usersTable.phone,
         driver_whatsapp: usersTable.whatsappE164,
@@ -667,8 +668,8 @@ export function createTripRequestsV2Routes(opts: {
       })
       .from(assignments)
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .leftJoin(usersTable, eq(usersTable.id, conductorDeAsignacion))
       .where(eq(assignments.tripId, id))
       .limit(1);
 

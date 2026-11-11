@@ -25,6 +25,11 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import { ctxDeUserContext, puedeGestionarFlota, veSoloSuViaje } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
+import {
+  asignacionConConductor,
+  asignacionConVehiculo,
+  vehiculoDeAsignacion,
+} from '../db/configuracion-de-asignacion.js';
 import { pgErrorCode } from '../db/pg-error.js';
 import {
   assignments,
@@ -568,12 +573,12 @@ export function createVehiculosRoutes(opts: {
 
     if (veSoloSuViaje(ctxFlota)) {
       const asignados = await opts.db
-        .select({ vehicleId: assignments.vehicleId })
+        .select({ vehicleId: vehiculoDeAsignacion })
         .from(assignments)
         .where(
           and(
             eq(assignments.empresaId, empresaId),
-            eq(assignments.driverUserId, auth.userContext.user.id),
+            asignacionConConductor(auth.userContext.user.id),
             inArray(assignments.status, ['asignado', 'recogido']),
           ),
         );
@@ -1511,13 +1516,13 @@ export function createVehiculosRoutes(opts: {
 
     if (veSoloSuViaje(ctxUbicacion)) {
       const asignados = await opts.db
-        .select({ vehicleId: assignments.vehicleId })
+        .select({ vehicleId: vehiculoDeAsignacion })
         .from(assignments)
         .where(
           and(
             eq(assignments.empresaId, empresaId),
-            eq(assignments.driverUserId, auth.userContext.user.id),
-            eq(assignments.vehicleId, id),
+            asignacionConConductor(auth.userContext.user.id),
+            asignacionConVehiculo(id),
             inArray(assignments.status, ['asignado', 'recogido']),
           ),
         );
