@@ -98,6 +98,62 @@ function unidadesQueCargan(
   return arrastre ? [motriz, arrastre] : [motriz];
 }
 
+/** Capacidad de una configuración, sin mirar qué carga lleva. */
+export interface CapacidadDeConfiguracion {
+  readonly capacidadKg: number;
+  /** Nulo cuando alguna unidad que carga no declara volumen, o cuando ninguna carga. */
+  readonly capacidadM3: number | null;
+  /** La carrocería de cada unidad que carga, en orden (motriz y después arrastre). */
+  readonly carrocerias: readonly (Carroceria | null)[];
+}
+
+/**
+ * Capacidad de una configuración para una ruta, que puede llevar cargas de
+ * distinto tipo (plan de ruta-parada-servicio, decisión D3): la suma de las
+ * unidades que cargan. No filtra por carrocería; eso se mira servicio por
+ * servicio con `cargaCabeEnCarrocerias`.
+ *
+ * Con un rígido y un remolque de carrocerías distintas, la suma puede
+ * sobrestimar lo que cabe de un tipo de carga.
+ *
+ * Lanza si las unidades no forman una configuración (categoría equivocada o
+ * arrastre que no compone): quien llama valida la entrada del usuario antes.
+ */
+export function capacidadDeConfiguracion(
+  motriz: UnidadDeFlota,
+  arrastre: UnidadDeFlota | null,
+): CapacidadDeConfiguracion {
+  if (motriz.unitCategory !== 'motriz') {
+    throw new Error(`la unidad ${motriz.id} no es motriz`);
+  }
+  if (arrastre && arrastre.unitCategory !== 'arrastre') {
+    throw new Error(`la unidad ${arrastre.id} no es de arrastre`);
+  }
+  if (arrastre && !componeConArrastre(motriz.unitType, arrastre.unitType)) {
+    throw new Error(
+      `el arrastre ${arrastre.unitType ?? 'sin tipo'} no compone con la motriz ${motriz.unitType ?? 'sin tipo'}`,
+    );
+  }
+  const cargan = unidadesQueCargan(motriz, arrastre);
+  const volumenes = cargan.map((u) => u.capacityM3);
+  return {
+    capacidadKg: cargan.reduce((suma, u) => suma + u.capacityKg, 0),
+    capacidadM3:
+      cargan.length === 0 || volumenes.some((v) => v === null)
+        ? null
+        : volumenes.reduce<number>((suma, v) => suma + (v ?? 0), 0),
+    carrocerias: cargan.map((u) => u.bodyType),
+  };
+}
+
+/** La carga cabe en la configuración si alguna de sus unidades que cargan le sirve. */
+export function cargaCabeEnCarrocerias(
+  cargoType: TipoDeCarga,
+  carrocerias: readonly (Carroceria | null)[],
+): boolean {
+  return carrocerias.some((carroceria) => carroceriaCompatible(cargoType, carroceria));
+}
+
 /**
  * El volumen declarado no descarta: en la flota real ese dato es poco
  * confiable (decisión del PO del 2026-11-11, spec §11-5). Se compara solo
