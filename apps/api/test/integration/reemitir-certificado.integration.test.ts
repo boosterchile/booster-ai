@@ -12,6 +12,8 @@ vi.mock('@booster-ai/certificate-generator', async (original) => ({
 const { ArtefactoYaSubidoError } = await import('@booster-ai/certificate-generator');
 
 import * as schema from '../../src/db/schema.js';
+import { destinoDe, formatoDestino } from '../../src/jobs/hc001-fuente-combustible-can.js';
+import { main as jobReemitir } from '../../src/jobs/reemitir-certificado.js';
 import { createCertificatesRoutes } from '../../src/routes/certificates.js';
 import {
   registrarPrimeraVersion,
@@ -470,6 +472,160 @@ describe('integration: reemisión de un certificado', () => {
       mensaje: 'reemplazado por v2',
       version_vigente: { version: 2, pdf_sha256: sha('b') },
     });
+  });
+  // ---------------------------------------------------------------------
+  // Parte 5: el job. En seco por defecto; para escribir exige el destino
+  // confirmado y la configuración de firma. Un viaje por corrida.
+  // ---------------------------------------------------------------------
+  const ENV_BASE = (tracking: string) => ({
+    DATABASE_URL: handle.url,
+    CODIGO_SEGUIMIENTO: tracking,
+    MOTIVO: 'factor_impreso_no_corresponde',
+    FACTOR_ANTERIOR: '3.25',
+    FACTOR_NUEVO: '3.24',
+  });
+  const ENV_ESCRITURA = () => ({
+    DRY_RUN: 'false',
+    CONFIRMAR_DESTINO: formatoDestino(destinoDe(handle.url)),
+    CERTIFICATE_SIGNING_KEY_ID: CONFIG.kmsKeyId,
+    CERTIFICATES_BUCKET: CONFIG.certificatesBucket,
+    VERIFY_BASE_URL: CONFIG.verifyBaseUrl,
+  });
+
+  test('el job corre en seco por defecto: informa la reemisión y no firma ni escribe', async () => {
+    const { tripId, tracking } = await emitido();
+    const r = await jobReemitir(ENV_BASE(tracking));
+
+    expect(r).toMatchObject({
+      dryRun: true,
+      ok: true,
+      tripId,
+      codigoSeguimiento: tracking,
+      versionVigente: 1,
+      versionNueva: 2,
+      rutaPdf: `certificates/${base.empresaId}/${tracking}.v2.pdf`,
+      factorAnterior: 3.25,
+      factorNuevo: 3.24,
+      litros: 182.33,
+      emisionesKg: 590.746,
+      sha256Vigente: sha('a'),
+    });
+    // Generó el PDF real en memoria, sin firmar: la plantilla aceptó la versión.
+    expect(r.ok && r.pdfBytes).toBeGreaterThan(1000);
+    expect(emitirCertificado).not.toHaveBeenCalled();
+    expect(await versiones(tripId)).toHaveLength(1);
+    expect((await metricas(tripId)).emissionFactorUsed).toBe('3.25000');
+    expect(await eventos(tripId)).toEqual([]);
+  });
+
+  test('en seco no pide la configuración de firma', async () => {
+    const { tracking } = await emitido();
+    await expect(jobReemitir(ENV_BASE(tracking))).resolves.toMatchObject({ ok: true });
+  });
+
+  test('en seco, una corrección que no cuadra se informa sin escribir', async () => {
+    const { tripId, tracking } = await emitido();
+    const r = await jobReemitir({ ...ENV_BASE(tracking), FACTOR_NUEVO: '3.30' });
+
+    expect(r).toMatchObject({ dryRun: true, ok: false, code: 'correccion_no_explica_cifra' });
+    expect(await versiones(tripId)).toHaveLength(1);
+  });
+
+  test('un código de seguimiento que no existe se informa', async () => {
+    await expect(jobReemitir(ENV_BASE('BOO-NOEXIS'))).resolves.toMatchObject({
+      ok: false,
+      code: 'trip_not_found',
+    });
+  });
+
+  test('el job no escribe sin la confirmación del destino', async () => {
+    const { tripId, tracking } = await emitido();
+    const { CONFIRMAR_DESTINO: _c, ...sinDestino } = ENV_ESCRITURA();
+    await expect(jobReemitir({ ...ENV_BASE(tracking), ...sinDestino })).rejects.toThrow(
+      /CONFIRMAR_DESTINO/,
+    );
+    await expect(
+      jobReemitir({ ...ENV_BASE(tracking), ...ENV_ESCRITURA(), CONFIRMAR_DESTINO: 'otro:5432/x' }),
+    ).rejects.toThrow(/CONFIRMAR_DESTINO/);
+    expect(emitirCertificado).not.toHaveBeenCalled();
+    expect(await versiones(tripId)).toHaveLength(1);
+  });
+
+  test('para escribir exige la configuración de firma, antes de leer nada', async () => {
+    const { tripId, tracking } = await emitido();
+    const { CERTIFICATE_SIGNING_KEY_ID: _k, ...sinLlave } = ENV_ESCRITURA();
+    await expect(jobReemitir({ ...ENV_BASE(tracking), ...sinLlave })).rejects.toThrow(
+      /CERTIFICATE_SIGNING_KEY_ID/,
+    );
+    expect(await versiones(tripId)).toHaveLength(1);
+  });
+
+  test('con el destino confirmado reemite: versión 2 vigente y evento con quién lo pidió', async () => {
+    const { tripId, tracking } = await emitido();
+    const r = await jobReemitir({
+      ...ENV_BASE(tracking),
+      ...ENV_ESCRITURA(),
+      SOLICITADO_POR_USER_ID: base.usuarioId,
+    });
+
+    expect(r).toMatchObject({ dryRun: false, ok: true, version: 2, sha256Nuevo: sha('b') });
+    expect(emitirCertificado).toHaveBeenCalledTimes(1);
+    expect((await versiones(tripId)).map((v) => [v.version, v.estado])).toEqual([
+      [1, 'reemplazado'],
+      [2, 'vigente'],
+    ]);
+    expect((await metricas(tripId)).emissionFactorUsed).toBe('3.24000');
+    expect((await eventos(tripId))[0]?.recordedByUserId).toBe(base.usuarioId);
+  });
+
+  test('un solicitante que no existe se rechaza antes de firmar', async () => {
+    const { tripId, tracking } = await emitido();
+    const r = await jobReemitir({
+      ...ENV_BASE(tracking),
+      ...ENV_ESCRITURA(),
+      SOLICITADO_POR_USER_ID: randomUUID(),
+    });
+
+    expect(r).toMatchObject({ ok: false, code: 'solicitante_no_existe' });
+    expect(emitirCertificado).not.toHaveBeenCalled();
+    expect(await versiones(tripId)).toHaveLength(1);
+  });
+
+  test('para escribir rechaza la llave local y el bucket en disco del E2E, antes de conectarse', async () => {
+    const { tripId, tracking } = await emitido();
+    for (const local of [
+      { CERTIFICATE_SIGNING_KEY_ID: 'local:e2e' },
+      { CERTIFICATES_BUCKET: 'file:/tmp/certificados' },
+    ]) {
+      await expect(
+        jobReemitir({ ...ENV_BASE(tracking), ...ENV_ESCRITURA(), ...local }),
+      ).rejects.toThrow(/Cloud KMS.*GCS/);
+    }
+    expect(emitirCertificado).not.toHaveBeenCalled();
+    expect(await versiones(tripId)).toHaveLength(1);
+  });
+
+  test('el código de seguimiento se acepta en minúsculas y con espacios', async () => {
+    const { tripId, tracking } = await emitido();
+    const r = await jobReemitir({
+      ...ENV_BASE(tracking),
+      CODIGO_SEGUIMIENTO: `  ${tracking.toLowerCase()} `,
+    });
+    expect(r).toMatchObject({ ok: true, tripId, codigoSeguimiento: tracking });
+  });
+
+  test('parámetros inválidos no corren nada', async () => {
+    const { tracking } = await emitido();
+    for (const malo of [
+      { MOTIVO: 'otro' },
+      { FACTOR_NUEVO: 'tres' },
+      { FACTOR_ANTERIOR: '' },
+      { CODIGO_SEGUIMIENTO: '' },
+      { SOLICITADO_POR_USER_ID: 'no-es-uuid' },
+    ]) {
+      await expect(jobReemitir({ ...ENV_BASE(tracking), ...malo })).rejects.toThrow();
+    }
+    await expect(jobReemitir({})).rejects.toThrow();
   });
 });
 
