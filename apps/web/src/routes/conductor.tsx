@@ -79,8 +79,61 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * latinoamericano: "tu/tienes/aquí" (no "vos/tenés/acá").
  */
 
+/** Una parada de la hoja de ruta (ruta-parada-servicio §4.8). */
+export interface ParadaDeHoja {
+  orden: number;
+  tipo: 'recogida' | 'entrega';
+  resuelta_en: string | null;
+  asignacion_id: string;
+  cancelado: boolean;
+  codigo_seguimiento: string;
+  direccion: string;
+  contacto: { nombre: string | null; telefono_e164: string | null } | null;
+}
+
+export interface HojaDeRutaConductor {
+  id: string;
+  estado: string;
+  paradas: ParadaDeHoja[];
+}
+
+/** La parada que sigue: la primera sin resolver de una carga vigente. */
+function paradaQueSigue(hoja: HojaDeRutaConductor): ParadaDeHoja | null {
+  return hoja.paradas.find((p) => !p.resuelta_en && !p.cancelado) ?? null;
+}
+
+/** Una hoja solo aporta cuando la ruta lleva más de una carga. */
+function esRutaCompartida(hoja: HojaDeRutaConductor): boolean {
+  return new Set(hoja.paradas.map((p) => p.asignacion_id)).size > 1;
+}
+
+/**
+ * Ordena las cargas como las pide la ruta: primero la de la parada que sigue.
+ * Las que no están en una ruta compartida conservan su lugar, después.
+ */
+function ordenarPorRuta(
+  assignments: DriverAssignment[],
+  hojas: HojaDeRutaConductor[],
+): DriverAssignment[] {
+  const turno = new Map<string, number>();
+  for (const hoja of hojas) {
+    for (const p of hoja.paradas) {
+      if (!p.resuelta_en && !p.cancelado && !turno.has(p.asignacion_id)) {
+        turno.set(p.asignacion_id, p.orden);
+      }
+    }
+  }
+  const lugar = (a: DriverAssignment) => turno.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+  return assignments
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => lugar(x.a) - lugar(y.a) || x.i - y.i)
+    .map(({ a }) => a);
+}
+
 export interface DriverAssignment {
   id: string;
+  /** Ruta a la que pertenece la carga; ausente en respuestas anteriores a las rutas. */
+  ruta_id?: string | null;
   status: string;
   trip: {
     id: string;
@@ -241,6 +294,7 @@ function WhatsAppSafetyBanner() {
 
 function AssignmentsSection() {
   const [assignments, setAssignments] = useState<DriverAssignment[]>([]);
+  const [hojas, setHojas] = useState<HojaDeRutaConductor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [geoPermission, setGeoPermission] = useState<PermissionStatus>('unknown');
@@ -256,8 +310,13 @@ function AssignmentsSection() {
     setError(null);
     setRefrescando(true);
     try {
-      const res = await api.get<{ assignments: DriverAssignment[] }>('/me/assignments');
-      setAssignments(res.assignments);
+      const res = await api.get<{
+        assignments: DriverAssignment[];
+        rutas?: HojaDeRutaConductor[];
+      }>('/me/assignments');
+      const compartidas = (res.rutas ?? []).filter(esRutaCompartida);
+      setHojas(compartidas);
+      setAssignments(ordenarPorRuta(res.assignments, compartidas));
       setVersionCarga((v) => v + 1);
     } catch (err) {
       // Mensajes en lenguaje del conductor: `Error 500: boom` no le sirve a
@@ -372,6 +431,9 @@ function AssignmentsSection() {
 
   return (
     <section className="mt-6 space-y-4">
+      {hojas.map((hoja) => (
+        <HojaDeRuta key={hoja.id} hoja={hoja} />
+      ))}
       <AssignmentCard
         destacado
         assignment={primero}
@@ -411,6 +473,88 @@ function AssignmentsSection() {
           Licencia por vencer
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * Hoja de ruta: las paradas de una ruta con varias cargas, en el orden en que
+ * la oficina la armó (el conductor no reordena, spec §11-3). Dice cuál sigue;
+ * cada parada se confirma en la tarjeta de su carga, más abajo.
+ */
+function HojaDeRuta({ hoja }: { hoja: HojaDeRutaConductor }) {
+  const vigentes = hoja.paradas.filter((p) => !p.cancelado);
+  const hechas = vigentes.filter((p) => p.resuelta_en).length;
+  const sigue = paradaQueSigue(hoja);
+  return (
+    <section
+      aria-label="Hoja de ruta"
+      className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-semibold text-base text-neutral-900">Hoja de ruta</h2>
+        <p className="text-neutral-600 text-sm">
+          {vigentes.length} paradas · {hechas} {hechas === 1 ? 'hecha' : 'hechas'}
+        </p>
+      </div>
+      <ol className="mt-3 space-y-2">
+        {hoja.paradas.map((p, i) => {
+          const esLaQueSigue = p === sigue;
+          const estado = p.cancelado
+            ? 'Cancelada'
+            : p.resuelta_en
+              ? 'Hecha'
+              : esLaQueSigue
+                ? 'Sigue'
+                : null;
+          return (
+            <li
+              key={`${p.asignacion_id}-${p.tipo}`}
+              aria-current={esLaQueSigue ? 'step' : undefined}
+              className={`flex items-start gap-3 rounded-md border px-3 py-2 ${
+                esLaQueSigue
+                  ? 'border-primary-300 bg-primary-50'
+                  : 'border-neutral-200 bg-neutral-50'
+              }`}
+            >
+              <span
+                className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-semibold text-xs ${
+                  esLaQueSigue ? 'bg-primary-600 text-white' : 'bg-neutral-200 text-neutral-700'
+                }`}
+              >
+                {i + 1}
+              </span>
+              <div
+                className={`min-w-0 flex-1 text-sm ${
+                  p.cancelado ? 'text-neutral-400 line-through' : 'text-neutral-800'
+                }`}
+              >
+                <p className="font-medium">
+                  {p.tipo === 'recogida' ? 'Recoger' : 'Entregar'}{' '}
+                  <span className="font-mono text-neutral-600 text-xs">{p.codigo_seguimiento}</span>
+                </p>
+                <p className="break-words">{p.direccion}</p>
+                {p.contacto?.nombre ? (
+                  <p className="text-neutral-600 text-xs">{p.contacto.nombre}</p>
+                ) : null}
+              </div>
+              {estado ? (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 font-medium text-xs ${
+                    estado === 'Sigue'
+                      ? 'bg-primary-600 text-white'
+                      : estado === 'Hecha'
+                        ? 'bg-success-50 text-success-700'
+                        : 'bg-neutral-200 text-neutral-600'
+                  }`}
+                >
+                  {estado}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }

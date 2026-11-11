@@ -194,3 +194,26 @@ visualizador lee y no escribe; el conductor no usa `/rutas`; apagada responde
 - El conductor todavía no ve las paradas de una ruta agrupada: es la parte 6.
   Por eso la API sigue apagada.
 - No hay aviso al conductor cuando se le declara una ruta desde esta API.
+
+## Parte 6a — la hoja de ruta en la API del conductor (2026-11-11)
+
+Spec §4.8 y §5 («la asignación entrega además la ruta y sus paradas»).
+`GET /me/assignments` agrega, sin cambiar lo que ya entregaba:
+
+- en cada asignación, `ruta_id`;
+- `rutas`: una entrada por ruta del conductor, con `id`, `estado` y sus
+  `paradas` en orden. Cada parada trae `orden`, `tipo`, `resuelta_en`,
+  `asignacion_id`, `cancelado`, `codigo_seguimiento`, `direccion`, `ventana`
+  (solo la recogida), `contacto` (el destinatario, solo la entrega), `notas`,
+  `referencia`, `tipo_carga` y `peso_kg`.
+
+La hoja incluye las paradas ya resueltas y las de servicios entregados o
+cancelados, para que el orden se entienda completo. Solo salen rutas donde el
+usuario es el conductor declarado. No depende de `RUTAS_API_ACTIVADA`: con un
+servicio por ruta, la hoja tiene dos paradas.
+
+Evidencia: `test/unit/me-assignments.test.ts` (4 tests nuevos, en rojo antes)
+y `test/integration/ruta-consolidada.integration.test.ts` (hoja de una ruta
+con dos servicios; otro conductor de la misma empresa no la ve).
+
+Falta la pantalla del conductor que la muestra (parte 6, interfaz).
