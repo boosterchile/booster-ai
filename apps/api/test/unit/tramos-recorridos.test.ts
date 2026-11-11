@@ -76,6 +76,11 @@ describe('tramosRecorridos: lo que el camión llevó a bordo entre parada y para
     expect(r.tramos).toEqual([{ desde: t(20), hasta: t(70), cargaKg: 3000 }]);
   });
 
+  it('recogida y entrega en el mismo instante: un tramo sin duración con su carga', () => {
+    const r = tramosRecorridos([servicio('a', 8000, 10, 10)], t(10));
+    expect(r.tramos).toEqual([{ desde: t(10), hasta: t(10), cargaKg: 8000 }]);
+  });
+
   it('rechaza una ruta sin servicios y una entrega anterior a su recogida', () => {
     expect(() => tramosRecorridos([], t(0))).toThrow(/al menos un servicio/);
     expect(() => tramosRecorridos([servicio('a', 1, 30, 10)], t(30))).toThrow(/antes de recogerse/);
@@ -112,6 +117,42 @@ describe('repartirDistanciaEnTramos: la distancia medida de la ruta, tramo por t
     const r = repartirDistanciaEnTramos(tramos, [], 90);
     expect(r[0]?.distanciaKm).toBeCloseTo(30, 9);
     expect(r[1]?.distanciaKm).toBeCloseTo(60, 9);
+  });
+
+  it('ignora el avance fuera de la ventana de la ruta', () => {
+    const tramos = [
+      { desde: t(0), hasta: t(30), cargaKg: 8000 },
+      { desde: t(30), hasta: t(60), cargaKg: 0 },
+    ];
+    // Un paso antes de la ruta, uno en cada tramo y uno después.
+    const pings = [ping(-20, 0), ping(-10, 5), ping(10, 6), ping(40, 7), ping(80, 20)];
+    const r = repartirDistanciaEnTramos(
+      tramos,
+      [pings[0], pings[1]].filter((x) => !!x),
+      10,
+    );
+    expect(r.map((x) => x.distanciaKm)).toEqual([5, 5]);
+    const conAvance = repartirDistanciaEnTramos(
+      tramos,
+      [ping(5, 0), ping(15, 1), ping(120, 9)],
+      10,
+    );
+    expect(conAvance[0]?.distanciaKm).toBeCloseTo(10, 9);
+    expect(conAvance[1]?.distanciaKm).toBe(0);
+  });
+
+  it('el avance que termina justo en el cierre cuenta en el último tramo', () => {
+    const tramos = [{ desde: t(0), hasta: t(0), cargaKg: 8000 }];
+    const r = repartirDistanciaEnTramos(tramos, [ping(0, 0), ping(0, 1)], 3);
+    expect(r).toEqual([{ distanciaKm: 3, cargaKg: 8000 }]);
+  });
+
+  it('tramos sin duración y sin avance se reparten por igual', () => {
+    const tramos = [
+      { desde: t(0), hasta: t(0), cargaKg: 8000 },
+      { desde: t(0), hasta: t(0), cargaKg: 0 },
+    ];
+    expect(repartirDistanciaEnTramos(tramos, [], 8).map((x) => x.distanciaKm)).toEqual([4, 4]);
   });
 
   it('con un solo tramo le da toda la distancia', () => {

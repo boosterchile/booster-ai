@@ -5,6 +5,7 @@ import {
   type ParametrosServicioSolo,
   calcularHuellaDeRuta,
   calcularHuellaDeServicioSolo,
+  guardarHuellaDeRutaCompartida,
   guardarMetricasDeRuta,
 } from '../../src/services/huella-por-ruta.js';
 
@@ -506,5 +507,87 @@ describe('calcularHuellaDeRuta: varios servicios', () => {
       [{ servicioId: 'viaje-1', masaKg: params.cargaKg, distanciaDirectaKm: params.distanciaKm }],
     );
     expect(servicios[0]?.huella).toEqual(calcularHuellaDeServicioSolo('viaje-1', params));
+  });
+});
+
+describe('guardarHuellaDeRutaCompartida', () => {
+  const DE_RUTA = calcularHuellaDeRuta(
+    {
+      metodo: 'modelado',
+      tramos: [
+        { distanciaKm: 40, cargaKg: 8_000 },
+        { distanciaKm: 60, cargaKg: 13_000 },
+      ],
+      vehiculo: VEHICULO,
+    },
+    [
+      { servicioId: 'viaje-a', masaKg: 8_000, distanciaDirectaKm: 100 },
+      { servicioId: 'viaje-b', masaKg: 5_000, distanciaDirectaKm: 60 },
+    ],
+  );
+
+  it('real: guarda la huella de la ruta y la participación de cada servicio', async () => {
+    const t = txFalsa('ruta-1');
+    await guardarHuellaDeRutaCompartida(t.tx, {
+      rutaId: 'ruta-1',
+      momento: 'real',
+      huella: DE_RUTA,
+      nivel: NIVEL,
+      distanciaKmReal: 100,
+      tripIds: ['viaje-a', 'viaje-b'],
+    });
+
+    expect(t.ruta()).toMatchObject({
+      rutaId: 'ruta-1',
+      distanceKmActual: '100',
+      carbonEmissionsKgco2eActual: DE_RUTA.ruta.emisionesKgco2eWtw.toString(),
+      actividadTkm: DE_RUTA.ruta.actividadTkm.toString(),
+      versionMetodoReparto: 'tkm-distancia-directa-v1',
+    });
+    const viajes = t.escrituras.filter((e) => e.tabla === tripMetrics).map((e) => e.valores);
+    expect(viajes).toEqual([
+      {
+        rutaId: 'ruta-1',
+        actividadTkm: '800',
+        participacion: '72.73',
+        versionMetodoReparto: 'tkm-distancia-directa-v1',
+      },
+      {
+        rutaId: 'ruta-1',
+        actividadTkm: '300',
+        participacion: '27.27',
+        versionMetodoReparto: 'tkm-distancia-directa-v1',
+      },
+    ]);
+  });
+
+  it('sin huella: la ruta guarda su nivel y cada viaje solo anota su ruta', async () => {
+    const t = txFalsa('ruta-1');
+    await guardarHuellaDeRutaCompartida(t.tx, {
+      rutaId: 'ruta-1',
+      momento: 'nivel',
+      huella: null,
+      nivel: NIVEL,
+      distanciaKmReal: 100,
+      tripIds: ['viaje-a', 'viaje-b'],
+    });
+
+    expect(t.ruta()).toMatchObject({ rutaId: 'ruta-1', distanceKmActual: '100' });
+    expect(t.ruta()).not.toHaveProperty('carbonEmissionsKgco2eActual');
+    expect(t.viaje()).toEqual({ rutaId: 'ruta-1' });
+  });
+
+  it('sin huella y sin viajes: solo escribe la ruta', async () => {
+    const t = txFalsa('ruta-1');
+    await guardarHuellaDeRutaCompartida(t.tx, {
+      rutaId: 'ruta-1',
+      momento: 'real',
+      huella: null,
+      nivel: NIVEL,
+      distanciaKmReal: null,
+      tripIds: [],
+    });
+    expect(t.escrituras).toHaveLength(1);
+    expect(t.ruta()).toMatchObject({ carbonEmissionsKgco2eActual: null });
   });
 });

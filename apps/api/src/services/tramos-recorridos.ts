@@ -78,8 +78,12 @@ export function tramosRecorridos(
     }
   }
   if (tramos.length === 0) {
-    // Recogida y entrega en el mismo instante: un tramo sin duración.
-    tramos.push({ desde: new Date(desdeMs), hasta: new Date(hastaMs), cargaKg: aBordo });
+    // Todo ocurrió en el mismo instante: un tramo sin duración con lo que se movió.
+    tramos.push({
+      desde: new Date(desdeMs),
+      hasta: new Date(hastaMs),
+      cargaKg: servicios.reduce((suma, s) => suma + s.masaKg, 0),
+    });
   }
   return { desde: new Date(desdeMs), hasta: new Date(hastaMs), tramos };
 }
