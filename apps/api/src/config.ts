@@ -516,6 +516,19 @@ export const apiEnvSchema = commonEnvSchema
     MATCHING_ALGORITHM_V2_ACTIVATED: booleanFlag(false),
 
     /**
+     * ADR-090, spec matching-desde-la-carga parte 2 — qué elegibilidad decide
+     * a qué empresas se ofrece una carga.
+     *   - `vigente` (default): un vehículo activo con capacidad para el peso.
+     *   - `sombra`: decide el vigente; la elegibilidad por carga (carrocería,
+     *     volumen y configuraciones con arrastre) se calcula al lado y la
+     *     diferencia queda en el log `matching: elegibilidad por carga` y en
+     *     la métrica `matching_elegibilidad_comparaciones_total`.
+     *   - `activa`: decide la elegibilidad por carga.
+     * Pasar a `activa` es una activación en producción: la decide el PO.
+     */
+    MATCHING_ELEGIBILIDAD_MODO: z.enum(['vigente', 'sombra', 'activa']).default('vigente'),
+
+    /**
      * ADR-035 (Wave 4) — Feature flag para activar el flow universal
      * RUT + clave numérica en `/login`.
      *
