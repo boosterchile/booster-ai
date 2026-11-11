@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, sql } from 'drizzle-orm';
+import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { conductorDeAsignacion } from '../../src/db/configuracion-de-asignacion.js';
 import * as schema from '../../src/db/schema.js';
+import { createMeRoutes } from '../../src/routes/me.js';
 import {
   VehicleNotAssignableError,
   asignarConductorAAssignment,
@@ -483,5 +485,49 @@ describe('integration: ruta con varios servicios', () => {
     // 4001 cabe en el camión vacío (5000), pero no junto a los 1000 de a.
     expect(await medir(b.viaje.id, 4001)).toEqual({ capacidadKg: 5000, masaKg: 5001 });
     expect(await medir(a.viaje.id, 3001)).toEqual({ capacidadKg: 5000, masaKg: 5001 });
+  });
+
+  test('el conductor recibe la hoja de ruta: todas las paradas en orden, y solo las suyas', async () => {
+    const { f, a, b, rutaId } = await consolidada();
+    await recoger(f, a);
+    const hojaDe = async (firebaseUid: string) => {
+      const app = new Hono();
+      app.use('/me/*', async (c, next) => {
+        c.set('firebaseClaims', {
+          uid: firebaseUid,
+          email: 'c@test.invalid',
+          emailVerified: true,
+          name: undefined,
+          picture: undefined,
+          custom: {},
+        });
+        await next();
+      });
+      app.route('/me', createMeRoutes({ db: handle.db, logger }));
+      const res = await app.request('/me/assignments');
+      return (await res.json()) as {
+        assignments: { id: string; ruta_id: string | null }[];
+        rutas: {
+          id: string;
+          estado: string;
+          paradas: { tipo: string; asignacion_id: string; resuelta_en: string | null }[];
+        }[];
+      };
+    };
+
+    const hoja = await hojaDe(f.conductor.firebaseUid);
+    expect(hoja.assignments.map((x) => x.ruta_id)).toEqual([rutaId, rutaId]);
+    expect(hoja.rutas).toHaveLength(1);
+    expect(hoja.rutas[0]).toMatchObject({ id: rutaId, estado: 'en_curso' });
+    expect(
+      hoja.rutas[0]?.paradas.map((p) => [p.tipo, p.asignacion_id, p.resuelta_en !== null]),
+    ).toEqual([
+      ['recogida', a.assignment.id, true],
+      ['recogida', b.assignment.id, false],
+      ['entrega', a.assignment.id, false],
+      ['entrega', b.assignment.id, false],
+    ]);
+    // Otro conductor de la misma empresa no ve esta ruta.
+    expect(await hojaDe(f.relevo.firebaseUid)).toEqual({ rutas: [], assignments: [] });
   });
 });
