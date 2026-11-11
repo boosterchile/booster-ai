@@ -561,6 +561,13 @@
       "when": 1780963200321,
       "tag": "0079_asignacion_vehiculo_opcional",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1781049600321,
+      "tag": "0080_metricas_ruta",
+      "breakpoints": true
     }
   ]
 }
