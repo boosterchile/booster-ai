@@ -100,6 +100,33 @@ No tiene reversa automática. Para deshacerlo: `UPDATE asignaciones SET ruta_id 
 NULL` y borrar `eventos_ruta`, `paradas_ruta` y `rutas`, en ese orden. Mientras
 la ruta no tenga lectores (antes de la parte 4) eso no cambia nada visible.
 
+### `rellenar-versiones-certificado.ts`
+
+Relleno de la versión 1 de los certificados emitidos antes de que la emisión
+versionara (`.specs/reemision-certificado/` parte 2). Por cada certificado
+emitido sin versión, crea su versión 1 en `certificados_viaje` copiando las
+columnas `certificado_*` de `metricas_viaje`, y deja las métricas apuntando a
+ella. La lógica vive en `src/services/rellenar-versiones-certificado.ts`.
+
+No toca PDFs ni las columnas `certificado_*`. Dry-run por defecto. Una
+transacción: si al final queda algún certificado emitido sin versión, no
+escribe nada. Idempotente. Lo ejecuta el PO.
+
+Un certificado que no se puede versionar (sin huella del PDF, o con una versión
+vigente que no coincide con sus métricas) sale en `omitidas` con su motivo y el
+job termina con código 1.
+
+```bash
+# 1. En seco (default): imprime el destino y lo que haría.
+pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-versiones-certificado.ts
+# 2. Real (solo con el visto del PO), con el destino copiado de la salida anterior:
+DRY_RUN=false CONFIRMAR_DESTINO=<destino de la corrida en seco> pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-versiones-certificado.ts
+```
+
+Reverso: `UPDATE metricas_viaje SET certificado_vigente_id = NULL` y borrar las
+versiones 1 que creó, salvo la que ya existía antes. Mientras ninguna se haya
+reemplazado, no cambia nada visible.
+
 ### `reap-orphan-onboarding-firebase.ts`
 
 Borra el usuario Firebase **huérfano** del onboarding admin-provisioned
