@@ -2,7 +2,7 @@
 
 - **Author**: agente (Claude), por encargo del PO
 - **Date**: 2026-11-11
-- **Status**: Propuesta. No aceptada. Las decisiones de §8 son del PO.
+- **Status**: Aceptada por el PO en el chat del 2026-11-11 («Acepto las cinco»), con las decisiones de §8.
 - **Linked**: [ADR-021](../../docs/adr/021-glec-v3-compliance.md), `.specs/huella-consolidada/verify.md` (hallazgos del 2026-11-11), `apps/api/src/services/certificados-versionados.ts` (HC-001 parte 3a, #870)
 - **Frente**: sin slot. Nace de un hallazgo sobre un certificado emitido.
 
@@ -162,9 +162,11 @@ Son decisión del PO.
 
 Es dominio crítico: primero el test, con el rojo en la evidencia del PR.
 
-## 8. Decisiones del PO
+## 8. Decisiones del PO (2026-11-11)
 
-| # | Pregunta | Recomendación |
+El PO aceptó las cinco recomendaciones.
+
+| # | Pregunta | Decisión |
 |---|---|---|
 | 1 | ¿El generador se entera de que su certificado fue reemplazado? | Sí, con un aviso corto y el certificado nuevo. Ya tiene el PDF anterior, y quien lo verifique verá «reemplazado». Enterarse por un tercero es peor que un aviso. |
 | 2 | ¿El certificado nuevo dice que reemplaza a otro, y por qué? | Sí: versión, fecha de la anterior y motivo en una línea. Un certificado que cambia sin decirlo no resiste una auditoría. |
