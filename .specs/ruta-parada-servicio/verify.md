@@ -97,3 +97,26 @@ misma regla.
 Evidencia en el PR: rojo 6 de 7 en
 `test/integration/ruta-sigue-asignacion.integration.test.ts` antes de
 implementar; verde después.
+
+## Parte 4b — los lectores leen de la ruta (2026-11-11)
+
+Los 25 archivos de `apps/api/src` que leían vehículo, arrastre o conductor de
+`asignaciones` usan ahora `db/configuracion-de-asignacion.ts`: tres expresiones
+que leen la ruta de la asignación y dos filtros (por conductor y por vehículo).
+
+- Una asignación sin ruta entrega sus propias columnas. El despliegue no
+  depende de que el relleno ya se haya corrido.
+- Las columnas de `asignaciones` se siguen escribiendo y quedan iguales a la
+  ruta (parte 4a). Se retiran en la parte 8.
+- `test/unit/lectores-de-ruta.test.ts` falla si un archivo vuelve a leerlas
+  directo.
+
+Criterio 4 de la spec (respuestas idénticas): los tests de rutas y de
+integración que ya existían pasan sin tocarlos, y
+`test/integration/configuracion-de-asignacion.integration.test.ts` prueba que
+la expresión entrega lo mismo que la asignación cuando la ruta está al día. No
+hay una comparación respuesta por respuesta contra producción.
+
+Lo que no se midió: el plan de ejecución de los filtros con volumen real. Con
+las tablas de hoy (10 asignaciones) no dice nada; los filtros están escritos
+para poder usar `idx_rutas_conductor` e `idx_rutas_vehiculo`.

@@ -1,6 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import {
+  arrastreDeAsignacion,
+  conductorDeAsignacion,
+  vehiculoDeAsignacion,
+} from '../db/configuracion-de-asignacion.js';
 import { assignments, conductores, tripEvents, trips, users, vehicles } from '../db/schema.js';
 import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 import { PENDING_FIREBASE_UID_PREFIX } from './vinculo-persona.js';
@@ -181,10 +186,10 @@ export async function asignarConductorAAssignment(
         id: assignments.id,
         empresaId: assignments.empresaId,
         status: assignments.status,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         tripId: assignments.tripId,
-        vehicleId: assignments.vehicleId,
-        unidadArrastreId: assignments.unidadArrastreId,
+        vehicleId: vehiculoDeAsignacion,
+        unidadArrastreId: arrastreDeAsignacion,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))

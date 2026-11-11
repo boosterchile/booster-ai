@@ -24,6 +24,7 @@ import type { Logger } from '@booster-ai/logger';
 import { regionLabel } from '@booster-ai/notification-fan-out';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, empresas, trips, users, vehicles } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
@@ -151,7 +152,7 @@ async function enviarCorreoTracking(
     .innerJoin(trips, eq(trips.id, assignments.tripId))
     .leftJoin(users, eq(users.id, trips.createdByUserId))
     .leftJoin(empresas, eq(empresas.id, assignments.empresaId))
-    .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(eq(assignments.id, assignmentId))
     .limit(1);
   const row = rows[0];
@@ -281,7 +282,7 @@ async function reenviarCorreoTracking(
     // rls-allowlist: notificador server-side; assignmentId de la carga que el generador acaba de editar.
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(eq(assignments.id, assignmentId))
     .limit(1);
   const row = rows[0];

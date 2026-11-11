@@ -12,6 +12,7 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { asignacionConVehiculo } from '../db/configuracion-de-asignacion.js';
 import { assignments, memberships, trips, users, vehicles } from '../db/schema.js';
 
 export interface SafetyRecipient {
@@ -68,10 +69,7 @@ export async function routeSafetyRecipients(opts: {
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
     .where(
-      and(
-        eq(assignments.vehicleId, vehicle.id),
-        inArray(assignments.status, ['asignado', 'recogido']),
-      ),
+      and(asignacionConVehiculo(vehicle.id), inArray(assignments.status, ['asignado', 'recogido'])),
     )
     .limit(1);
 

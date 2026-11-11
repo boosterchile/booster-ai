@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { assertTransicion } from '@booster-ai/trip-state-machine';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripChangeRequests, tripEvents, trips } from '../db/schema.js';
 import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 
@@ -92,7 +93,7 @@ export async function confirmarRecogidaViaje(opts: {
       .select({
         assignmentId: assignments.id,
         assignmentStatus: assignments.status,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         pickedUpAt: assignments.pickedUpAt,
         acceptedAt: assignments.acceptedAt,
         empresaId: assignments.empresaId,

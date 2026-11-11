@@ -6,6 +6,7 @@ import {
 } from '@booster-ai/trip-state-machine';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, offers, tripEvents, trips } from '../db/schema.js';
 import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 import { invalidarSolicitudPendiente } from './solicitud-cambio-carga.js';
@@ -111,7 +112,7 @@ export async function cancelarCarga(
         .select({
           id: assignments.id,
           empresaId: assignments.empresaId,
-          driverUserId: assignments.driverUserId,
+          driverUserId: conductorDeAsignacion,
         })
         .from(assignments)
         .where(and(eq(assignments.tripId, tripId), eq(assignments.status, 'asignado')))

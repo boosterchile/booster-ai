@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, trips } from '../db/schema.js';
 
 /**
@@ -48,7 +49,7 @@ export async function autorizarSobreViaje(
     return { exists: true, authorized: true, lado: 'generador' };
   }
   const asgRows = await db
-    .select({ empresaId: assignments.empresaId, driverUserId: assignments.driverUserId })
+    .select({ empresaId: assignments.empresaId, driverUserId: conductorDeAsignacion })
     .from(assignments)
     .where(
       and(eq(assignments.tripId, tripId), inArray(assignments.status, ASSIGNMENT_ESTADOS_VIGENTES)),

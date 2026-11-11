@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { correoEnListaRespaldo, tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { asignacionConConductor, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   carrierMemberships,
@@ -391,17 +392,15 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
             and ${tripChangeRequests.status} = 'pendiente'
           limit 1
         )`,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         vehicleTeltonikaImei: vehicles.teltonikaImei,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(empresas, eq(empresas.id, assignments.empresaId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .where(
-        and(eq(assignments.driverUserId, user.id), inArray(assignments.status, ACTIVE_STATUSES)),
-      )
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .where(and(asignacionConConductor(user.id), inArray(assignments.status, ACTIVE_STATUSES)))
       .orderBy(desc(assignments.acceptedAt));
 
     // Helper: serializar Dates de Drizzle de forma defensiva — un Date

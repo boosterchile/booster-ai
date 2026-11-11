@@ -13,6 +13,7 @@ import {
 import { aceptaSolicitudCambio, esEstadoViaje, esPreMatch } from '@booster-ai/trip-state-machine';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   liquidaciones,
@@ -152,7 +153,7 @@ export async function crearSolicitudCambio(
       .select({
         id: assignments.id,
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       .from(assignments)
       .where(and(eq(assignments.tripId, tripId), eq(assignments.status, 'asignado')))
@@ -279,7 +280,7 @@ export async function retirarSolicitudCambio(
       .select({
         id: assignments.id,
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       .from(assignments)
       .where(eq(assignments.id, cerrada.assignmentId))
@@ -411,9 +412,9 @@ async function bloquearContexto(
     .select({
       id: assignments.id,
       empresaId: assignments.empresaId,
-      driverUserId: assignments.driverUserId,
+      driverUserId: conductorDeAsignacion,
       status: assignments.status,
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       agreedPriceClp: assignments.agreedPriceClp,
     })
     .from(assignments)
