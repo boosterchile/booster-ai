@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (PO) + agente
 - Date: 2026-11-09
-- Status: Propuesta. La decisión de §10 va con el visto del PO en el PR.
+- Status: Aceptada por el PO el 2026-11-11 en el chat («merge y deploy»), con los contratos de §4 y las decisiones de §10 como están implementadas.
 - Linked: `.specs/acceso-panel-plataforma/spec.md` (#893: el panel otorga y quita el acceso), `.specs/bordes-autenticacion/spec.md` (#895, base de esta rama), `.specs/alta-personal-booster/spec.md` (panel del personal), ADR-028 (el «Admin Booster» es la cuenta con `usuarios.es_admin_plataforma = true`), ADR-035 (RUT + clave numérica)
 
 ---
@@ -113,4 +113,5 @@ El panel del personal otorga el acceso a cada persona que da de alta (#893). Cua
 - 2026-11-09 — Revisión del PR: el código vale mientras quien lo emitió tenga acceso al panel. La confirmación lee esa cuenta (correo, marca y estado) en su transacción y le aplica la regla única con la lista de respaldo; si no la cumple, la respuesta es la misma `400`, sin escrituras ni intento sumado, con el motivo interno `emisor_sin_acceso` en el log y el counter. La lectura no bloquea la fila de quien emitió: una baja que comitea antes deja el código sin uso, y una que comitea después no deshace una confirmación ya hecha.
 - 2026-11-09 — Revisión del PR: el alta de una cuenta activa con vínculos cuyo correo está en la lista de respaldo la marca, como el resto de las altas (SC2): la lista ya le da el panel, así que un código de confirmación no agrega nada.
 - 2026-11-09 — Revisión del PR: el alta busca la cuenta por correo en orden fijo por `id`, para que filas que difieren solo en mayúsculas den siempre la misma.
-- 2026-11-11 — Número de la migración: `main` ocupó la 0078 con `0078_rutas_paradas` (#911) la 0079 con `0079_asignacion_vehiculo_opcional` (#922) y la 0080 con `0080_metricas_ruta` (#923), así que esta queda como `0081_confirmaciones_acceso_booster`, con su `when` posterior al de esa 0080. El contenido no cambió al renumerarla.
+- 2026-11-11 — Número de la migración: `main` ocupó la 0078 con `0078_rutas_paradas` (#911), la 0079 con `0079_asignacion_vehiculo_opcional` (#922) y la 0080 con `0080_metricas_ruta` (#923), así que esta queda como `0081_confirmaciones_acceso_booster`, con su `when` posterior al de esa 0080. El contenido no cambió al renumerarla.
+- 2026-11-11 — El PO dio el visto («merge y deploy») a los contratos de §4 y a las decisiones de este registro tal como están implementadas: cuenta como vínculo una membresía con empresa en cualquier estado o una fila de conductor, también retirada; la confirmación no exige que el correo de la cuenta siga siendo el del alta; el rechazo responde `400`; y no hay enlace en el menú.

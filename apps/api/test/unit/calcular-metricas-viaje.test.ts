@@ -192,7 +192,7 @@ describe('calcularMetricasEstimadas', () => {
         [
           {
             id: VEH_ID,
-            fuelType: 'diesel_b5',
+            fuelType: 'diesel',
             consumptionLPer100kmBaseline: '28.5',
             curbWeightKg: 7000,
             capacityKg: 12000,

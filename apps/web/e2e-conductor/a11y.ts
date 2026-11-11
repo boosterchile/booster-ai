@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { type Locator, type Page, expect } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
 
 /**
  * T10-11 — axe sobre la pantalla actual con las reglas WCAG 2.1 A/AA.
@@ -80,7 +80,7 @@ interface EstiloFoco {
  * con Tab y compara el estilo de cada control enfocado con su estilo sin foco
  * (propio y de dos ancestros, para indicadores `focus-within`).
  */
-async function expectTeclado(page: Page, pantalla: string): Promise<void> {
+export async function expectTeclado(page: Page, pantalla: string): Promise<void> {
   // La foto "sin foco" se toma sin ningún control enfocado (el paso anterior
   // del test puede haber dejado el foco en el último campo que llenó).
   await page.evaluate(() => {
@@ -171,6 +171,8 @@ async function expectTeclado(page: Page, pantalla: string): Promise<void> {
   });
 
   const alcanzados = new Set<string>();
+  /** Controles de la foto que siguen enfocables y a la vista al terminar. */
+  let vigentes = new Set<string>();
   const sinIndicador: string[] = [];
   let volvio = false;
   const maximo = controles.reduce((n, c) => n + c.pasos, 0) + 10;
@@ -235,18 +237,52 @@ async function expectTeclado(page: Page, pantalla: string): Promise<void> {
       }
     }
   } finally {
-    await page.evaluate(
-      ({ atributo }) => {
-        document.getElementById('__a11y_inicio')?.remove();
-        for (const el of document.querySelectorAll(`[${atributo}]`)) {
-          el.removeAttribute(atributo);
-        }
-      },
-      { atributo: ATRIBUTO_ID },
+    vigentes = new Set(
+      await page.evaluate(
+        ({ selector, atributo }) => {
+          document.getElementById('__a11y_inicio')?.remove();
+          // Los controles de la foto que siguen en el documento, enfocables y
+          // a la vista. Mismo criterio que al tomar la foto.
+          const sigue = (el: Element) => {
+            if (!(el instanceof HTMLElement) || !el.matches(selector)) {
+              return false;
+            }
+            if (el.closest('[inert]') || (el as HTMLButtonElement).disabled) {
+              return false;
+            }
+            const s = getComputedStyle(el);
+            if (s.visibility === 'hidden' || s.display === 'none') {
+              return false;
+            }
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          };
+          const marcados = [...document.querySelectorAll(`[${atributo}]`)];
+          const ids = marcados.filter(sigue).map((el) => el.getAttribute(atributo) ?? '');
+          for (const el of marcados) {
+            el.removeAttribute(atributo);
+          }
+          return ids;
+        },
+        { selector: SELECTOR_ENFOCABLE, atributo: ATRIBUTO_ID },
+      ),
     );
   }
 
-  const noAlcanzados = controles.filter((c) => !alcanzados.has(c.id)).map((c) => c.descripcion);
+  // Un control de la foto que ya no está, no se ve o dejó de ser enfocable
+  // cuando termina el recorrido no se puede alcanzar con Tab: lo cambió la
+  // página durante la revisión (un widget de terceros que se monta y se
+  // reemplaza, como el mapa de Google con una clave inválida). No es una falla
+  // de 2.1.1; queda anotado en el reporte para que no pase inadvertido.
+  const pendientes = controles.filter((c) => !alcanzados.has(c.id));
+  const desaparecidos = pendientes.filter((c) => !vigentes.has(c.id)).map((c) => c.descripcion);
+  if (desaparecidos.length > 0) {
+    test.info().annotations.push({
+      type: 'a11y: controles que cambiaron durante el recorrido',
+      description: `${pantalla}: ${desaparecidos.join(', ')}`,
+    });
+  }
+  const noAlcanzados = pendientes.filter((c) => vigentes.has(c.id)).map((c) => c.descripcion);
   expect.soft(volvio, `2.1.2 trampa de foco en ${pantalla}: ${maximo} Tab sin salir`).toBe(true);
   expect.soft(noAlcanzados, `2.1.1 controles sin alcanzar con Tab en ${pantalla}`).toEqual([]);
   expect

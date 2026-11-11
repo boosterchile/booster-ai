@@ -15,6 +15,7 @@ import {
 } from '../db/schema.js';
 import type { NivelCert, ReconstruccionTrip } from './backfill-distancia-real.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
+import { guardarMetricasDeRuta } from './huella-por-ruta.js';
 import { cargarPingsVentana } from './posicion-segmento.js';
 import { computeRoutes } from './routes-api.js';
 
@@ -227,6 +228,19 @@ export async function persistirBackfill(db: Db, r: ReconstruccionTrip): Promise<
           updatedAt: sql`now()`,
         })
         .where(eq(tripMetrics.tripId, r.tripId));
+      // La ruta del viaje queda con la misma distancia y el mismo nivel (ADR-089).
+      await guardarMetricasDeRuta(tx, {
+        tripId: r.tripId,
+        momento: 'nivel',
+        huella: null,
+        nivel: {
+          routeDataSource: 'teltonika_gps',
+          coveragePct: r.resultado.coveragePct,
+          certificationLevel: r.resultado.nivelNuevo,
+          uncertaintyFactor,
+        },
+        distanciaKmReal: r.resultado.distanciaKmReal,
+      });
     }
   });
 }
