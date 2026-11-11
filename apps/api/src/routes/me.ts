@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { correoEnListaRespaldo, tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
@@ -13,6 +13,8 @@ import {
   empresas,
   memberships,
   organizacionesStakeholder,
+  paradasRuta,
+  rutas,
   tripChangeRequests,
   trips,
   users,
@@ -395,6 +397,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         vehicleTeltonikaImei: vehicles.teltonikaImei,
+        rutaId: assignments.rutaId,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
@@ -418,9 +421,91 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       return typeof d === 'string' ? d : null;
     };
 
+    // Hoja de ruta (spec ruta-parada-servicio §4.8): las paradas de cada ruta
+    // del conductor, en orden. Incluye las ya resueltas y las de servicios
+    // entregados o cancelados, para que el orden se entienda completo.
+    const rutaIds = [...new Set(rows.map((r) => r.rutaId).filter((id): id is string => !!id))];
+    const paradas =
+      rutaIds.length === 0
+        ? []
+        : await opts.db
+            .select({
+              rutaId: paradasRuta.rutaId,
+              rutaEstado: rutas.status,
+              orden: paradasRuta.orden,
+              tipo: paradasRuta.tipo,
+              resolvedAt: paradasRuta.resolvedAt,
+              assignmentId: assignments.id,
+              assignmentStatus: assignments.status,
+              trackingCode: trips.trackingCode,
+              originAddressRaw: trips.originAddressRaw,
+              destinationAddressRaw: trips.destinationAddressRaw,
+              pickupWindowStart: trips.pickupWindowStart,
+              pickupWindowEnd: trips.pickupWindowEnd,
+              consigneeName: trips.consigneeName,
+              consigneeWhatsappE164: trips.consigneeWhatsappE164,
+              notes: trips.notes,
+              reference: trips.reference,
+              cargoType: trips.cargoType,
+              cargoWeightKg: trips.cargoWeightKg,
+            })
+            // rls-allowlist: scope por conductor (rutas.conductor_id = user.id), como el SELECT de arriba
+            .from(paradasRuta)
+            .innerJoin(rutas, eq(rutas.id, paradasRuta.rutaId))
+            .innerJoin(trips, eq(trips.id, paradasRuta.tripId))
+            .innerJoin(
+              assignments,
+              and(
+                eq(assignments.tripId, paradasRuta.tripId),
+                eq(assignments.rutaId, paradasRuta.rutaId),
+              ),
+            )
+            // Solo rutas donde este usuario es el conductor declarado.
+            .where(and(inArray(paradasRuta.rutaId, rutaIds), eq(rutas.driverUserId, user.id)))
+            .orderBy(asc(paradasRuta.rutaId), asc(paradasRuta.orden));
+    const hojas = rutaIds.flatMap((id) => {
+      const suyas = paradas.filter((p) => p.rutaId === id);
+      const [primera] = suyas;
+      if (!primera) {
+        return [];
+      }
+      return [
+        {
+          id,
+          estado: primera.rutaEstado,
+          paradas: suyas.map((p) => {
+            const esEntrega = p.tipo === 'entrega';
+            return {
+              orden: p.orden,
+              tipo: p.tipo,
+              resuelta_en: safeIso(p.resolvedAt),
+              asignacion_id: p.assignmentId,
+              cancelado: p.assignmentStatus === 'cancelado',
+              codigo_seguimiento: p.trackingCode,
+              direccion: esEntrega ? p.destinationAddressRaw : p.originAddressRaw,
+              ventana: esEntrega
+                ? null
+                : { desde: safeIso(p.pickupWindowStart), hasta: safeIso(p.pickupWindowEnd) },
+              // El contacto de la entrega es el destinatario (§12-P4 de editar-anular-cargas).
+              contacto:
+                esEntrega && (p.consigneeName || p.consigneeWhatsappE164)
+                  ? { nombre: p.consigneeName, telefono_e164: p.consigneeWhatsappE164 }
+                  : null,
+              notas: p.notes,
+              referencia: p.reference,
+              tipo_carga: p.cargoType,
+              peso_kg: p.cargoWeightKg,
+            };
+          }),
+        },
+      ];
+    });
+
     return c.json({
+      rutas: hojas,
       assignments: rows.map((r) => ({
         id: r.assignmentId,
+        ruta_id: r.rutaId ?? null,
         status: r.assignmentStatus,
         accepted_at: safeIso(r.acceptedAt),
         picked_up_at: safeIso(r.pickedUpAt),
