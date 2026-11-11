@@ -3,7 +3,7 @@
 - **Author**: agente (Claude), por encargo del PO
 - **Date**: 2026-11-11
 - **Status**: Propuesta. No aceptada. Las decisiones de §8 son del PO.
-- **Linked**: [ADR-021](../../docs/adr/021-glec-v3-compliance.md), [ADR-028](../../docs/adr/028-rbac-auth-firebase-multi-tenant-with-consent-grants.md), `.specs/huella-consolidada/verify.md` (hallazgos del 2026-11-11), `apps/api/src/services/certificados-versionados.ts` (HC-001 parte 3a, #870)
+- **Linked**: [ADR-021](../../docs/adr/021-glec-v3-compliance.md), `.specs/huella-consolidada/verify.md` (hallazgos del 2026-11-11), `apps/api/src/services/certificados-versionados.ts` (HC-001 parte 3a, #870)
 - **Frente**: sin slot. Nace de un hallazgo sobre un certificado emitido.
 
 ## 1. Objetivo
