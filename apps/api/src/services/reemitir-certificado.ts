@@ -1,15 +1,24 @@
-import { ArtefactoYaSubidoError, emitirCertificado } from '@booster-ai/certificate-generator';
+import {
+  ArtefactoYaSubidoError,
+  emitirCertificado,
+  generarPdfBase,
+  rutaPdfCertificado,
+} from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { tripEvents, tripMetrics, trips } from '../db/schema.js';
+import { tripEvents, tripMetrics, trips, users } from '../db/schema.js';
 import {
   VersionVigenteCambioError,
   crearVersionEnTx,
   obtenerVigente,
   siguienteVersion,
 } from './certificados-versionados.js';
-import { type EmitirCertificadoConfig, armarDatosEmision } from './emitir-certificado-viaje.js';
+import {
+  type DatosEmisionCertificado,
+  type EmitirCertificadoConfig,
+  armarDatosEmision,
+} from './emitir-certificado-viaje.js';
 
 /**
  * Reemisión de un certificado emitido (`.specs/reemision-certificado/` §3).
@@ -57,6 +66,7 @@ export type CodigoNoReemitido =
   | 'correccion_no_corresponde'
   | 'correccion_no_explica_cifra'
   | 'datos_insuficientes'
+  | 'solicitante_no_existe'
   | 'no_shipper';
 
 export type ResultadoReemision =
@@ -95,23 +105,46 @@ const numOrNull = (v: string | null): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-export async function reemitirCertificado(opts: {
+/** Lo que la reemisión va a hacer, ya comprobado; aún sin firmar ni escribir. */
+export interface PlanReemision {
+  readonly trip: typeof trips.$inferSelect;
+  readonly metrics: typeof tripMetrics.$inferSelect;
+  readonly vigente: NonNullable<Awaited<ReturnType<typeof obtenerVigente>>>;
+  readonly versionNueva: number;
+  readonly factorNuevoTexto: string;
+  readonly litros: number;
+  readonly emisiones: number;
+  /** Datos del PDF con el factor corregido y la línea de reemplazo. */
+  readonly datos: DatosEmisionCertificado;
+}
+
+type Preparacion =
+  | { readonly ok: true; readonly plan: PlanReemision }
+  | Extract<ResultadoReemision, { ok: false }>;
+
+interface ParametrosReemision {
   readonly db: Db;
   readonly logger: Logger;
   readonly tripId: string;
   readonly correccion: CorreccionFactor;
   readonly solicitadoPorUserId: string | null;
-  readonly config: Partial<EmitirCertificadoConfig>;
-}): Promise<ResultadoReemision> {
-  const { db, logger, tripId, correccion, solicitadoPorUserId, config } = opts;
-  const noReemitido = (code: CodigoNoReemitido, detalle?: string): ResultadoReemision => {
+}
+
+const noReemitidoCon =
+  (logger: Logger, tripId: string) =>
+  (code: CodigoNoReemitido, detalle?: string): Extract<ResultadoReemision, { ok: false }> => {
     logger.warn({ tripId, code, detalle }, 'reemisión de certificado no realizada');
     return { ok: false, code, ...(detalle ? { detalle } : {}) };
   };
 
-  if (!config.kmsKeyId || !config.certificatesBucket || !config.verifyBaseUrl) {
-    return noReemitido('config_missing');
-  }
+/**
+ * Pasos (1) y armado de (2): todas las comprobaciones y los datos del PDF.
+ * Solo lee. La usan la reemisión y la corrida en seco, para que las dos
+ * comprueben exactamente lo mismo.
+ */
+export async function prepararReemision(opts: ParametrosReemision): Promise<Preparacion> {
+  const { db, logger, tripId, correccion, solicitadoPorUserId } = opts;
+  const noReemitido = noReemitidoCon(logger, tripId);
 
   // rls-allowlist: reemisión de plataforma scoped por tripId (job manual del PO)
   const [trip] = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
@@ -185,22 +218,70 @@ export async function reemitirCertificado(opts: {
   // El número sale de la mayor versión registrada, no de la vigente: después
   // de una reversa la vigente es la 1 pero la 2 ya tiene su PDF en el bucket.
   const versionNueva = await siguienteVersion(db, tripId);
-  let result: Awaited<ReturnType<typeof emitirCertificado>>;
-  try {
-    result = await emitirCertificado({
-      ...armado.datos,
+
+  // El solicitante queda en el evento (FK a usuarios): si no existe, la
+  // transacción fallaría después de firmar y subir. Se comprueba antes.
+  if (solicitadoPorUserId !== null) {
+    const [solicitante] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, solicitadoPorUserId))
+      .limit(1);
+    if (!solicitante) {
+      return noReemitido(
+        'solicitante_no_existe',
+        `no hay un usuario con id ${solicitadoPorUserId}`,
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    plan: {
+      trip,
+      metrics,
+      vigente,
+      versionNueva,
+      factorNuevoTexto,
+      litros,
+      emisiones,
       // El certificado dice a qué versión reemplaza, de cuándo y por qué
       // (spec §8-2). Reemplaza a la vigente, que tras una reversa puede no
       // ser la de número anterior.
-      viaje: {
-        ...armado.datos.viaje,
-        version: {
-          numero: versionNueva,
-          reemplazaA: vigente.version,
-          reemplazaEmitidoEn: vigente.emitidoEn,
-          motivo: correccion.motivo,
+      datos: {
+        ...armado.datos,
+        viaje: {
+          ...armado.datos.viaje,
+          version: {
+            numero: versionNueva,
+            reemplazaA: vigente.version,
+            reemplazaEmitidoEn: vigente.emitidoEn,
+            motivo: correccion.motivo,
+          },
         },
       },
+    },
+  };
+}
+
+export async function reemitirCertificado(
+  opts: ParametrosReemision & { readonly config: Partial<EmitirCertificadoConfig> },
+): Promise<ResultadoReemision> {
+  const { db, logger, tripId, correccion, solicitadoPorUserId, config } = opts;
+  if (!config.kmsKeyId || !config.certificatesBucket || !config.verifyBaseUrl) {
+    return noReemitidoCon(logger, tripId)('config_missing');
+  }
+  const preparada = await prepararReemision(opts);
+  if (!preparada.ok) {
+    return preparada;
+  }
+  const { metrics, vigente, versionNueva, factorNuevoTexto, datos } = preparada.plan;
+
+  // (2) y (3) Generar, firmar y subir con el dato corregido, sin tocar la base.
+  let result: Awaited<ReturnType<typeof emitirCertificado>>;
+  try {
+    result = await emitirCertificado({
+      ...datos,
       infra: { kmsKeyId: config.kmsKeyId, certificatesBucket: config.certificatesBucket },
       verifyBaseUrl: config.verifyBaseUrl,
       version: versionNueva,
@@ -312,4 +393,60 @@ export async function reemitirCertificado(opts: {
     }
     throw err;
   }
+}
+
+/** Lo que informa la corrida en seco: la reemisión que haría, sin firmar ni escribir. */
+export type ResultadoSimulacion =
+  | {
+      readonly ok: true;
+      readonly tripId: string;
+      readonly versionVigente: number;
+      readonly versionNueva: number;
+      readonly sha256Vigente: string;
+      readonly rutaPdf: string;
+      readonly factorAnterior: number;
+      readonly factorNuevo: number;
+      readonly litros: number;
+      readonly emisionesKg: number;
+      /** Tamaño del PDF generado en memoria, sin firma: la plantilla lo aceptó. */
+      readonly pdfBytes: number;
+    }
+  | Extract<ResultadoReemision, { ok: false }>;
+
+/**
+ * Corrida en seco (spec §3.5): las mismas comprobaciones que la reemisión y
+ * el PDF generado en memoria, sin firmar, sin subir y sin escribir en la base.
+ */
+export async function simularReemision(
+  opts: ParametrosReemision & { readonly verifyBaseUrl: string },
+): Promise<ResultadoSimulacion> {
+  const preparada = await prepararReemision(opts);
+  if (!preparada.ok) {
+    return preparada;
+  }
+  const { trip, vigente, versionNueva, litros, emisiones, datos } = preparada.plan;
+  const pdf = await generarPdfBase({
+    viaje: datos.viaje,
+    metricas: datos.metricas,
+    empresaShipper: datos.empresaShipper,
+    ...(datos.transportista ? { transportista: datos.transportista } : {}),
+    verifyUrl: `${opts.verifyBaseUrl.replace(/\/$/, '')}/certificates/${trip.trackingCode}/verify`,
+  });
+  return {
+    ok: true,
+    tripId: trip.id,
+    versionVigente: vigente.version,
+    versionNueva,
+    sha256Vigente: vigente.sha256,
+    rutaPdf: rutaPdfCertificado({
+      empresaId: datos.empresaShipper.id,
+      trackingCode: trip.trackingCode,
+      version: versionNueva,
+    }),
+    factorAnterior: comoFactor(opts.correccion.factorAnterior),
+    factorNuevo: comoFactor(opts.correccion.factorNuevo),
+    litros,
+    emisionesKg: emisiones,
+    pdfBytes: pdf.length,
+  };
 }

@@ -8,12 +8,17 @@ const m = vi.hoisted(() => ({
   crearVersionEnTx: vi.fn(),
   siguienteVersion: vi.fn(),
   armarDatosEmision: vi.fn(),
+  generarPdfBase: vi.fn(),
 }));
-vi.mock('@booster-ai/certificate-generator', async (original) => ({
-  ArtefactoYaSubidoError: (await original<typeof import('@booster-ai/certificate-generator')>())
-    .ArtefactoYaSubidoError,
-  emitirCertificado: m.emitirCertificado,
-}));
+vi.mock('@booster-ai/certificate-generator', async (original) => {
+  const real = await original<typeof import('@booster-ai/certificate-generator')>();
+  return {
+    ArtefactoYaSubidoError: real.ArtefactoYaSubidoError,
+    rutaPdfCertificado: real.rutaPdfCertificado,
+    emitirCertificado: m.emitirCertificado,
+    generarPdfBase: m.generarPdfBase,
+  };
+});
 const { ArtefactoYaSubidoError } = await import('@booster-ai/certificate-generator');
 vi.mock('../../src/services/certificados-versionados.js', async (original) => ({
   ...(await original<typeof import('../../src/services/certificados-versionados.js')>()),
@@ -28,7 +33,7 @@ vi.mock('../../src/services/emitir-certificado-viaje.js', () => ({
 const { VersionVigenteCambioError } = await import(
   '../../src/services/certificados-versionados.js'
 );
-const { ReemisionConcurrenteError, reemitirCertificado } = await import(
+const { ReemisionConcurrenteError, reemitirCertificado, simularReemision } = await import(
   '../../src/services/reemitir-certificado.js'
 );
 
@@ -42,8 +47,14 @@ const consulta = (filas: Filas) => {
 };
 
 /** SELECTs en orden: viaje, métricas. UPDATE de la guarda devuelve `corregidas`. */
-function baseFalsa(viaje: Filas, metricas: Filas, corregidas: Filas = [{ tripId: 'v' }]) {
-  const cola = [viaje, metricas];
+/** SELECTs en orden: viaje, métricas y el solicitante del evento. */
+function baseFalsa(
+  viaje: Filas,
+  metricas: Filas,
+  corregidas: Filas = [{ tripId: 'v' }],
+  solicitante: Filas = [{ id: 'po' }],
+) {
+  const cola = [viaje, metricas, solicitante];
   const insertados: unknown[] = [];
   const tx = {
     update: vi.fn(() => ({
@@ -292,5 +303,101 @@ describe('reemitirCertificado — reemisión', () => {
     expect(
       (db as unknown as { transaction: ReturnType<typeof vi.fn> }).transaction,
     ).not.toHaveBeenCalled();
+  });
+});
+
+describe('reemitirCertificado — solicitante', () => {
+  it('si el solicitante no existe, no firma ni sube', async () => {
+    const { db } = baseFalsa([VIAJE], [METRICAS], [{ tripId: 'v' }], []);
+    await expect(reemitir(db)).resolves.toMatchObject({
+      ok: false,
+      code: 'solicitante_no_existe',
+    });
+    expect(m.emitirCertificado).not.toHaveBeenCalled();
+  });
+
+  it('sin solicitante no lo busca', async () => {
+    const { db } = baseFalsa([VIAJE], [METRICAS]);
+    await expect(reemitir(db, { solicitadoPorUserId: null })).resolves.toMatchObject({ ok: true });
+    expect((db as unknown as { select: ReturnType<typeof vi.fn> }).select).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('simularReemision — en seco', () => {
+  const simular = (db: never) =>
+    simularReemision({
+      db,
+      logger,
+      tripId: 'v',
+      correccion: CORRECCION,
+      solicitadoPorUserId: 'po',
+      verifyBaseUrl: 'https://api/',
+    });
+
+  beforeEach(() => {
+    m.armarDatosEmision.mockResolvedValue({
+      ok: true,
+      datos: {
+        viaje: { trackingCode: 'BOO-X' },
+        metricas: {},
+        empresaShipper: { id: 'e', legalName: 'E', rut: null },
+      },
+    });
+    m.generarPdfBase.mockResolvedValue(new Uint8Array(1500));
+  });
+
+  it('informa la reemisión que haría y genera el PDF en memoria, sin firmar ni escribir', async () => {
+    const { db } = baseFalsa([{ ...VIAJE, trackingCode: 'BOO-X' }], [METRICAS]);
+    const r = await simular(db);
+
+    expect(r).toEqual({
+      ok: true,
+      tripId: 'v',
+      versionVigente: 1,
+      versionNueva: 2,
+      sha256Vigente: sha('a'),
+      rutaPdf: 'certificates/e/BOO-X.v2.pdf',
+      factorAnterior: 3.25,
+      factorNuevo: 3.24,
+      litros: 182.33,
+      emisionesKg: 590.746,
+      pdfBytes: 1500,
+    });
+    const pdf = m.generarPdfBase.mock.calls[0]?.[0];
+    expect(pdf.verifyUrl).toBe('https://api/certificates/BOO-X/verify');
+    expect(pdf.viaje.version).toMatchObject({ numero: 2, reemplazaA: 1 });
+    expect(pdf).not.toHaveProperty('transportista');
+    expect(m.emitirCertificado).not.toHaveBeenCalled();
+    expect(
+      (db as unknown as { transaction: ReturnType<typeof vi.fn> }).transaction,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('pasa el transportista al PDF cuando lo hay', async () => {
+    m.armarDatosEmision.mockResolvedValueOnce({
+      ok: true,
+      datos: {
+        viaje: { trackingCode: 'BOO-X' },
+        metricas: {},
+        empresaShipper: { id: 'e', legalName: 'E', rut: null },
+        transportista: { legalName: 'T', rut: null, vehiclePlate: null },
+      },
+    });
+    const { db } = baseFalsa([{ ...VIAJE, trackingCode: 'BOO-X' }], [METRICAS]);
+    await simular(db);
+    expect(m.generarPdfBase.mock.calls[0]?.[0].transportista).toEqual({
+      legalName: 'T',
+      rut: null,
+      vehiclePlate: null,
+    });
+  });
+
+  it('una corrección que no cuadra se informa sin generar el PDF', async () => {
+    const { db } = baseFalsa([VIAJE], [{ ...METRICAS, emissionFactorUsed: '3.30000' }]);
+    await expect(simular(db)).resolves.toMatchObject({
+      ok: false,
+      code: 'correccion_no_corresponde',
+    });
+    expect(m.generarPdfBase).not.toHaveBeenCalled();
   });
 });
