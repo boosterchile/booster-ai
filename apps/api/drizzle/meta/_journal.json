@@ -547,6 +547,13 @@
       "when": 1780876800320,
       "tag": "0077_solicitudes_cambio_viaje",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1780876800321,
+      "tag": "0078_rutas_paradas",
+      "breakpoints": true
     }
   ]
 }
