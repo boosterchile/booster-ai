@@ -37,7 +37,7 @@
  *     tracking se queda en la primera coordenada.
  */
 
-import { and, desc, eq, gte, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { asignacionConVehiculo } from '../db/configuracion-de-asignacion.js';
 import { assignments, posicionesMovilConductor, telemetryPoints, trips } from '../db/schema.js';
@@ -80,8 +80,17 @@ export async function resolverPosicionEnVivo(opts: {
   vehicleId: string;
   tripStatus: string;
   nowMs: number;
+  /**
+   * En una ruta compartida, las asignaciones vigentes de la ruta: el teléfono
+   * del conductor reporta con la carga que tiene abierta, y el camión es el
+   * mismo para todas. Quien llama ya decidió que este servicio va a bordo.
+   */
+  asignacionesDeLaRuta?: readonly string[] | undefined;
 }): Promise<LivePosition> {
   const { db, assignmentId, vehicleId, tripStatus, nowMs } = opts;
+  const asignaciones = opts.asignacionesDeLaRuta?.length
+    ? [...opts.asignacionesDeLaRuta]
+    : [assignmentId];
 
   if (!POSITION_VISIBLE_STATUSES.has(tripStatus)) {
     return SIN_POSICION;
@@ -130,7 +139,7 @@ export async function resolverPosicionEnVivo(opts: {
       .where(
         and(
           eq(posicionesMovilConductor.vehicleId, vehicleId),
-          eq(posicionesMovilConductor.assignmentId, assignmentId),
+          inArray(posicionesMovilConductor.assignmentId, asignaciones),
           coordenadaGpsValidaSql(
             posicionesMovilConductor.latitude,
             posicionesMovilConductor.longitude,

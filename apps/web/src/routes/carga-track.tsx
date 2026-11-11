@@ -62,6 +62,8 @@ interface TripDetailResponse {
     eta_minutes?: number | null;
     /** UUID del seguimiento público. Null en asignaciones anteriores a la columna. */
     public_tracking_token?: string | null;
+    /** La ruta lleva otras cargas (ruta-parada-servicio §4.6). Ausente en un API anterior. */
+    viaja_consolidada?: boolean;
   } | null;
 }
 
@@ -137,6 +139,14 @@ function CargaTrackPage({
           <div className="space-y-3">
             {assignment ? (
               <div className="space-y-2">
+                {assignment.viaja_consolidada && (
+                  <div className="rounded-md border border-neutral-200 bg-neutral-50 p-2">
+                    <p className="font-medium text-neutral-900 text-sm">Viaja con otras cargas</p>
+                    <p className="text-neutral-600 text-xs">
+                      La ubicación se muestra entre la recogida y la entrega de tu carga.
+                    </p>
+                  </div>
+                )}
                 {hasPos && (
                   <div>
                     <p className="font-semibold text-neutral-900 text-sm">

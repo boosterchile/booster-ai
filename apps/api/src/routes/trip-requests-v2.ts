@@ -61,7 +61,7 @@ import { editarCargaPreMatch } from '../services/editar-carga.js';
 import { editarDatosLibres } from '../services/editar-datos-libres.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
-import { computeLiveTracking } from '../services/get-public-tracking.js';
+import { computeLiveTracking, coordenadaDe } from '../services/get-public-tracking.js';
 import { filasListaUnicas, serializarFilaLista } from '../services/inicio-viaje-lista.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { liquidarTrip } from '../services/liquidar-trip.js';
@@ -85,6 +85,7 @@ import {
 } from '../services/notify-tracking-link.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
 import { resolverEnlaceMapa } from '../services/resolver-enlace-mapa.js';
+import { contextoDeRuta } from '../services/ruta-en-seguimiento.js';
 import {
   type SolicitudVista,
   crearSolicitudCambio,
@@ -665,6 +666,7 @@ export function createTripRequestsV2Routes(opts: {
         // sale en este detalle, el generador no tiene enlace público cuando
         // el WhatsApp no tiene a quién escribir.
         public_tracking_token: assignments.publicTrackingToken,
+        ruta_id: assignments.rutaId,
       })
       .from(assignments)
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
@@ -705,6 +707,8 @@ export function createTripRequestsV2Routes(opts: {
         destRegionCode: trip.destinationRegionCode,
         routesProjectId: opts.routesProjectId,
         nowMs: Date.now(),
+        rutaId: assignmentRow.ruta_id,
+        destino: coordenadaDe(trip.destinationLatitude, trip.destinationLongitude),
       });
       if (live.position) {
         ubicacionActual = {
@@ -749,9 +753,15 @@ export function createTripRequestsV2Routes(opts: {
           }
         : null;
 
+    const viajaConsolidada = assignmentRow?.ruta_id
+      ? (await contextoDeRuta(opts.db, { rutaId: assignmentRow.ruta_id, tripId: trip.id }))
+          .compartida
+      : false;
+
     let assignmentOut: Record<string, unknown> | null = null;
     if (assignmentRow) {
-      const { driver_phone, driver_whatsapp, ...resto } = assignmentRow;
+      // `ruta_id` no sale: el generador solo sabe si viaja con otras cargas (§4.6).
+      const { driver_phone, driver_whatsapp, ruta_id: _rutaId, ...resto } = assignmentRow;
       // El teléfono del conductor solo mientras el viaje está activo (§12-P11).
       const telefono = driver_phone ?? driver_whatsapp ?? null;
       const viajeActivo = trip.status === 'asignado' || trip.status === 'en_proceso';
@@ -778,6 +788,8 @@ export function createTripRequestsV2Routes(opts: {
             ubicacion_actual: ubicacionActual,
             position_source: positionSource,
             eta_minutes: etaMinutes,
+            // ruta-parada-servicio §4.6: «viaja con otras cargas». No dice cuántas ni de quién.
+            viaja_consolidada: viajaConsolidada,
           }
         : null,
       metrics: metricsRow ? serializeTripMetrics(metricsRow) : null,

@@ -264,6 +264,31 @@ describe('CargaTrackRoute', () => {
     expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('no disponible aún');
   });
 
+  // ruta-parada-servicio §4.6: el generador solo sabe que viaja con otras cargas.
+  it('carga en una ruta compartida → «Viaja con otras cargas», aunque todavía no haya posición', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    const detalle = liveDetail({ ubicacion: false, position_source: null, eta_minutes: null });
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      ...detalle,
+      assignment: { ...detalle.assignment, viaja_consolidada: true },
+    });
+    renderRoute();
+    expect(await screen.findByText('Viaja con otras cargas')).toBeInTheDocument();
+    expect(
+      screen.getByText(/La ubicación se muestra entre la recogida y la entrega de tu carga/),
+    ).toBeInTheDocument();
+  });
+
+  it('carga que viaja sola, o un API anterior → no dice nada de otras cargas', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce(
+      liveDetail({ ubicacion: true, position_source: 'mobile', eta_minutes: 42 }),
+    );
+    renderRoute();
+    await waitFor(() => expect(screen.getByText(/Llegada estimada/i)).toBeInTheDocument());
+    expect(screen.queryByText('Viaja con otras cargas')).toBeNull();
+  });
+
   it('sin posición → no promete ETA ni fuente', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     vi.spyOn(api, 'get').mockResolvedValueOnce(

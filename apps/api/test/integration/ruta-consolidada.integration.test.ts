@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { conductorDeAsignacion } from '../../src/db/configuracion-de-asignacion.js';
 import * as schema from '../../src/db/schema.js';
 import { createMeRoutes } from '../../src/routes/me.js';
+import { createTripRequestsV2Routes } from '../../src/routes/trip-requests-v2.js';
 import {
   VehicleNotAssignableError,
   asignarConductorAAssignment,
@@ -13,7 +14,9 @@ import { cancelarCarga } from '../../src/services/cancelar-carga.js';
 import { cargarRuta, pesoQueNoCabeEnLaRuta } from '../../src/services/cargar-ruta.js';
 import { confirmarEntregaViaje } from '../../src/services/confirmar-entrega-viaje.js';
 import { confirmarRecogidaViaje } from '../../src/services/confirmar-recogida-viaje.js';
+import { getPublicTracking } from '../../src/services/get-public-tracking.js';
 import { acceptOffer } from '../../src/services/offer-actions.js';
+import { contextoDeRuta } from '../../src/services/ruta-en-seguimiento.js';
 import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
@@ -529,5 +532,126 @@ describe('integration: ruta con varios servicios', () => {
     ]);
     // Otro conductor de la misma empresa no ve esta ruta.
     expect(await hojaDe(f.relevo.firebaseUid)).toEqual({ rutas: [], assignments: [] });
+  });
+
+  // Parte 7 (spec §4.7): el enlace público de un servicio en una ruta compartida.
+  describe('seguimiento público en una ruta compartida', () => {
+    const ping = (f: Flota, s: Servicio, minutosAtras: number) =>
+      handle.db.insert(schema.posicionesMovilConductor).values({
+        assignmentId: s.assignment.id,
+        vehicleId: f.vehiculo.id,
+        userId: f.conductor.id,
+        timestampDevice: new Date(Date.now() - minutosAtras * 60_000),
+        latitude: '-33.4500000',
+        longitude: '-70.6500000',
+        speedKmh: '60',
+        headingDeg: 180,
+      });
+    const seguir = async (s: Servicio) => {
+      const token = (await asignacion(s)).publicTrackingToken ?? '';
+      const r = await getPublicTracking({ db: handle.db, logger, token });
+      if (r.status !== 'found') {
+        throw new Error('el enlace no se encontró');
+      }
+      return r;
+    };
+
+    test('antes de su recogida no entrega posición; entre su recogida y su entrega, sí', async () => {
+      const { f, a, b } = await consolidada();
+      // El teléfono reporta con la carga a, que es la que el conductor tiene abierta.
+      await ping(f, a, 2);
+      await ping(f, a, 1);
+      expect((await seguir(b)).position).toBeNull();
+      expect((await seguir(a)).position).toBeNull();
+
+      await recoger(f, a);
+      // a ya va a bordo: ve la posición. b todavía no se recoge: no la ve.
+      expect((await seguir(a)).position).toMatchObject({ latitude: -33.45, longitude: -70.65 });
+      expect((await seguir(b)).position).toBeNull();
+
+      await recoger(f, b);
+      // b va a bordo y ve la posición del camión, aunque el teléfono reporte con a.
+      expect((await seguir(b)).position).toMatchObject({ latitude: -33.45 });
+
+      await entregar(f, a);
+      expect((await seguir(a)).position).toBeNull();
+      expect((await seguir(b)).position).not.toBeNull();
+    });
+
+    test('un servicio que viaja solo se sigue como siempre: también antes de recoger', async () => {
+      const f = await flota();
+      const a = await aceptada(f, 1000);
+      await asignarConductor(f, a);
+      await ping(f, a, 1);
+      expect((await seguir(a)).position).toMatchObject({ latitude: -33.45 });
+    });
+
+    test('el enlace nunca trae datos de la otra carga', async () => {
+      const { f, a, b } = await consolidada();
+      await recoger(f, a);
+      const cuerpo = JSON.stringify(await seguir(a));
+      expect(cuerpo).not.toContain(b.viaje.trackingCode);
+      expect(cuerpo).not.toContain(b.viaje.id);
+      expect(cuerpo).not.toContain(b.assignment.id);
+    });
+
+    test('el generador ve «viaja con otras cargas», sin la ruta ni los datos de las demás (§4.6)', async () => {
+      const detalle = async (f: Flota, s: Servicio) => {
+        const app = new Hono();
+        app.use('*', async (c, next) => {
+          c.set('userContext', {
+            user: { id: f.oficina.id },
+            activeMembership: {
+              membership: { role: 'dueno' },
+              empresa: {
+                id: f.empresa.id,
+                isGeneradorCarga: true,
+                isTransportista: true,
+                status: 'activa',
+              },
+            },
+          } as never);
+          await next();
+        });
+        app.route('/trip-requests-v2', createTripRequestsV2Routes({ db: handle.db, logger }));
+        const res = await app.request(`/trip-requests-v2/${s.viaje.id}`);
+        expect(res.status).toBe(200);
+        return {
+          texto: await res.clone().text(),
+          cuerpo: (await res.json()) as { assignment: Record<string, unknown> },
+        };
+      };
+      const { f, a, b, rutaId } = await consolidada();
+      const junta = await detalle(f, a);
+      expect(junta.cuerpo.assignment.viaja_consolidada).toBe(true);
+      expect(junta.texto).not.toContain(rutaId);
+      expect(junta.texto).not.toContain(b.viaje.trackingCode);
+      expect(junta.texto).not.toContain(b.assignment.id);
+
+      const f2 = await flota();
+      const solo = await aceptada(f2, 1000);
+      expect((await detalle(f2, solo)).cuerpo.assignment.viaja_consolidada).toBe(false);
+    });
+
+    test('contextoDeRuta: compartida, sus asignaciones y las paradas que quedan antes de la entrega', async () => {
+      const { f, a, b, rutaId } = await consolidada();
+      await handle.db
+        .update(schema.trips)
+        .set({ originLatitude: '-34.1700000', originLongitude: '-70.7400000' })
+        .where(eq(schema.trips.id, b.viaje.id));
+      await recoger(f, a);
+      // Orden: recoge a (hecha), recoge b, entrega a, entrega b.
+      const deA = await contextoDeRuta(handle.db, { rutaId, tripId: a.viaje.id });
+      expect(deA.compartida).toBe(true);
+      expect([...deA.asignacionIds].sort()).toEqual([a.assignment.id, b.assignment.id].sort());
+      expect(deA.paradasIntermedias).toEqual([{ lat: -34.17, lng: -70.74 }]);
+      // Antes de la entrega de b quedan la recogida de b (propia: no cuenta) y la entrega de a.
+      const deB = await contextoDeRuta(handle.db, { rutaId, tripId: b.viaje.id });
+      expect(deB.paradasIntermedias).toEqual([null]);
+
+      await cancelar(f, b);
+      const sola = await contextoDeRuta(handle.db, { rutaId, tripId: a.viaje.id });
+      expect(sola).toMatchObject({ compartida: false, paradasIntermedias: [] });
+    });
   });
 });
