@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { assignments, eventosRuta, paradasRuta, rutas } from '../../src/db/schema.js';
+import { VerificacionRellenoError, rellenarRutas } from '../../src/services/rellenar-rutas.js';
 import {
   type AsignacionParaRuta,
-  VerificacionRellenoError,
-  rellenarRutas,
   rutaQueCorresponde,
-} from '../../src/services/rellenar-rutas.js';
+} from '../../src/services/sincronizar-ruta-de-asignacion.js';
 
 const RECOGIDO = new Date('2026-11-01T12:00:00Z');
 const ENTREGADO = new Date('2026-11-01T18:00:00Z');

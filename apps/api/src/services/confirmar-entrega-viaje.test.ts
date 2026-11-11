@@ -1,6 +1,14 @@
 import { getTableName } from 'drizzle-orm';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('./sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
@@ -160,6 +168,10 @@ describe('confirmarEntregaViaje — cierre flexible documental (F4-4a)', () => {
     const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
     const r = await confirmarEntregaViaje({ ...baseArgs, db });
     expect(r.ok).toBe(true);
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'entrega_confirmada' }),
+    );
   });
 
   it('post-commit: liquida con los flags de pricing v2 y v3 (ADR-079 §6)', async () => {

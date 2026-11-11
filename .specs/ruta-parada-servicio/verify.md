@@ -74,5 +74,26 @@ vehículo, arrastre o conductor.
 3. Si hay omitidas, se revisan una a una antes de escribir; el job no las toca.
 4. Job con `DRY_RUN=false` y el destino confirmado.
 5. Segunda corrida en seco: 0 creadas, 0 conciliadas.
-6. El job se vuelve a correr justo antes de desplegar la parte 4: entre el
-   relleno y esa parte, las rutas no siguen a la asignación.
+6. Si el relleno se corre antes de desplegar la parte 4a, se repite después de
+   desplegarla: hasta entonces las rutas no siguen a la asignación.
+
+## Parte 4a — la ruta sigue a la asignación (2026-11-11)
+
+Asignar conductor (y cambiar el camión), confirmar la recogida, confirmar la
+entrega y cancelar la carga dejan la ruta igual a la asignación en la misma
+transacción (`services/sincronizar-ruta-de-asignacion.ts`). El relleno usa la
+misma regla.
+
+- Una asignación sin ruta la recibe con su primera escritura, así que el orden
+  entre el relleno y este despliegue no rompe nada.
+- La sincronización no rechaza la operación del usuario. Si no puede decidir el
+  estado (hoy, una recogida confirmada por la oficina sin conductor asignado),
+  iguala vehículo, arrastre y conductor, deja el estado de la ruta como estaba y
+  lo registra en el log; el job de relleno lo informa como omitida. Al asignar
+  el conductor, la ruta pasa a `en_curso`.
+- Los lectores no cambian en esta parte: vehículo, conductor y arrastre se
+  siguen leyendo de la asignación. Eso es la parte 4b.
+
+Evidencia en el PR: rojo 6 de 7 en
+`test/integration/ruta-sigue-asignacion.integration.test.ts` antes de
+implementar; verde después.
