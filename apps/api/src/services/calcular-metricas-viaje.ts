@@ -1000,6 +1000,12 @@ async function recalcularNivelPostEntregaInner(opts: {
               ...(emisionesReales !== null
                 ? {
                     precisionMethod: emisionesReales.metodoPrecision,
+                    // El factor y la versión son los de ESTE cálculo. El certificado
+                    // imprime el factor junto a las emisiones reales; si quedara el de la
+                    // estimación, un cambio de factores entre asignar y cerrar dejaría un
+                    // certificado cuyo factor no explica su cifra.
+                    emissionFactorUsed: emisionesReales.factorEmisionUsado.toString(),
+                    glecVersion: emisionesReales.versionGlec,
                     ...desgloseEmisiones(emisionesReales, trip.cargoWeightKg, vehiculo.fuelType),
                   }
                 : {
