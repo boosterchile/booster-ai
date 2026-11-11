@@ -107,6 +107,24 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => undefined;
 }
 
+/**
+ * GET del detalle según la ruta: la ficha pide el conductor y la sección de
+ * documentos pide los suyos. Con un único `mockResolvedValue`, la consulta de
+ * documentos recibía `{ conductor }`, terminaba en error («Query data cannot
+ * be undefined») en un momento variable y volvía a renderizar mientras el
+ * test escribía en el formulario.
+ */
+function getDetalle(conductor: ReturnType<typeof buildConductor>) {
+  return vi
+    .spyOn(api, 'get')
+    .mockImplementation(async (path: string) =>
+      path.startsWith('/documentos/') ? { documentos: [] } : { conductor },
+    );
+}
+
+/** Plazo de las esperas tras un clic: bajo cobertura en CI, 1 s no siempre alcanza. */
+const ESPERA_ENVIO = { timeout: 5000 };
+
 beforeEach(() => {
   vi.clearAllMocks();
   providedContext = { kind: 'unmanaged' };
@@ -525,8 +543,8 @@ describe('ConductoresDetalleRoute', () => {
   });
 
   it('pendiente con email de relleno: guarda el real y muestra el PIN reenviado', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      conductor: buildConductor({
+    getDetalle(
+      buildConductor({
         user: {
           id: 'u-1',
           full_name: 'Camila Rojas',
@@ -536,7 +554,7 @@ describe('ConductoresDetalleRoute', () => {
           is_pending: true,
         },
       }),
-    });
+    );
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       email: 'usuario@example.com',
       invitacion_reenviada: true,
@@ -546,14 +564,18 @@ describe('ConductoresDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     expect(await screen.findByText(/email de relleno/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/Email de contacto/), 'usuario@example.com');
-    await userEvent.click(
-      screen.getByRole('button', { name: /Guardar email y reenviar invitación/ }),
-    );
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
-        email: 'usuario@example.com',
-      }),
+    const email = screen.getByLabelText(/Email de contacto/);
+    await userEvent.type(email, 'usuario@example.com');
+    expect(email).toHaveValue('usuario@example.com');
+    const reenviar = screen.getByRole('button', { name: /Guardar email y reenviar invitación/ });
+    expect(reenviar).toBeEnabled();
+    await userEvent.click(reenviar);
+    await waitFor(
+      () =>
+        expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
+          email: 'usuario@example.com',
+        }),
+      ESPERA_ENVIO,
     );
     expect(await screen.findByText('482915')).toBeInTheDocument();
     expect(
@@ -665,7 +687,7 @@ describe('ConductoresDetalleRoute', () => {
   });
 
   it('pendiente: «Guardar teléfono» solo cambia el número y no muestra PIN', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ conductor: conductorPendienteConTelefono() });
+    getDetalle(conductorPendienteConTelefono());
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       phone: '+56987654321',
       email: 'viejo@example.com',
@@ -679,12 +701,19 @@ describe('ConductoresDetalleRoute', () => {
     const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
     await userEvent.clear(input);
     await userEvent.type(input, '+56987654321');
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar teléfono' }));
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
-        phone: '+56987654321',
-        reenviar_invitacion: false,
-      }),
+    // Si vuelve a fallar, dice por qué: el número quedó mal escrito o el botón
+    // seguía deshabilitado al hacer clic.
+    expect(input).toHaveValue('+56987654321');
+    const boton = screen.getByRole('button', { name: 'Guardar teléfono' });
+    expect(boton).toBeEnabled();
+    await userEvent.click(boton);
+    await waitFor(
+      () =>
+        expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
+          phone: '+56987654321',
+          reenviar_invitacion: false,
+        }),
+      ESPERA_ENVIO,
     );
     expect(await screen.findByRole('status')).toHaveTextContent('Teléfono guardado.');
     expect(screen.getByText('+56987654321')).toBeInTheDocument();
@@ -693,7 +722,7 @@ describe('ConductoresDetalleRoute', () => {
   });
 
   it('pendiente: «Guardar y reenviar invitación» muestra el PIN nuevo y actualiza el encabezado', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ conductor: conductorPendienteConTelefono() });
+    getDetalle(conductorPendienteConTelefono());
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       phone: '+56987654321',
       email: 'juan@example.com',
@@ -708,12 +737,19 @@ describe('ConductoresDetalleRoute', () => {
     const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
     await userEvent.clear(input);
     await userEvent.type(input, '+56987654321');
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar y reenviar invitación' }));
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
-        phone: '+56987654321',
-        reenviar_invitacion: true,
-      }),
+    // Si vuelve a fallar, dice por qué: el número quedó mal escrito o el botón
+    // seguía deshabilitado al hacer clic.
+    expect(input).toHaveValue('+56987654321');
+    const boton = screen.getByRole('button', { name: 'Guardar y reenviar invitación' });
+    expect(boton).toBeEnabled();
+    await userEvent.click(boton);
+    await waitFor(
+      () =>
+        expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
+          phone: '+56987654321',
+          reenviar_invitacion: true,
+        }),
+      ESPERA_ENVIO,
     );
     expect(await screen.findByText('135790')).toBeInTheDocument();
     expect(screen.getByText('+56987654321')).toBeInTheDocument();
