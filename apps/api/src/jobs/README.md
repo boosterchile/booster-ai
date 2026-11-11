@@ -75,9 +75,10 @@ SENTIDO=reversa DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --fil
 
 Relleno de rutas (ADR-088, `.specs/ruta-parada-servicio/` parte 3). Deja cada
 asignación con su ruta de dos paradas en el estado que le corresponde: crea la
-que falta y pone al día la que creó el accept y cuya asignación avanzó después
-(hasta la parte 4, recogida, entrega y conductor se escriben solo en la
-asignación). La lógica vive en `src/services/rellenar-rutas.ts`.
+que falta y pone al día la que quedó atrás. Desde la parte 4, asignar conductor,
+confirmar recogida o entrega y cancelar sincronizan la ruta en la misma
+transacción; el job cubre lo anterior y lo que esa sincronización omitió. La
+regla vive en `src/services/sincronizar-ruta-de-asignacion.ts`.
 
 Requiere la migración 0078 aplicada. Dry-run por defecto. Una transacción: si
 la verificación final falla (alguna asignación sin ruta, o una ruta distinta de

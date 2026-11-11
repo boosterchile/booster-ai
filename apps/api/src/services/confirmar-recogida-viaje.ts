@@ -3,6 +3,7 @@ import { assertTransicion } from '@booster-ai/trip-state-machine';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripChangeRequests, tripEvents, trips } from '../db/schema.js';
+import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 
 /**
  * Confirmar recogida — el paso que la máquina de estados modelaba y nadie
@@ -230,6 +231,15 @@ export async function confirmarRecogidaViaje(opts: {
         // 'servidor' = tap manual, now del API.
         picked_up_at_source: pickedUpAtSource,
       },
+    });
+
+    // La ruta sigue a la asignación (ADR-088): pasa a `en_curso` con su
+    // parada de recogida resuelta.
+    await sincronizarRutaDeAsignacion(tx, {
+      asignacionId: row.assignmentId,
+      origen: 'recogida_confirmada',
+      userId: actor.userId,
+      logger,
     });
 
     logger.info(

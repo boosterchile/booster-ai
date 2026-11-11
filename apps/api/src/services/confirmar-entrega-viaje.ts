@@ -57,6 +57,7 @@ import {
   type FlagsCierreDocumental,
   puedeCerrarConDocumentos,
 } from './puede-cerrar-con-documentos.js';
+import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 
 // El guard de estados confirmables vive en @booster-ai/trip-state-machine
 // (esConfirmableEntrega: asignado|en_proceso — ADR-061). 'entregado' es
@@ -282,6 +283,15 @@ export async function confirmarEntregaViaje(opts: {
         confirmed_via: source,
         assignment_id: assignment.id,
       },
+    });
+
+    // La ruta sigue a la asignación (ADR-088): se cierra con sus dos paradas
+    // resueltas.
+    await sincronizarRutaDeAsignacion(tx, {
+      asignacionId: assignment.id,
+      origen: 'entrega_confirmada',
+      userId: actor.userId,
+      logger,
     });
 
     return {

@@ -8,6 +8,14 @@ import {
   condicionesConductorAsignable,
 } from '../../src/services/asignar-conductor-a-assignment.js';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('../../src/services/sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
   process.env.SERVICE_NAME = 'booster-ai-api';
@@ -229,6 +237,10 @@ describe('asignarConductorAAssignment', () => {
     expect(result.driverName).toBe('Pedro González (Demo)');
     expect(stub.spies.updateFn).toHaveBeenCalled();
     expect(stub.spies.insertFn).toHaveBeenCalled(); // audit event
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'conductor_asignado' }),
+    );
   });
 
   it('reasignación: permite cambiar el conductor si el assignment está en estado asignado', async () => {
