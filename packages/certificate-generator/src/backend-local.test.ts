@@ -55,6 +55,17 @@ describe('backend local de certificados (E2E sin KMS ni GCS)', () => {
     expect((await file.download())[0].toString('utf-8')).toBe('{"a":1}');
   });
 
+  it('bucket local: con la precondición ifGenerationMatch 0 no pisa un objeto existente', async () => {
+    const bucket = abrirBucketLocal(`file:${dir}`);
+    const file = bucket.file('certificates/emp/BOO-1.v2.pdf');
+    await file.save('primero', { preconditionOpts: { ifGenerationMatch: 0 } });
+    await expect(
+      file.save('segundo', { preconditionOpts: { ifGenerationMatch: 0 } }),
+    ).rejects.toMatchObject({ code: 'EEXIST' });
+    const [contenido] = await file.download();
+    expect(contenido.toString()).toBe('primero');
+  });
+
   it('bucket local rechaza paths que escapan del directorio base', async () => {
     const bucket = abrirBucketLocal(`file:${dir}`);
     await expect(bucket.file('../fuera.pdf').save('x')).rejects.toThrow(/fuera del bucket local/);

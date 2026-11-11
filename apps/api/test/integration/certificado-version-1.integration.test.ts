@@ -84,7 +84,7 @@ describe('integration: versión 1 del certificado al emitir', () => {
   test('con la versión 1 registrada, se puede crear la versión 2', async () => {
     const tripId = await viajeSinCertificado();
     const v1 = await registrar(nueva(tripId));
-    const v2 = await crearVersion(handle.db, nueva(tripId, 'b'));
+    const v2 = await crearVersion(handle.db, nueva(tripId, 'b'), 'factor_impreso_no_corresponde');
 
     expect(v2).toMatchObject({ version: 2, estado: 'vigente' });
     const [anterior] = await handle.db

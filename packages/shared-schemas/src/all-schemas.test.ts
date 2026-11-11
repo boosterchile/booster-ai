@@ -453,6 +453,7 @@ describe('tripEvent — whitelist guardrail (Sprint S1a T1.2)', () => {
     'carga_editada',
     'cambio_solicitado',
     'cambio_respondido',
+    'certificado_reemitido',
   ] as const;
 
   it(`tripEventTypeSchema tiene exactamente ${EXPECTED_TRIP_EVENT_TYPES.length} valores (whitelist)`, () => {

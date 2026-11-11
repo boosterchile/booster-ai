@@ -575,6 +575,13 @@
       "when": 1781049600420,
       "tag": "0081_confirmaciones_acceso_booster",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1781136000420,
+      "tag": "0082_reemision_certificado",
+      "breakpoints": true
     }
   ]
 }
