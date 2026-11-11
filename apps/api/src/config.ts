@@ -598,6 +598,15 @@ export const apiEnvSchema = commonEnvSchema
     ECO_ROUTING_REALTIME_ACTIVATED: booleanFlag(false),
 
     /**
+     * Rutas con varias paradas (ADR-088, plan de ruta-parada-servicio §2) —
+     * API del transportista bajo `/rutas`. OFF: todo responde 404. Se enciende
+     * junto con la web (parte 6), el seguimiento con paradas (parte 7) y el
+     * reparto de huella (ADR-089): la spec §7 y §11-1 piden que salgan juntos.
+     * Encenderla es una activación en producción y la decide el PO.
+     */
+    RUTAS_API_ACTIVADA: booleanFlag(false),
+
+    /**
      * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
      * rollback) — gating del flow signup-request → admin-approval.
      *

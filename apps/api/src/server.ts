@@ -69,6 +69,7 @@ import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicPreciosRoutes } from './routes/public-precios.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
+import { createRutasRoutes } from './routes/rutas.js';
 import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
   MAX_ASSET_BYTES,
@@ -1093,6 +1094,20 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/trayectos-teltonika', firebaseAuthMiddleware);
     app.use('/trayectos-teltonika', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/trayectos-teltonika', createTrayectosTeltonikaRoutes({ db: opts.db, logger }));
+
+    // Rutas con varias paradas (ADR-088): API del transportista, detrás de
+    // RUTAS_API_ACTIVADA. Mismos middlewares que /assignments, incluida la
+    // guardia de visibilidad: la ruta expone datos de cargas.
+    app.use('/rutas/*', guardiaVisibilidadTransportista);
+    app.use('/rutas/*', firebaseAuthMiddleware);
+    app.use('/rutas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/rutas', guardiaVisibilidadTransportista);
+    app.use('/rutas', firebaseAuthMiddleware);
+    app.use('/rutas', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/rutas',
+      createRutasRoutes({ db: opts.db, logger, activada: config.RUTAS_API_ACTIVADA }),
+    );
 
     app.route(
       '/vehiculos',

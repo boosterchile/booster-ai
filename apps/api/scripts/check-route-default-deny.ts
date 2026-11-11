@@ -106,6 +106,8 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAuthImpersonateRoutes: { category: 'ENFORCED', rationale: '' },
   createVehiculosRoutes: { category: 'ENFORCED', rationale: '' },
   createTrayectosTeltonikaRoutes: { category: 'ENFORCED', rationale: '' },
+  // /rutas — firebaseAuth + userContext + guardia de impersonación + guardia de visibilidad.
+  createRutasRoutes: { category: 'ENFORCED', rationale: '' },
   createConductoresRoutes: { category: 'ENFORCED', rationale: '' },
   createSucursalesRoutes: { category: 'ENFORCED', rationale: '' },
   createDocumentosRoutes: { category: 'ENFORCED', rationale: '' },
