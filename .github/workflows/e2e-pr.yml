@@ -88,7 +88,15 @@ jobs:
       # Solo Chromium (pin implícito a @playwright/test del lockfile). Sin webkit
       # ni firefox: los descartamos a propósito (webkit colgaba el nightly).
       - name: Install Playwright Chromium
-        run: pnpm --filter @booster-ai/web exec playwright install --with-deps chromium
+        # --with-deps instala librerías y fuentes con apt. Si el mirror de
+        # Ubuntu no responde (2026-11-11), instala solo el navegador: la imagen
+        # del runner ya trae las librerías de Chrome y ningún E2E compara
+        # capturas, así que las fuentes extra no cambian resultados.
+        run: |
+          if ! pnpm --filter @booster-ai/web exec playwright install --with-deps chromium; then
+            echo "::warning::apt no respondió; Chromium se instala sin dependencias del sistema"
+            pnpm --filter @booster-ai/web exec playwright install chromium
+          fi
       - name: Run E2E local (build + preview + Chromium)
         run: pnpm --filter @booster-ai/web test:e2e:local
       - name: Upload Playwright report (on failure)
@@ -222,7 +230,15 @@ jobs:
           tail -n 120 /tmp/api-e2e.log >&2 || true
           exit 1
       - name: Install Playwright Chromium
-        run: pnpm --filter @booster-ai/web exec playwright install --with-deps chromium
+        # --with-deps instala librerías y fuentes con apt. Si el mirror de
+        # Ubuntu no responde (2026-11-11), instala solo el navegador: la imagen
+        # del runner ya trae las librerías de Chrome y ningún E2E compara
+        # capturas, así que las fuentes extra no cambian resultados.
+        run: |
+          if ! pnpm --filter @booster-ai/web exec playwright install --with-deps chromium; then
+            echo "::warning::apt no respondió; Chromium se instala sin dependencias del sistema"
+            pnpm --filter @booster-ai/web exec playwright install chromium
+          fi
       - name: Run E2E conductor
         run: pnpm --filter @booster-ai/web test:e2e:conductor
       - name: Upload Playwright report (on failure)
