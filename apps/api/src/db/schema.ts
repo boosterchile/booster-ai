@@ -3472,3 +3472,41 @@ export const certificadosViaje = pgTable(
     ),
   }),
 );
+
+/**
+ * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
+ * migración `0081_confirmaciones_acceso_booster`). Cuando el panel del
+ * personal da de alta una cuenta que ya tiene clave y vínculos con una
+ * empresa, el acceso lo confirma la persona desde su sesión con un código de
+ * 6 dígitos que el admin le entrega en persona. El código se guarda solo como
+ * hash, vence a las 24 horas y deja de servir al quinto intento fallido. Una
+ * sola confirmación pendiente (`consumido_en` NULL) por persona: emitir una
+ * nueva borra la anterior.
+ */
+export const confirmacionesAccesoBooster = pgTable(
+  'confirmaciones_acceso_booster',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    usuarioId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    codigoHash: text('codigo_hash').notNull(),
+    venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
+    intentosFallidos: integer('intentos_fallidos').notNull().default(0),
+    emitidoPorUsuarioId: uuid('emitido_por_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    consumidoEn: timestamp('consumido_en', { withTimezone: true }),
+  },
+  (table) => ({
+    pendienteUnica: uniqueIndex('uq_confirmaciones_acceso_booster_pendiente')
+      .on(table.usuarioId)
+      .where(sql`consumido_en IS NULL`),
+    intentosNoNegativos: check(
+      'chk_confirmaciones_acceso_booster_intentos',
+      sql`intentos_fallidos >= 0`,
+    ),
+  }),
+);
+export type ConfirmacionAccesoBoosterRow = typeof confirmacionesAccesoBooster.$inferSelect;

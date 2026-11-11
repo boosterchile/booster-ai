@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  CONFIRMACION_ACCESO_BOOSTER_MAX_INTENTOS,
   type PersonalBooster,
   type PersonalBoosterErrorCode,
   type VinculoPersonalBooster,
@@ -9,18 +10,24 @@ import {
   quitarAccesoPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
 } from '@booster-ai/shared-schemas';
-import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { correoEnListaRespaldo } from '../auth/acceso-plataforma.js';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, esFirebaseUidDuplicado, esRutDuplicado } from '../db/pg-error.js';
-import { users } from '../db/schema.js';
+import { confirmacionesAccesoBooster, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import {
+  emitirConfirmacionAccesoBooster,
+  invalidarConfirmacionPendiente,
+  tieneConfirmacionPendiente,
+  tieneVinculoConEmpresa,
+} from '../services/confirmacion-acceso-booster.js';
 import { enviarAvisoAccesoPanel } from '../services/notifications/aviso-acceso-panel-email.js';
 import { enviarCorreoActivacionPersonalBooster } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -58,7 +65,10 @@ type ResultadoAlta =
       marcada: boolean;
       /** La cuenta no estaba marcada antes de esta alta (o es nueva). */
       accesoOtorgado: boolean;
-      /** Código en claro: solo para la respuesta y el correo. Nunca a un log. */
+      /**
+       * Código en claro: solo para la respuesta y, si es de activación, para
+       * el correo. Nunca a un log.
+       */
       codigo: string | null;
       expira: Date | string | null;
       email: string;
@@ -97,15 +107,23 @@ type ResultadoAlta =
  * nuevo con su vencimiento: una cuenta marcada se activa solo con un código
  * del panel (`/auth/activar`).
  *
- * **Cuenta ya activa.** Queda marcada y con acceso desde el alta. El panel le
- * pide al admin confirmarlo con la persona, y la lista de respaldo recibe el
- * aviso.
+ * **Cuenta ya activa.** Sin vínculos con una empresa, queda marcada y con
+ * acceso desde el alta: el panel le pide al admin confirmarlo con la persona,
+ * y la lista de respaldo recibe el aviso. Con un vínculo (una membresía en una
+ * empresa en cualquier estado, o una fila de `conductores`) no se marca: el
+ * alta emite un código de confirmación de 24 horas que el admin entrega en
+ * persona y que la persona confirma desde su sesión en
+ * `POST /me/confirmar-acceso-booster` (`.specs/confirmar-acceso-booster`).
+ * Ese código nunca sale por correo, y «Generar código nuevo» y «Quitar
+ * acceso» lo reemplazan y lo borran.
  *
  * **Quitar acceso.** Desmarca la cuenta. No aplica a un correo de la lista de
  * respaldo (ese acceso se quita en Terraform) ni deja el panel sin nadie con
  * acceso. La lectura bloquea las cuentas marcadas hasta el commit, para que
  * dos bajas en paralelo no se salten esa regla. Si la cuenta no activó, su
- * código del panel deja de servir.
+ * código del panel deja de servir, y una confirmación pendiente se borra. A
+ * una persona por confirmar se le bloquea la fila de la cuenta antes de mirar
+ * su confirmación.
  *
  * Auditoría: log estructurado con `event_type` `personal_booster.*` (qué
  * admin, a quién por `user_id`, qué vínculo), igual que las demás rutas admin.
@@ -134,6 +152,9 @@ export function createAdminPersonalBoosterRoutes(opts: {
     return await withBusinessSpan({ name: 'personal_booster.listar' }, async (span) => {
       const lista = normalizarLista(opts.platformAdminEmails);
       const marcadas = eq(users.isPlatformAdmin, true);
+      // Quien tiene una confirmación pendiente (`.specs/confirmar-acceso-booster`
+      // SC9). El índice único parcial deja una por persona: el join no repite filas.
+      const porConfirmar = isNotNull(confirmacionesAccesoBooster.id);
       // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
       const filas = await opts.db
         .select({
@@ -146,12 +167,22 @@ export function createAdminPersonalBoosterRoutes(opts: {
           activationPinHash: users.activationPinHash,
           activacionVenceEn: users.activacionVenceEn,
           lastLoginAt: users.lastLoginAt,
+          isPlatformAdmin: users.isPlatformAdmin,
+          confirmacionVenceEn: confirmacionesAccesoBooster.venceEn,
+          confirmacionIntentos: confirmacionesAccesoBooster.intentosFallidos,
         })
         .from(users)
+        .leftJoin(
+          confirmacionesAccesoBooster,
+          and(
+            eq(confirmacionesAccesoBooster.usuarioId, users.id),
+            isNull(confirmacionesAccesoBooster.consumidoEn),
+          ),
+        )
         .where(
           lista.length > 0
-            ? or(marcadas, inArray(sql<string>`lower(${users.email})`, lista))
-            : marcadas,
+            ? or(marcadas, inArray(sql<string>`lower(${users.email})`, lista), porConfirmar)
+            : or(marcadas, porConfirmar),
         )
         .orderBy(users.email)
         .limit(LIMITE_PERSONAL);
@@ -162,13 +193,31 @@ export function createAdminPersonalBoosterRoutes(opts: {
         if (porCorreo.has(clave)) {
           continue;
         }
-        const activa = clasificarVinculoPersona(fila) === 'cuenta_activa';
-        porCorreo.set(clave, {
+        const base = {
           email: fila.email,
           en_lista: lista.includes(clave),
           user_id: fila.id,
           nombre: fila.fullName,
           rut: fila.rut,
+        };
+        // Sin marca y con una confirmación pendiente: por confirmar. Un código
+        // vencido muestra su vencimiento; uno sin intentos, null (hay que
+        // generar un código nuevo).
+        const venceConfirmacion = fila.confirmacionVenceEn ?? null;
+        if (fila.isPlatformAdmin !== true && venceConfirmacion !== null) {
+          const sinIntentos =
+            (fila.confirmacionIntentos ?? 0) >= CONFIRMACION_ACCESO_BOOSTER_MAX_INTENTOS;
+          porCorreo.set(clave, {
+            ...base,
+            estado: 'pendiente_confirmacion',
+            expira_en: sinIntentos ? null : isoONull(venceConfirmacion),
+            ultimo_login_en: null,
+          });
+          continue;
+        }
+        const activa = clasificarVinculoPersona(fila) === 'cuenta_activa';
+        porCorreo.set(clave, {
+          ...base,
           estado: activa ? 'activa' : 'pendiente_activacion',
           expira_en: activa ? null : isoONull(fila.activacionVenceEn),
           ultimo_login_en: activa ? isoONull(fila.lastLoginAt) : null,
@@ -252,6 +301,9 @@ export function createAdminPersonalBoosterRoutes(opts: {
               })
               .from(users)
               .where(sql`lower(${users.email}) = ${body.email}`)
+              // En orden fijo: con filas que difieren solo en mayúsculas, el
+              // alta toma siempre la misma.
+              .orderBy(users.id)
               // La fila queda bloqueada hasta el commit: una activación o una
               // re-emisión en paralelo espera y ve el estado que deja esta.
               .for('update')
@@ -264,6 +316,35 @@ export function createAdminPersonalBoosterRoutes(opts: {
                 return { tipo: 'rechazo', code: 'rut_mismatch' };
               }
               const clasificado = clasificarVinculoPersona(existente);
+              // Una cuenta con clave, sin marca y con un vínculo con una empresa
+              // no se marca en el alta: recibe un código de confirmación que la
+              // persona confirma desde su sesión (`.specs/confirmar-acceso-booster`
+              // SC1). Emitirlo reemplaza la confirmación pendiente anterior. Si
+              // su correo está en la lista de respaldo, la lista ya le da el
+              // panel y el alta la marca como cualquier otra (SC2).
+              if (
+                clasificado === 'cuenta_activa' &&
+                existente.isPlatformAdmin !== true &&
+                !enLista &&
+                (await tieneVinculoConEmpresa(tx, existente.id))
+              ) {
+                const confirmacion = await emitirConfirmacionAccesoBooster(tx, {
+                  usuarioId: existente.id,
+                  emitidoPorUsuarioId: admin.userContext.user.id,
+                  ahora,
+                });
+                return {
+                  tipo: 'registrada',
+                  userId: existente.id,
+                  vinculo: 'cuenta_activa_por_confirmar',
+                  marcada: false,
+                  accesoOtorgado: false,
+                  codigo: confirmacion.codigo,
+                  expira: confirmacion.venceEn,
+                  email: existente.email,
+                  nombre: existente.fullName,
+                };
+              }
               // Se conserva solo un código que el panel del personal emitió a
               // esta cuenta ya marcada y que sigue vigente. Una provisoria que
               // todavía no era del personal recibe siempre uno nuevo: el que
@@ -384,9 +465,10 @@ export function createAdminPersonalBoosterRoutes(opts: {
           'personal-booster: alta registrada (código no logueado)',
         );
 
-        // El código sale por correo a la persona, esté o no en la lista de
-        // respaldo: la lista ya no es condición para activar (SC3).
-        if (resultado.codigo !== null) {
+        // El código de activación sale por correo a la persona, esté o no en la
+        // lista de respaldo: la lista ya no es condición para activar (SC3). El
+        // de confirmación se entrega solo en persona.
+        if (resultado.codigo !== null && resultado.vinculo !== 'cuenta_activa_por_confirmar') {
           await enviarCorreoActivacionPersonalBooster({
             sender: opts.emailSender,
             logger: opts.logger,
@@ -453,15 +535,24 @@ export function createAdminPersonalBoosterRoutes(opts: {
     return await withBusinessSpan(
       { name: 'personal_booster.reemitir_codigo', attributes: { 'booster.user_id': userId } },
       async (span) => {
-        const record = (resultado: string) => {
-          getBusinessCounter('personal_booster_reemision_codigo_total').add(1, { resultado });
-          setResultAttributes(span, { 'personal_booster.resultado': resultado });
+        /** El vínculo va como label solo en el código de confirmación. */
+        const record = (resultado: string, vinculo?: 'cuenta_activa_por_confirmar') => {
+          getBusinessCounter('personal_booster_reemision_codigo_total').add(1, {
+            resultado,
+            ...(vinculo ? { vinculo } : {}),
+          });
+          setResultAttributes(span, {
+            'personal_booster.resultado': resultado,
+            ...(vinculo ? { 'personal_booster.vinculo': vinculo } : {}),
+          });
         };
 
         const ahora = new Date();
         const venceEn = new Date(ahora.getTime() + CODIGO_ACTIVACION_TTL_MS);
 
         const resultado = await opts.db.transaction(async (tx) => {
+          // La fila de la cuenta queda bloqueada hasta el commit, antes de tocar
+          // su código o su confirmación.
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const filas = await tx
             .select({
@@ -476,10 +567,24 @@ export function createAdminPersonalBoosterRoutes(opts: {
             })
             .from(users)
             .where(eq(users.id, userId))
+            .for('update')
             .limit(1);
           const persona = filas[0];
-          if (!persona?.isPlatformAdmin) {
+          if (!persona) {
             return { tipo: 'no_encontrada' } as const;
+          }
+          if (!persona.isPlatformAdmin) {
+            // Persona por confirmar: el código nuevo es de confirmación, no de
+            // activación (`.specs/confirmar-acceso-booster` SC8).
+            if (!(await tieneConfirmacionPendiente(tx, persona.id))) {
+              return { tipo: 'no_encontrada' } as const;
+            }
+            const confirmacion = await emitirConfirmacionAccesoBooster(tx, {
+              usuarioId: persona.id,
+              emitidoPorUsuarioId: admin.userContext.user.id,
+              ahora,
+            });
+            return { tipo: 'confirmacion', persona, ...confirmacion } as const;
           }
           if (clasificarVinculoPersona(persona) === 'cuenta_activa') {
             return { tipo: 'ya_activada' } as const;
@@ -521,6 +626,33 @@ export function createAdminPersonalBoosterRoutes(opts: {
 
         const { persona, codigo } = resultado;
         const enLista = lista.includes(persona.email.toLowerCase());
+
+        if (resultado.tipo === 'confirmacion') {
+          // Se entrega en persona: sin correo.
+          record('emitido', 'cuenta_activa_por_confirmar');
+          opts.logger.info(
+            {
+              event_type: 'personal_booster.reemision_codigo',
+              actor_user_id: admin.userContext.user.id,
+              user_id: persona.id,
+              en_lista: enLista,
+              vinculo: 'cuenta_activa_por_confirmar',
+            },
+            'personal-booster: código de confirmación reemitido (código no logueado)',
+          );
+          return c.json(
+            reemitirCodigoPersonalBoosterResponseSchema.parse({
+              ok: true,
+              user_id: persona.id,
+              vinculo: 'cuenta_activa_por_confirmar',
+              codigo_activacion: codigo,
+              expira_en: resultado.venceEn.toISOString(),
+              en_lista: enLista,
+            }),
+            200,
+          );
+        }
+
         record('emitido');
         opts.logger.info(
           {
@@ -549,6 +681,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
           reemitirCodigoPersonalBoosterResponseSchema.parse({
             ok: true,
             user_id: persona.id,
+            vinculo: 'provisoria_sin_codigo',
             codigo_activacion: codigo,
             expira_en: venceEn.toISOString(),
             en_lista: enLista,
@@ -578,30 +711,64 @@ export function createAdminPersonalBoosterRoutes(opts: {
         };
 
         const resultado = await opts.db.transaction(async (tx) => {
+          const camposBaja = {
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            firebaseUid: users.firebaseUid,
+            claveNumericaHash: users.claveNumericaHash,
+            activationPinHash: users.activationPinHash,
+            activacionVenceEn: users.activacionVenceEn,
+            status: users.status,
+            isPlatformAdmin: users.isPlatformAdmin,
+          };
           // Todas las cuentas marcadas, bloqueadas hasta el commit y en orden
           // fijo: dos bajas en paralelo se ordenan y la segunda ve lo que dejó
           // la primera.
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const marcadas = await tx
-            .select({
-              id: users.id,
-              email: users.email,
-              fullName: users.fullName,
-              firebaseUid: users.firebaseUid,
-              claveNumericaHash: users.claveNumericaHash,
-              activationPinHash: users.activationPinHash,
-              activacionVenceEn: users.activacionVenceEn,
-              status: users.status,
-            })
+            .select(camposBaja)
             .from(users)
             .where(eq(users.isPlatformAdmin, true))
             .orderBy(users.id)
             .for('update')
             .limit(LIMITE_PERSONAL);
 
-          const persona = marcadas.find((m) => m.id === userId);
+          let persona = marcadas.find((m) => m.id === userId);
           if (!persona) {
-            return { tipo: 'no_encontrada' } as const;
+            // Sin marca al leer. La fila de la cuenta se bloquea antes de mirar
+            // su confirmación, en el orden del alta, la re-emisión y la
+            // confirmación (primero `usuarios`): una confirmación o un código
+            // nuevo en curso terminan antes, y esta baja ve lo que dejaron.
+            // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+            const cuentas = await tx
+              .select(camposBaja)
+              .from(users)
+              .where(eq(users.id, userId))
+              .for('update')
+              .limit(1);
+            const cuenta = cuentas[0];
+            if (!cuenta) {
+              return { tipo: 'no_encontrada' } as const;
+            }
+            if (cuenta.isPlatformAdmin !== true) {
+              // Persona por confirmar: sin marca, con una confirmación
+              // pendiente. Quitarle el acceso borra su código
+              // (`.specs/confirmar-acceso-booster` SC10).
+              if (!(await tieneConfirmacionPendiente(tx, cuenta.id))) {
+                return { tipo: 'no_encontrada' } as const;
+              }
+              if (correoEnListaRespaldo(cuenta.email, lista)) {
+                return { tipo: 'en_lista_respaldo' } as const;
+              }
+              if (!(await invalidarConfirmacionPendiente(tx, cuenta.id))) {
+                return { tipo: 'no_encontrada' } as const;
+              }
+              return { tipo: 'confirmacion_invalidada', userId: cuenta.id } as const;
+            }
+            // La persona confirmó mientras la baja esperaba la fila: ahora es
+            // una cuenta marcada y la baja sigue como con cualquier otra.
+            persona = cuenta;
           }
           if (correoEnListaRespaldo(persona.email, lista)) {
             return { tipo: 'en_lista_respaldo' } as const;
@@ -633,7 +800,10 @@ export function createAdminPersonalBoosterRoutes(opts: {
           if (escritas.length === 0) {
             return { tipo: 'no_encontrada' } as const;
           }
-          return { tipo: 'quitado', persona, invalidarCodigo } as const;
+          // Sin la marca, una confirmación pendiente tampoco sirve: no puede
+          // devolverle el acceso.
+          const confirmacionInvalidada = await invalidarConfirmacionPendiente(tx, persona.id);
+          return { tipo: 'quitado', persona, invalidarCodigo, confirmacionInvalidada } as const;
         });
 
         if (resultado.tipo === 'no_encontrada') {
@@ -648,8 +818,27 @@ export function createAdminPersonalBoosterRoutes(opts: {
           record('ultimo_acceso');
           return c.json({ error: 'conflict', code: 'ultimo_acceso' }, 409);
         }
+        if (resultado.tipo === 'confirmacion_invalidada') {
+          // Nunca tuvo acceso: sin aviso a la lista de respaldo.
+          record('confirmacion_invalidada');
+          opts.logger.info(
+            {
+              event_type: 'personal_booster.confirmacion_invalidada',
+              actor_user_id: admin.userContext.user.id,
+              user_id: resultado.userId,
+            },
+            'personal-booster: confirmación pendiente invalidada',
+          );
+          return c.json(
+            quitarAccesoPersonalBoosterResponseSchema.parse({
+              ok: true,
+              user_id: resultado.userId,
+            }),
+            200,
+          );
+        }
 
-        const { persona, invalidarCodigo } = resultado;
+        const { persona, invalidarCodigo, confirmacionInvalidada } = resultado;
         record('quitado');
         const aviso = await enviarAvisoAccesoPanel({
           sender: opts.emailSender,
@@ -666,6 +855,7 @@ export function createAdminPersonalBoosterRoutes(opts: {
             actor_user_id: admin.userContext.user.id,
             user_id: persona.id,
             codigo_invalidado: invalidarCodigo,
+            confirmacion_invalidada: confirmacionInvalidada,
             avisos_destinatarios: aviso.destinatarios,
             avisos_enviados: aviso.enviados,
           },

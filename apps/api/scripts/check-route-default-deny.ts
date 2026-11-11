@@ -138,6 +138,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // (app.use('/me/empresa', userContextMiddlewareForMe)); autorización =
   // membresía activa + rol dueno|admin. El empresaId nunca viene del cliente.
   createMeEmpresaRoutes: { category: 'ENFORCED', rationale: '' },
+  // confirmar-acceso-booster — /me/confirmar-acceso-booster: userContext
+  // precede el mount (app.use('/me/confirmar-acceso-booster',
+  // userContextMiddlewareForMe)); el usuario sale de la sesión, nunca del body.
+  // El guard de /me/* corre antes y bloquea la escritura impersonada.
+  createMeConfirmarAccesoBoosterRoutes: { category: 'ENFORCED', rationale: '' },
   // CRUD zonas de matching — /me/zonas: userContext precede el mount
   // (app.use('/me/zonas', userContextMiddlewareForMe)); autorización =
   // membresía activa + empresa transportista + rol dueno|admin.
