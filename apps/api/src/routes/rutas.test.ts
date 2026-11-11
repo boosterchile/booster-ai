@@ -13,7 +13,9 @@ const s = vi.hoisted(() => ({
   declararConfiguracionDeRuta: vi.fn(),
 }));
 vi.mock('../services/operar-ruta.js', () => s);
-const estimarHuellaDeRuta = vi.hoisted(() => vi.fn(async () => ({ estado: 'estimada' })));
+const estimarHuellaDeRuta = vi.hoisted(() =>
+  vi.fn(async (_opts: { rutaId: string }) => ({ estado: 'estimada' })),
+);
 vi.mock('../services/estimar-huella-de-ruta.js', () => ({ estimarHuellaDeRuta }));
 
 const { createRutasRoutes } = await import('./rutas.js');
@@ -253,8 +255,7 @@ describe('/rutas — fallos del servicio', () => {
  * operación que cambia una ruta vuelve a estimar las rutas que tocó.
  */
 describe('/rutas — la estimación sigue a la ruta', () => {
-  const estimadas = () =>
-    estimarHuellaDeRuta.mock.calls.map(([o]) => (o as unknown as { rutaId: string }).rutaId);
+  const estimadas = () => estimarHuellaDeRuta.mock.calls.map(([o]) => o.rutaId);
   const agrupar = () =>
     app().request(
       `/rutas/${RUTA}/servicios`,
