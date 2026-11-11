@@ -2,7 +2,7 @@
 
 - **Spec**: [spec.md](./spec.md) (aceptada el 2026-11-11)
 - **Date**: 2026-11-11
-- **Status**: Propuesta. La tabla de §1 y las reglas de §2 esperan la aprobación del PO (spec §3.4 y §11-2). Nada de esto rige hasta entonces.
+- **Status**: Aprobado por el PO en el chat del 2026-11-11 («Apruebo todo»): la tabla de §1.1 completa, con los 26 pares dudosos como están propuestos, y las dos reglas de §2.
 
 Este documento cubre la parte 1 de la spec: la tabla de compatibilidad y las
 funciones de elegibilidad. Las partes 2 a 6 se planifican cuando esta esté en
@@ -135,10 +135,15 @@ Tests (dominio crítico, con el rojo en la evidencia del PR):
 Esta parte no toca el matching que corre en producción. Eso es la parte 2,
 detrás de un flag y con comparación en sombra.
 
-## 4. Lo que el PO decide aquí
+## 4. Decisiones del PO (2026-11-11)
 
-1. La tabla de §1.1, completa. Basta con indicar los pares que cambian.
-2. Las dos reglas de §2.
+1. La tabla de §1.1 queda aprobada completa, sin cambios.
+2. Las dos reglas de §2 quedan aprobadas. Completan la spec §3.2, que las
+   atribuía a ADR-073.
+
+La tabla sigue sin validación contra una norma o una transportista (§1). Un
+cambio posterior a un par se hace en la tabla y en su test, con el visto del
+PO.
 
 ## 5. Efecto conocido sobre producción al activar la parte 2
 
