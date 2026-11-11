@@ -23,6 +23,14 @@ vi.mock('../../src/services/calcular-metricas-viaje.js', () => ({
   })),
 }));
 
+// ruta-parada-servicio parte 2: la ruta de dos paradas se verifica en su
+// propio test unitario y contra Postgres (ruta-de-asignacion.integration).
+// Acá solo importa que acceptOffer la cree dentro de su transacción.
+const crearRutaMock = vi.fn(async () => ({ rutaId: 'ruta-1' }));
+vi.mock('../../src/services/crear-ruta-de-asignacion.js', () => ({
+  crearRutaDeAsignacion: (...args: unknown[]) => crearRutaMock(...(args as [])),
+}));
+
 // seguimiento-por-correo: el envío por correo se verifica en su propio test;
 // acá solo importa que acceptOffer lo despache y que su falla no lo revierta.
 const notifyEmailMock = vi.fn(async () => ({
@@ -387,6 +395,49 @@ describe('acceptOffer', () => {
         userId: USER_ID,
       }),
     ).rejects.toThrow(/Insert assignment returned no row/);
+  });
+
+  it('crea la ruta de la asignación dentro de la transacción del accept', async () => {
+    crearRutaMock.mockClear();
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
+    });
+    await acceptOffer({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      userId: USER_ID,
+    });
+    expect(crearRutaMock).toHaveBeenCalledTimes(1);
+    expect(crearRutaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ insert: expect.any(Function) }),
+      { assignment: expect.objectContaining({ id: 'assign-1', tripId: TRIP_ID }), userId: USER_ID },
+    );
+  });
+
+  it('si la ruta no se puede crear, el accept falla y no sigue', async () => {
+    crearRutaMock.mockClear();
+    crearRutaMock.mockRejectedValueOnce(new Error('sin ruta'));
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
+    });
+    await expect(
+      acceptOffer({
+        db: db as never,
+        logger: noopLogger,
+        offerId: OFFER_ID,
+        empresaId: EMPRESA_ID,
+        userId: USER_ID,
+      }),
+    ).rejects.toThrow('sin ruta');
+    // Ni el supersede de ofertas hermanas ni el viaje a `asignado`: solo el
+    // UPDATE de la oferta corrió antes de la ruta.
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 
   it('acuña tracking_token_publico UUID v4 aunque el viaje no traiga destinatario', async () => {

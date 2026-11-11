@@ -14,6 +14,7 @@ import {
 } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularMetricasEstimadas } from './calcular-metricas-viaje.js';
+import { crearRutaDeAsignacion } from './crear-ruta-de-asignacion.js';
 import {
   type NotifyTrackingLinkEmailDeps,
   notifyTrackingLinkEmailAtAssignment,
@@ -238,6 +239,10 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
       if (!assignment) {
         throw new Error('Insert assignment returned no row');
       }
+
+      // 3b. La ruta de dos paradas del servicio (ADR-088). Misma transacción:
+      // no existe una asignación nueva sin ruta.
+      await crearRutaDeAsignacion(tx, { assignment, userId });
 
       // 4. Otras offers del mismo trip pasan a reemplazada.
       // rls-allowlist: supersede de ofertas hermanas del mismo trip (offer.tripId ya validado) (rls-viabilidad §2)
