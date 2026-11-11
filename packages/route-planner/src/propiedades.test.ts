@@ -6,9 +6,14 @@ import {
   type ServicioDeRuta,
   agregarServicio,
   calcularTramos,
+  declararConductor,
   declararConfiguracion,
+  estadoQueCorresponde,
+  moverServicio,
   quitarServicio,
   reordenarParadas,
+  separarServicio,
+  serviciosEnMasDeUnaRuta,
   validarRuta,
 } from './index.js';
 
@@ -47,10 +52,15 @@ function servicioAleatorio(g: Generador, id: string): ServicioDeRuta {
   return {
     servicioId: id,
     empresaId: g.probabilidad(0.05) ? 'empresa-2' : EMPRESA,
+    tipoCarga: g.probabilidad(0.1) ? 'refrigerada' : 'carga_seca',
     pesoKg: g.probabilidad(0.1) ? null : g.entero(100, 6_000),
     volumenM3: g.probabilidad(0.5) ? g.entero(1, 30) : null,
     cancelado: false,
   };
+}
+
+function carroceriasAleatorias(g: Generador) {
+  return g.probabilidad(0.2) ? (['plano', 'refrigerado'] as const) : (['plano'] as const);
 }
 
 function rutaInicial(g: Generador): Ruta {
@@ -62,6 +72,7 @@ function rutaInicial(g: Generador): Ruta {
       : {
           capacidadKg: g.entero(3_000, 12_000),
           capacidadM3: g.probabilidad(0.5) ? g.entero(10, 60) : null,
+          carrocerias: carroceriasAleatorias(g),
         },
     tieneConductor: g.probabilidad(0.8),
     paradas: [],
@@ -98,9 +109,13 @@ function operacionAleatoria(g: Generador, ruta: Ruta, numero: number): Resultado
   if (dado <= 8) {
     return reordenarParadas(ruta, permutacion(g, ruta.paradas.length));
   }
+  if (g.probabilidad(0.3)) {
+    return declararConductor(ruta, g.probabilidad(0.8));
+  }
   return declararConfiguracion(ruta, {
-    configuracion: { capacidadKg: g.entero(2_000, 15_000), capacidadM3: null },
-    tieneConductor: true,
+    capacidadKg: g.entero(2_000, 15_000),
+    capacidadM3: null,
+    carrocerias: carroceriasAleatorias(g),
   });
 }
 
@@ -215,6 +230,97 @@ describe('propiedades de los tramos', () => {
           expect(tramo.vacio).toBe(tramo.serviciosABordo.length === 0);
         }
       }
+    },
+    LIMITE_MS,
+  );
+});
+
+describe('propiedades entre rutas (mover y separar, plan parte 5a)', () => {
+  const ids = (rutas: readonly Ruta[]) =>
+    rutas
+      .filter((r) => r.estado !== 'cancelada')
+      .flatMap((r) => r.servicios.map((s) => s.servicioId))
+      .sort();
+
+  it(
+    'mover y separar conservan los servicios, y ninguno queda en dos rutas',
+    () => {
+      let movidos = 0;
+      let separados = 0;
+      let rechazados = 0;
+      for (let caso = 1; caso <= CASOS; caso += 1) {
+        const g = generador(caso + 30_000);
+        const config = {
+          capacidadKg: g.entero(6_000, 20_000),
+          capacidadM3: null,
+          carrocerias: ['plano', 'refrigerado'] as const,
+        };
+        // Parte como el sistema: cada servicio en su ruta de dos paradas.
+        let rutas: Ruta[] = Array.from({ length: g.entero(2, 6) }, (_, i) => ({
+          empresaId: EMPRESA,
+          estado: 'planificada' as const,
+          configuracion: config,
+          tieneConductor: true,
+          paradas: [
+            { servicioId: `s${i}`, tipo: 'recogida' as const, resuelta: false },
+            { servicioId: `s${i}`, tipo: 'entrega' as const, resuelta: false },
+          ],
+          servicios: [
+            { ...servicioAleatorio(g, `s${i}`), empresaId: EMPRESA, pesoKg: g.entero(100, 6_000) },
+          ],
+        }));
+        const todos = ids(rutas);
+        for (let n = 0; n < OPERACIONES_POR_CASO; n += 1) {
+          const vivas = rutas.map((r, i) => ({ r, i })).filter(({ r }) => r.estado !== 'cancelada');
+          const desde = vivas[g.entero(0, vivas.length - 1)];
+          if (!desde) {
+            break;
+          }
+          const servicioId =
+            desde.r.servicios[g.entero(0, Math.max(0, desde.r.servicios.length - 1))]?.servicioId ??
+            'inexistente';
+          const antes = JSON.stringify(rutas);
+          if (g.probabilidad(0.7)) {
+            const hacia = vivas[g.entero(0, vivas.length - 1)];
+            if (!hacia || hacia.i === desde.i) {
+              continue;
+            }
+            const recogida = g.entero(0, hacia.r.paradas.length);
+            const r = moverServicio(desde.r, hacia.r, servicioId, {
+              recogida,
+              entrega: g.entero(recogida + 1, hacia.r.paradas.length + 1),
+            });
+            expect(JSON.stringify(rutas), `caso ${caso}, operación ${n}: mutó`).toBe(antes);
+            if (r.ok) {
+              movidos += 1;
+              rutas = rutas.map((x, i) =>
+                i === desde.i ? r.origen : i === hacia.i ? r.destino : x,
+              );
+            } else {
+              rechazados += 1;
+              expect(r.violaciones.length).toBeGreaterThan(0);
+            }
+          } else {
+            const r = separarServicio(desde.r, servicioId);
+            expect(JSON.stringify(rutas), `caso ${caso}, operación ${n}: mutó`).toBe(antes);
+            if (r.ok) {
+              separados += 1;
+              rutas = [...rutas.map((x, i) => (i === desde.i ? r.ruta : x)), r.propia];
+            } else {
+              rechazados += 1;
+            }
+          }
+          expect(ids(rutas), `caso ${caso}, operación ${n}`).toEqual(todos);
+          expect(serviciosEnMasDeUnaRuta(rutas), `caso ${caso}, operación ${n}`).toEqual([]);
+          for (const r of rutas) {
+            expect(validarRuta(r), `caso ${caso}, operación ${n}`).toEqual([]);
+            expect(estadoQueCorresponde(r), `caso ${caso}, operación ${n}`).toBe(r.estado);
+          }
+        }
+      }
+      expect(movidos).toBeGreaterThan(500);
+      expect(separados).toBeGreaterThan(100);
+      expect(rechazados).toBeGreaterThan(100);
     },
     LIMITE_MS,
   );

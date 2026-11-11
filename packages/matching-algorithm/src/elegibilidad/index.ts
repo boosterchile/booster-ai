@@ -7,11 +7,14 @@ export {
   carroceriaCompatible,
 } from './tabla.js';
 export {
+  type CapacidadDeConfiguracion,
   type ConfiguracionElegible,
   type RequisitosDeCarga,
   TIPOS_DE_UNIDAD,
   type TipoDeUnidad,
   type UnidadDeFlota,
+  capacidadDeConfiguracion,
+  cargaCabeEnCarrocerias,
   componeConArrastre,
   configuracionesElegibles,
   empresaEsCandidata,
