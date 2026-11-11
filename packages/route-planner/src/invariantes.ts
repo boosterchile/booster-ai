@@ -1,4 +1,4 @@
-import type { Ruta, Violacion } from './tipos.js';
+import type { Aviso, Ruta, Violacion } from './tipos.js';
 import { calcularTramos } from './tramos.js';
 
 /** Cada servicio con una recogida y una entrega, en ese orden. */
@@ -67,17 +67,39 @@ function violacionesDeCapacidad(ruta: Ruta): Violacion[] {
   const violaciones: Violacion[] = [];
   for (const tramo of calcularTramos(ruta)) {
     if (tramo.masaKg > configuracion.capacidadKg) {
-      violaciones.push({ motivo: 'capacidad_peso_excedida', tramo: tramo.desde });
-    }
-    if (
-      configuracion.capacidadM3 !== null &&
-      tramo.volumenM3 !== null &&
-      tramo.volumenM3 > configuracion.capacidadM3
-    ) {
-      violaciones.push({ motivo: 'capacidad_volumen_excedida', tramo: tramo.desde });
+      violaciones.push({
+        motivo: 'capacidad_peso_excedida',
+        tramo: tramo.desde,
+        masaKg: tramo.masaKg,
+        capacidadKg: configuracion.capacidadKg,
+      });
     }
   }
   return violaciones;
+}
+
+/**
+ * Avisos de la ruta: tramos donde el volumen a bordo supera el del vehículo.
+ * Solo donde el vehículo y todos los servicios a bordo lo declaran. No
+ * bloquean ninguna operación (decisión D2 del plan).
+ */
+export function avisosDeRuta(ruta: Ruta): Aviso[] {
+  const capacidadM3 = ruta.configuracion?.capacidadM3 ?? null;
+  if (capacidadM3 === null) {
+    return [];
+  }
+  const avisos: Aviso[] = [];
+  for (const tramo of calcularTramos(ruta)) {
+    if (tramo.volumenM3 !== null && tramo.volumenM3 > capacidadM3) {
+      avisos.push({
+        motivo: 'capacidad_volumen_excedida',
+        tramo: tramo.desde,
+        volumenM3: tramo.volumenM3,
+        capacidadM3,
+      });
+    }
+  }
+  return avisos;
 }
 
 /**
@@ -85,8 +107,11 @@ function violacionesDeCapacidad(ruta: Ruta): Violacion[] {
  * las violaciones; una lista vacía es una ruta válida.
  *
  * La capacidad solo se evalúa sobre paradas bien formadas y con vehículo
- * declarado. El volumen, además, solo donde el vehículo y todos los servicios
- * a bordo lo declaran.
+ * declarado, y solo por peso: el volumen avisa (`avisosDeRuta`).
+ *
+ * La carrocería no es un invariante de la ruta: se comprueba cuando entra un
+ * servicio o se declara un vehículo (`operaciones.ts`). Así una carga asignada
+ * antes de que el matching mirara la carrocería no bloquea el resto de la ruta.
  */
 export function validarRuta(ruta: Ruta): Violacion[] {
   const violaciones: Violacion[] = [];

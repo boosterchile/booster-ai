@@ -5,7 +5,9 @@ import {
   type ServicioDeRuta,
   TRANSICIONES_RUTA,
   agregarServicio,
+  avisosDeRuta,
   calcularTramos,
+  declararConductor,
   declararConfiguracion,
   estadoQueCorresponde,
   puedeTransicionarRuta,
@@ -21,6 +23,7 @@ function servicio(id: string, pesoKg: number | null, extra: Partial<ServicioDeRu
   return {
     servicioId: id,
     empresaId: EMPRESA,
+    tipoCarga: 'carga_seca',
     pesoKg,
     volumenM3: null,
     cancelado: false,
@@ -40,7 +43,7 @@ function ruta(parcial: Partial<Ruta> = {}): Ruta {
   return {
     empresaId: EMPRESA,
     estado: 'planificada',
-    configuracion: { capacidadKg: 10_000, capacidadM3: null },
+    configuracion: { capacidadKg: 10_000, capacidadM3: null, carrocerias: ['plano'] },
     tieneConductor: true,
     paradas: [],
     servicios: [],
@@ -162,13 +165,23 @@ describe('validarRuta', () => {
   });
 
   it('rechaza el tramo donde la masa supera la capacidad, con su índice', () => {
-    const v = validarRuta(rutaDeDos({ configuracion: { capacidadKg: 8_000, capacidadM3: null } }));
-    expect(v).toEqual([{ motivo: 'capacidad_peso_excedida', tramo: 1 }]);
+    const v = validarRuta(
+      rutaDeDos({
+        configuracion: { capacidadKg: 8_000, capacidadM3: null, carrocerias: ['plano'] },
+      }),
+    );
+    expect(v).toEqual([
+      { motivo: 'capacidad_peso_excedida', tramo: 1, masaKg: 9_000, capacidadKg: 8_000 },
+    ]);
   });
 
   it('acepta la masa igual a la capacidad', () => {
     expect(
-      validarRuta(rutaDeDos({ configuracion: { capacidadKg: 9_000, capacidadM3: null } })),
+      validarRuta(
+        rutaDeDos({
+          configuracion: { capacidadKg: 9_000, capacidadM3: null, carrocerias: ['plano'] },
+        }),
+      ),
     ).toEqual([]);
   });
 
@@ -176,24 +189,22 @@ describe('validarRuta', () => {
     expect(validarRuta(rutaDeDos({ configuracion: null }))).toEqual([]);
   });
 
-  it('rechaza el volumen excedido cuando vehículo y servicios lo declaran', () => {
-    const v = validarRuta(
-      ruta({
-        configuracion: { capacidadKg: 10_000, capacidadM3: 20 },
-        paradas: [recogida('a'), recogida('b'), entrega('a'), entrega('b')],
-        servicios: [
-          servicio('a', 1_000, { volumenM3: 15 }),
-          servicio('b', 1_000, { volumenM3: 10 }),
-        ],
-      }),
-    );
-    expect(v).toEqual([{ motivo: 'capacidad_volumen_excedida', tramo: 1 }]);
+  it('el volumen excedido avisa y no rechaza (decisión D2 del plan)', () => {
+    const excedida = ruta({
+      configuracion: { capacidadKg: 10_000, capacidadM3: 20, carrocerias: ['plano'] },
+      paradas: [recogida('a'), recogida('b'), entrega('a'), entrega('b')],
+      servicios: [servicio('a', 1_000, { volumenM3: 15 }), servicio('b', 1_000, { volumenM3: 10 })],
+    });
+    expect(validarRuta(excedida)).toEqual([]);
+    expect(avisosDeRuta(excedida)).toEqual([
+      { motivo: 'capacidad_volumen_excedida', tramo: 1, volumenM3: 25, capacidadM3: 20 },
+    ]);
   });
 
   it('no evalúa volumen si un servicio a bordo no lo declara', () => {
-    const v = validarRuta(
+    const v = avisosDeRuta(
       ruta({
-        configuracion: { capacidadKg: 10_000, capacidadM3: 20 },
+        configuracion: { capacidadKg: 10_000, capacidadM3: 20, carrocerias: ['plano'] },
         paradas: [recogida('a'), recogida('b'), entrega('a'), entrega('b')],
         servicios: [servicio('a', 1_000, { volumenM3: 30 }), servicio('b', 1_000)],
       }),
@@ -375,7 +386,9 @@ describe('agregarServicio', () => {
     const r = agregarServicio(unServicio, servicio('b', 7_000), { recogida: 1, entrega: 3 });
     expect(r).toEqual({
       ok: false,
-      violaciones: [{ motivo: 'capacidad_peso_excedida', tramo: 1 }],
+      violaciones: [
+        { motivo: 'capacidad_peso_excedida', tramo: 1, masaKg: 11_000, capacidadKg: 10_000 },
+      ],
     });
   });
 
@@ -555,7 +568,7 @@ describe('reordenarParadas', () => {
   it('rechaza un orden que rompe la capacidad', () => {
     const r = reordenarParadas(
       ruta({
-        configuracion: { capacidadKg: 6_000, capacidadM3: null },
+        configuracion: { capacidadKg: 6_000, capacidadM3: null, carrocerias: ['plano'] },
         paradas: [recogida('a'), entrega('a'), recogida('b'), entrega('b')],
         servicios: [servicio('a', 4_000), servicio('b', 5_000)],
       }),
@@ -563,7 +576,9 @@ describe('reordenarParadas', () => {
     );
     expect(r).toEqual({
       ok: false,
-      violaciones: [{ motivo: 'capacidad_peso_excedida', tramo: 1 }],
+      violaciones: [
+        { motivo: 'capacidad_peso_excedida', tramo: 1, masaKg: 9_000, capacidadKg: 6_000 },
+      ],
     });
   });
 
@@ -576,26 +591,31 @@ describe('reordenarParadas', () => {
 });
 
 describe('declararConfiguracion', () => {
-  it('declara vehículo y conductor en una ruta planificada', () => {
-    const r = declararConfiguracion(rutaDeDos({ configuracion: null, tieneConductor: false }), {
-      configuracion: { capacidadKg: 9_000, capacidadM3: null },
-      tieneConductor: true,
-    });
+  const NUEVA = { capacidadKg: 9_000, capacidadM3: null, carrocerias: ['plano' as const] };
+
+  it('declara el vehículo en una ruta planificada, sin tocar el conductor', () => {
+    const r = declararConfiguracion(
+      rutaDeDos({ configuracion: null, tieneConductor: false }),
+      NUEVA,
+    );
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.ruta.configuracion).toEqual({ capacidadKg: 9_000, capacidadM3: null });
-      expect(r.ruta.tieneConductor).toBe(true);
+      expect(r.ruta.configuracion).toEqual(NUEVA);
+      expect(r.ruta.tieneConductor).toBe(false);
+      expect(declararConductor(r.ruta, true)).toMatchObject({ ruta: { tieneConductor: true } });
     }
   });
 
   it('rechaza una configuración que no alcanza para algún tramo', () => {
     const r = declararConfiguracion(rutaDeDos({ configuracion: null }), {
-      configuracion: { capacidadKg: 8_999, capacidadM3: null },
-      tieneConductor: true,
+      ...NUEVA,
+      capacidadKg: 8_999,
     });
     expect(r).toEqual({
       ok: false,
-      violaciones: [{ motivo: 'capacidad_peso_excedida', tramo: 1 }],
+      violaciones: [
+        { motivo: 'capacidad_peso_excedida', tramo: 1, masaKg: 9_000, capacidadKg: 8_999 },
+      ],
     });
   });
 
@@ -604,18 +624,12 @@ describe('declararConfiguracion', () => {
       estado: 'en_curso',
       paradas: [recogida('a', true), recogida('b'), entrega('a'), entrega('b')],
     });
-    const r = declararConfiguracion(enCurso, {
-      configuracion: { capacidadKg: 20_000, capacidadM3: null },
-      tieneConductor: true,
-    });
-    expect(r).toEqual({ ok: false, violaciones: [{ motivo: 'servicio_ya_recogido' }] });
+    const r = declararConfiguracion(enCurso, { ...NUEVA, capacidadKg: 20_000 });
+    expect(r).toEqual({ ok: false, violaciones: [{ motivo: 'vehiculo_con_carga_recogida' }] });
   });
 
   it('una ruta cerrada no se edita', () => {
-    const r = declararConfiguracion(rutaDeDos({ estado: 'cerrada' }), {
-      configuracion: { capacidadKg: 20_000, capacidadM3: null },
-      tieneConductor: true,
-    });
+    const r = declararConfiguracion(rutaDeDos({ estado: 'cerrada' }), NUEVA);
     expect(r).toEqual({ ok: false, violaciones: [{ motivo: 'ruta_no_editable' }] });
   });
 });
