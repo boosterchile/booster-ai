@@ -34,7 +34,8 @@ case "$*" in
     echo "$FAKE_DIGEST"
     ;;
   *"services describe"*latestCreatedRevisionName*) echo "$FAKE_CREATED" ;;
-  *"revisions describe"*) echo "$FAKE_IMAGE" ;;
+  *"revisions describe $FAKE_CREATED "*) echo "$FAKE_IMAGE" ;;
+  *"revisions describe"*) echo "ERROR: revisión desconocida: $*" >&2; exit 98 ;;
   *"update-traffic"*) exit "${FAKE_TRAFFIC_EXIT:-0}" ;;
   *"services describe"*status.traffic*) echo "$FAKE_SERVED" ;;
   *) echo "llamada inesperada: $*" >&2; exit 99 ;;
@@ -96,6 +97,7 @@ class RouteToCommitRevisionTest(unittest.TestCase):
         self.assertIn(
             f"artifacts docker images describe {IMAGE_REF}", self.calls()
         )
+        self.assertIn("revisions describe booster-ai-web-00419-4bt ", self.calls())
         self.assertIn("--to-revisions=booster-ai-web-00419-4bt=100", self.calls())
         self.assertNotIn("--to-latest", self.calls())
 
@@ -150,8 +152,10 @@ class RouteToCommitRevisionTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
 
     def test_falla_si_no_hay_revision_creada(self):
-        result = self.run_script(created="", image="", served="")
+        result = self.run_script(created="", served="")
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no reporta una última revisión creada", result.stderr)
+        self.assertNotIn("revisions describe", self.calls())
         self.assert_no_movio_trafico()
 
     def test_exige_cuatro_argumentos(self):
