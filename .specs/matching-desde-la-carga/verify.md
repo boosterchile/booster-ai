@@ -71,3 +71,48 @@ nueva sugiere siempre la unidad motriz.
 - No se corrió en sombra contra tráfico real: la variable no está activada.
 - La comparación mira candidatas por flota. El puntaje y el orden entre
   candidatas no cambian en esta parte.
+
+## Parte 3 — migración `expand` 0079 (2026-11-11)
+
+`apps/api/drizzle/0079_asignacion_vehiculo_opcional.sql`:
+
+- `asignaciones.vehiculo_id` deja de ser obligatorio (conserva su llave
+  foránea);
+- `vehiculos.es_de_tercero`, booleano, obligatorio, falso por defecto.
+
+No toca filas existentes. Ningún código escribe todavía una asignación sin
+vehículo ni una unidad de tercero.
+
+### Seguridad del despliegue
+
+- **Rollback de código:** seguro. Una revisión anterior nunca ve un
+  `vehiculo_id` nulo, porque nadie lo escribe, y no conoce la columna nueva.
+- **Reverso del esquema:** manual, en `down/`. Solo es seguro mientras no haya
+  asignaciones sin vehículo ni unidades de tercero; el archivo trae las dos
+  consultas para comprobarlo.
+- **Bloqueo:** `DROP NOT NULL` y `ADD COLUMN` con valor por defecto constante
+  toman un bloqueo breve y no reescriben la tabla.
+
+### Lo que la parte 4 tiene que resolver antes de escribir un vehículo nulo
+
+La expresión `vehiculoDeAsignacion` está tipada como texto no nulo, y los
+lectores cuentan con eso. Con el esquema de hoy es cierto. Cuando aceptar deje
+de exigir vehículo:
+
+| Uso | Dónde | Qué pasa con una asignación sin vehículo |
+|---|---|---|
+| `INNER JOIN` al vehículo | 8 consultas en 6 servicios: seguimiento público, traza de la carga, eco-ruta en tiempo real, tablero de conducción (2), relleno de distancia (2), observatorio | la fila desaparece del resultado |
+| `LEFT JOIN` al vehículo | 9 consultas en 6 archivos: rutas de asignaciones (3), `me`, zonas de stakeholders, detalle de la carga, eco-ruta, correo de seguimiento (2) | patente y tipo llegan vacíos; el contrato de la respuesta tiene que decir «por asignar» |
+| Columna leída como texto | 18 lecturas en 14 archivos, entre ellas métricas del viaje, certificado y puntaje de conducción | reciben nulo donde el tipo dice texto |
+| Filtro por vehículo | 4 consultas | no cambia: una asignación sin vehículo no calza con ninguno |
+
+Los servicios de medición (métricas, certificado, puntaje, traza) solo corren
+desde la recogida, y la spec §3.8 impide recoger sin vehículo: ahí el nulo no
+llega. Los que sí lo verán son los que muestran la asignación antes de
+despachar. La parte 4 cambia el tipo de la expresión a «texto o nulo» y
+recorre esos lectores con el compilador.
+
+### Numeración
+
+El PR #904, abierto, también usa el número 0079. El que entre segundo
+renumera su migración a 0080.
