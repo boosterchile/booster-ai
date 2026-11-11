@@ -109,25 +109,58 @@ describe('regresión con los insumos de los 8 certificados emitidos', () => {
     },
   );
 
-  it('las cifras publicadas no se reproducen con el calculador de hoy, por viaje ni por ruta', () => {
-    // Los certificados se emitieron con versiones anteriores del cálculo o del
-    // perfil del vehículo. La spec deja fuera recalcular certificados emitidos
-    // (§7), así que el criterio 3 no puede pedir igualdad con lo publicado:
-    // este test fija cuánto se aleja cada uno, para que un cambio se note.
-    const desvio = CERTIFICADOS.map(({ n, params, publicado }) => {
-      const hoy = calcularEmisionesViaje(params).emisionesKgco2eWtw;
-      return [n, Math.round(((hoy - publicado) / publicado) * 10_000) / 100];
+  /**
+   * Por qué la cifra publicada no es la de hoy (investigado el 2026-11-11):
+   *
+   * - 2 a 7 se calcularon antes del 2026-11-02, cuando el factor del diésel
+   *   pasó de 3,25 a 3,24 kg CO₂e/L (#872, HC-003). Con 3,25 se reproducen.
+   * - 8 se calculó después, con 3,24: se reproduce.
+   * - 1 se emitió el 2026-09-14 y el vehículo se editó el 2026-09-28. Con el
+   *   factor 3,25 y una capacidad de 10.000 kg (hoy 20.000) calzan la cifra y
+   *   los litros guardados; la capacidad anterior no quedó registrada, así que
+   *   es la explicación que calza, no un dato.
+   *
+   * La tolerancia de 6 gramos cubre que la distancia se guarda con 2 decimales.
+   */
+  const FACTOR_HOY = 3.24;
+  const FACTOR_ANTERIOR = 3.25;
+  const TOLERANCIA_KG = 0.006;
+  const conFactorAnterior = (kg: number) => (kg / FACTOR_HOY) * FACTOR_ANTERIOR;
+  const hoy = (params: ParametrosServicioSolo) =>
+    calcularHuellaDeServicioSolo('viaje', params).emisiones.emisionesKgco2eWtw;
+
+  it.each(CERTIFICADOS.filter((c) => c.n >= 2 && c.n <= 7))(
+    'certificado $n: se reproduce con el factor vigente cuando se emitió (3,25)',
+    ({ params, publicado }) => {
+      expect(Math.abs(conFactorAnterior(hoy(params)) - publicado)).toBeLessThan(TOLERANCIA_KG);
+      // Y no con el de hoy: la diferencia es el cambio de factor, −0,31 %.
+      expect(Math.abs(hoy(params) - publicado)).toBeGreaterThan(TOLERANCIA_KG);
+    },
+  );
+
+  it('certificado 8: se reproduce con el factor de hoy (3,24)', () => {
+    const c = CERTIFICADOS.find((x) => x.n === 8);
+    expect(Math.abs(hoy(c?.params as ParametrosServicioSolo) - (c?.publicado ?? 0))).toBeLessThan(
+      TOLERANCIA_KG,
+    );
+  });
+
+  it('certificado 1: calza con el factor anterior y la capacidad que tenía el vehículo', () => {
+    const c = CERTIFICADOS.find((x) => x.n === 1);
+    const entonces = calcularHuellaDeServicioSolo('viaje', {
+      metodo: 'modelado',
+      distanciaKm: 2.51,
+      cargaKg: 8_000,
+      vehiculo: { ...VEHICULO, capacidadKg: 10_000 },
     });
-    expect(desvio).toEqual([
-      [1, -4.27],
-      [2, -0.31],
-      [3, -0.31],
-      [4, -0.31],
-      [5, -0.31],
-      [6, -0.31],
-      [7, -0.31],
-      [8, 0],
-    ]);
+    expect(entonces.emisiones.combustibleConsumido).toBe(0.83);
+    expect(
+      Math.abs(conFactorAnterior(entonces.emisiones.emisionesKgco2eWtw) - (c?.publicado ?? 0)),
+    ).toBeLessThan(TOLERANCIA_KG);
+    // Con el perfil de hoy no calza.
+    expect(
+      Math.abs(conFactorAnterior(hoy(c?.params as ParametrosServicioSolo)) - 2.691),
+    ).toBeGreaterThan(0.1);
   });
 });
 

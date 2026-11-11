@@ -140,20 +140,47 @@ producción el 2026-11-11:
 
 Por ruta y por viaje dan exactamente lo mismo en los 8. Lo que no se reproduce
 es la cifra publicada, y tampoco la reproduce el cálculo por viaje que estaba
-antes de este cambio: los certificados se emitieron con una versión anterior
-del cálculo o con otro perfil del vehículo. El certificado 8, el más reciente,
-difiere en 4 gramos, lo que calza con que la distancia se guarda con 2
+antes de este cambio.
+
+### Por qué no se reproducen (investigado el 2026-11-11)
+
+| Certificado | Calculado | Causa | Cómo se comprobó |
+|---|---|---|---|
+| 2 a 7 | entre el 2026-09-21 y el 2026-10-20 | El factor del diésel pasó de 3,25 a 3,24 kg CO₂e/L el 2026-11-02 (#872, HC-003: fila «Diesel» de la Tabla 32 de GLEC v2.0). 3,24 / 3,25 = −0,31 %. | Con 3,25 los seis se reproducen con a lo más 5 gramos de diferencia. |
+| 8 | 2026-11-03 | Ninguna: se calculó con el factor de hoy. | Se reproduce con 4 gramos de diferencia. |
+| 1 | 2026-09-14 | El factor anterior, y además el vehículo se editó el 2026-09-28, después de emitir. | Con 3,25 y una capacidad de 10.000 kg (hoy 20.000) calzan la cifra (3 gramos) y los litros guardados (0,83). |
+
+Las diferencias de gramos calzan con que la distancia se guarda con 2
 decimales.
 
-No investigué qué cambió entre la emisión de cada certificado y hoy; eso es
-una inferencia a partir de las cifras. La spec deja fuera recalcular
-certificados emitidos (§7), y este cambio no toca ninguno.
+Lo del certificado 1 es la explicación que calza con los datos, no un hecho
+registrado: la base no guarda el perfil que tenía el vehículo cuando se emitió
+el certificado.
 
-**Propuesta para el PO:** reescribir el criterio 3 como «con los insumos de
-los 8 certificados emitidos, el cálculo por ruta da exactamente lo mismo que
-el cálculo por viaje». Es lo que este cambio puede garantizar y lo que queda
-probado. El test además fija cuánto se aleja hoy cada certificado, para que
-un cambio futuro del calculador se note.
+Ningún certificado está mal calculado. Cada uno es correcto para el factor y
+el vehículo de su momento.
+
+### Lo que el desvío deja a la vista
+
+1. **Un certificado emitido no se puede reproducir solo con la base de hoy.**
+   Depende del factor vigente y del perfil del vehículo en su fecha, y ninguno
+   de los dos queda guardado junto al certificado. `factores_fuente` existe
+   desde #872 y está vacío en los 7 certificados anteriores.
+2. **`factor_emision_usado` puede quedar desactualizado.** En el certificado 8
+   dice 3,25 y sus emisiones reales se calcularon con 3,24: el factor se
+   escribe al estimar y el cierre no lo reescribe. Es anterior a este cambio.
+   En `metricas_ruta`, el cierre sí guarda el factor con que se calculó.
+
+Ninguno de los dos se corrige aquí. El segundo es un cambio chico en el cierre;
+el primero es una decisión de diseño (guardar con cada certificado los insumos
+con que se calculó). Quedan para que el PO decida.
+
+### Propuesta para el criterio 3
+
+Reescribirlo como: «con los insumos de los 8 certificados emitidos, el cálculo
+por ruta da exactamente lo mismo que el cálculo por viaje; y cada certificado
+se reproduce con el factor vigente en su fecha». Las dos cosas quedan probadas
+en `test/unit/huella-por-ruta.test.ts`, con la salvedad del certificado 1.
 
 ### Otras notas
 
