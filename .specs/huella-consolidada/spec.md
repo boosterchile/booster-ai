@@ -186,9 +186,10 @@ aquella spec: no hay consolidación sin certificado.
    servicios.
 2. Test de propiedad: permutar el orden de las paradas de entrega no cambia la
    parte de ningún servicio mientras `E` no cambie.
-3. Test de regresión: para cada uno de los 8 certificados emitidos en
-   producción al 2026-11-10, el cálculo por ruta de un solo servicio da las
-   mismas cifras publicadas.
+3. Test de regresión con los insumos de los 8 certificados emitidos en
+   producción al 2026-11-11: el cálculo por ruta de un solo servicio da
+   exactamente lo mismo que el cálculo por viaje, y cada certificado se
+   reproduce con el factor de emisión vigente en su fecha (§11-6).
 4. Test de `calcularEmisionesRuta`: una ruta de dos paradas da lo mismo que
    `calcularEmisionesViaje` para ese viaje, en los tres métodos.
 5. Test de integración contra PostgreSQL: al cerrar una ruta de tres servicios
@@ -223,8 +224,8 @@ PR.
 
 ## 11. Decisiones del PO (2026-11-11)
 
-El PO aceptó las cuatro recomendaciones. La quinta la tomó el mismo día, con
-la parte 1 a la vista.
+El PO aceptó las cuatro recomendaciones. La quinta y la sexta las tomó el
+mismo día, con las partes 1 y 3 a la vista.
 
 | # | Pregunta | Decisión |
 |---|---|---|
@@ -233,3 +234,4 @@ la parte 1 a la vista.
 | 3 | ¿El transportista ve cuánto le tocó a cada generador? | Sí. Ya conoce a sus clientes y sus cargas; el reparto no le revela nada nuevo. |
 | 4 | ¿El certificado muestra la huella total de la ruta además de la parte del servicio? | Sí. Con la parte y la participación, que ADR-089 ya pone en el certificado, el total se deduce igual; mostrarlo permite verificar la cuenta. No dice cuántos ni quiénes son los otros generadores. |
 | 5 | Una ruta medida por tramos con fuentes distintas, ¿con cuál se deriva su nivel? (2026-11-11, tras la parte 1) | Con la más débil («Sí, la más débil»). La cobertura se pondera por distancia. Es la lectura conservadora: el nivel respalda el certificado ante un auditor. Se descartó ponderar también la fuente por distancia, que dejaría pasar un tramo corto mal medido. |
+| 6 | El criterio 3 pedía que el cálculo por ruta diera «las mismas cifras publicadas» de los 8 certificados. ¿Qué se exige? (2026-11-11, tras la parte 3) | Equivalencia entre ruta y viaje con los mismos insumos, y que cada certificado se reproduzca con el factor de su fecha («Sí, reescribe y mergea»). Las cifras publicadas no son las del calculador de hoy porque el factor del diésel pasó de 3,25 a 3,24 kg CO₂e/L el 2026-11-02 (#872) y un vehículo se editó después de emitir su certificado. Ningún certificado está mal calculado y ninguno se recalcula (§7). |
