@@ -130,12 +130,50 @@ const RUTA_B = {
 };
 
 /** GET por ruta: flags, lista y detalle. */
+const FLOTA = [
+  { id: 'v1', plate: 'ABCD12', unit_category: 'motriz', status: 'activo' },
+  { id: 'v2', plate: 'WXYZ99', unit_category: 'motriz', status: 'activo' },
+  { id: 'v3', plate: 'TALL01', unit_category: 'motriz', status: 'mantenimiento' },
+  { id: 'r1', plate: 'REMO01', unit_category: 'arrastre', status: 'activo' },
+];
+const CONDUCTORES = [
+  {
+    id: 'cd1',
+    user_id: 'c1',
+    status: 'activo',
+    user: { id: 'c1', full_name: 'Juan Pérez', rut: null, is_pending: false },
+  },
+  {
+    id: 'cd2',
+    user_id: 'c2',
+    status: 'activo',
+    user: { id: 'c2', full_name: 'Ana Rojas', rut: null, is_pending: true },
+  },
+  {
+    id: 'cd3',
+    user_id: 'c3',
+    status: 'baja',
+    user: { id: 'c3', full_name: 'Se Fue', rut: null, is_pending: false },
+  },
+];
+
 function servir(
-  opts: { activada?: boolean; rutas?: unknown[]; detalle?: Record<string, unknown> } = {},
+  opts: {
+    activada?: boolean;
+    rutas?: unknown[];
+    detalle?: Record<string, unknown>;
+    vehiculos?: unknown;
+  } = {},
 ) {
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/feature-flags') {
       return { rutas_api_activada: opts.activada ?? true };
+    }
+    if (path === '/vehiculos') {
+      return opts.vehiculos ?? FLOTA;
+    }
+    if (path === '/conductores') {
+      return { conductores: CONDUCTORES };
     }
     if (path.startsWith('/rutas?') || path === '/rutas') {
       return {
@@ -361,5 +399,147 @@ describe('/app/rutas', () => {
     const region = await abrir();
     expect(within(region).getAllByRole('listitem')[1]).toHaveTextContent('Cancelada');
     expect(within(region).queryByRole('button', { name: /BOO-BBB222/ })).toBeNull();
+  });
+
+  // Parte 6d: declarar camión, arrastre y conductor desde la ruta.
+  describe('camión y conductor', () => {
+    const form = async () => {
+      await abrir();
+      return screen.findByRole('group', { name: 'Camión y conductor' });
+    };
+
+    it('muestra lo declarado y ofrece solo unidades activas y conductores vigentes', async () => {
+      const f = await form();
+      const camion = within(f).getByLabelText('Camión');
+      expect(camion).toHaveValue('v1');
+      expect(
+        within(camion)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['ABCD12', 'WXYZ99']);
+      expect(
+        within(within(f).getByLabelText('Arrastre'))
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['Sin arrastre', 'REMO01']);
+      const conductor = within(f).getByLabelText('Conductor');
+      expect(conductor).toHaveValue('c1');
+      expect(
+        within(conductor)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['Sin conductor', 'Juan Pérez', 'Ana Rojas (sin activar)']);
+      expect(within(f).getByRole('button', { name: 'Guardar' })).toBeDisabled();
+    });
+
+    it('guardar declara los tres en la ruta', async () => {
+      apiPut.mockResolvedValue({
+        ruta: {
+          ...RUTA_A,
+          vehiculo: { id: 'v2', patente: 'WXYZ99' },
+          unidad_arrastre: { id: 'r1', patente: 'REMO01' },
+          conductor: { id: 'c2', nombre: 'Ana Rojas' },
+        },
+      });
+      const f = await form();
+      await userEvent.selectOptions(within(f).getByLabelText('Camión'), 'v2');
+      await userEvent.selectOptions(within(f).getByLabelText('Arrastre'), 'r1');
+      await userEvent.selectOptions(within(f).getByLabelText('Conductor'), 'c2');
+      await userEvent.click(within(f).getByRole('button', { name: 'Guardar' }));
+      expect(apiPut).toHaveBeenCalledWith(
+        '/rutas/ruta-a/configuracion',
+        { vehiculo_id: 'v2', unidad_arrastre_id: 'r1', conductor_id: 'c2' },
+        expect.anything(),
+      );
+      expect(await screen.findByRole('status')).toHaveTextContent('Camión y conductor guardados.');
+      // El formulario vuelve a partir de lo que quedó guardado.
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole('group', { name: 'Camión y conductor' })).getByLabelText(
+            'Camión',
+          ),
+        ).toHaveValue('v2'),
+      );
+      expect(
+        within(screen.getByRole('group', { name: 'Camión y conductor' })).getByRole('button', {
+          name: 'Guardar',
+        }),
+      ).toBeDisabled();
+    });
+
+    it('con una carga recogida solo se cambia el conductor', async () => {
+      servir({
+        detalle: {
+          'ruta-a': {
+            ...RUTA_A,
+            estado: 'en_curso',
+            paradas: [
+              parada('p1', 0, 'recogida', 'BOO-AAA111', { resuelta_en: '2026-11-12T13:00:00Z' }),
+              ...RUTA_A.paradas.slice(1),
+            ],
+          },
+        },
+      });
+      const f = await form();
+      expect(within(f).getByLabelText('Camión')).toBeDisabled();
+      expect(within(f).getByLabelText('Arrastre')).toBeDisabled();
+      expect(within(f).getByLabelText('Conductor')).toBeEnabled();
+      expect(within(f).getByText(/ya hay carga recogida/)).toBeInTheDocument();
+      // En curso no se ofrece dejar la ruta sin conductor.
+      expect(
+        within(within(f).getByLabelText('Conductor')).queryByRole('option', {
+          name: 'Sin conductor',
+        }),
+      ).toBeNull();
+    });
+
+    it.each([
+      [
+        {
+          code: 'vehiculo_no_asignable',
+          unidad: 'unidad_arrastre',
+          motivo: 'no_compone_con_la_motriz',
+        },
+        'Ese arrastre no se engancha a ese camión',
+      ],
+      [
+        { code: 'vehiculo_no_asignable', unidad: 'vehiculo', motivo: 'no_esta_activa' },
+        'no está activo',
+      ],
+      [{ code: 'conductor_no_asignable' }, 'Ese conductor ya no está disponible'],
+      [
+        { code: 'ruta_invalida', violaciones: [{ motivo: 'vehiculo_con_carga_recogida' }] },
+        'ya hay carga recogida',
+      ],
+      [
+        {
+          code: 'ruta_invalida',
+          violaciones: [
+            { motivo: 'capacidad_peso_excedida', tramo: 1, masa_kg: 2000, capacidad_kg: 1500 },
+          ],
+        },
+        'irían 2.000 kg y el camión lleva 1.500 kg',
+      ],
+    ])('rechazo %j → mensaje', async (cuerpo, texto) => {
+      apiPut.mockRejectedValue(new ApiError(422, cuerpo.code, cuerpo));
+      const f = await form();
+      await userEvent.selectOptions(within(f).getByLabelText('Camión'), 'v2');
+      await userEvent.click(within(f).getByRole('button', { name: 'Guardar' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(texto);
+    });
+
+    it('quien solo mira ve el camión y el conductor, sin formulario', async () => {
+      providedContext = { kind: 'onboarded', me: makeMe({ role: 'visualizador' }) };
+      await abrir();
+      expect(screen.queryByRole('group', { name: 'Camión y conductor' })).toBeNull();
+      expect(screen.getByText('Camión ABCD12 · Conductor Juan Pérez')).toBeInTheDocument();
+    });
+
+    it('si la flota no carga, lo dice y no deja guardar', async () => {
+      servir({ vehiculos: { raro: true } });
+      const f = await form();
+      expect(await within(f).findByText(/No pudimos cargar tu flota/)).toBeInTheDocument();
+      expect(within(f).getByRole('button', { name: 'Guardar' })).toBeDisabled();
+    });
   });
 });
