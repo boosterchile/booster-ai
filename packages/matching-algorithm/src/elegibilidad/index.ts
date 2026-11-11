@@ -16,3 +16,9 @@ export {
   configuracionesElegibles,
   empresaEsCandidata,
 } from './configuraciones.js';
+export {
+  type CandidataPorFlota,
+  type ComparacionDeCandidatas,
+  candidatasPorCarga,
+  compararCandidatas,
+} from './candidatas.js';
