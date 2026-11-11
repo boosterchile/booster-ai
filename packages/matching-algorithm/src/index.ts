@@ -145,3 +145,7 @@ export {
   hashRanking,
   rankearCandidatos,
 } from './ranking.js';
+
+// Elegibilidad desde la carga (ADR-090): tabla carga × carrocería y
+// configuraciones de la flota. Todavía no la usa el matching en producción.
+export * from './elegibilidad/index.js';
