@@ -124,7 +124,8 @@ describe('Equipo — shell y tipo de empresa (equipo-generador)', () => {
     render(<EquipoRoute />, { wrapper: makeWrapper() });
     const layout = await screen.findByTestId('layout');
     expect(layout).toHaveAttribute('data-title', 'Equipo');
-    expect(layout).toHaveTextContent('Gabriel Barros');
+    // El Layout aparece antes que los datos: en CI se vio «Cargando equipo…».
+    await waitFor(() => expect(layout).toHaveTextContent('Gabriel Barros'));
   });
 
   it('generador puro: sin aviso de conductores ni permiso de ofertas', async () => {
