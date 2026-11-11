@@ -34,6 +34,7 @@
     "@booster-ai/notification-fan-out": "workspace:*",
     "@booster-ai/otel-bootstrap": "workspace:*",
     "@booster-ai/pricing-engine": "workspace:*",
+    "@booster-ai/route-planner": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/transport-documents": "workspace:*",
     "@booster-ai/trip-state-machine": "workspace:*",

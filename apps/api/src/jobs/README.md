@@ -71,6 +71,34 @@ SENTIDO=up DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --filter @
 SENTIDO=reversa DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
 ```
 
+### `rellenar-rutas.ts`
+
+Relleno de rutas (ADR-088, `.specs/ruta-parada-servicio/` parte 3). Deja cada
+asignación con su ruta de dos paradas en el estado que le corresponde: crea la
+que falta y pone al día la que creó el accept y cuya asignación avanzó después
+(hasta la parte 4, recogida, entrega y conductor se escriben solo en la
+asignación). La lógica vive en `src/services/rellenar-rutas.ts`.
+
+Requiere la migración 0078 aplicada. Dry-run por defecto. Una transacción: si
+la verificación final falla (alguna asignación sin ruta, o una ruta distinta de
+su asignación), no escribe nada. Idempotente: la segunda corrida informa 0
+creadas y 0 conciliadas. Lo ejecuta el PO.
+
+Una asignación con datos que no cuadran (por ejemplo, recogida sin fecha de
+recogida) no se rellena: sale en `omitidas` con su motivo y el job termina con
+código 1.
+
+```bash
+# 1. En seco (default): imprime el destino y lo que haría.
+pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-rutas.ts
+# 2. Real (solo con el visto del PO), con el destino copiado de la salida anterior:
+DRY_RUN=false CONFIRMAR_DESTINO=<destino de la corrida en seco> pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-rutas.ts
+```
+
+No tiene reversa automática. Para deshacerlo: `UPDATE asignaciones SET ruta_id =
+NULL` y borrar `eventos_ruta`, `paradas_ruta` y `rutas`, en ese orden. Mientras
+la ruta no tenga lectores (antes de la parte 4) eso no cambia nada visible.
+
 ### `reap-orphan-onboarding-firebase.ts`
 
 Borra el usuario Firebase **huérfano** del onboarding admin-provisioned
