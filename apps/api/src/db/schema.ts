@@ -361,6 +361,8 @@ export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
   'carga_editada',
   'cambio_solicitado',
   'cambio_respondido',
+  /** reemision-certificado (0082): una versión nueva del certificado reemplaza a la vigente. */
+  'certificado_reemitido',
 ]);
 
 export const tripEventSourceEnum = pgEnum('origen_evento_viaje', [
@@ -3457,6 +3459,11 @@ export const certificadosViaje = pgTable(
     fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
     motivoFallback: varchar('motivo_fallback', { length: 40 }),
     decisionVersion: smallint('decision_version'),
+    /**
+     * reemision-certificado (0082): por qué se reemitió. Nulo en la versión
+     * 1; obligatorio y de la lista cerrada desde la 2.
+     */
+    motivoReemision: varchar('motivo_reemision', { length: 40 }),
     creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -3469,6 +3476,10 @@ export const certificadosViaje = pgTable(
     estadoValido: check(
       'chk_certificados_viaje_estado',
       sql`estado IN ('vigente', 'reemplazado', 'revertido')`,
+    ),
+    motivoValido: check(
+      'ck_certificados_viaje_motivo',
+      sql`(version = 1 AND motivo_reemision IS NULL) OR (version > 1 AND motivo_reemision IS NOT NULL AND motivo_reemision IN ('factor_impreso_no_corresponde'))`,
     ),
   }),
 );

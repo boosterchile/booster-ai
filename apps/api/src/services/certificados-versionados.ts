@@ -49,41 +49,81 @@ export async function obtenerVigente(
   return vigente ?? null;
 }
 
+type TxVersiones = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/** La versión vigente no es la que quien llama leyó: otro proceso la cambió. */
+export class VersionVigenteCambioError extends Error {}
+
 /**
  * Crea la versión siguiente: la vigente pasa a 'reemplazado' (con fecha y
  * puntero a la nueva) y metricas_viaje apunta a la nueva. Todo o nada.
+ *
+ * `motivo` es obligatorio: una versión mayor que 1 existe porque alguien la
+ * reemitió (`.specs/reemision-certificado/` §3.4).
  */
 export async function crearVersion(
   db: Db,
   nueva: NuevaVersionCertificado,
+  motivo: string,
 ): Promise<CertificadoViaje> {
-  return db.transaction(async (tx) => {
-    const [anterior] = await vigenteDe(tx, nueva.tripId).for('update');
-    if (!anterior) {
-      throw new Error(`crearVersion: el viaje ${nueva.tripId} no tiene versión vigente`);
-    }
-    const [maxima] = await tx
-      .select({ v: sql<number>`max(${certificadosViaje.version})::int` })
-      .from(certificadosViaje)
-      .where(eq(certificadosViaje.tripId, nueva.tripId));
-    await tx
-      .update(certificadosViaje)
-      .set({ estado: 'reemplazado', reemplazadoEn: new Date() })
-      .where(eq(certificadosViaje.id, anterior.id));
-    const [creada] = await tx
-      .insert(certificadosViaje)
-      .values({ ...nueva, version: (maxima?.v ?? anterior.version) + 1, estado: 'vigente' })
-      .returning();
-    if (!creada) {
-      throw new Error('crearVersion: el INSERT no devolvió fila');
-    }
-    await tx
-      .update(certificadosViaje)
-      .set({ reemplazadoPor: creada.id })
-      .where(eq(certificadosViaje.id, anterior.id));
-    await tx.update(tripMetrics).set(espejo(creada)).where(eq(tripMetrics.tripId, nueva.tripId));
-    return creada;
-  });
+  return db.transaction((tx) => crearVersionEnTx(tx, nueva, motivo));
+}
+
+/**
+ * El número que tendrá la próxima versión del viaje: una más que la mayor
+ * registrada, aunque esa haya sido revertida. Un número no se reusa, porque
+ * cada uno tiene su ruta en el bucket.
+ */
+export async function siguienteVersion(db: Consulta, tripId: string): Promise<number> {
+  const [maxima] = await db
+    .select({ v: sql<number | null>`max(${certificadosViaje.version})::int` })
+    .from(certificadosViaje)
+    .where(eq(certificadosViaje.tripId, tripId));
+  return (maxima?.v ?? 0) + 1;
+}
+
+/**
+ * Lo mismo que `crearVersion`, dentro de la transacción de quien llama.
+ * Con `vigenteEsperadaId`, falla si la vigente ya no es esa.
+ */
+export async function crearVersionEnTx(
+  tx: TxVersiones,
+  nueva: NuevaVersionCertificado,
+  motivo: string,
+  vigenteEsperadaId?: string,
+): Promise<CertificadoViaje> {
+  const [anterior] = await vigenteDe(tx, nueva.tripId).for('update');
+  if (!anterior) {
+    throw new Error(`crearVersion: el viaje ${nueva.tripId} no tiene versión vigente`);
+  }
+  if (vigenteEsperadaId !== undefined && anterior.id !== vigenteEsperadaId) {
+    throw new VersionVigenteCambioError(
+      `crearVersion: la versión vigente del viaje ${nueva.tripId} cambió`,
+    );
+  }
+  const version = await siguienteVersion(tx, nueva.tripId);
+  await tx
+    .update(certificadosViaje)
+    .set({ estado: 'reemplazado', reemplazadoEn: new Date() })
+    .where(eq(certificadosViaje.id, anterior.id));
+  const [creada] = await tx
+    .insert(certificadosViaje)
+    .values({
+      ...nueva,
+      version,
+      estado: 'vigente',
+      motivoReemision: motivo,
+    })
+    .returning();
+  if (!creada) {
+    throw new Error('crearVersion: el INSERT no devolvió fila');
+  }
+  await tx
+    .update(certificadosViaje)
+    .set({ reemplazadoPor: creada.id })
+    .where(eq(certificadosViaje.id, anterior.id));
+  await tx.update(tripMetrics).set(espejo(creada)).where(eq(tripMetrics.tripId, nueva.tripId));
+  return creada;
 }
 
 /**

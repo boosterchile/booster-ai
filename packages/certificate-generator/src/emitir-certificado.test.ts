@@ -10,7 +10,11 @@ const { caMock, pdfMock, padesMock, storageMock } = vi.hoisted(() => ({
 vi.mock('./ca-self-signed.js', () => ({ obtenerOEmitirCertSelfSigned: caMock }));
 vi.mock('./generar-pdf-base.js', () => ({ generarPdfBase: pdfMock }));
 vi.mock('./firmar-pades.js', () => ({ firmarPades: padesMock }));
-vi.mock('./storage.js', () => ({ subirArtefactosCertificado: storageMock }));
+vi.mock('./storage.js', async (original) => ({
+  // La ruta por versión es la real: la emisión la usa para validar.
+  rutaPdfCertificado: (await original<typeof import('./storage.js')>()).rutaPdfCertificado,
+  subirArtefactosCertificado: storageMock,
+}));
 
 const { emitirCertificado } = await import('./emitir-certificado.js');
 
@@ -51,6 +55,20 @@ describe('emitirCertificado', () => {
     pdfMock.mockReset().mockResolvedValue(fakePdf);
     padesMock.mockReset().mockResolvedValue(fakeFirma);
     storageMock.mockReset().mockResolvedValue(fakeUpload);
+  });
+
+  it('pasa la versión al upload', async () => {
+    await emitirCertificado({ ...baseParams, version: 2 } as any);
+    expect(storageMock).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }));
+  });
+
+  it('una versión inválida no firma ni sube nada', async () => {
+    await expect(emitirCertificado({ ...baseParams, version: 0 } as any)).rejects.toThrow(
+      /versión/,
+    );
+    expect(caMock).not.toHaveBeenCalled();
+    expect(padesMock).not.toHaveBeenCalled();
+    expect(storageMock).not.toHaveBeenCalled();
   });
 
   it('orquesta cert → pdf → firma → upload y compone el resultado', async () => {

@@ -14,7 +14,7 @@
 import { obtenerOEmitirCertSelfSigned } from './ca-self-signed.js';
 import { firmarPades } from './firmar-pades.js';
 import { generarPdfBase } from './generar-pdf-base.js';
-import { subirArtefactosCertificado } from './storage.js';
+import { rutaPdfCertificado, subirArtefactosCertificado } from './storage.js';
 import type {
   ConfigInfra,
   DatosEmpresaCertificado,
@@ -35,11 +35,24 @@ export interface ParametrosEmisionCertificado {
    * sidecar. Ejemplo: 'https://api.boosterchile.com'. Sin slash final.
    */
   verifyBaseUrl: string;
+  /**
+   * Versión del certificado (`.specs/reemision-certificado/`). Sin ella, la
+   * 1. Una reemisión sube a la ruta de su versión y no pisa la anterior.
+   */
+  version?: number | undefined;
 }
 
 export async function emitirCertificado(
   params: ParametrosEmisionCertificado,
 ): Promise<ResultadoEmisionCertificado> {
+  // (0) La ruta se valida antes de firmar: una versión inválida no gasta una
+  // firma de KMS ni sube nada.
+  rutaPdfCertificado({
+    empresaId: params.empresaShipper.id,
+    trackingCode: params.viaje.trackingCode,
+    version: params.version,
+  });
+
   // (1) Cert X.509 — barato si está cacheado en GCS, ~150ms si hay que
   // emitirlo (1 sign de KMS).
   const cert = await obtenerOEmitirCertSelfSigned({
@@ -73,6 +86,7 @@ export async function emitirCertificado(
     cert,
     kmsKeyId: params.infra.kmsKeyId,
     verifyBaseUrl: params.verifyBaseUrl,
+    version: params.version,
   });
 
   return {

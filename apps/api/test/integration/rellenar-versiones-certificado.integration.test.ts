@@ -140,16 +140,20 @@ describe('integration: relleno de la versión 1 de los certificados emitidos', (
   test('un certificado ya reemitido conserva su historial', async () => {
     const tripId = await emitidoSinVersion('d');
     await rellenarVersionesCertificado(handle.db, { dryRun: false });
-    const v2 = await crearVersion(handle.db, {
-      tripId,
-      sha256: sha('e'),
-      pdfUrl: 'gs://b/certificates/e/e.pdf',
-      kmsVersion: '1',
-      emitidoEn: new Date('2026-11-11T12:00:00Z'),
-      fuenteDistancia: null,
-      motivoFallback: null,
-      decisionVersion: null,
-    });
+    const v2 = await crearVersion(
+      handle.db,
+      {
+        tripId,
+        sha256: sha('e'),
+        pdfUrl: 'gs://b/certificates/e/e.pdf',
+        kmsVersion: '1',
+        emitidoEn: new Date('2026-11-11T12:00:00Z'),
+        fuenteDistancia: null,
+        motivoFallback: null,
+        decisionVersion: null,
+      },
+      'factor_impreso_no_corresponde',
+    );
     const r = await rellenarVersionesCertificado(handle.db, { dryRun: false });
 
     expect(r.creadas.some((c) => c.tripId === tripId)).toBe(false);
