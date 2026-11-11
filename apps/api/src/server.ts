@@ -1106,7 +1106,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/rutas', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/rutas',
-      createRutasRoutes({ db: opts.db, logger, activada: config.RUTAS_API_ACTIVADA }),
+      createRutasRoutes({
+        db: opts.db,
+        logger,
+        activada: config.RUTAS_API_ACTIVADA,
+        routesProjectId: config.GOOGLE_CLOUD_PROJECT,
+      }),
     );
 
     app.route(

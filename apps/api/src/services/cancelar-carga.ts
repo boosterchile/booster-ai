@@ -47,6 +47,11 @@ export type ResultadoCancelacion =
        * commit (huella-consolidada §3.9).
        */
       rutaCerradaId: string | null;
+      /**
+       * La ruta de la carga cancelada, si sigue vigente con otras cargas: su
+       * estimación cambia y quien llama la recalcula (§3.9).
+       */
+      rutaVigenteId: string | null;
     }
   | { ok: false; code: 'trip_not_found' }
   | { ok: false; code: 'trip_not_cancellable'; currentStatus: string }
@@ -169,6 +174,12 @@ export async function cancelarCarga(
         sincronizada.desde !== 'cerrada'
           ? sincronizada.rutaId
           : null;
+      const rutaVigenteId =
+        (sincronizada.tipo === 'conciliada' &&
+          (sincronizada.hacia === 'planificada' || sincronizada.hacia === 'en_curso')) ||
+        sincronizada.tipo === 'sin_cambios'
+          ? sincronizada.rutaId
+          : null;
       // Una solicitud de cambio pendiente ya no tiene a quién aplicarse (§6.6).
       const solicitudInvalidada = await invalidarSolicitudPendiente(tx, {
         tripId,
@@ -205,6 +216,7 @@ export async function cancelarCarga(
         asignacion,
         motivo,
         rutaCerradaId,
+        rutaVigenteId,
       } as const;
     }
 

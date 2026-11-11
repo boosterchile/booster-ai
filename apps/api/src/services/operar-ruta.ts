@@ -346,7 +346,7 @@ export async function agruparServicio(
     readonly posicion: { readonly recogida: number; readonly entrega: number };
     readonly userId: string;
   },
-): Promise<{ ok: true; ruta: VistaDeRuta } | FalloDeRuta> {
+): Promise<{ ok: true; ruta: VistaDeRuta; rutaOrigenId: string } | FalloDeRuta> {
   return db.transaction(async (tx) => {
     const [asignacion] = await tx
       .select({ id: assignments.id, tripId: assignments.tripId, rutaId: assignments.rutaId })
@@ -412,7 +412,11 @@ export async function agruparServicio(
         recordedByUserId: opts.userId,
       },
     ]);
-    return { ok: true, ruta: await vistaActual(tx, destino.fila.id) } as const;
+    return {
+      ok: true,
+      ruta: await vistaActual(tx, destino.fila.id),
+      rutaOrigenId: origen.fila.id,
+    } as const;
   });
 }
 
