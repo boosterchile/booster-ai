@@ -31,9 +31,11 @@ import { type EmitirCertificadoConfig, armarDatosEmision } from './emitir-certif
  * en el bucket (spec §9); nunca una versión sin PDF.
  */
 
-/** Lista cerrada de motivos (spec §3.4). Espejo de `ck_certificados_viaje_motivo`. */
-export const MOTIVOS_REEMISION = ['factor_impreso_no_corresponde'] as const;
-export type MotivoReemision = (typeof MOTIVOS_REEMISION)[number];
+/**
+ * Lista cerrada de motivos (spec §3.4). Vive en el generador, que imprime el
+ * texto de cada uno; `ck_certificados_viaje_motivo` la repite en la base.
+ */
+export { MOTIVOS_REEMISION, type MotivoReemision } from '@booster-ai/certificate-generator';
 
 /**
  * El factor de emisión guardado (y por lo tanto impreso) no es el que se usó
@@ -187,6 +189,18 @@ export async function reemitirCertificado(opts: {
   try {
     result = await emitirCertificado({
       ...armado.datos,
+      // El certificado dice a qué versión reemplaza, de cuándo y por qué
+      // (spec §8-2). Reemplaza a la vigente, que tras una reversa puede no
+      // ser la de número anterior.
+      viaje: {
+        ...armado.datos.viaje,
+        version: {
+          numero: versionNueva,
+          reemplazaA: vigente.version,
+          reemplazaEmitidoEn: vigente.emitidoEn,
+          motivo: correccion.motivo,
+        },
+      },
       infra: { kmsKeyId: config.kmsKeyId, certificatesBucket: config.certificatesBucket },
       verifyBaseUrl: config.verifyBaseUrl,
       version: versionNueva,

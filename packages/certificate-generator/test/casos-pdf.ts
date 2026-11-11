@@ -9,7 +9,12 @@ const viaje = {
   cargoPesoKg: 12000,
   pickupAt: null,
   deliveredAt: new Date('2026-10-30T18:00:00Z'),
-  version: { numero: 2, reemplazaA: 1 },
+  version: {
+    numero: 2,
+    reemplazaA: 1,
+    reemplazaEmitidoEn: new Date('2026-11-03T06:18:23Z'),
+    motivo: 'factor_impreso_no_corresponde',
+  },
 };
 const metricas = {
   distanciaKmEstimated: 468.76,

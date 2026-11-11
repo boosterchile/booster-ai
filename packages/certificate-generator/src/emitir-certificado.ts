@@ -14,6 +14,7 @@
 import { obtenerOEmitirCertSelfSigned } from './ca-self-signed.js';
 import { firmarPades } from './firmar-pades.js';
 import { generarPdfBase } from './generar-pdf-base.js';
+import { validarVersion } from './reemision.js';
 import { rutaPdfCertificado, subirArtefactosCertificado } from './storage.js';
 import type {
   ConfigInfra,
@@ -52,6 +53,14 @@ export async function emitirCertificado(
     trackingCode: params.viaje.trackingCode,
     version: params.version,
   });
+  // La versión de la ruta y la impresa son la misma: un PDF subido como v2
+  // que diga «Versión 1», sin decir qué reemplaza, no resiste una auditoría.
+  const impresa = validarVersion(params.viaje.version).numero;
+  if ((params.version ?? 1) !== impresa) {
+    throw new Error(
+      `la versión de la ruta (${params.version ?? 1}) no es la impresa en el certificado (${impresa})`,
+    );
+  }
 
   // (1) Cert X.509 — barato si está cacheado en GCS, ~150ms si hay que
   // emitirlo (1 sign de KMS).

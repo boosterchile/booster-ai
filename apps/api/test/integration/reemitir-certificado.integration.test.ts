@@ -245,6 +245,24 @@ describe('integration: reemisión de un certificado', () => {
     expect(params).toMatchObject({ version: 2, metricas: { emissionFactorUsado: 3.24 } });
     // Las emisiones impresas no cambian.
     expect(params.metricas.kgco2eWtwActual).toBe(590.746);
+    // El certificado dice a qué versión reemplaza, de cuándo y por qué (§8-2).
+    expect(params.viaje.version).toEqual({
+      numero: 2,
+      reemplazaA: 1,
+      reemplazaEmitidoEn: EMITIDO_V1,
+      motivo: 'factor_impreso_no_corresponde',
+    });
+    // Y con esos datos el PDF real se genera (la plantilla valida la versión).
+    const { generarPdfBase } = await import('@booster-ai/certificate-generator');
+    await expect(
+      generarPdfBase({
+        viaje: params.viaje,
+        metricas: params.metricas,
+        empresaShipper: params.empresaShipper,
+        transportista: params.transportista,
+        verifyUrl: 'https://x/verify',
+      }),
+    ).resolves.toBeInstanceOf(Uint8Array);
 
     const [v1, v2] = await versiones(tripId);
     expect(v1).toMatchObject({
@@ -381,7 +399,10 @@ describe('integration: reemisión de un certificado', () => {
     const r = await reemitir(tripId, { ...CORRECCION, factorAnterior: 3.24, factorNuevo: 3.24001 });
 
     expect(r).toMatchObject({ ok: true, version: 3 });
-    expect(emitirCertificado.mock.calls[1]?.[0]).toMatchObject({ version: 3 });
+    expect(emitirCertificado.mock.calls[1]?.[0]).toMatchObject({
+      version: 3,
+      viaje: { version: { numero: 3, reemplazaA: 2, reemplazaEmitidoEn: EMITIDO_V2 } },
+    });
     expect((await versiones(tripId)).map((v) => v.estado)).toEqual([
       'reemplazado',
       'reemplazado',
@@ -409,7 +430,11 @@ describe('integration: reemisión de un certificado', () => {
     const r = await reemitir(tripId);
 
     expect(r).toMatchObject({ ok: true, version: 3 });
-    expect(emitirCertificado.mock.calls[1]?.[0]).toMatchObject({ version: 3 });
+    // Reemplaza a la que estaba vigente (la 1), no a la revertida.
+    expect(emitirCertificado.mock.calls[1]?.[0]).toMatchObject({
+      version: 3,
+      viaje: { version: { numero: 3, reemplazaA: 1, reemplazaEmitidoEn: EMITIDO_V1 } },
+    });
     expect((await versiones(tripId)).map((v) => [v.version, v.estado])).toEqual([
       [1, 'reemplazado'],
       [2, 'revertido'],

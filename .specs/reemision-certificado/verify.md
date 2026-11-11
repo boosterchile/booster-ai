@@ -140,3 +140,41 @@ El criterio 5 (lo que imprime el certificado reemitido) es la parte 4.
 - KMS y el bucket se simulan; no hay test que firme y suba a GCS.
 - Si la transacción falla después de subir, el PDF queda huérfano en el
   bucket (spec §9) y se registra en el log.
+
+## Parte 4 — el certificado reemitido dice qué reemplaza (2026-11-11)
+
+Un certificado de versión mayor que 1 lleva, bajo las fechas y en una línea:
+
+> Reemplaza a la versión 1, emitida el 03-11-2026. Motivo: el factor de
+> emisión impreso no era el usado en el cálculo.
+
+Arriba sigue «Versión 2 · reemplaza a v1», como fijó HC-004.
+
+- La fecha es la de emisión de la versión reemplazada, en hora de Chile.
+- «Reemplaza a» nombra la versión que estaba vigente. Después de revertir la
+  2, la 3 reemplaza a la 1.
+- La lista cerrada de motivos y su texto viven en el generador
+  (`src/reemision.ts`); el API la reexporta y la restricción
+  `ck_certificados_viaje_motivo` de la base la repite.
+- La plantilla valida la versión: una versión mayor que 1 sin versión
+  anterior, fecha o motivo válidos no se genera. Un certificado firmado que
+  diga «versión 2» sin decir qué reemplaza no resiste una auditoría (§8-2).
+- El texto del motivo se acortó para que la línea quepa a 9 pt. El test
+  comprueba que cada motivo de la lista cabe en una línea.
+
+### Criterio 5
+
+`packages/certificate-generator/test/reemision-plantilla.test.ts`, con las
+cifras del certificado afectado: imprime el factor 3,24, combustible 182,33 L y
+emisiones 590,75 kg; 182,33 × 3,24 da la cifra impresa dentro del redondeo a
+2 decimales. Con el factor viejo (3,25) la cuenta no cierra.
+
+`apps/api/test/integration/reemitir-certificado.integration.test.ts`: la
+reemisión pasa al PDF la versión anterior, su fecha y el motivo, y con esos
+datos el PDF real se genera.
+
+### Lo que no cubre
+
+- Ningún test abre el PDF firmado: la firma y la subida se simulan.
+- El aviso al generador de §8-1 no está en ninguna parte de la tabla §5. Queda
+  para decidir dónde entra (la parte 5 o una propia).
