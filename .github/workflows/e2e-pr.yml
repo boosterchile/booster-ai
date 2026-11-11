@@ -181,10 +181,11 @@ jobs:
           java-version: '21'
       - run: pnpm install --frozen-lockfile
       - name: Enable pgcrypto
+        # psql del propio contenedor de Postgres: instalar postgresql-client con
+        # apt dejaba el job a merced del mirror de Ubuntu (caído el 2026-11-11).
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y postgresql-client
-          PGPASSWORD=test psql -h localhost -U test -d test -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;'
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -v ON_ERROR_STOP=1 -U test -d test -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;'
       - name: Start Auth emulator :9099
         run: |
           nohup npx --yes firebase-tools@14.7.0 emulators:start --only auth --project booster-ai-dev --non-interactive > /tmp/auth-emulator.log 2>&1 &
