@@ -2,7 +2,7 @@
 
 - **Author**: agente (Claude), por encargo del PO
 - **Date**: 2026-11-10
-- **Status**: Borrador. Espera la aceptación del PO y sus respuestas a §11.
+- **Status**: Aceptada por el PO en el chat del 2026-11-11 («Acepto las ocho»), con las decisiones de §11.
 - **Linked**: [ADR-089](../../docs/adr/089-reparto-huella-cargas-consolidadas.md) (vigente desde el 2026-11-10), [ADR-088](../../docs/adr/088-ruta-parada-servicio.md), [ADR-021](../../docs/adr/021-glec-v3-compliance.md), [ADR-077](../../docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md), `.specs/ruta-parada-servicio/`
 - **Frente**: «Ruta, parada y servicio (etapa 2)», fuera de slot en `docs/frentes-vivos.md`.
 
@@ -49,7 +49,7 @@ tramo es el trayecto entre dos paradas consecutivas
 El trayecto antes de la primera recogida y el posterior a la última entrega
 entran en `E` cuando hay telemetría que los mide. Sin ella se aplica el factor
 de retorno vacío de ADR-021 sobre el total de la ruta. Los límites de esos dos
-trayectos se fijan en §11-1.
+trayectos son los de §11-1.
 
 ### 3.3 Reparto
 
@@ -85,8 +85,8 @@ peso en una ruta consolidada. Solo, sigue la regla vigente.
 ### 3.7 Servicio cancelado dentro de la ruta
 
 - Cancelado antes de su recogida: sale de la ruta y no participa.
-- Cancelado después de su recogida: participa con su actividad completa. El
-  caso se decide en §11-2.
+- Cancelado después de su recogida: participa con su actividad completa. No
+  recibe certificado y su parte no se carga a los demás (§11-2).
 
 ### 3.8 Nivel de certificación
 
@@ -107,7 +107,8 @@ ruta cambia.
 
 En una ruta con más de un servicio agrega: que la carga viajó consolidada, el
 método de reparto («toneladas-kilómetro, distancia directa»), la participación
-del servicio en porcentaje y la versión del método. No identifica a los otros
+del servicio en porcentaje, la huella total de la ruta (§11-4) y la versión
+del método. No identifica a los otros
 generadores ni dice cuántos son.
 
 En una ruta con un solo servicio el certificado no cambia.
@@ -127,7 +128,7 @@ Son decisión del PO.
 | Contrato | Cambio |
 |---|---|
 | Esquema de base | tabla nueva `metricas_ruta` (`ruta_id`, `E` y su desglose, distancia, método, fuente, nivel, versión del método); `metricas_viaje` agrega `ruta_id`, `actividad_tkm`, `participacion` y `version_metodo_reparto` |
-| Certificado | cuatro datos nuevos en las rutas con más de un servicio (§3.10). Cambia la plantilla. |
+| Certificado | cinco datos nuevos en las rutas con más de un servicio (§3.10). Cambia la plantilla. |
 | API y web del generador | la huella de una carga consolidada indica que es una parte de una ruta y su participación |
 | API y web del transportista | huella total de la ruta y su reparto por servicio, sin datos de otros generadores más allá de lo que la transportista ya conoce |
 | Momento de emisión | el certificado de una carga consolidada llega al cerrar la ruta, no al entregar esa carga |
@@ -211,9 +212,11 @@ PR.
   release conjunto.
 - Verificación de las citas de GLEC, ISO 14083 y GHG Protocol.
 
-## 11. Preguntas para el PO
+## 11. Decisiones del PO (2026-11-11)
 
-| # | Pregunta | Recomendación |
+El PO aceptó las cuatro recomendaciones.
+
+| # | Pregunta | Decisión |
 |---|---|---|
 | 1 | ¿Desde y hasta dónde se cuentan el posicionamiento y el regreso cuando hay telemetría? | Desde el último punto donde el vehículo quedó libre de la ruta anterior, o donde empezó a moverse ese día si no hay ruta anterior, hasta la primera recogida. El regreso, desde la última entrega hasta la primera recogida de la ruta siguiente o hasta 4 horas detenido, lo que ocurra primero. |
 | 2 | Un servicio cancelado después de recogido, ¿participa en el reparto? | Sí, con su actividad completa: el camión ya movió esa carga. No se le emite certificado; su parte queda registrada en la ruta y no se carga a los demás. |

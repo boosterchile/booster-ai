@@ -207,7 +207,7 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Terminado cuando:** se cumplen los criterios de `.specs/ruta-parada-servicio/spec.md` §10 y sus ocho partes (§7) están en producción. Las partes 5 a 7 salen en el mismo release que el reparto de huella de ADR-089.
 
-**Estado al 2026-11-10:** spec aceptada, sin código. Las specs de ADR-089 y ADR-090 están por escribir.
+**Estado al 2026-11-11:** las tres specs están aceptadas (`ruta-parada-servicio`, `matching-desde-la-carga`, `huella-consolidada`). Sin código.
 
 **Fuera de alcance:** transbordo, optimización automática del orden de paradas, rutas con más de una empresa transportista, más de una unidad de arrastre y sugerencia de agrupaciones (spec §8).
 

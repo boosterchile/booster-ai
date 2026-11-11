@@ -2,7 +2,7 @@
 
 - **Author**: agente (Claude), por encargo del PO
 - **Date**: 2026-11-10
-- **Status**: Borrador. Espera la aceptación del PO y sus respuestas a §11.
+- **Status**: Aceptada por el PO en el chat del 2026-11-11 («Acepto las ocho»), con las decisiones de §11.
 - **Linked**: [ADR-090](../../docs/adr/090-matching-desde-la-carga-vehiculo-al-despachar.md) (vigente desde el 2026-11-10), [ADR-088](../../docs/adr/088-ruta-parada-servicio.md), [ADR-073](../../docs/adr/073-tipologias-flota-configuracion-glec.md), [ADR-077](../../docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md), `.specs/ruta-parada-servicio/`
 - **Frente**: «Ruta, parada y servicio (etapa 2)», fuera de slot en `docs/frentes-vivos.md`.
 
@@ -65,12 +65,12 @@ que cumple a la vez:
 
 Es dato y función pura en `packages/matching-algorithm`, con un test por cada
 par (`tipo_carga`, `tipo_carroceria`): 110 pares, cada uno compatible o no.
-La tabla inicial la propone el agente en `plan.md` y la aprueba el PO antes
-del PR que la introduce (§11-2).
+La tabla inicial la propone el agente en `plan.md`, con los pares dudosos
+marcados, y la aprueba el PO antes del PR que la introduce (§11-2).
 
 ### 3.5 Vehículo sin carrocería declarada
 
-Hoy es el caso de toda la flota (§2). La regla se decide en §11-1.
+Hoy es el caso de toda la flota (§2). Un vehículo sin carrocería declarada es elegible solo para `carga_seca` y `otra`. Desde este release la carrocería es obligatoria al crear o editar un vehículo (§11-1).
 
 ### 3.6 La oferta
 
@@ -97,7 +97,8 @@ conductor.
 
 Se puede declarar hasta el inicio de la ventana de recogida. Antes, la oficina
 recibe recordatorios. Si la ventana empieza y la ruta sigue sin vehículo, el
-generador recibe un aviso. Los momentos de los recordatorios se fijan en §11-3.
+generador recibe un aviso. Los recordatorios salen 24 horas y 2 horas antes del inicio de la ventana
+(§11-3).
 
 ### 3.10 Unidad de un tercero (decisión 2 de ADR-090)
 
@@ -110,7 +111,8 @@ fuente de posición disponible (ADR-077).
 ### 3.11 Lo que ve el generador (decisión 3 de ADR-090)
 
 Antes de la declaración ve «vehículo por asignar». Desde la declaración ve lo
-mismo que ve hoy del vehículo asignado.
+mismo que ve hoy del vehículo asignado. No ve si la unidad es de un tercero
+(§11-4).
 
 ### 3.12 Huella
 
@@ -134,7 +136,7 @@ Son decisión del PO.
 | API del transportista | declarar y cambiar vehículo, arrastre y conductor de una ruta; el rechazo trae un código de motivo |
 | API de recogida | nuevo rechazo: ruta sin vehículo o sin conductor |
 | API y web del generador | el vehículo de la carga puede venir vacío: «por asignar» |
-| API de flota | alta y edición de vehículos aceptan `es_de_tercero` |
+| API de flota | alta y edición de vehículos aceptan `es_de_tercero` y exigen `carroceria` |
 
 ## 5. Arquitectura
 
@@ -177,7 +179,8 @@ Las partes 4, 5 y 6 se despliegan juntas.
    `empresaEsCandidata` con configuraciones de motriz sola y con arrastre.
 2. Test de regresión del matching: con la flota y las cargas de producción al
    2026-11-10, las empresas candidatas de cada carga son las mismas que con el
-   matching vigente, bajo la regla que se decida en §11-1.
+   matching vigente para las cargas `carga_seca`, y ninguna para la carga
+   `agricola` (§3.5).
 3. Test de integración contra PostgreSQL: aceptar una oferta sin vehículo
    sugerido deja la asignación y su ruta sin vehículo.
 4. Tests de ruta de la API: declarar una configuración no elegible se rechaza
@@ -194,18 +197,20 @@ evidencia del PR.
 
 ## 9. Riesgo principal
 
-Si la regla de §11-1 exige carrocería, ninguna empresa es candidata hasta que
-cada transportista la declare en sus vehículos. La parte 2 sale detrás de un
-flag y con comparación en sombra para ver ese efecto antes de activarla.
+Con la regla de §3.5, la carga `agricola` de producción no tendría candidatas
+hasta que alguna transportista declare carrocería. La parte 2 sale detrás de
+un flag y con comparación en sombra para ver ese efecto antes de activarla.
 
 ## 10. Dependencias
 
 - `.specs/ruta-parada-servicio/` partes 1 a 4.
 - La validación del anexo de ADR-090, solo para lo que §7 deja fuera.
 
-## 11. Preguntas para el PO
+## 11. Decisiones del PO (2026-11-11)
 
-| # | Pregunta | Recomendación |
+El PO aceptó las cuatro recomendaciones.
+
+| # | Pregunta | Decisión |
 |---|---|---|
 | 1 | Un vehículo sin carrocería declarada, ¿para qué cargas es elegible? Hoy son los 16 vehículos activos. | Elegible solo para `carga_seca` y `otra`, que son 16 de los 17 viajes de producción, y pedir la carrocería como obligatoria en el alta y la edición de vehículos desde este release. Así nada se detiene y la flota se completa sola. |
 | 2 | ¿Quién propone la tabla de compatibilidad de 110 pares? | El agente la propone en `plan.md`, marcando los pares dudosos, y el PO la aprueba antes del PR. |
