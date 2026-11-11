@@ -888,7 +888,7 @@ steps:
           --region=${_REGION} \
           --platform=managed \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-whatsapp-bot '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-whatsapp-bot '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}'
     waitFor: [push-whatsapp-bot]
 
   - id: deploy-web
@@ -903,7 +903,7 @@ steps:
           --region=${_REGION} \
           --platform=managed \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-web '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-web '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/web:${_COMMIT_SHA}'
     waitFor: [push-web]
 
   # apps/telemetry-processor — Cloud Run PULL consumer (StreamingPull).
@@ -926,7 +926,7 @@ steps:
           --cpu=1 \
           --memory=1Gi \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-telemetry-processor '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-telemetry-processor '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}'
     waitFor: [push-telemetry-processor]
 
   - id: deploy-sms-fallback-gateway
@@ -941,7 +941,7 @@ steps:
           --region=${_REGION} \
           --platform=managed \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-sms-fallback-gateway '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-sms-fallback-gateway '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}'
     waitFor: [push-sms-fallback-gateway]
 
   # apps/document-service — consumer de `document.uploaded`, pull o push según
@@ -966,7 +966,7 @@ steps:
           --cpu=1 \
           --memory=1Gi \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-document-service '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-document-service '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/document-service:${_COMMIT_SHA}'
     waitFor: [push-document-service]
 
   # apps/notification-service — Cloud Run PULL consumer de `notification-events`.
@@ -991,7 +991,7 @@ steps:
           --cpu=1 \
           --memory=512Mi \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-notification-service '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-notification-service '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/notification-service:${_COMMIT_SHA}'
     waitFor: [push-notification-service]
 
   # apps/matching-engine — request-driven. --min-instances NO va aquí: lo
@@ -1018,7 +1018,7 @@ steps:
           --cpu=1 \
           --memory=512Mi \
           --update-labels=commit=${_COMMIT_SHA}
-        bash scripts/deploy/route_to_commit_revision.sh booster-ai-matching-engine '${_REGION}' '${_COMMIT_SHA}'
+        bash scripts/deploy/route_to_commit_revision.sh booster-ai-matching-engine '${_REGION}' '${_COMMIT_SHA}' '${_REGISTRY}/matching-engine:${_COMMIT_SHA}'
     waitFor: [push-matching-engine]
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
