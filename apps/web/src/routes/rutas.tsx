@@ -1,6 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, Inbox, Plus, Truck, UserRound, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
+import { z } from 'zod';
 import { EmptyState } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -39,6 +40,9 @@ interface ParadaRuta {
 interface DetalleRuta {
   id: string;
   estado: ResumenRuta['estado'];
+  vehiculo: { id: string; patente: string } | null;
+  unidad_arrastre: { id: string; patente: string } | null;
+  conductor: { id: string; nombre: string } | null;
   capacidad: { kg: number; m3: number | null } | null;
   paradas: ParadaRuta[];
   tramos: { desde: number; hasta: number; masa_kg: number }[];
@@ -67,11 +71,27 @@ const MENSAJES: Record<string, string> = {
     'Una carga sin peso declarado no puede compartir ruta: no sabemos si cabe.',
   carroceria_incompatible: 'La carrocería del camión de esta ruta no sirve para esa carga.',
   ruta_no_editable: 'Esta ruta ya terminó: no se puede cambiar.',
+  vehiculo_con_carga_recogida:
+    'El camión no se cambia cuando ya hay carga recogida. Sí puedes cambiar el conductor.',
+  en_curso_sin_conductor: 'Una ruta en curso no puede quedar sin conductor.',
   rutas_de_distinta_empresa: 'Las dos rutas tienen que ser de tu empresa.',
 };
 
 /** Traduce el rechazo del API a algo que la oficina pueda resolver. */
 function mensajeDeRechazo(err: unknown): string {
+  if (err instanceof ApiError && err.code === 'conductor_no_asignable') {
+    return 'Ese conductor ya no está disponible en tu empresa.';
+  }
+  if (err instanceof ApiError && err.code === 'vehiculo_no_asignable') {
+    const { unidad, motivo } = (err.details ?? {}) as { unidad?: string; motivo?: string };
+    if (motivo === 'no_compone_con_la_motriz') {
+      return 'Ese arrastre no se engancha a ese camión.';
+    }
+    const cual = unidad === 'unidad_arrastre' ? 'El arrastre' : 'El camión';
+    return motivo === 'no_esta_activa'
+      ? `${cual} no está activo.`
+      : `${cual} no se puede usar en esta ruta.`;
+  }
   if (!(err instanceof ApiError) || err.code !== 'ruta_invalida') {
     return 'No pudimos guardar el cambio. Intenta de nuevo en unos segundos.';
   }
@@ -357,6 +377,32 @@ function DetalleDeRuta({
         </output>
       )}
 
+      {puedeArmar ? (
+        <CamionYConductor
+          // Con otra configuración guardada, el formulario parte de ella.
+          key={`${ruta.vehiculo?.id}-${ruta.unidad_arrastre?.id}-${ruta.conductor?.id}`}
+          ruta={ruta}
+          conCargaRecogida={recogidas.size > 0}
+          guardando={cambio.isPending}
+          onGuardar={(declarado) =>
+            cambio.mutate(async () => {
+              const r = await api.put<{ ruta: DetalleRuta }>(
+                `/rutas/${rutaId}/configuracion`,
+                declarado,
+                scope.init,
+              );
+              setAviso('Camión y conductor guardados.');
+              return r;
+            })
+          }
+        />
+      ) : (
+        <p className="rounded-lg border border-neutral-200 bg-white p-4 text-neutral-700 text-sm">
+          Camión {ruta.vehiculo?.patente ?? 'sin declarar'} · Conductor{' '}
+          {ruta.conductor?.nombre ?? 'sin declarar'}
+        </p>
+      )}
+
       <section
         aria-label="Paradas de la ruta"
         className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
@@ -475,6 +521,177 @@ function DetalleDeRuta({
         </section>
       )}
     </div>
+  );
+}
+
+const unidadSchema = z.object({
+  id: z.string().min(1),
+  plate: z.string().min(1),
+  unit_category: z.string().optional(),
+  status: z.string(),
+});
+/** `/vehiculos` responde el arreglo pelado o `{ vehicles }`, según la pantalla que lo cacheó. */
+const flotaSchema = z.union([z.array(unidadSchema), z.object({ vehicles: z.array(unidadSchema) })]);
+
+interface ConductorDeLista {
+  user_id: string;
+  status: string;
+  user: { full_name: string | null; is_pending: boolean };
+}
+
+interface Declarado {
+  vehiculo_id: string;
+  unidad_arrastre_id: string | null;
+  conductor_id: string | null;
+}
+
+/**
+ * Declarar camión, arrastre y conductor para toda la ruta (plan §3.2, D1). El
+ * camión no se cambia con carga recogida; el conductor sí. Las reglas las
+ * aplica el API: este formulario solo evita ofrecer lo que ya se sabe inválido.
+ */
+function CamionYConductor({
+  ruta,
+  conCargaRecogida,
+  guardando,
+  onGuardar,
+}: {
+  ruta: DetalleRuta;
+  conCargaRecogida: boolean;
+  guardando: boolean;
+  onGuardar: (declarado: Declarado) => void;
+}) {
+  const scope = useEmpresaScope();
+  const flotaQ = useQuery({
+    queryKey: scope.key('vehiculos', 'rutas'),
+    queryFn: async () => {
+      const filas = flotaSchema.parse(await api.get<unknown>('/vehiculos', scope.init));
+      return Array.isArray(filas) ? filas : filas.vehicles;
+    },
+  });
+  const conductoresQ = useQuery({
+    queryKey: scope.key('conductores', 'rutas'),
+    queryFn: async () =>
+      (await api.get<{ conductores: ConductorDeLista[] }>('/conductores', scope.init)).conductores,
+  });
+
+  const actual = {
+    vehiculo: ruta.vehiculo?.id ?? '',
+    arrastre: ruta.unidad_arrastre?.id ?? '',
+    conductor: ruta.conductor?.id ?? '',
+  };
+  const [elegido, setElegido] = useState(actual);
+  const cambio =
+    elegido.vehiculo !== actual.vehiculo ||
+    elegido.arrastre !== actual.arrastre ||
+    elegido.conductor !== actual.conductor;
+
+  const activas = (flotaQ.data ?? []).filter((u) => u.status === 'activo');
+  // La unidad ya declarada se ofrece aunque hoy no esté activa.
+  const conLaActual = (
+    lista: { id: string; plate: string }[],
+    declarada: { id: string; patente: string } | null,
+  ) =>
+    declarada && !lista.some((u) => u.id === declarada.id)
+      ? [{ id: declarada.id, plate: declarada.patente }, ...lista]
+      : lista;
+  const camiones = conLaActual(
+    activas.filter((u) => u.unit_category !== 'arrastre'),
+    ruta.vehiculo,
+  );
+  const arrastres = conLaActual(
+    activas.filter((u) => u.unit_category === 'arrastre'),
+    ruta.unidad_arrastre,
+  );
+  const conductores = (conductoresQ.data ?? []).filter((c) => c.status !== 'baja');
+  const clase =
+    'mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm disabled:bg-neutral-100 disabled:text-neutral-500';
+
+  return (
+    <fieldset className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+      <legend className="px-1 font-semibold text-base text-neutral-900">Camión y conductor</legend>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="block text-neutral-700 text-sm">
+          Camión
+          <select
+            className={clase}
+            value={elegido.vehiculo}
+            disabled={conCargaRecogida || flotaQ.isLoading}
+            onChange={(e) => setElegido({ ...elegido, vehiculo: e.target.value })}
+          >
+            {camiones.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.plate}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-neutral-700 text-sm">
+          Arrastre
+          <select
+            className={clase}
+            value={elegido.arrastre}
+            disabled={conCargaRecogida || flotaQ.isLoading}
+            onChange={(e) => setElegido({ ...elegido, arrastre: e.target.value })}
+          >
+            <option value="">Sin arrastre</option>
+            {arrastres.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.plate}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-neutral-700 text-sm">
+          Conductor
+          <select
+            className={clase}
+            value={elegido.conductor}
+            disabled={conductoresQ.isLoading}
+            onChange={(e) => setElegido({ ...elegido, conductor: e.target.value })}
+          >
+            {/* Una ruta en curso no puede quedar sin conductor. */}
+            {(ruta.estado !== 'en_curso' || !actual.conductor) && (
+              <option value="">Sin conductor</option>
+            )}
+            {conductores.map((c) => (
+              <option key={c.user_id} value={c.user_id}>
+                {c.user.full_name ?? 'Sin nombre'}
+                {c.user.is_pending ? ' (sin activar)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {conCargaRecogida && (
+        <p className="mt-2 text-neutral-600 text-xs">
+          Como ya hay carga recogida, el camión no se cambia. El conductor sí se puede relevar.
+        </p>
+      )}
+      {(flotaQ.isError || conductoresQ.isError) && (
+        <p className="mt-2 text-danger-700 text-xs">
+          No pudimos cargar tu flota o tus conductores. Intenta de nuevo en unos segundos.
+        </p>
+      )}
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          disabled={
+            !cambio || guardando || flotaQ.isError || conductoresQ.isError || !elegido.vehiculo
+          }
+          onClick={() =>
+            onGuardar({
+              vehiculo_id: elegido.vehiculo,
+              unidad_arrastre_id: elegido.arrastre || null,
+              conductor_id: elegido.conductor || null,
+            })
+          }
+          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+        >
+          Guardar
+        </button>
+      </div>
+    </fieldset>
   );
 }
 
