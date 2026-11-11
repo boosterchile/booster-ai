@@ -146,6 +146,55 @@ bordo si no se recogió, no deja la ruta pendiente y conserva la historia.
 Evidencia: `test/integration/ruta-consolidada.integration.test.ts` (11 tests,
 10 en rojo antes de implementar) y `test/unit/ruta-compartida.test.ts`.
 
+## Parte 5c — la API de rutas, apagada (2026-11-11)
+
+Contrato de `plan.md` §3. Router `apps/api/src/routes/rutas.ts`, servicio
+`services/operar-ruta.ts`. Detrás de `RUTAS_API_ACTIVADA` (apagado por
+defecto): apagada, todo `/rutas` responde 404.
+
+| Operación | Ruta |
+|---|---|
+| Listar | `GET /rutas?estado=` |
+| Ver | `GET /rutas/:id` |
+| Agrupar | `POST /rutas/:id/servicios` |
+| Quitar | `DELETE /rutas/:id/servicios/:asignacion_id` |
+| Reordenar | `PUT /rutas/:id/paradas` |
+| Declarar vehículo, arrastre y conductor | `PUT /rutas/:id/configuracion` |
+
+Cada operación carga las rutas que toca con `FOR UPDATE`, pide el resultado a
+`route-planner` y persiste en una transacción, con su evento en
+`eventos_ruta`. Lo declarado en la ruta se copia a sus asignaciones vivas.
+
+### Precisiones al contrato
+
+- El 422 nombra el servicio con `viaje_id`, no con el nombre interno del
+  paquete.
+- Un vehículo, un arrastre o un conductor que no se pueden declarar responden
+  422 `vehiculo_no_asignable` (con `unidad` y `motivo`) o
+  `conductor_no_asignable`. El plan solo listaba `ruta_invalida`.
+- No hay `ruta_cambio_concurrente`: las rutas se bloquean al cargarlas, así
+  que dos escrituras a la vez se ordenan y la segunda ve el resultado de la
+  primera.
+- Cada parada trae `servicio.cancelado`: una carga cancelada sigue en la ruta
+  (parte 5b).
+- `ventana` es la de recogida; en la parada de entrega es `null`, porque el
+  viaje no guarda una ventana de entrega.
+
+### Criterio 5 de la spec
+
+`test/integration/rutas-api.integration.test.ts`, por HTTP contra PostgreSQL
+(16 tests): agrupar, quitar y reordenar respetan §4.5 con la ruta
+`planificada` y `en_curso`; una empresa no ve ni opera rutas de otra (404 en
+las seis operaciones, y no puede meter ni sacar cargas ajenas); el
+visualizador lee y no escribe; el conductor no usa `/rutas`; apagada responde
+404; el flujo completo agrupar → recoger → entregar cierra la ruta.
+
+### Lo que no cubre
+
+- El conductor todavía no ve las paradas de una ruta agrupada: es la parte 6.
+  Por eso la API sigue apagada.
+- No hay aviso al conductor cuando se le declara una ruta desde esta API.
+
 ## Parte 6a — la hoja de ruta en la API del conductor (2026-11-11)
 
 Spec §4.8 y §5 («la asignación entrega además la ruta y sus paradas»).
