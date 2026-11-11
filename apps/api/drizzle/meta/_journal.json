@@ -568,6 +568,13 @@
       "when": 1781049600321,
       "tag": "0080_metricas_ruta",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1781049600420,
+      "tag": "0081_confirmaciones_acceso_booster",
+      "breakpoints": true
     }
   ]
 }

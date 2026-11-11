@@ -146,3 +146,31 @@ describe('enviarAvisoAccesoPanel', () => {
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain('fallo con datos del cuerpo');
   });
 });
+
+// `.specs/confirmar-acceso-booster` SC7 (T6).
+describe('enviarAvisoAccesoPanel — acceso confirmado por la persona', () => {
+  it('dice que la persona confirmó con el código que le entregó el admin, y dónde se quita', async () => {
+    const { sender, send } = makeSender();
+
+    const r = await enviarAvisoAccesoPanel({
+      ...BASE,
+      sender,
+      logger: makeLogger() as never as Logger,
+      accion: 'confirmado',
+      destinatarios: ['dev@boosterchile.com', 'ops@boosterchile.com'],
+    });
+
+    expect(r).toEqual({ destinatarios: 2, enviados: 2 });
+    const msg = send.mock.calls[0]?.[0];
+    expect(msg?.subject).toBe('Booster: acceso al panel otorgado a Ana Soto');
+    expect(msg?.text).toContain(
+      'Ana Soto (ana.soto@boosterchile.com) confirmó desde su sesión el código que le entregó dev@boosterchile.com.',
+    );
+    expect(msg?.text).toContain('Desde ahora tiene acceso al panel de administración de Booster.');
+    expect(msg?.text).toContain(
+      'Si este cambio no corresponde, quita el acceso en https://app.boosterchile.com/app/platform-admin/personal.',
+    );
+    expect(msg?.text).not.toMatch(/\d{6}/);
+    expect(msg?.html).toBeUndefined();
+  });
+});

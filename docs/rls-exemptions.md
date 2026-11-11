@@ -61,3 +61,4 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `configuracionComercial` | `configuracion_comercial` | Configuración comercial global de la plataforma (ADR-079); la publica solo platform-admin. Las queries llevan `rls-allowlist`. |
 | `valoresUf` | `valores_uf` | Caché global del valor UF por fecha (ADR-079 §4), sin datos de empresa. Las queries llevan `rls-allowlist`. |
 | `eventosPagoViaje` | `eventos_pago_viaje` | Mandato de cobro (ADR-080). Se filtra por `asignacionId` de una asignación validada, o por join con `liquidaciones` en la conciliación del job admin. |
+| `confirmacionesAccesoBooster` | `confirmaciones_acceso_booster` | Confirmación del acceso al panel de Booster de una cuenta (`.specs/confirmar-acceso-booster`). Se filtra por `usuarioId`: la persona confirma la suya con el id de su sesión, y el panel del personal (`requirePlatformAdmin`) la emite, la lista y la borra. Las queries llevan `rls-allowlist`. |

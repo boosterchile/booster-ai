@@ -270,3 +270,18 @@ describe('check-route-default-deny — alta del personal de Booster (SC8)', () =
     expect(rationale).not.toContain('BOOSTER_PLATFORM_ADMIN_EMAILS');
   });
 });
+
+// `.specs/confirmar-acceso-booster` SC12 (T5): la confirmación del acceso al
+// panel la hace la persona desde su sesión. userContext precede el mount.
+describe('check-route-default-deny — confirmación del acceso al panel (SC12)', () => {
+  it('createMeConfirmarAccesoBoosterRoutes está montada en /confirmar-acceso-booster de /me', () => {
+    expect(enumerateRouteMounts(REAL_SERVER_SOURCE)).toContainEqual({
+      path: '/confirmar-acceso-booster',
+      key: 'createMeConfirmarAccesoBoosterRoutes',
+    });
+  });
+
+  it('createMeConfirmarAccesoBoosterRoutes clasificada ENFORCED', () => {
+    expect(ROUTE_CLASSIFICATION.createMeConfirmarAccesoBoosterRoutes?.category).toBe('ENFORCED');
+  });
+});

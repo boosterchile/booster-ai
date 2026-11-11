@@ -1,6 +1,7 @@
 import {
   type AltaPersonalBooster,
   type AltaPersonalBoosterResponse,
+  CONFIRMACION_ACCESO_BOOSTER_VIGENCIA_HORAS,
   type PersonalBooster as PersonaDelPersonal,
   type PersonalBoosterErrorCode,
   type PersonalBoosterEstado,
@@ -18,6 +19,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import type { ZodError } from 'zod';
 import { urlActivar } from '../../lib/activar-url.js';
 import { ApiError, api } from '../../lib/api-client.js';
+import { urlConfirmarAccesoBooster } from '../../lib/confirmar-acceso-booster-url.js';
 import { logger } from '../../lib/logger.js';
 import { formatRut } from '../../lib/rut.js';
 
@@ -34,6 +36,11 @@ import { formatRut } from '../../lib/rut.js';
  * El código llega solo en la respuesta del alta o de la re-emisión y se
  * muestra una sola vez: al cerrar el panel, o al emitir otro, deja de estar
  * en pantalla. La lista nunca lo trae.
+ *
+ * Una cuenta activa que ya es de una empresa no queda marcada en el alta: el
+ * panel muestra un código de confirmación que el admin entrega en persona y
+ * que la persona ingresa con su sesión en `/app/confirmar-acceso-booster`
+ * (`.specs/confirmar-acceso-booster` SC16 y SC17).
  */
 
 // La API no informa si el proveedor de correo entregó el mensaje: el aviso no
@@ -42,16 +49,21 @@ const AVISO_CORREO_ENVIADO =
   'Intentamos enviarle el código por correo a esa dirección. Si no le llega, entrégaselo tú: cópialo antes de cerrar.';
 const AVISO_SIN_RUT =
   'No enviamos el correo: la cuenta no tiene RUT registrado y sin RUT no puede activar. Repárala con el script de bootstrap del runbook.';
+/** El código de confirmación no sale por correo: lo entrega el admin (SC16). */
+const INSTRUCCION_CONFIRMACION =
+  'Esta persona ya tiene cuenta en una empresa. Entrégale este código en persona: lo ingresa con su sesión iniciada en Confirmar acceso de Booster. No lo envíes por correo ni por chat.';
 
 const ESTADO_LABEL: Record<PersonalBoosterEstado, string> = {
   sin_cuenta: 'Sin cuenta',
   pendiente_activacion: 'Pendiente de activar',
+  pendiente_confirmacion: 'Pendiente de confirmar',
   activa: 'Activa',
 };
 
 const ESTADO_CLASE: Record<PersonalBoosterEstado, string> = {
   sin_cuenta: 'border-neutral-300 bg-neutral-100 text-neutral-700',
   pendiente_activacion: 'border-amber-300 bg-amber-50 text-amber-900',
+  pendiente_confirmacion: 'border-amber-300 bg-amber-50 text-amber-900',
   activa: 'border-success-200 bg-success-50 text-success-700',
 };
 
@@ -142,6 +154,11 @@ function mensajeError(err: unknown): string {
 
 interface CodigoEmitido {
   tipo: 'codigo';
+  /**
+   * `activacion`: la persona elige su clave en `/activar`. `confirmacion`: la
+   * persona lo ingresa con su sesión en `/app/confirmar-acceso-booster`.
+   */
+  uso: 'activacion' | 'confirmacion';
   /** El alta lo muestra bajo el formulario; la re-emisión, en la fila. */
   origen: 'alta' | 'reemision';
   userId: string;
@@ -160,10 +177,15 @@ interface AltaSinCodigo {
 
 type Panel = CodigoEmitido | AltaSinCodigo;
 
+function usoDelCodigo(vinculo: VinculoPersonalBooster): CodigoEmitido['uso'] {
+  return vinculo === 'cuenta_activa_por_confirmar' ? 'confirmacion' : 'activacion';
+}
+
 function panelDelAlta(res: AltaPersonalBoosterResponse, datos: AltaPersonalBooster): Panel {
   if (res.codigo_activacion !== null && res.expira_en !== null) {
     return {
       tipo: 'codigo',
+      uso: usoDelCodigo(res.vinculo),
       origen: 'alta',
       userId: res.user_id,
       email: datos.email,
@@ -180,7 +202,8 @@ function panelDelAlta(res: AltaPersonalBoosterResponse, datos: AltaPersonalBoost
       expiraEn: res.expira_en,
     };
   }
-  // El schema exige código en `nueva` y `provisoria_sin_codigo`: no se llega aquí.
+  // El schema exige código en `nueva`, `provisoria_sin_codigo` y
+  // `cuenta_activa_por_confirmar`: no se llega aquí.
   throw new RespuestaInesperadaError();
 }
 
@@ -301,6 +324,7 @@ export function PersonalBooster() {
       }
       setPanel({
         tipo: 'codigo',
+        uso: usoDelCodigo(parsed.data.vinculo),
         origen: 'reemision',
         userId,
         email: persona.email,
@@ -330,8 +354,11 @@ export function PersonalBooster() {
         throw respuestaInesperada('quitar_acceso', parsed.error);
       }
       setConfirmandoQuitar(null);
+      // Una persona por confirmar nunca tuvo acceso: el API no avisa a la lista (SC10).
       setAccesoQuitado(
-        `Quitamos el acceso al panel a ${persona.nombre ?? persona.email}. Avisamos a la lista de respaldo.`,
+        persona.estado === 'pendiente_confirmacion'
+          ? `Anulamos el código de confirmación de ${persona.nombre ?? persona.email}: no recibe acceso al panel.`
+          : `Quitamos el acceso al panel a ${persona.nombre ?? persona.email}. Avisamos a la lista de respaldo.`,
       );
       void cargar();
     } catch (err) {
@@ -422,8 +449,10 @@ export function PersonalBooster() {
             <div className="font-semibold text-neutral-900">Confirma el alta</div>
             <p className="mt-1 text-neutral-700 text-sm">
               Revisa los datos. Al crearla, la persona queda marcada como personal de Booster con
-              acceso al panel. Si no tiene cuenta, se crea con un código de activación de un solo
-              uso que vence en 7 días; si ya tiene una activa, entra desde ya con su clave.
+              acceso al panel, salvo que ya tenga cuenta en una empresa. Si no tiene cuenta, se crea
+              con un código de activación de un solo uso que vence en 7 días; si ya tiene una
+              activa, entra desde ya con su clave. Si su cuenta ya es de una empresa, queda marcada
+              cuando confirme, con su sesión, el código que le entregues en persona.
             </p>
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
               <dt className="text-neutral-600">Correo</dt>
@@ -471,7 +500,7 @@ export function PersonalBooster() {
         )}
 
         {panel?.tipo === 'codigo' && panel.origen === 'alta' && (
-          <PanelCodigo key={panel.codigo} panel={panel} onCerrar={cerrarPanel} />
+          <PanelCodigoEmitido key={panel.codigo} panel={panel} onCerrar={cerrarPanel} />
         )}
         {panel?.tipo === 'sin_codigo' && <PanelSinCodigo panel={panel} onCerrar={cerrarPanel} />}
       </section>
@@ -517,7 +546,10 @@ export function PersonalBooster() {
             <ul className="divide-y divide-neutral-100">
               {personal.map((persona) => {
                 const userId = persona.user_id;
-                const puedeReemitir = userId !== null && persona.estado === 'pendiente_activacion';
+                const puedeReemitir =
+                  userId !== null &&
+                  (persona.estado === 'pendiente_activacion' ||
+                    persona.estado === 'pendiente_confirmacion');
                 // Una fila con cuenta y fuera de la lista es una cuenta marcada:
                 // el panel le quita el acceso. El de la lista se quita en Terraform.
                 const puedeQuitar = userId !== null && !persona.en_lista;
@@ -608,9 +640,9 @@ export function PersonalBooster() {
                           {`¿Quitar el acceso al panel a ${persona.nombre ?? persona.email}?`}
                         </p>
                         <p className="mt-1 text-neutral-700">
-                          Deja de entrar al panel desde su próxima acción. Su cuenta y su clave no
-                          cambian; si todavía no activó, su código deja de servir. Avisamos a la
-                          lista de respaldo.
+                          {persona.estado === 'pendiente_confirmacion'
+                            ? 'Todavía no confirmó su acceso, así que no entra al panel: su código de confirmación deja de servir. Su cuenta en la empresa no cambia.'
+                            : 'Deja de entrar al panel desde su próxima acción. Su cuenta y su clave no cambian; si todavía no activó, su código deja de servir. Avisamos a la lista de respaldo.'}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
@@ -648,7 +680,11 @@ export function PersonalBooster() {
                     {panel?.tipo === 'codigo' &&
                       panel.origen === 'reemision' &&
                       panel.userId === userId && (
-                        <PanelCodigo key={panel.codigo} panel={panel} onCerrar={cerrarPanel} />
+                        <PanelCodigoEmitido
+                          key={panel.codigo}
+                          panel={panel}
+                          onCerrar={cerrarPanel}
+                        />
                       )}
                   </li>
                 );
@@ -675,7 +711,7 @@ function OrdenDelAlta() {
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-neutral-700 text-sm">
             <li>
               Crea la cuenta aquí con su correo, nombre completo y RUT. Desde ese momento queda
-              marcada como personal de Booster.
+              marcada como personal de Booster, salvo que ya tenga cuenta en una empresa.
             </li>
             <li>
               Entrégale el código o usa «Generar código nuevo» en su fila: también se lo enviamos
@@ -687,8 +723,13 @@ function OrdenDelAlta() {
             </li>
           </ol>
           <p className="mt-2 text-neutral-600 text-sm">
-            Para quitarle el acceso, usa «Quitar acceso» en su fila. Cada alta y cada baja se avisan
-            a la lista de respaldo.
+            Si ya tiene cuenta en una empresa, el alta te muestra un código de confirmación:
+            entrégaselo en persona y ella lo ingresa con su sesión iniciada en Confirmar acceso de
+            Booster. Queda con acceso al panel cuando lo confirma.
+          </p>
+          <p className="mt-2 text-neutral-600 text-sm">
+            Para quitarle el acceso, usa «Quitar acceso» en su fila. Cada alta que da acceso y cada
+            baja de quien tenía acceso se avisan a la lista de respaldo.
           </p>
         </div>
       </div>
@@ -709,40 +750,107 @@ function DetalleEstado({ persona }: { persona: PersonaDelPersonal }) {
   if (persona.estado === 'sin_cuenta') {
     return null;
   }
-  // Sin vencimiento, el código actual no lo emitió el panel y no activa a una
-  // cuenta del personal: se pide uno nuevo desde esta fila.
+  const porConfirmar = persona.estado === 'pendiente_confirmacion';
+  // Sin vencimiento: en una provisoria, el código actual no lo emitió el panel
+  // y no activa a una cuenta del personal; en una persona por confirmar, el
+  // código ya no tiene intentos (SC9). En ambos casos se pide uno nuevo.
   if (persona.expira_en === null) {
     return (
-      <span>Sin código vigente del panel: usa «Generar código nuevo» para entregarle uno.</span>
+      <span>
+        {porConfirmar
+          ? 'El código de confirmación ya no sirve: usa «Generar código nuevo» para entregarle otro.'
+          : 'Sin código vigente del panel: usa «Generar código nuevo» para entregarle uno.'}
+      </span>
     );
   }
+  const codigo = porConfirmar ? 'Código de confirmación' : 'Código';
   if (yaPaso(persona.expira_en)) {
     return (
       <span className="inline-flex items-center gap-1">
-        <span>{`Código: venció el ${fechaHora(persona.expira_en)}`}</span>
+        <span>{`${codigo}: venció el ${fechaHora(persona.expira_en)}`}</span>
         <span className="rounded-full border border-danger-200 bg-danger-50 px-2 py-0.5 font-medium text-danger-700">
           vencido
         </span>
       </span>
     );
   }
-  return <span>{`Código: vence el ${fechaHora(persona.expira_en)}`}</span>;
+  return <span>{`${codigo}: vence el ${fechaHora(persona.expira_en)}`}</span>;
 }
 
-/** Código de una sola vez, con el RUT y la dirección absoluta de `/activar`. */
-function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () => void }) {
+function PanelCodigoEmitido({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () => void }) {
+  return panel.uso === 'confirmacion' ? (
+    <PanelConfirmacion panel={panel} onCerrar={onCerrar} />
+  ) : (
+    <PanelCodigo panel={panel} onCerrar={onCerrar} />
+  );
+}
+
+/** El código en grande. */
+function CodigoEnPantalla({ codigo }: { codigo: string }) {
+  return (
+    <div
+      className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]"
+      data-testid="personal-codigo"
+    >
+      {codigo}
+    </div>
+  );
+}
+
+/** El código en grande, con «Copiar código». */
+function CodigoParaCopiar({ codigo }: { codigo: string }) {
   const [copia, setCopia] = useState<'pendiente' | 'copiado' | 'fallo'>('pendiente');
-  const direccion = urlActivar();
 
   async function copiar() {
     try {
-      await navigator.clipboard.writeText(panel.codigo);
+      await navigator.clipboard.writeText(codigo);
       setCopia('copiado');
     } catch {
       // Sin portapapeles (http, permiso denegado): se avisa y el código sigue en pantalla.
       setCopia('fallo');
     }
   }
+
+  return (
+    <>
+      <div className="mt-3 flex items-center gap-2">
+        <CodigoEnPantalla codigo={codigo} />
+        <button
+          type="button"
+          onClick={() => void copiar()}
+          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+        >
+          <Copy className="h-3 w-3" aria-hidden />
+          {copia === 'copiado' ? 'Copiado ✓' : 'Copiar código'}
+        </button>
+      </div>
+      {copia === 'fallo' && (
+        <p className="mt-2 text-amber-900 text-sm">
+          No pudimos copiar. Selecciona el código y cópialo a mano.
+        </p>
+      )}
+    </>
+  );
+}
+
+function DatosDeLaPersona({ panel }: { panel: CodigoEmitido }) {
+  return (
+    <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+      <dt className="text-amber-800">Persona</dt>
+      <dd className="text-neutral-900">{panel.nombre ?? panel.email}</dd>
+      <dt className="text-amber-800">Correo</dt>
+      <dd className="break-all text-neutral-900">{panel.email}</dd>
+      <dt className="text-amber-800">RUT</dt>
+      <dd className="font-mono text-neutral-900">
+        {panel.rut === null ? 'Sin RUT registrado' : formatRut(panel.rut)}
+      </dd>
+    </dl>
+  );
+}
+
+/** Código de activación de una sola vez, con el RUT y la dirección absoluta de `/activar`. */
+function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () => void }) {
+  const direccion = urlActivar();
 
   return (
     <div
@@ -763,37 +871,8 @@ function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () =
         Se muestra una sola vez: cópialo o entrégalo antes de cerrar. Sirve para activar una vez y
         no es su clave.
       </p>
-      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-amber-800">Persona</dt>
-        <dd className="text-neutral-900">{panel.nombre ?? panel.email}</dd>
-        <dt className="text-amber-800">Correo</dt>
-        <dd className="break-all text-neutral-900">{panel.email}</dd>
-        <dt className="text-amber-800">RUT</dt>
-        <dd className="font-mono text-neutral-900">
-          {panel.rut === null ? 'Sin RUT registrado' : formatRut(panel.rut)}
-        </dd>
-      </dl>
-      <div className="mt-3 flex items-center gap-2">
-        <div
-          className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]"
-          data-testid="personal-codigo"
-        >
-          {panel.codigo}
-        </div>
-        <button
-          type="button"
-          onClick={() => void copiar()}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
-        >
-          <Copy className="h-3 w-3" aria-hidden />
-          {copia === 'copiado' ? 'Copiado ✓' : 'Copiar código'}
-        </button>
-      </div>
-      {copia === 'fallo' && (
-        <p className="mt-2 text-amber-900 text-sm">
-          No pudimos copiar. Selecciona el código y cópialo a mano.
-        </p>
-      )}
+      <DatosDeLaPersona panel={panel} />
+      <CodigoParaCopiar codigo={panel.codigo} />
       <p className="mt-2 text-amber-700 text-xs">Vence el {fechaHora(panel.expiraEn)}.</p>
       <p className="mt-2 text-amber-800 text-sm">
         La persona entra a{' '}
@@ -805,6 +884,61 @@ function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () =
       </p>
       <p className="mt-2 font-medium text-amber-900 text-sm" data-testid="personal-aviso-lista">
         {avisoDeLista(panel)}
+      </p>
+      <button
+        type="button"
+        onClick={onCerrar}
+        className="mt-3 rounded-md border border-amber-400 bg-white px-3 py-1.5 font-medium text-amber-950 text-sm hover:bg-amber-100"
+      >
+        Listo, cerrar
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Código de confirmación de una sola vez (`.specs/confirmar-acceso-booster`
+ * SC16): la persona ya tiene cuenta en una empresa y confirma el acceso con su
+ * sesión. No sale por correo y no sirve en `/activar`.
+ */
+function PanelConfirmacion({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () => void }) {
+  const direccion = urlConfirmarAccesoBooster();
+
+  return (
+    <div
+      className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4"
+      data-testid="personal-codigo-panel"
+    >
+      <div className="font-semibold text-amber-900">
+        {panel.origen === 'alta' ? 'Código de confirmación' : 'Código de confirmación nuevo'}
+      </div>
+      <p
+        className="mt-1 font-medium text-amber-900 text-sm"
+        data-testid="personal-confirmacion-instruccion"
+      >
+        {INSTRUCCION_CONFIRMACION}
+      </p>
+      {panel.origen === 'reemision' && (
+        <p className="mt-1 text-amber-800 text-sm">
+          {`El anterior deja de servir. El plazo de ${CONFIRMACION_ACCESO_BOOSTER_VIGENCIA_HORAS} horas corre desde ahora.`}
+        </p>
+      )}
+      <p className="mt-1 text-amber-800 text-sm">
+        Se muestra una sola vez: anótalo o entrégaselo antes de cerrar. Hasta que lo confirme, la
+        persona no tiene acceso al panel.
+      </p>
+      <DatosDeLaPersona panel={panel} />
+      {/* Sin «Copiar código»: se entrega en persona, no por un canal. */}
+      <div className="mt-3 flex">
+        <CodigoEnPantalla codigo={panel.codigo} />
+      </div>
+      <p className="mt-2 text-amber-700 text-xs">Vence el {fechaHora(panel.expiraEn)}.</p>
+      <p className="mt-2 text-amber-800 text-sm">
+        La persona inicia sesión con su RUT y su clave de siempre, entra a{' '}
+        <span className="break-all font-mono" data-testid="personal-url-confirmar">
+          {direccion}
+        </span>{' '}
+        y escribe este código.
       </p>
       <button
         type="button"

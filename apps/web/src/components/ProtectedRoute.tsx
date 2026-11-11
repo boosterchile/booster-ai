@@ -5,6 +5,7 @@ import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import { useImpersonation } from '../hooks/use-impersonation.js';
 import { type MeResponse, useMe } from '../hooks/use-me.js';
 import { flagsDe } from '../lib/capacidades.js';
+import { RUTA_CONFIRMAR_ACCESO_BOOSTER } from '../lib/confirmar-acceso-booster-url.js';
 import { RotarClaveModal } from './auth/RotarClaveModal.js';
 
 export interface ProtectedRouteProps {
@@ -121,11 +122,16 @@ export function ProtectedRoute({
     const path = typeof window !== 'undefined' ? window.location.pathname : '';
     const entradaAlPanel =
       me.user.is_platform_admin === true && (path === '/app' || path === '/app/');
+    // Quien confirma el acceso al panel puede ser conductor de una empresa
+    // (`.specs/confirmar-acceso-booster` SC18): esa pantalla no lo redirige.
+    const confirmaAccesoBooster =
+      path === RUTA_CONFIRMAR_ACCESO_BOOSTER || path === `${RUTA_CONFIRMAR_ACCESO_BOOSTER}/`;
     if (
       capacidades.ctx &&
       !capacidades.menuGestion &&
       !path.startsWith('/app/conductor') &&
-      !entradaAlPanel
+      !entradaAlPanel &&
+      !confirmaAccesoBooster
     ) {
       return <Navigate to="/app/conductor" />;
     }
