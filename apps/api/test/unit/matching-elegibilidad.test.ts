@@ -126,6 +126,7 @@ describe('runMatching con elegibilidad por carga', () => {
         soloVigente: ['emp-1'],
         soloPorCarga: [],
         vehiculoDistinto: [],
+        volumenInsuficiente: [],
       },
       'matching: elegibilidad por carga',
     );
@@ -192,8 +193,18 @@ describe('cargarCandidatasPorCarga', () => {
         empresaIds: ['emp-c', 'emp-a', 'emp-b', 'emp-sin-flota'],
       }),
     ).toEqual([
-      { empresaId: 'emp-c', vehicleId: 'c-frio', vehicleCapacityKg: 6_000 },
-      { empresaId: 'emp-b', vehicleId: 'b-frio', vehicleCapacityKg: 8_000 },
+      {
+        empresaId: 'emp-c',
+        vehicleId: 'c-frio',
+        vehicleCapacityKg: 6_000,
+        volumenInsuficiente: false,
+      },
+      {
+        empresaId: 'emp-b',
+        vehicleId: 'b-frio',
+        vehicleCapacityKg: 8_000,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 });

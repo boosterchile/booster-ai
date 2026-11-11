@@ -29,8 +29,8 @@ describe('candidatasPorCarga', () => {
       ['e4', []],
     ]);
     expect(candidatasPorCarga(SECA, flotas)).toEqual([
-      { empresaId: 'e1', vehicleId: 'chico', vehicleCapacityKg: 5_000 },
-      { empresaId: 'e3', vehicleId: 'justo', vehicleCapacityKg: 4_000 },
+      { empresaId: 'e1', vehicleId: 'chico', vehicleCapacityKg: 5_000, volumenInsuficiente: false },
+      { empresaId: 'e3', vehicleId: 'justo', vehicleCapacityKg: 4_000, volumenInsuficiente: false },
     ]);
   });
 
@@ -50,7 +50,12 @@ describe('candidatasPorCarga', () => {
       ],
     ]);
     expect(candidatasPorCarga({ ...SECA, weightKg: 20_000 }, flotas)).toEqual([
-      { empresaId: 'e1', vehicleId: 'tracto', vehicleCapacityKg: 28_000 },
+      {
+        empresaId: 'e1',
+        vehicleId: 'tracto',
+        vehicleCapacityKg: 28_000,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 
@@ -74,11 +79,24 @@ describe('compararCandidatas', () => {
       soloVigente: [],
       soloPorCarga: [],
       vehiculoDistinto: [],
+      volumenInsuficiente: [],
     });
   });
 
   it('dos listas vacías coinciden', () => {
     expect(compararCandidatas([], []).coinciden).toBe(true);
+  });
+
+  it('lista las candidatas por carga con aviso de volumen, sin contarlas como diferencia', () => {
+    const conAviso = { ...c('e1', 'v1'), volumenInsuficiente: true };
+    const sinAviso = { ...c('e2', 'v2'), volumenInsuficiente: false };
+    expect(compararCandidatas([c('e1', 'v1'), c('e2', 'v2')], [sinAviso, conAviso])).toEqual({
+      coinciden: true,
+      soloVigente: [],
+      soloPorCarga: [],
+      vehiculoDistinto: [],
+      volumenInsuficiente: ['e1'],
+    });
   });
 
   it('separa las empresas que solo aparecen en un lado y las que cambian de vehículo', () => {
@@ -92,6 +110,7 @@ describe('compararCandidatas', () => {
       soloVigente: ['e3'],
       soloPorCarga: ['e4'],
       vehiculoDistinto: ['e2'],
+      volumenInsuficiente: [],
     });
   });
 });
@@ -166,11 +185,28 @@ describe('regresión con la flota y las cargas de producción (2026-11-10)', () 
     },
   );
 
-  it('carga seca de 22.000 kg y 100 m³: el vigente la ofrece y la regla nueva no, por volumen', () => {
+  it('carga seca de 22.000 kg y 100 m³: misma empresa que el vigente, con aviso de volumen', () => {
     // El único vehículo que alcanza el peso (28.000 kg) declara 50 m³. El
-    // matching vigente no mira el volumen; la spec §3.3 sí.
-    expect(vigente(22_000)).toEqual(['e2']);
-    expect(porCarga({ cargoType: 'carga_seca', weightKg: 22_000, volumeM3: 100 })).toEqual([]);
+    // volumen declarado no descarta (spec §11-5): la empresa sigue siendo
+    // candidata y el caso queda marcado.
+    const carga = { cargoType: 'carga_seca', weightKg: 22_000, volumeM3: 100 } as const;
+    expect(porCarga(carga)).toEqual(vigente(22_000));
+    expect(candidatasPorCarga(carga, flotas)).toMatchObject([
+      { empresaId: 'e2', volumenInsuficiente: true },
+    ]);
+  });
+
+  it('ninguna otra carga seca de producción lleva aviso de volumen', () => {
+    for (const [kg, m3] of SECAS) {
+      const candidatas = candidatasPorCarga(
+        { cargoType: 'carga_seca', weightKg: kg, volumeM3: m3 },
+        flotas,
+      );
+      expect(
+        candidatas.filter((c) => c.volumenInsuficiente),
+        `${kg} kg`,
+      ).toEqual([]);
+    }
   });
 
   it('carga agrícola de 10.000 kg: ninguna empresa, porque nadie declara carrocería (spec §9)', () => {

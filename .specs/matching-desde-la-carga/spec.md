@@ -58,8 +58,12 @@ Una empresa es candidata para una carga si tiene al menos una configuración
 que cumple a la vez:
 
 1. capacidad útil ≥ peso de la carga;
-2. volumen útil ≥ volumen de la carga, cuando los dos están declarados;
-3. carrocería compatible con el `tipo_carga`.
+2. carrocería compatible con el `tipo_carga`.
+
+El volumen no descarta (§11-5). Cuando la carga y la configuración lo declaran
+y el de la configuración no alcanza, queda un aviso: la configuración sigue
+siendo elegible, se ordena después de las que sí alcanzan, y el caso se
+registra en la comparación del matching.
 
 ### 3.4 Tabla de compatibilidad
 
@@ -180,7 +184,8 @@ Las partes 4, 5 y 6 se despliegan juntas.
 2. Test de regresión del matching: con la flota y las cargas de producción al
    2026-11-10, las empresas candidatas de cada carga son las mismas que con el
    matching vigente para las cargas `carga_seca`, y ninguna para la carga
-   `agricola` (§3.5).
+   `agricola` (§3.5). Una de las cargas `carga_seca` lleva aviso de
+   volumen (§11-5).
 3. Test de integración contra PostgreSQL: aceptar una oferta sin vehículo
    sugerido deja la asignación y su ruta sin vehículo.
 4. Tests de ruta de la API: declarar una configuración no elegible se rechaza
@@ -208,7 +213,8 @@ un flag y con comparación en sombra para ver ese efecto antes de activarla.
 
 ## 11. Decisiones del PO (2026-11-11)
 
-El PO aceptó las cuatro recomendaciones.
+El PO aceptó las cuatro recomendaciones. La quinta la tomó el mismo día, con
+el resultado de la parte 2 a la vista.
 
 | # | Pregunta | Decisión |
 |---|---|---|
@@ -216,3 +222,4 @@ El PO aceptó las cuatro recomendaciones.
 | 2 | ¿Quién propone la tabla de compatibilidad de 110 pares? | El agente la propone en `plan.md`, marcando los pares dudosos, y el PO la aprueba antes del PR. |
 | 3 | ¿Cuándo se recuerda a la oficina que falta declarar el vehículo? | 24 horas y 2 horas antes del inicio de la ventana de recogida, por los canales que ya usan los recordatorios de cambios de carga. |
 | 4 | ¿El generador ve que el camión es de un tercero? | No. Ve la patente y el tipo, como con cualquier vehículo; responde la empresa que aceptó. |
+| 5 | El volumen declarado, ¿descarta candidatas? (2026-11-11, tras la parte 2) | No: «solo avisar». Con la flota de producción, la regla original dejaba sin candidatas a una carga seca de 22.000 kg y 100 m³ porque el único camión que alcanza el peso declara 50 m³, y los volúmenes declarados no son confiables (un camión de 10.000 kg con 500 m³). El volumen se compara y se registra como aviso; se vuelve a evaluar cuando el dato de la flota esté corregido. |

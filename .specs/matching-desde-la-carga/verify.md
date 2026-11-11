@@ -36,18 +36,28 @@ los 17 viajes, leídos de producción en solo lectura y sin identificadores.
 
 | Carga | Resultado |
 |---|---|
-| 15 de los 16 viajes `carga_seca` | mismas empresas que el matching de hoy |
-| `carga_seca` de 22.000 kg y 100 m³ | **cambia**: hoy se ofrece a una empresa; con la regla nueva, a ninguna |
+| Los 16 viajes `carga_seca` | mismas empresas que el matching de hoy |
+| `carga_seca` de 22.000 kg y 100 m³ | misma empresa, **con aviso de volumen** |
 | `agricola` de 10.000 kg | hoy se ofrece a dos empresas; con la regla nueva, a ninguna (spec §9) |
 
-El criterio decía «las mismas para `carga_seca`». No se cumple para un viaje,
-y la causa es la regla de volumen de la spec §3.3: el único vehículo que
-alcanza los 22.000 kg declara 50 m³, y la carga declara 100 m³. El matching de
-hoy no mira el volumen.
+### El volumen: de descartar a avisar
 
-Los volúmenes declarados en la flota no parecen confiables (un camión de
-10.000 kg con 500 m³; uno de 28.000 kg con 50 m³). Antes de pasar a `activa`
-conviene revisar ese dato o decidir si el volumen debe descartar candidatas.
+La primera versión de la parte 2 (#918) aplicaba la regla original de la spec
+§3.3: volumen útil ≥ volumen de la carga cuando los dos están declarados. Con
+esa regla el viaje de 22.000 kg y 100 m³ quedaba sin candidatas, porque el
+único vehículo que alcanza el peso declara 50 m³.
+
+Los volúmenes declarados en la flota no son confiables (un camión de 10.000 kg
+con 500 m³; uno de 28.000 kg con 50 m³). El PO decidió el 2026-11-11 que el
+volumen **solo avise** (spec §11-5):
+
+- no descarta ninguna configuración;
+- entre las que sirven, se sugiere primero una sin aviso;
+- la comparación del matching lista en `volumenInsuficiente` las empresas cuya
+  configuración sugerida declara menos volumen que la carga. No cuenta como
+  diferencia entre las dos reglas.
+
+Se vuelve a evaluar cuando el dato de la flota esté corregido.
 
 ### Algo que la sombra dejó a la vista
 

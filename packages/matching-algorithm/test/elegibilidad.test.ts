@@ -123,7 +123,13 @@ const SECA = { cargoType: 'carga_seca', weightKg: 4_000, volumeM3: null } as con
 describe('configuracionesElegibles', () => {
   it('una motriz sola sirve con su carrocería y su capacidad', () => {
     expect(configuracionesElegibles(SECA, [unidad({ id: 'm1' })])).toEqual([
-      { motrizId: 'm1', arrastreId: null, capacidadUtilKg: 5_000, capacidadUtilM3: null },
+      {
+        motrizId: 'm1',
+        arrastreId: null,
+        capacidadUtilKg: 5_000,
+        capacidadUtilM3: null,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 
@@ -153,18 +159,45 @@ describe('configuracionesElegibles', () => {
   it('una motriz sin tipo de unidad (fila antigua) carga sola y no lleva arrastre', () => {
     const flota = [unidad({ id: 'm1', unitType: null }), remolque({ id: 'r1' })];
     expect(configuracionesElegibles(SECA, flota)).toEqual([
-      { motrizId: 'm1', arrastreId: null, capacidadUtilKg: 5_000, capacidadUtilM3: null },
+      {
+        motrizId: 'm1',
+        arrastreId: null,
+        capacidadUtilKg: 5_000,
+        capacidadUtilM3: null,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 
-  it('el volumen se compara solo cuando los dos lados lo declaran', () => {
+  it('el volumen no descarta: cuando los dos lados lo declaran y no alcanza, queda como aviso', () => {
     const carga = { ...SECA, volumeM3: 30 };
-    expect(configuracionesElegibles(carga, [unidad({ id: 'm1', capacityM3: null })])).toHaveLength(
-      1,
-    );
-    expect(configuracionesElegibles(carga, [unidad({ id: 'm1', capacityM3: 30 })])).toHaveLength(1);
-    expect(configuracionesElegibles(carga, [unidad({ id: 'm1', capacityM3: 29 })])).toEqual([]);
-    expect(configuracionesElegibles(SECA, [unidad({ id: 'm1', capacityM3: 1 })])).toHaveLength(1);
+    const aviso = (capacityM3: number | null, c = carga) =>
+      configuracionesElegibles(c, [unidad({ id: 'm1', capacityM3 })]).map(
+        (x) => x.volumenInsuficiente,
+      );
+    expect(aviso(null)).toEqual([false]);
+    expect(aviso(30)).toEqual([false]);
+    expect(aviso(29)).toEqual([true]);
+    // La carga no declara volumen: no hay nada que avisar.
+    expect(aviso(1, SECA)).toEqual([false]);
+  });
+
+  it('prefiere la configuración con volumen suficiente aunque sea más grande', () => {
+    const flota = [
+      unidad({ id: 'chico', capacityKg: 5_000, capacityM3: 10 }),
+      unidad({ id: 'grande', capacityKg: 9_000, capacityM3: 40 }),
+      unidad({ id: 'sin-dato', capacityKg: 7_000, capacityM3: null }),
+    ];
+    expect(
+      configuracionesElegibles({ ...SECA, volumeM3: 30 }, flota).map((c) => [
+        c.motrizId,
+        c.volumenInsuficiente,
+      ]),
+    ).toEqual([
+      ['sin-dato', false],
+      ['grande', false],
+      ['chico', true],
+    ]);
   });
 
   it('un tracto solo no carga nada', () => {
@@ -174,7 +207,13 @@ describe('configuracionesElegibles', () => {
   it('tracto con semirremolque: cuentan la carrocería y la capacidad del semirremolque', () => {
     const flota = [tracto('t1'), semi({ id: 's1', capacityKg: 28_000, capacityM3: 90 })];
     expect(configuracionesElegibles({ ...SECA, weightKg: 20_000 }, flota)).toEqual([
-      { motrizId: 't1', arrastreId: 's1', capacidadUtilKg: 28_000, capacidadUtilM3: 90 },
+      {
+        motrizId: 't1',
+        arrastreId: 's1',
+        capacidadUtilKg: 28_000,
+        capacidadUtilM3: 90,
+        volumenInsuficiente: false,
+      },
     ]);
     const frio = { cargoType: 'refrigerada', weightKg: 100, volumeM3: null } as const;
     expect(configuracionesElegibles(frio, flota)).toEqual([]);
@@ -200,7 +239,13 @@ describe('configuracionesElegibles', () => {
       remolque({ id: 'r1', capacityKg: 5_000 }),
     ];
     expect(configuracionesElegibles({ ...SECA, weightKg: 1_000 }, flota)).toEqual([
-      { motrizId: 'f1', arrastreId: null, capacidadUtilKg: 1_500, capacidadUtilM3: null },
+      {
+        motrizId: 'f1',
+        arrastreId: null,
+        capacidadUtilKg: 1_500,
+        capacidadUtilM3: null,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 
@@ -210,7 +255,13 @@ describe('configuracionesElegibles', () => {
       remolque({ id: 'r1', capacityKg: 10_000, capacityM3: 50 }),
     ];
     expect(configuracionesElegibles({ ...SECA, weightKg: 15_000 }, flota)).toEqual([
-      { motrizId: 'm1', arrastreId: 'r1', capacidadUtilKg: 18_000, capacidadUtilM3: 90 },
+      {
+        motrizId: 'm1',
+        arrastreId: 'r1',
+        capacidadUtilKg: 18_000,
+        capacidadUtilM3: 90,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 
@@ -220,7 +271,13 @@ describe('configuracionesElegibles', () => {
       remolque({ id: 'r1', capacityKg: 10_000, capacityM3: null }),
     ];
     expect(configuracionesElegibles({ ...SECA, weightKg: 15_000, volumeM3: 500 }, flota)).toEqual([
-      { motrizId: 'm1', arrastreId: 'r1', capacidadUtilKg: 18_000, capacidadUtilM3: null },
+      {
+        motrizId: 'm1',
+        arrastreId: 'r1',
+        capacidadUtilKg: 18_000,
+        capacidadUtilM3: null,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 
@@ -231,14 +288,32 @@ describe('configuracionesElegibles', () => {
     ];
     const frio = { cargoType: 'refrigerada', weightKg: 10_000, volumeM3: null } as const;
     expect(configuracionesElegibles(frio, flota)).toEqual([
-      { motrizId: 'm1', arrastreId: 'r1', capacidadUtilKg: 10_000, capacidadUtilM3: 50 },
+      {
+        motrizId: 'm1',
+        arrastreId: 'r1',
+        capacidadUtilKg: 10_000,
+        capacidadUtilM3: 50,
+        volumenInsuficiente: false,
+      },
     ]);
     expect(configuracionesElegibles({ ...frio, weightKg: 10_001 }, flota)).toEqual([]);
     // Solo sirve la motriz: el remolque no agrega capacidad para esta carga.
     const granos = { cargoType: 'construccion', weightKg: 8_000, volumeM3: null } as const;
     expect(configuracionesElegibles(granos, flota)).toEqual([
-      { motrizId: 'm1', arrastreId: null, capacidadUtilKg: 8_000, capacidadUtilM3: null },
-      { motrizId: 'm1', arrastreId: 'r1', capacidadUtilKg: 8_000, capacidadUtilM3: null },
+      {
+        motrizId: 'm1',
+        arrastreId: null,
+        capacidadUtilKg: 8_000,
+        capacidadUtilM3: null,
+        volumenInsuficiente: false,
+      },
+      {
+        motrizId: 'm1',
+        arrastreId: 'r1',
+        capacidadUtilKg: 8_000,
+        capacidadUtilM3: null,
+        volumenInsuficiente: false,
+      },
     ]);
   });
 

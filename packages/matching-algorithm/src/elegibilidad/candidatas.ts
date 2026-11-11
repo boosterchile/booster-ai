@@ -17,6 +17,11 @@ export interface CandidataPorFlota {
   readonly vehicleCapacityKg: number;
 }
 
+/** Candidata según la elegibilidad por carga, con el aviso de volumen de su configuración. */
+export interface CandidataPorCarga extends CandidataPorFlota {
+  readonly volumenInsuficiente: boolean;
+}
+
 export interface ComparacionDeCandidatas {
   readonly coinciden: boolean;
   /** Empresas que el matching vigente ofrece y la elegibilidad por carga no. */
@@ -25,19 +30,24 @@ export interface ComparacionDeCandidatas {
   readonly soloPorCarga: string[];
   /** Empresas candidatas en los dos, con distinto vehículo sugerido. */
   readonly vehiculoDistinto: string[];
+  /**
+   * Empresas candidatas por carga cuya configuración sugerida declara menos
+   * volumen que la carga. No las descarta ni cuenta como diferencia.
+   */
+  readonly volumenInsuficiente: string[];
 }
 
 /**
  * Las empresas con alguna configuración elegible para la carga, en el orden
  * en que vienen las flotas. El vehículo sugerido es la unidad motriz de la
- * configuración de menor capacidad útil, y la capacidad es la de esa
- * configuración (spec §3.6).
+ * primera configuración elegible (sin aviso de volumen si la hay, y la de menor
+ * capacidad útil), y la capacidad es la de esa configuración (spec §3.6).
  */
 export function candidatasPorCarga(
   carga: RequisitosDeCarga,
   flotas: ReadonlyMap<string, readonly UnidadDeFlota[]>,
-): CandidataPorFlota[] {
-  const candidatas: CandidataPorFlota[] = [];
+): CandidataPorCarga[] {
+  const candidatas: CandidataPorCarga[] = [];
   for (const [empresaId, flota] of flotas) {
     const [menor] = configuracionesElegibles(carga, flota);
     if (menor) {
@@ -45,6 +55,7 @@ export function candidatasPorCarga(
         empresaId,
         vehicleId: menor.motrizId,
         vehicleCapacityKg: menor.capacidadUtilKg,
+        volumenInsuficiente: menor.volumenInsuficiente,
       });
     }
   }
@@ -54,7 +65,7 @@ export function candidatasPorCarga(
 /** Diferencias entre las candidatas del matching vigente y las de la elegibilidad por carga. */
 export function compararCandidatas(
   vigente: readonly CandidataPorFlota[],
-  porCarga: readonly CandidataPorFlota[],
+  porCarga: readonly (CandidataPorFlota & { readonly volumenInsuficiente?: boolean })[],
 ): ComparacionDeCandidatas {
   const vehiculoVigente = new Map(vigente.map((c) => [c.empresaId, c.vehicleId]));
   const vehiculoPorCarga = new Map(porCarga.map((c) => [c.empresaId, c.vehicleId]));
@@ -72,5 +83,9 @@ export function compararCandidatas(
     soloVigente,
     soloPorCarga,
     vehiculoDistinto,
+    volumenInsuficiente: porCarga
+      .filter((c) => c.volumenInsuficiente === true)
+      .map((c) => c.empresaId)
+      .sort(),
   };
 }
