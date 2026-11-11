@@ -34,6 +34,7 @@ import { regionLabel } from '@booster-ai/notification-fan-out';
 import { comunaPorCodigo } from '@booster-ai/shared-schemas';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
 import { computeRouteEta } from './compute-route-eta.js';
@@ -257,7 +258,7 @@ export async function getPublicTracking(opts: {
     // rls-allowlist: tracking público por token, sin tenant de sesión por diseño (censo §2 / rls-viabilidad §3)
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(eq(assignments.publicTrackingToken, token))
     .limit(1);
 

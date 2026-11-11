@@ -95,6 +95,9 @@ importers:
       '@booster-ai/pricing-engine':
         specifier: workspace:*
         version: link:../../packages/pricing-engine
+      '@booster-ai/route-planner':
+        specifier: workspace:*
+        version: link:../../packages/route-planner
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
@@ -1185,6 +1188,9 @@ importers:
 
   packages/matching-algorithm:
     devDependencies:
+      '@booster-ai/shared-schemas':
+        specifier: workspace:*
+        version: link:../shared-schemas
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18

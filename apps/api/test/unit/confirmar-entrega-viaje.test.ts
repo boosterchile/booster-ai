@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirmarEntregaViaje } from '../../src/services/confirmar-entrega-viaje.js';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('../../src/services/sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 const { viajesEntregadosAdd } = vi.hoisted(() => ({
   viajesEntregadosAdd: vi.fn(),
 }));
@@ -307,6 +315,10 @@ describe('confirmarEntregaViaje', () => {
       throw new Error('expected ok=true');
     }
     expect(result.alreadyDelivered).toBe(false);
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'entrega_confirmada' }),
+    );
   });
 
   it('métrica norte: primera entrega del shipper desde asignado suma 1', async () => {

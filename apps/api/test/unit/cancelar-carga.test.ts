@@ -1,6 +1,14 @@
 import { getTableName } from 'drizzle-orm';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('../../src/services/sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
@@ -170,6 +178,10 @@ describe('cancelarCarga — después del match (cancelar)', () => {
         reason: 'El cliente postergó el pedido',
       },
     });
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'carga_cancelada' }),
+    );
   });
 
   it('invalida la solicitud de cambio pendiente con su evento (§6.6)', async () => {

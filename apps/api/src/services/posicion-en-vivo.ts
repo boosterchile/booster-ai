@@ -39,6 +39,7 @@
 
 import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { asignacionConVehiculo } from '../db/configuracion-de-asignacion.js';
 import { assignments, posicionesMovilConductor, telemetryPoints, trips } from '../db/schema.js';
 import { coordenadaGpsValidaSql, esCoordenadaGpsValida } from './coordenada-gps.js';
 
@@ -167,7 +168,7 @@ async function vehiculoEnOtroViaje(opts: {
     .innerJoin(trips, eq(trips.id, assignments.tripId))
     .where(
       and(
-        eq(assignments.vehicleId, opts.vehicleId),
+        asignacionConVehiculo(opts.vehicleId),
         ne(assignments.id, opts.assignmentId),
         eq(trips.status, 'en_proceso'),
       ),

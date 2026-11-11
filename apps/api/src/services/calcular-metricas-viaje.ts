@@ -14,6 +14,7 @@ import {
 import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
 import {
   type DecisionFuente,
@@ -606,7 +607,7 @@ async function recalcularNivelPostEntregaInner(opts: {
   // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C)
   const assignmentRows = await db
     .select({
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       deliveredAt: assignments.deliveredAt,
       pickedUpAt: assignments.pickedUpAt,
       empresaId: assignments.empresaId,

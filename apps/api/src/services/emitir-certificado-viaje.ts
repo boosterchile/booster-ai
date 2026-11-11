@@ -30,6 +30,7 @@ import { emitirCertificado } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
@@ -193,7 +194,7 @@ async function emitirCertificadoViajeInner(
   const assignmentRows = await db
     .select({
       empresaId: assignments.empresaId,
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
     })
     .from(assignments)
     .where(eq(assignments.tripId, tripId))

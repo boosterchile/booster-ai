@@ -93,6 +93,15 @@ peso en una ruta consolidada. Solo, sigue la regla vigente.
 Se deriva una vez por ruta, con la fuente y la cobertura de la ruta completa
 (ADR-077). Todos sus servicios lo heredan.
 
+Una ruta se mide por tramos. Para derivar su nivel (§11-5):
+
+- la **cobertura** de la ruta es la de sus tramos, ponderada por su distancia;
+- la **fuente** de la ruta es la más débil entre sus tramos: declarada a mano,
+  ruta de mapas, GPS del celular, GPS del vehículo, de menor a mayor.
+
+Un tramo medido con el celular impide el nivel primario de toda la ruta, y uno
+declarado a mano la baja al último nivel, por corto que sea.
+
 ### 3.9 Cuándo se emite (decisión 1 de ADR-089)
 
 El certificado de un servicio se emite cuando su ruta pasa a `cerrada`. No hay
@@ -214,7 +223,8 @@ PR.
 
 ## 11. Decisiones del PO (2026-11-11)
 
-El PO aceptó las cuatro recomendaciones.
+El PO aceptó las cuatro recomendaciones. La quinta la tomó el mismo día, con
+la parte 1 a la vista.
 
 | # | Pregunta | Decisión |
 |---|---|---|
@@ -222,3 +232,4 @@ El PO aceptó las cuatro recomendaciones.
 | 2 | Un servicio cancelado después de recogido, ¿participa en el reparto? | Sí, con su actividad completa: el camión ya movió esa carga. No se le emite certificado; su parte queda registrada en la ruta y no se carga a los demás. |
 | 3 | ¿El transportista ve cuánto le tocó a cada generador? | Sí. Ya conoce a sus clientes y sus cargas; el reparto no le revela nada nuevo. |
 | 4 | ¿El certificado muestra la huella total de la ruta además de la parte del servicio? | Sí. Con la parte y la participación, que ADR-089 ya pone en el certificado, el total se deduce igual; mostrarlo permite verificar la cuenta. No dice cuántos ni quiénes son los otros generadores. |
+| 5 | Una ruta medida por tramos con fuentes distintas, ¿con cuál se deriva su nivel? (2026-11-11, tras la parte 1) | Con la más débil («Sí, la más débil»). La cobertura se pondera por distancia. Es la lectura conservadora: el nivel respalda el certificado ante un auditor. Se descartó ponderar también la fuente por distancia, que dejaría pasar un tramo corto mal medido. |

@@ -6,7 +6,9 @@ import {
 } from '@booster-ai/trip-state-machine';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, offers, tripEvents, trips } from '../db/schema.js';
+import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 import { invalidarSolicitudPendiente } from './solicitud-cambio-carga.js';
 
 /**
@@ -110,7 +112,7 @@ export async function cancelarCarga(
         .select({
           id: assignments.id,
           empresaId: assignments.empresaId,
-          driverUserId: assignments.driverUserId,
+          driverUserId: conductorDeAsignacion,
         })
         .from(assignments)
         .where(and(eq(assignments.tripId, tripId), eq(assignments.status, 'asignado')))
@@ -147,6 +149,13 @@ export async function cancelarCarga(
         // la transacción para no dejar el viaje cancelado con la asignación viva.
         throw new Error(`no se pudo cancelar la asignación ${asignacion.id} (estado cambió)`);
       }
+      // La ruta sigue a la asignación (ADR-088): queda `cancelada`.
+      await sincronizarRutaDeAsignacion(tx, {
+        asignacionId: asignacion.id,
+        origen: 'carga_cancelada',
+        userId,
+        logger,
+      });
       // Una solicitud de cambio pendiente ya no tiene a quién aplicarse (§6.6).
       const solicitudInvalidada = await invalidarSolicitudPendiente(tx, {
         tripId,

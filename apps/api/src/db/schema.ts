@@ -1006,6 +1006,12 @@ export const vehicles = pgTable(
     unitType: tipoUnidadEnum('tipo_unidad'),
     /** Carrocería, ortogonal a categoría/tipo. NULL = no declarada. */
     bodyType: tipoCarroceriaEnum('carroceria'),
+    /**
+     * Unidad de un tercero (migración 0079, ADR-090 decisión 2): un vehículo
+     * que la transportista registra y opera sin ser suyo. Se declara en la
+     * ruta igual que uno propio; responde la empresa que aceptó la carga.
+     */
+    esDeTercero: boolean('es_de_tercero').notNull().default(false),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1523,9 +1529,13 @@ export const assignments = pgTable(
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    vehicleId: uuid('vehiculo_id')
-      .notNull()
-      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    /**
+     * Opcional desde la migración 0079 (ADR-090): la empresa acepta la carga y
+     * declara el vehículo al despachar. Hasta la parte 4 de la spec
+     * matching-desde-la-carga, aceptar sigue fijándolo y ninguna fila lo tiene
+     * nulo.
+     */
+    vehicleId: uuid('vehiculo_id').references(() => vehicles.id, { onDelete: 'restrict' }),
     driverUserId: uuid('conductor_id').references(() => users.id),
     status: assignmentStatusEnum('estado').notNull().default('asignado'),
     agreedPriceClp: integer('precio_acordado_clp').notNull(),
@@ -3377,7 +3387,7 @@ export const certificadosViaje = pgTable(
 
 /**
  * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
- * migración `0079_confirmaciones_acceso_booster`). Cuando el panel del
+ * migración `0080_confirmaciones_acceso_booster`). Cuando el panel del
  * personal da de alta una cuenta que ya tiene clave y vínculos con una
  * empresa, el acceso lo confirma la persona desde su sesión con un código de
  * 6 dígitos que el admin le entrega en persona. El código se guarda solo como

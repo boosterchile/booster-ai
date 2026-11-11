@@ -1,11 +1,13 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  type CandidataPorFlota,
   type CarrierCandidateV2,
   MATCHING_CONFIG,
   type NoCandidatesReason,
   type ResultadoRanking,
   type SolicitudRanking,
   type VehicleCandidate,
+  compararCandidatas,
 } from '@booster-ai/matching-algorithm';
 import { esEstadoViaje, puedeTransicionar } from '@booster-ai/trip-state-machine';
 import { and, eq, gte, inArray } from 'drizzle-orm';
@@ -20,7 +22,9 @@ import {
   vehicles,
   zones,
 } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { type ModoElegibilidad, cargarCandidatasPorCarga } from './matching-elegibilidad.js';
 import { type RankeadorMatching, rankeadorLocal } from './matching-ranking.js';
 import { buildCandidateV2, lookupCarriersForV2 } from './matching-v2-lookups.js';
 import { resolveMatchingV2Weights } from './matching-v2-weights.js';
@@ -85,6 +89,11 @@ export interface RunMatchingOptions {
    * (`services/matching-ranking.ts`).
    */
   ranking?: RankeadorMatching;
+  /**
+   * Qué elegibilidad decide las candidatas (spec matching-desde-la-carga
+   * parte 2). Por defecto, `MATCHING_ELEGIBILIDAD_MODO`.
+   */
+  elegibilidad?: ModoElegibilidad;
 }
 
 export async function runMatching(opts: RunMatchingOptions): Promise<MatchingResult> {
@@ -114,6 +123,7 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
 async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResult> {
   const { db, logger, tripId, notify } = opts;
   const ranking = opts.ranking ?? rankeadorLocal;
+  const modoElegibilidad = opts.elegibilidad ?? appConfig.MATCHING_ELEGIBILIDAD_MODO;
   // Solicitud y resultado del ranking, para la comparación en sombra
   // post-commit (null si el matching terminó sin candidatos).
   let rankeo: { solicitud: SolicitudRanking; resultado: ResultadoRanking } | null = null;
@@ -257,31 +267,39 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
         }
       }
 
-      for (const emp of candidateEmpresas) {
+      // Candidatas del matching vigente: una por empresa con vehículo apto.
+      const candidatasVigente: CandidataPorFlota[] = candidateEmpresas.flatMap((emp) => {
         const veh = bestVehicleByEmpresa.get(emp.id);
-        if (!veh) {
-          continue;
-        }
+        return veh
+          ? [{ empresaId: emp.id, vehicleId: veh.id, vehicleCapacityKg: veh.capacityKg }]
+          : [];
+      });
 
-        const vehicleCapacityKg = veh.capacityKg;
+      // Elegibilidad por carga (ADR-090): en sombra se compara y no decide;
+      // activa, decide. En modo `vigente` no corre.
+      const candidatasPorCarga = await elegibilidadPorCarga(tx, {
+        modo: modoElegibilidad,
+        logger,
+        trip,
+        empresaIds: candidateEmpresas.map((e) => e.id),
+        candidatasVigente,
+      });
+      const candidatas =
+        modoElegibilidad === 'activa' && candidatasPorCarga
+          ? candidatasPorCarga
+          : candidatasVigente;
 
+      for (const { empresaId, vehicleId, vehicleCapacityKg } of candidatas) {
         if (algorithmVersion === 'v2' && v2Lookups) {
-          const lookup = v2Lookups.get(emp.id);
+          const lookup = v2Lookups.get(empresaId);
           if (!lookup) {
             // No debería pasar (Map debe tener entry por empresaId).
             // Defensa: skip.
             continue;
           }
-          candidatosV2.push(
-            buildCandidateV2({
-              empresaId: emp.id,
-              vehicleId: veh.id,
-              vehicleCapacityKg,
-              lookup,
-            }),
-          );
+          candidatosV2.push(buildCandidateV2({ empresaId, vehicleId, vehicleCapacityKg, lookup }));
         } else {
-          candidatosV1.push({ empresaId: emp.id, vehicleId: veh.id, vehicleCapacityKg });
+          candidatosV1.push({ empresaId, vehicleId, vehicleCapacityKg });
         }
       }
 
@@ -421,6 +439,62 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
       }
       return result;
     });
+}
+
+/** +1 por matching con la elegibilidad por carga calculada; labels `modo` y `resultado`. */
+const comparacionesElegibilidad = getBusinessCounter('matching_elegibilidad_comparaciones_total');
+
+/**
+ * Calcula las candidatas por carga, las compara con las vigentes y deja la
+ * diferencia en el log y en la métrica. Devuelve `null` cuando no corresponde
+ * usarlas: en modo `vigente`, o en `sombra` si el cálculo falló (la sombra
+ * nunca frena al matching que decide). En `activa` un fallo se propaga.
+ */
+async function elegibilidadPorCarga(
+  tx: Parameters<Parameters<Db['transaction']>[0]>[0],
+  opts: {
+    modo: ModoElegibilidad;
+    logger: Logger;
+    trip: { id: string } & Parameters<typeof cargarCandidatasPorCarga>[1]['trip'];
+    empresaIds: readonly string[];
+    candidatasVigente: readonly CandidataPorFlota[];
+  },
+): Promise<CandidataPorFlota[] | null> {
+  const { modo, logger, trip, empresaIds, candidatasVigente } = opts;
+  if (modo === 'vigente') {
+    return null;
+  }
+  try {
+    const porCarga = await cargarCandidatasPorCarga(tx, { trip, empresaIds });
+    const comparacion = compararCandidatas(candidatasVigente, porCarga);
+    comparacionesElegibilidad.add(1, {
+      modo,
+      resultado: comparacion.coinciden ? 'coincide' : 'difiere',
+    });
+    logger.info(
+      {
+        tripId: trip.id,
+        modo,
+        cargoType: trip.cargoType,
+        cargoWeightKg: trip.cargoWeightKg,
+        cargoVolumeM3: trip.cargoVolumeM3,
+        candidatasVigente: candidatasVigente.length,
+        candidatasPorCarga: porCarga.length,
+        ...comparacion,
+      },
+      'matching: elegibilidad por carga',
+    );
+    return porCarga;
+  } catch (err) {
+    if (modo === 'activa') {
+      throw err;
+    }
+    logger.error(
+      { tripId: trip.id, modo, err },
+      'matching: falló la elegibilidad por carga en sombra',
+    );
+    return null;
+  }
 }
 
 /**

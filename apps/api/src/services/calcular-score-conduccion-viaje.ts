@@ -6,6 +6,7 @@ import {
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, greenDrivingEvents, tripMetrics, trips } from '../db/schema.js';
 
 /**
@@ -62,7 +63,7 @@ export async function calcularScoreConduccionViaje(opts: {
   // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C)
   const assignmentRows = await db
     .select({
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       deliveredAt: assignments.deliveredAt,
     })
     .from(assignments)

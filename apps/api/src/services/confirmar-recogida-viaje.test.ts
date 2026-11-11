@@ -2,6 +2,14 @@ import { getTableName } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirmarRecogidaViaje } from './confirmar-recogida-viaje.js';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('./sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 /**
  * Confirmar recogida — el paso que la máquina de estados modelaba y nadie
  * escribía (`asignaciones.recogido` / `viajes.en_proceso`).
@@ -161,6 +169,10 @@ describe('confirmarRecogidaViaje', () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.eventType).toBe('recogida_confirmada');
     expect(inserts[0]?.tripId).toBe(TRIP_ID);
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'recogida_confirmada' }),
+    );
   });
 
   it('confirmar dos veces es idempotente y NO duplica el evento', async () => {

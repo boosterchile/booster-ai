@@ -11,6 +11,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, gte, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   empresas,
@@ -133,7 +134,7 @@ export async function cargarScorecardMedioPlazo(opts: {
         .select({
           viajeId: assignments.tripId,
           asignacionId: assignments.id,
-          vehicleId: assignments.vehicleId,
+          vehicleId: vehiculoDeAsignacion,
           teltonikaImei: vehicles.teltonikaImei,
           esUsuarioPrueba: empresas.isTestUser,
           recogidoEn: assignments.pickedUpAt,
@@ -141,7 +142,7 @@ export async function cargarScorecardMedioPlazo(opts: {
           canceladoEn: assignments.cancelledAt,
         })
         .from(assignments)
-        .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+        .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
         .innerJoin(empresas, eq(empresas.id, assignments.empresaId))
         .where(
           and(
@@ -282,12 +283,12 @@ export async function cargarScorecardMedioPlazo(opts: {
 
       const filasFlota = await opts.db
         .select({
-          vehicleId: assignments.vehicleId,
+          vehicleId: vehiculoDeAsignacion,
           teltonikaImei: vehicles.teltonikaImei,
           esUsuarioPrueba: empresas.isTestUser,
         })
         .from(assignments)
-        .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+        .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
         .innerJoin(empresas, eq(empresas.id, assignments.empresaId))
         .where(
           and(

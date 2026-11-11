@@ -4,6 +4,7 @@ import { type DatosLibresInput, cargaEditadaPayloadSchema } from '@booster-ai/sh
 import { aceptaDatosLibres, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripEvents, trips } from '../db/schema.js';
 
 /**
@@ -150,7 +151,7 @@ export async function editarDatosLibres(
         id: assignments.id,
         status: assignments.status,
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         publicTrackingToken: assignments.publicTrackingToken,
       })
       .from(assignments)

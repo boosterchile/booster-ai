@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripChangeRequests } from '../db/schema.js';
 import { notifyCambioCarga } from './notify-cambio-carga.js';
 
@@ -73,7 +74,7 @@ export async function recordarSolicitudesCambio(deps: {
     .select({
       id: assignments.id,
       empresaId: assignments.empresaId,
-      driverUserId: assignments.driverUserId,
+      driverUserId: conductorDeAsignacion,
     })
     .from(assignments)
     .where(
