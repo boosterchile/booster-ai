@@ -304,6 +304,16 @@ export const assignmentStatusEnum = pgEnum('estado_asignacion', [
   'cancelado',
 ]);
 
+/** Estados de la ruta (ADR-088; transiciones en @booster-ai/route-planner). */
+export const estadoRutaEnum = pgEnum('estado_ruta', [
+  'planificada',
+  'en_curso',
+  'cerrada',
+  'cancelada',
+]);
+
+export const tipoParadaEnum = pgEnum('tipo_parada', ['recogida', 'entrega']);
+
 export const cancellationActorEnum = pgEnum('actor_cancelacion', [
   'transportista',
   'generador_carga',
@@ -1572,10 +1582,19 @@ export const assignments = pgTable(
     unidadArrastreId: uuid('unidad_arrastre_id').references(() => vehicles.id, {
       onDelete: 'restrict',
     }),
+    /**
+     * ADR-088 (migración 0078) — la ruta a la que pertenece el servicio. Toda
+     * asignación nueva nace con una ruta de dos paradas. NULL solo en las
+     * asignaciones anteriores a la 0078, hasta el relleno (spec
+     * ruta-parada-servicio §7, parte 3). Vehículo, arrastre y conductor siguen
+     * leyéndose de esta tabla hasta la parte 4.
+     */
+    rutaId: uuid('ruta_id').references((): AnyPgColumn => rutas.id, { onDelete: 'restrict' }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    rutaIdx: index('idx_asignaciones_ruta').on(table.rutaId),
     // Índice compuesto del histórico 7d de matching v2 (lookupCarriersForV2 →
     // agregación por empresa, matching-v2-lookups.ts): WHERE empresa_id IN (...)
     // AND entregado_en >= now() - interval '7 days' GROUP BY empresa_id.
@@ -1606,6 +1625,96 @@ export const assignments = pgTable(
     arrastreDistintoCheck: check(
       'chk_asignaciones_arrastre_distinto',
       sql`${table.unidadArrastreId} IS NULL OR ${table.unidadArrastreId} <> ${table.vehicleId}`,
+    ),
+  }),
+);
+
+/**
+ * ADR-088 (migración 0078) — el recorrido de una configuración de vehículo
+ * con un conductor, de una empresa transportista. Un servicio que viaja solo
+ * es una ruta de dos paradas. Vehículo y conductor son opcionales mientras
+ * está `planificada`; la regla «en curso exige los dos» la valida
+ * @booster-ai/route-planner, no un CHECK (el relleno de la parte 3 trae
+ * asignaciones históricas sin conductor).
+ */
+export const rutas = pgTable(
+  'rutas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    vehicleId: uuid('vehiculo_id').references(() => vehicles.id, { onDelete: 'restrict' }),
+    unidadArrastreId: uuid('unidad_arrastre_id').references(() => vehicles.id, {
+      onDelete: 'restrict',
+    }),
+    driverUserId: uuid('conductor_id').references(() => users.id),
+    status: estadoRutaEnum('estado').notNull().default('planificada'),
+    plannedPolylineEncoded: text('polilinea_planificada'),
+    startedAt: timestamp('iniciada_en', { withTimezone: true }),
+    closedAt: timestamp('cerrada_en', { withTimezone: true }),
+    cancelledAt: timestamp('cancelada_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    empresaEstadoIdx: index('idx_rutas_empresa_estado').on(table.empresaId, table.status),
+    vehiculoIdx: index('idx_rutas_vehiculo').on(table.vehicleId),
+    conductorIdx: index('idx_rutas_conductor').on(table.driverUserId),
+  }),
+);
+
+/**
+ * ADR-088 — punto ordenado de una ruta. Dirección, ventana y contacto se leen
+ * del servicio (`viajes`); no se copian. `uq_paradas_ruta_orden` es DEFERRABLE
+ * INITIALLY DEFERRED en la base (0078) para reordenar dentro de una
+ * transacción; Drizzle no expresa esa cláusula.
+ */
+export const paradasRuta = pgTable(
+  'paradas_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    rutaId: uuid('ruta_id')
+      .notNull()
+      .references(() => rutas.id, { onDelete: 'restrict' }),
+    orden: integer('orden').notNull(),
+    tipo: tipoParadaEnum('tipo').notNull(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    resolvedAt: timestamp('resuelta_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    ordenUnico: unique('uq_paradas_ruta_orden').on(table.rutaId, table.orden),
+    servicioTipoUnico: unique('uq_paradas_ruta_servicio_tipo').on(
+      table.rutaId,
+      table.tripId,
+      table.tipo,
+    ),
+    viajeIdx: index('idx_paradas_ruta_viaje').on(table.tripId),
+    ordenNoNegativo: check('ck_paradas_ruta_orden', sql`orden >= 0`),
+  }),
+);
+
+/** ADR-088 — quién cambió qué en una ruta y cuándo. */
+export const eventosRuta = pgTable(
+  'eventos_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    rutaId: uuid('ruta_id')
+      .notNull()
+      .references(() => rutas.id, { onDelete: 'restrict' }),
+    tipo: varchar('tipo_evento', { length: 40 }).notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    recordedByUserId: uuid('registrado_por_id').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    rutaIdx: index('idx_eventos_ruta_ruta').on(table.rutaId, table.createdAt),
+    tipoValido: check(
+      'ck_eventos_ruta_tipo',
+      sql`tipo_evento IN ('ruta_creada', 'servicio_agregado', 'servicio_quitado', 'paradas_reordenadas', 'configuracion_declarada', 'estado_cambiado')`,
     ),
   }),
 );
@@ -3186,6 +3295,10 @@ export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;
 export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
 
 // Repositorio documental de transporte — documentos_transporte (migration 0044)
+export type RutaRow = typeof rutas.$inferSelect;
+export type NewRutaRow = typeof rutas.$inferInsert;
+export type ParadaRutaRow = typeof paradasRuta.$inferSelect;
+export type EventoRutaRow = typeof eventosRuta.$inferSelect;
 export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
 export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;
 
@@ -3264,7 +3377,7 @@ export const certificadosViaje = pgTable(
 
 /**
  * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
- * migración `0078_confirmaciones_acceso_booster`). Cuando el panel del
+ * migración `0079_confirmaciones_acceso_booster`). Cuando el panel del
  * personal da de alta una cuenta que ya tiene clave y vínculos con una
  * empresa, el acceso lo confirma la persona desde su sesión con un código de
  * 6 dígitos que el admin le entrega en persona. El código se guarda solo como

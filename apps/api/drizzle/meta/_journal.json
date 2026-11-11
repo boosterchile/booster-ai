@@ -551,8 +551,15 @@
     {
       "idx": 78,
       "version": "7",
+      "when": 1780876800321,
+      "tag": "0078_rutas_paradas",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
       "when": 1780876800420,
-      "tag": "0078_confirmaciones_acceso_booster",
+      "tag": "0079_confirmaciones_acceso_booster",
       "breakpoints": true
     }
   ]
