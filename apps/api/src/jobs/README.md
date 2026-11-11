@@ -127,6 +127,53 @@ Reverso: `UPDATE metricas_viaje SET certificado_vigente_id = NULL` y borrar las
 versiones 1 que creó, salvo la que ya existía antes. Mientras ninguna se haya
 reemplazado, no cambia nada visible.
 
+### `reemitir-certificado.ts`
+
+Reemite **un** certificado (`.specs/reemision-certificado/` parte 5): corrige el
+dato que estaba mal en `metricas_viaje`, genera la versión siguiente del PDF con
+la línea «Reemplaza a la versión N, emitida el …», la firma, la sube a su propia
+ruta (`{tracking}.v{n}.pdf`, sin pisar la anterior) y la registra con su evento.
+La lógica vive en `src/services/reemitir-certificado.ts`. No reemite en lote.
+
+En seco por defecto: hace todas las comprobaciones y genera el PDF en memoria,
+sin firmar, sin subir y sin escribir. Para escribir exige `CONFIRMAR_DESTINO` y
+la llave y el bucket. Sale con código 1 si el certificado no se reemitiría, con
+el motivo en la salida. Lo ejecuta el PO.
+
+Requiere que el certificado tenga su versión 1: correr antes
+`rellenar-versiones-certificado.ts`.
+
+```bash
+# 1. En seco (default): imprime el destino y la reemisión que haría.
+CODIGO_SEGUIMIENTO=BOO-YWKZWR MOTIVO=factor_impreso_no_corresponde \
+FACTOR_ANTERIOR=3.25 FACTOR_NUEVO=3.24 \
+pnpm --filter @booster-ai/api exec tsx src/jobs/reemitir-certificado.ts
+# 2. Real (solo con el visto del PO), con el destino copiado de la salida anterior:
+DRY_RUN=false CONFIRMAR_DESTINO=<destino de la corrida en seco> \
+CERTIFICATE_SIGNING_KEY_ID=<llave> CERTIFICATES_BUCKET=<bucket> \
+SOLICITADO_POR_USER_ID=<uuid del PO> \
+CODIGO_SEGUIMIENTO=BOO-YWKZWR MOTIVO=factor_impreso_no_corresponde \
+FACTOR_ANTERIOR=3.25 FACTOR_NUEVO=3.24 \
+pnpm --filter @booster-ai/api exec tsx src/jobs/reemitir-certificado.ts
+```
+
+Para escribir rechaza la llave `local:` y el bucket `file:` del E2E. Los
+valores reales son las variables `CERTIFICATE_SIGNING_KEY_ID` y
+`CERTIFICATES_BUCKET` del servicio api en Cloud Run.
+
+Desde el Mac, la firma con KMS puede fallar al pedir el token («Premature
+close»), como en el backfill de 2026-09. Falla antes de subir y de escribir, así
+que no deja nada a medias; se resuelve sirviendo el token con un metadata server
+local.
+
+No hay job ni CLI de reverso. `revertirVersion`
+(`src/services/certificados-versionados.ts`) vuelve vigente la versión anterior
+y espeja las columnas `certificado_*`, pero **no repone `factor_emision_usado`**.
+Un reverso exige además, en la misma transacción y con el visto del PO,
+`UPDATE metricas_viaje SET factor_emision_usado = <anterior> WHERE viaje_id = …
+AND factor_emision_usado = <nuevo>`; sin él, el certificado vigente y el factor
+guardado quedan desalineados. El PDF de la versión revertida queda en el bucket.
+
 ### `reap-orphan-onboarding-firebase.ts`
 
 Borra el usuario Firebase **huérfano** del onboarding admin-provisioned

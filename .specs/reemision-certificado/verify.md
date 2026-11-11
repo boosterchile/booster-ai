@@ -178,3 +178,89 @@ datos el PDF real se genera.
 - Ningún test abre el PDF firmado: la firma y la subida se simulan.
 - El aviso al generador de §8-1 no está en ninguna parte de la tabla §5. Queda
   para decidir dónde entra (la parte 5 o una propia).
+
+## Parte 5 — job de reemisión, en seco por defecto (2026-11-11)
+
+`apps/api/src/jobs/reemitir-certificado.ts`. Un viaje por corrida, elegido por
+código de seguimiento; la corrección (motivo, factor anterior y nuevo) va en
+variables. En seco por defecto.
+
+- `prepararReemision` hace todas las comprobaciones y arma el PDF. La usan la
+  reemisión y la corrida en seco, así que las dos comprueban exactamente lo
+  mismo.
+- En seco, `simularReemision` además genera el PDF en memoria (sin firmar):
+  si la plantilla lo rechazara, se vería aquí y no al firmar.
+- Para escribir exige `CONFIRMAR_DESTINO` igual al destino que imprime la
+  corrida en seco, y la llave de Cloud KMS y el bucket GCS (rechaza los
+  `local:` y `file:` del E2E). Lo rechaza antes de conectarse.
+- El código de seguimiento se acepta en minúsculas.
+- El solicitante (`SOLICITADO_POR_USER_ID`) queda en el evento del viaje. Si
+  no existe, se rechaza antes de firmar: de lo contrario, la transacción
+  fallaría con el PDF ya subido.
+
+### Corrida en seco sobre una copia de producción
+
+El certificado afectado es **BOO-YWKZWR**: imprime 3,25 y sus emisiones
+(590,746 kg) son 182,33 L × 3,24. Su fila de `metricas_viaje` se leyó de
+producción en solo lectura el 2026-11-11 (48 columnas) y se cargó en un
+PostgreSQL 17 local con las migraciones de esta rama; el viaje, la empresa y el
+usuario son sintéticos. En producción el certificado todavía no tiene versión
+registrada: el relleno de la parte 2 no se ha corrido.
+
+```
+0. estado inicial          versiones=0 factor=3.25000 eventos_reemision=0
+1. reemisión en seco       ok:false, code: sin_version_vigente              (exit 1)
+2a. relleno en seco        revisados 1, creadas 1, omitidas 0
+2b. relleno escribiendo    revisados 1, creadas 1, omitidas 0  → versiones=1
+3. reemisión en seco       ok:true, versionVigente 1 → versionNueva 2,
+                           ruta certificates/<empresa>/BOO-YWKZWR.v2.pdf,
+                           factor 3.25 → 3.24, 182.33 L, 590.746 kg,
+                           PDF en memoria 76 458 bytes                       (exit 0)
+4a. factor nuevo 3.30      ok:false, correccion_no_explica_cifra            (exit 1)
+4b. factor anterior 3.24   ok:false, correccion_no_corresponde              (exit 1)
+4c. escribir sin destino   «CONFIRMAR_DESTINO debe ser …; no se escribió nada» (exit 1)
+5. estado final            versiones=1 factor=3.25000 eventos_reemision=0
+```
+
+La huella vigente que informa el paso 3 es la del certificado publicado en
+producción. Una vista previa sin firmar del PDF de la versión 2 muestra
+«Versión 2 · reemplaza a v1», la línea «Reemplaza a la versión 1, emitida el
+03-11-2026. Motivo: el factor de emisión impreso no era el usado en el
+cálculo.», el factor 3,24 y la cifra de 590,75 kg con 182,33 L. La fuente de
+factores impresa (GLEC v2.0, Tabla 32) es la del 3,24.
+
+### Lista de verificación para la parte 6 (la ejecuta el PO)
+
+1. Desplegado en producción lo de las partes 1 a 3 (#929, #930 y #931: la
+   emisión versionada, la migración 0082 y la verificación pública por
+   versión). El job se corre desde un checkout de `main` al día con las partes
+   4 (#932) y 5 (esta): el PDF lo arma ese proceso local, no el servicio
+   desplegado, y sin la parte 4 saldría sin la línea de reemplazo.
+2. `rellenar-versiones-certificado.ts` en seco y después escribiendo (parte 2).
+3. Este job en seco contra producción: `ok: true`, `versionNueva: 2` y la
+   huella vigente igual a la del certificado publicado.
+4. Este job con `DRY_RUN=false`, el destino confirmado, la llave y el bucket
+   de producción (las variables del servicio api en Cloud Run; el job rechaza
+   los `local:` y `file:` del E2E) y `SOLICITADO_POR_USER_ID`. Desde el Mac, la
+   firma con KMS puede fallar al pedir el token («Premature close», como en el
+   backfill de 2026-09): falla antes de subir y de escribir, y se resuelve
+   sirviendo el token con un metadata server local.
+5. Comprobar:
+   - `GET /certificates/BOO-YWKZWR/verify` sin huella, y con `?sha256=` igual a
+     la huella nueva que imprime el job, responde válido con esa huella;
+   - con la huella de la versión 1 responde «reemplazado por v2»;
+   - en el bucket están `BOO-YWKZWR.v2.pdf` y su `.sig`, y el PDF de la versión
+     1 y su firma siguen ahí;
+   - una segunda corrida en seco responde `correccion_no_corresponde` (el
+     factor guardado ya es 3,24).
+
+No hay reverso ejecutable. `revertirVersion` vuelve vigente la versión 1 pero
+no repone el factor guardado; un reverso exige también reponer
+`factor_emision_usado` con guarda, en la misma transacción y con el visto del
+PO (detalle en `apps/api/src/jobs/README.md`).
+
+### Lo que no cubre
+
+- La firma con KMS y la subida a GCS solo se prueban simuladas.
+- El aviso al generador (§8-1) no está en ninguna parte de la tabla §5.
+
