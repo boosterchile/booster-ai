@@ -122,6 +122,20 @@ function getDetalle(conductor: ReturnType<typeof buildConductor>) {
     );
 }
 
+/**
+ * Espera a que la ficha termine de cargar antes de escribir en ella. El efecto
+ * que llega con los datos llena el formulario (la licencia parte vacía) y el
+ * teléfono de contacto. Si el test borra el campo antes de que corra, el
+ * efecto vuelve a poner el teléfono viejo y lo escrito queda pegado detrás:
+ * en CI se vio «+56911111111+56987654321».
+ */
+async function fichaCargada(telefonoInicial: string | null) {
+  await waitFor(() => {
+    expect(screen.getByLabelText(/Número de licencia/)).toHaveValue('LIC-12345');
+    expect(screen.getByLabelText(/Teléfono \(WhatsApp\)/)).toHaveValue(telefonoInicial ?? '');
+  });
+}
+
 /** Plazo de las esperas tras un clic: bajo cobertura en CI, 1 s no siempre alcanza. */
 const ESPERA_ENVIO = { timeout: 5000 };
 
@@ -651,12 +665,13 @@ describe('ConductoresDetalleRoute', () => {
   }
 
   it('teléfono inválido deshabilita guardar y reenviar, y muestra el aviso', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ conductor: conductorPendienteConTelefono() });
+    getDetalle(conductorPendienteConTelefono());
     const post = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
     expect(input).toHaveAttribute('placeholder', '+56912345678');
+    await fichaCargada('+56911111111');
     await userEvent.clear(input);
     await userEvent.type(input, '+569');
     expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
@@ -666,11 +681,12 @@ describe('ConductoresDetalleRoute', () => {
   });
 
   it('un fijo +562 no habilita guardar y usa el mismo aviso', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+    getDetalle(buildConductor());
     const post = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56912345678');
     await userEvent.clear(input);
     await userEvent.type(input, '+56212345678');
     expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
@@ -699,6 +715,7 @@ describe('ConductoresDetalleRoute', () => {
     expect(await screen.findByText('+56911111111')).toBeInTheDocument();
     expect(screen.getByText(/el PIN que ya tiene sigue sirviendo/)).toBeInTheDocument();
     const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56911111111');
     await userEvent.clear(input);
     await userEvent.type(input, '+56987654321');
     // Si vuelve a fallar, dice por qué: el número quedó mal escrito o el botón
@@ -735,6 +752,7 @@ describe('ConductoresDetalleRoute', () => {
     expect(await screen.findByText('viejo@example.com')).toBeInTheDocument();
     expect(screen.getByText('+56911111111')).toBeInTheDocument();
     const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56911111111');
     await userEvent.clear(input);
     await userEvent.type(input, '+56987654321');
     // Si vuelve a fallar, dice por qué: el número quedó mal escrito o el botón
@@ -1020,6 +1038,7 @@ describe('conductores — cuenta del personal de Booster (SC8)', () => {
     providedContext = { kind: 'onboarded', me: makeMe('admin') };
     wrap(<ConductoresDetalleRoute />);
     const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56911111111');
     await userEvent.clear(input);
     await userEvent.type(input, '+56987654321');
     await userEvent.click(screen.getByRole('button', { name: 'Guardar teléfono' }));
