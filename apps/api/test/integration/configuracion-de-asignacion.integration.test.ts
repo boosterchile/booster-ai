@@ -97,7 +97,7 @@ describe('integration: vehículo, arrastre y conductor leídos de la ruta', () =
           .insert(schema.vehicles)
           .values({
             empresaId: empresa.id,
-            plate: `${prefijo}${suffix.slice(0, 4).toUpperCase()}`,
+            plate: `${prefijo}${suffix.slice(0, 8).toUpperCase()}`,
             vehicleType: 'camion_mediano',
             capacityKg: 5000,
           })
