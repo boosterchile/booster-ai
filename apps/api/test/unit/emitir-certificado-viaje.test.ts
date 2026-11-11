@@ -15,6 +15,10 @@ vi.mock('../../src/observability/business-metrics.js', () => ({
   },
 }));
 
+// La versión 1 se registra en la misma transacción; aquí se comprueba con qué.
+const registrarPrimeraVersion = vi.fn(async () => ({ id: 'cert-v1' }));
+vi.mock('../../src/services/certificados-versionados.js', () => ({ registrarPrimeraVersion }));
+
 const { emitirCertificado } = await import('@booster-ai/certificate-generator');
 const { emitirCertificadoViaje } = await import('../../src/services/emitir-certificado-viaje.js');
 
@@ -412,6 +416,64 @@ describe('emitirCertificadoViaje', () => {
       config: VALID_CONFIG,
     });
     expect(db.transaction).toHaveBeenCalled();
+  });
+
+  it('emisión exitosa registra la versión 1 y deja a las métricas apuntando a ella', async () => {
+    (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
+    const db = makeDb({
+      selects: [
+        [TRIP_DELIVERED],
+        [
+          {
+            ...METRICS_BASE,
+            fuenteDistancia: 'routes_estimada',
+            motivoFallback: 'sin_telemetria',
+            decisionVersion: 2,
+          },
+        ],
+        [SHIPPER_ROW],
+        [],
+      ],
+      updates: [[]],
+      inserts: [[]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+
+    expect(registrarPrimeraVersion).toHaveBeenCalledTimes(1);
+    expect(registrarPrimeraVersion).toHaveBeenCalledWith(expect.anything(), {
+      tripId: TRIP_ID,
+      sha256: EMITIR_OK.pdfSha256,
+      pdfUrl: EMITIR_OK.pdfGcsUri,
+      kmsVersion: EMITIR_OK.kmsKeyVersion,
+      emitidoEn: EMITIR_OK.issuedAt,
+      fuenteDistancia: 'routes_estimada',
+      motivoFallback: 'sin_telemetria',
+      decisionVersion: 2,
+    });
+    const set = (db.update.mock.results[0]?.value as { set: ReturnType<typeof vi.fn> }).set;
+    expect(set.mock.calls[0]?.[0]).toMatchObject({
+      certificadoVigenteId: 'cert-v1',
+      certificateSha256: EMITIR_OK.pdfSha256,
+      certificateIssuedAt: EMITIR_OK.issuedAt,
+    });
+  });
+
+  it('un certificado ya emitido no registra otra versión', async () => {
+    const db = makeDb({
+      selects: [[TRIP_DELIVERED], [{ ...METRICS_BASE, certificateIssuedAt: new Date() }]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(registrarPrimeraVersion).not.toHaveBeenCalled();
   });
 
   it('métrica certificados_emitidos_total: resultado=emitido en la emisión exitosa', async () => {

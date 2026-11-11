@@ -34,6 +34,7 @@ import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { registrarPrimeraVersion } from './certificados-versionados.js';
 
 /**
  * Métrica de negocio T10-15 (ADR-082): certificados por resultado.
@@ -308,9 +309,22 @@ async function emitirCertificadoViajeInner(
   // queden o ninguno (si crashea entre el UPDATE y el INSERT, el próximo
   // re-disparo encuentra certificateIssuedAt=null y reintenta).
   await db.transaction(async (tx) => {
+    // Toda emisión queda versionada (`.specs/reemision-certificado/` §3.1):
+    // sin la versión 1 no se puede reemitir.
+    const version = await registrarPrimeraVersion(tx, {
+      tripId,
+      sha256: result.pdfSha256,
+      pdfUrl: result.pdfGcsUri,
+      kmsVersion: result.kmsKeyVersion,
+      emitidoEn: result.issuedAt,
+      fuenteDistancia: metrics.fuenteDistancia ?? null,
+      motivoFallback: metrics.motivoFallback ?? null,
+      decisionVersion: metrics.decisionVersion ?? null,
+    });
     await tx
       .update(tripMetrics)
       .set({
+        certificadoVigenteId: version.id,
         certificatePdfUrl: result.pdfGcsUri,
         certificateSha256: result.pdfSha256,
         certificateKmsKeyVersion: result.kmsKeyVersion,
