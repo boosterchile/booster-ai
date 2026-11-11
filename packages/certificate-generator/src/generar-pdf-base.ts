@@ -19,6 +19,7 @@ import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, type PDFFont, rgb, setCharacterSpacing } from 'pdf-lib';
 import { type FuentesCert, embeberFuentes } from './fuentes.js';
+import { lineaReemplazo, validarVersion } from './reemision.js';
 import {
   FRASE_ISO,
   TAMANO_LINEA_METODO,
@@ -86,7 +87,7 @@ export async function generarPdfConCajas(
   const c = new Cursor(pdfDoc, registro);
 
   // 1. Fila superior: marca a la izquierda; código y versión a la derecha.
-  const ver = params.viaje.version ?? { numero: 1 };
+  const ver = validarVersion(params.viaje.version);
   c.texto('Booster', MX, c.y - 16, 16, f.bold, AZUL);
   c.derecha('Código de viaje', c.y - 10, 9, f.regular, GRIS);
   c.derecha(params.viaje.trackingCode, c.y - 24, 11, f.bold, TEXTO);
@@ -155,6 +156,17 @@ export async function generarPdfConCajas(
     c.texto(valor, MX + i * col, c.y - 15, 10.5, f.semibold, TEXTO);
   });
   c.y -= 40;
+
+  // 7b. Certificado reemitido: a qué versión reemplaza, de cuándo y por qué.
+  const reemplazo = lineaReemplazo(ver, formatDate);
+  if (reemplazo) {
+    // Una sola línea (spec §8-2): si no cabe, falla en vez de cortarla.
+    if (partir(reemplazo, f.regular, 9, MX2 - MX).length > 1) {
+      throw new Error(`la línea de reemplazo no cabe en una línea: «${reemplazo}»`);
+    }
+    c.texto(reemplazo, MX, c.y, 9, f.regular, TEXTO);
+    c.y -= 24;
+  }
 
   // 8. Resultados.
   const kgWtw = m.kgco2eWtwActual ?? m.kgco2eWtwEstimated ?? 0;

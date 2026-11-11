@@ -11,6 +11,8 @@
  *     romper schema rompería el package.
  */
 
+import type { VersionCertificado } from './reemision.js';
+
 /**
  * Datos del viaje necesarios para imprimir el certificado. Subset de
  * `trips` mapeado por el caller.
@@ -26,10 +28,12 @@ export interface DatosViajeCertificado {
   pickupAt: Date | null;
   deliveredAt: Date | null;
   /**
-   * HC-004 — versión del certificado (certificados_viaje). Ausente = v1.
-   * `reemplazaA` imprime «Versión N · reemplaza a vM» (p3b).
+   * Versión del certificado (`certificados_viaje`). Ausente = v1. Una
+   * posterior imprime «Versión N · reemplaza a vM» arriba y la línea de
+   * reemplazo con la fecha de la anterior y el motivo
+   * (`.specs/reemision-certificado/` §8-2).
    */
-  version?: { numero: number; reemplazaA?: number };
+  version?: VersionCertificado;
 }
 
 /**
