@@ -36,6 +36,7 @@ import {
   soloCampos,
   valoresActuales,
 } from './cambio-carga-valores.js';
+import { pesoQueNoCabeEnLaRuta } from './cargar-ruta.js';
 import type { DesgloseGenerador } from './cotizacion-comercial.js';
 
 /**
@@ -376,6 +377,7 @@ interface ContextoRespuesta {
   asignacion: AsignacionAviso & {
     status: string;
     vehicleId: string | null;
+    rutaId: string | null;
     agreedPriceClp: number;
   };
   solicitud: typeof tripChangeRequests.$inferSelect;
@@ -415,6 +417,7 @@ async function bloquearContexto(
       driverUserId: conductorDeAsignacion,
       status: assignments.status,
       vehicleId: vehiculoDeAsignacion,
+      rutaId: assignments.rutaId,
       agreedPriceClp: assignments.agreedPriceClp,
     })
     .from(assignments)
@@ -546,6 +549,24 @@ export async function aceptarSolicitudCambio(
           code: 'excede_capacidad_vehiculo',
           capacidadKg: vehiculo.capacityKg,
           pesoKg: cambios.weight_kg,
+        } as const;
+      }
+    }
+
+    // En una ruta con otros servicios, el peso nuevo se mide contra el tramo
+    // más cargado y no contra el camión vacío (invariante 2 de la ruta).
+    if (typeof cambios.weight_kg === 'number' && ctx.asignacion.rutaId) {
+      const noCabe = await pesoQueNoCabeEnLaRuta(tx, {
+        rutaId: ctx.asignacion.rutaId,
+        tripId: ctx.viaje.id,
+        pesoKg: cambios.weight_kg,
+      });
+      if (noCabe) {
+        return {
+          ok: false,
+          code: 'excede_capacidad_vehiculo',
+          capacidadKg: noCabe.capacidadKg,
+          pesoKg: noCabe.masaKg,
         } as const;
       }
     }

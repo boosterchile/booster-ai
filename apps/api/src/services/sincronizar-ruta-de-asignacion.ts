@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
-import { puedeTransicionarRuta } from '@booster-ai/route-planner';
-import { asc, eq, sql } from 'drizzle-orm';
+import { estadoQueCorresponde, puedeTransicionarRuta } from '@booster-ai/route-planner';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   type AssignmentRow,
@@ -10,6 +10,7 @@ import {
   paradasRuta,
   rutas,
 } from '../db/schema.js';
+import { cargarRuta } from './cargar-ruta.js';
 
 /**
  * La ruta sigue a su asignación (ADR-088, spec ruta-parada-servicio partes 3
@@ -21,6 +22,12 @@ import {
  * recogida o entrega, cancelar) llama a `sincronizarRutaDeAsignacion` en la
  * misma transacción. El job de relleno usa el mismo camino para las
  * asignaciones anteriores a la ruta.
+ *
+ * Cuando la ruta lleva más de un servicio (parte 5b), la ruta es la fuente de
+ * verdad: `conciliarRutaCompartida` resuelve las paradas de cada servicio
+ * desde su asignación y mueve el estado con `estadoQueCorresponde` del
+ * paquete. El vehículo no se copia de ninguna asignación, y el conductor solo
+ * cuando la escritura fue asignar un conductor.
  *
  * Sincronizar nunca rechaza la operación de quien llama: si la ruta no se
  * puede poner al día, devuelve `omitida` con el motivo.
@@ -249,8 +256,11 @@ async function conciliarRuta(
     .orderBy(asc(paradasRuta.orden));
   const recogida = paradas.find((p) => p.tipo === 'recogida' && p.tripId === a.tripId);
   const entrega = paradas.find((p) => p.tipo === 'entrega' && p.tripId === a.tripId);
-  if (paradas.length !== 2 || !recogida || !entrega) {
-    return { tipo: 'omitida', motivo: 'la ruta tiene paradas de otros servicios' };
+  if (!recogida || !entrega) {
+    return { tipo: 'omitida', motivo: 'la ruta no tiene las paradas de este servicio' };
+  }
+  if (paradas.length !== 2) {
+    return conciliarRutaCompartida(tx, a, ruta, ctx);
   }
   if (corresponde.ok && !alcanzable(ruta.status, corresponde.plan.estado)) {
     return {
@@ -339,6 +349,171 @@ async function conciliarRuta(
     return { tipo: 'sin_cambios', rutaId };
   }
   return { tipo: 'conciliada', rutaId, desde: ruta.status, hacia: plan.estado };
+}
+
+const MUTABLES = ['asignado', 'recogido'] as const;
+
+function fechaMasTardia(fechas: readonly (Date | null)[]): Date | null {
+  const validas = fechas.filter((f): f is Date => f !== null);
+  return validas.length === 0 ? null : new Date(Math.max(...validas.map((f) => f.getTime())));
+}
+
+function fechaMasTemprana(fechas: readonly (Date | null)[]): Date | null {
+  const validas = fechas.filter((f): f is Date => f !== null);
+  return validas.length === 0 ? null : new Date(Math.min(...validas.map((f) => f.getTime())));
+}
+
+/**
+ * Pone al día una ruta con más de un servicio. Reconcilia la ruta entera, no
+ * solo el servicio que originó la llamada: así una parada que quedó sin
+ * resolver (por ejemplo, una recogida confirmada antes de declarar conductor)
+ * se resuelve con la siguiente escritura.
+ */
+async function conciliarRutaCompartida(
+  tx: Tx,
+  a: FilaParaRuta,
+  ruta: RutaRow,
+  ctx: ContextoSincronizacion,
+): Promise<ResultadoSincronizacion> {
+  const rutaId = ruta.id;
+
+  // El conductor se declara para toda la ruta (decisión D1 del plan): cambia
+  // en la ruta y en las demás asignaciones vivas, que son su espejo.
+  let conductorId = ruta.driverUserId;
+  const cambiaConductor =
+    ctx.origen === 'conductor_asignado' && a.driverUserId !== ruta.driverUserId;
+  if (cambiaConductor) {
+    conductorId = a.driverUserId;
+    // rls-allowlist: ruta tomada por id con FOR UPDATE en esta transacción
+    await tx
+      .update(rutas)
+      .set({ driverUserId: conductorId, updatedAt: sql`now()` })
+      .where(eq(rutas.id, rutaId));
+    // rls-allowlist: asignaciones de la ruta tomada con FOR UPDATE en esta transacción
+    await tx
+      .update(assignments)
+      .set({ driverUserId: conductorId, updatedAt: new Date() })
+      .where(and(eq(assignments.rutaId, rutaId), inArray(assignments.status, [...MUTABLES])));
+    await tx.insert(eventosRuta).values({
+      rutaId,
+      tipo: 'configuracion_declarada',
+      payload: {
+        vehiculo_id: ruta.vehicleId,
+        unidad_arrastre_id: ruta.unidadArrastreId,
+        conductor_id: conductorId,
+        origen: ctx.origen,
+      },
+      recordedByUserId: ctx.userId,
+    });
+  }
+
+  // Cada parada toma la fecha que le da la asignación de su servicio.
+  const antes = await cargarRuta(tx, rutaId);
+  if (!antes) {
+    throw new Error(`La ruta ${rutaId} desapareció dentro de la transacción`);
+  }
+  const deLaRuta = new Set(antes.servicios.map((s) => s.tripId));
+  if (antes.paradas.some((p) => !deLaRuta.has(p.tripId))) {
+    return {
+      tipo: 'omitida',
+      motivo: 'la ruta tiene paradas de otros servicios cuya asignación no apunta a ella',
+    };
+  }
+  let omitidas = 0;
+  let cambiaronParadas = false;
+  for (const servicio of antes.servicios) {
+    const corresponde = rutaQueCorresponde({
+      status: servicio.estado,
+      driverUserId: conductorId,
+      pickedUpAt: servicio.pickedUpAt,
+      deliveredAt: servicio.deliveredAt,
+      cancelledAt: servicio.cancelledAt,
+    });
+    if (!corresponde.ok) {
+      omitidas += 1;
+      continue;
+    }
+    for (const parada of antes.paradas.filter((p) => p.tripId === servicio.tripId)) {
+      const fecha =
+        parada.tipo === 'recogida'
+          ? corresponde.plan.recogidaResueltaEn
+          : corresponde.plan.entregaResueltaEn;
+      if (!mismaFecha(parada.resolvedAt, fecha)) {
+        cambiaronParadas = true;
+        // rls-allowlist: parada por id, de la ruta tomada en esta transacción
+        await tx
+          .update(paradasRuta)
+          .set({ resolvedAt: fecha })
+          .where(eq(paradasRuta.id, parada.id));
+      }
+    }
+  }
+
+  // El estado sale de las paradas y de los servicios vigentes, con la regla
+  // del paquete. Una ruta no pasa a en curso sin vehículo y conductor (§4.4-4).
+  const cargada = cambiaronParadas ? await cargarRuta(tx, rutaId) : antes;
+  if (!cargada) {
+    throw new Error(`La ruta ${rutaId} desapareció dentro de la transacción`);
+  }
+  let estado = cargada.ruta.estado;
+  for (let pasos = 0; pasos < 2; pasos += 1) {
+    const siguiente = estadoQueCorresponde({ ...cargada.ruta, estado });
+    if (siguiente === estado) {
+      break;
+    }
+    if (siguiente === 'en_curso' && (ruta.vehicleId === null || conductorId === null)) {
+      omitidas += 1;
+      break;
+    }
+    estado = siguiente;
+  }
+  const cambiaEstado = estado !== ruta.status;
+  if (cambiaEstado) {
+    const ahora = new Date();
+    const resueltas = cargada.paradas.map((p) => p.resolvedAt);
+    const empezo = estado === 'en_curso' || estado === 'cerrada';
+    // rls-allowlist: ruta tomada por id con FOR UPDATE en esta transacción
+    await tx
+      .update(rutas)
+      .set({
+        status: estado,
+        startedAt: empezo
+          ? (ruta.startedAt ??
+            fechaMasTemprana(
+              cargada.paradas.filter((p) => p.tipo === 'recogida').map((p) => p.resolvedAt),
+            ) ??
+            ahora)
+          : ruta.startedAt,
+        closedAt:
+          estado === 'cerrada'
+            ? (fechaMasTardia([...resueltas, ...cargada.servicios.map((s) => s.cancelledAt)]) ??
+              ahora)
+            : ruta.closedAt,
+        cancelledAt:
+          estado === 'cancelada'
+            ? (fechaMasTardia(cargada.servicios.map((s) => s.cancelledAt)) ?? ahora)
+            : ruta.cancelledAt,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(rutas.id, rutaId));
+    await tx.insert(eventosRuta).values({
+      rutaId,
+      tipo: 'estado_cambiado',
+      payload: { desde: ruta.status, hacia: estado, origen: ctx.origen },
+      recordedByUserId: ctx.userId,
+    });
+  }
+
+  if (omitidas > 0) {
+    return {
+      tipo: 'omitida',
+      motivo: 'a la ruta le falta vehículo, conductor o una fecha para quedar al día',
+    };
+  }
+  if (!cambiaEstado && !cambiaConductor && !cambiaronParadas) {
+    return { tipo: 'sin_cambios', rutaId };
+  }
+  return { tipo: 'conciliada', rutaId, desde: ruta.status, hacia: estado };
 }
 
 /**

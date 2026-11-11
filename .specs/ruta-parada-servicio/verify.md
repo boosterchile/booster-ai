@@ -120,3 +120,28 @@ hay una comparación respuesta por respuesta contra producción.
 Lo que no se midió: el plan de ejecución de los filtros con volumen real. Con
 las tablas de hoy (10 asignaciones) no dice nada; los filtros están escritos
 para poder usar `idx_rutas_conductor` e `idx_rutas_vehiculo`.
+
+## Parte 5b — la ruta como fuente de verdad con varios servicios (2026-11-11)
+
+Plan aprobado en `plan.md`. Sin cambios para las rutas de un servicio: los
+tests de `ruta-sigue-asignacion` y `rellenar-rutas` siguen en verde sin
+tocarse (criterio 7 de la spec).
+
+- `services/cargar-ruta.ts`: carga la ruta y la arma como la entiende
+  `route-planner` (paradas en orden, servicios, capacidad de sus unidades).
+- `conciliarRutaCompartida`: en una ruta con más de un servicio, cada parada
+  toma la fecha de la asignación de su servicio, en cualquier orden (D5), y el
+  estado sale de `estadoQueCorresponde`. No copia el vehículo de ninguna
+  asignación. El conductor solo cambia al asignar conductor, y se declara para
+  toda la ruta y sus asignaciones vivas (D1).
+- `asignar-conductor`: en una ruta con varios servicios no cambia el camión
+  (`ruta_con_varios_servicios`); se declara en la ruta, que lo valida entero.
+- Cambio de peso después del match: en una ruta con otros servicios se mide
+  contra el tramo más cargado, no contra el camión vacío.
+
+**Distinto del plan:** una carga cancelada no se saca de la ruta. Queda en
+ella como servicio cancelado, que es como lo modela el paquete: no cuenta a
+bordo si no se recogió, no deja la ruta pendiente y conserva la historia.
+
+Evidencia: `test/integration/ruta-consolidada.integration.test.ts` (11 tests,
+10 en rojo antes de implementar) y `test/unit/ruta-compartida.test.ts`.

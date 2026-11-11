@@ -82,7 +82,8 @@ export type VehicleNotAssignableReason =
   | 'not_active'
   | 'not_motriz'
   | 'es_el_arrastre'
-  | 'en_transito';
+  | 'en_transito'
+  | 'ruta_con_varios_servicios';
 
 export class VehicleNotAssignableError extends Error {
   constructor(
@@ -190,6 +191,7 @@ export async function asignarConductorAAssignment(
         tripId: assignments.tripId,
         vehicleId: vehiculoDeAsignacion,
         unidadArrastreId: arrastreDeAsignacion,
+        rutaId: assignments.rutaId,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
@@ -210,6 +212,19 @@ export async function asignarConductorAAssignment(
     // cambiar el conductor, pero un vehiculo_id no se persiste.
     if (vehiculoId && assignment.status !== 'asignado') {
       throw new VehicleNotAssignableError(vehiculoId, 'en_transito');
+    }
+
+    // El camión de una ruta con varios servicios se declara en la ruta, que
+    // lo valida contra todos sus tramos. Desde una asignación no se cambia.
+    if (vehiculoId && vehiculoId !== assignment.vehicleId && assignment.rutaId) {
+      // rls-allowlist: asignaciones de la ruta de una asignación ya validada contra la empresa
+      const enLaRuta = await tx
+        .select({ id: assignments.id })
+        .from(assignments)
+        .where(eq(assignments.rutaId, assignment.rutaId));
+      if (enLaRuta.length > 1) {
+        throw new VehicleNotAssignableError(vehiculoId, 'ruta_con_varios_servicios');
+      }
     }
 
     // 2. Conductor de la misma empresa y no eliminado. La activación

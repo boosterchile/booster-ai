@@ -374,15 +374,31 @@ describe('rellenarRutas', () => {
   });
 
   it('omite la ruta que lleva paradas de otros servicios', async () => {
+    const CON_AJENA = [...PARADAS, { id: 'p-2', orden: 2, tipo: 'recogida', tripId: 'viaje-2' }];
     const { db, escrituras } = baseFalsa({
-      asignaciones: [[{ ...FILA, rutaId: 'ruta-1' }], ...VERIFICACION_LIMPIA],
-      rutas: [[RUTA]],
-      paradas: [[...PARADAS, { id: 'p-2', orden: 2, tipo: 'recogida', tripId: 'viaje-2' }]],
+      // La ruta compartida se vuelve a cargar entera: ruta, paradas y sus asignaciones.
+      asignaciones: [
+        [{ ...FILA, rutaId: 'ruta-1' }],
+        [
+          {
+            asignacionId: 'asig-1',
+            tripId: 'viaje-1',
+            empresaId: 'empresa-1',
+            estado: 'entregado',
+          },
+        ],
+        ...VERIFICACION_LIMPIA,
+      ],
+      rutas: [[RUTA], [RUTA]],
+      paradas: [CON_AJENA, CON_AJENA],
     });
     const r = await rellenarRutas(db, { dryRun: false });
 
     expect(r.omitidas).toEqual([
-      { asignacionId: 'asig-1', motivo: 'la ruta tiene paradas de otros servicios' },
+      {
+        asignacionId: 'asig-1',
+        motivo: 'la ruta tiene paradas de otros servicios cuya asignación no apunta a ella',
+      },
     ]);
     expect(escrituras).toEqual([]);
   });
