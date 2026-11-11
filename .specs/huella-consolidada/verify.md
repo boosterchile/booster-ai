@@ -49,21 +49,9 @@ Completan lo que la spec deja abierto. Ninguna rige en producción todavía.
    deja entrar (§3.6); si llegara, no se le inventa actividad. Si ningún
    servicio de una ruta con varios tiene actividad, el reparto falla.
 
-### Una regla que la spec no define y necesita el visto del PO
+### La regla del nivel de una ruta medida por tramos
 
-La spec §3.8 dice que el nivel se deriva «con la fuente y la cobertura de la
-ruta completa», pero una ruta se mide por tramos y no dice cómo se resumen.
-`derivarNivelRuta` usa:
-
-- **cobertura**: la de los tramos, ponderada por su distancia;
-- **fuente**: la más débil entre los tramos (declarada a mano < ruta de mapas <
-  GPS del celular < GPS del vehículo).
-
-Efecto: una ruta con un solo tramo medido con el celular deja de poder ser
-`primario_verificable`, y una con un tramo declarado a mano baja a
-`secundario_default`, por corto que sea ese tramo. Es la lectura más
-conservadora. La alternativa es ponderar también la fuente por distancia, que
-es más permisiva.
-
-Es una regla de certificación: se confirma con el PO antes de la parte 3, que
-es la primera que la usa.
+La spec §3.8 no decía cómo se resumen los tramos. `derivarNivelRuta` usa la
+cobertura ponderada por distancia y la fuente más débil entre los tramos. El
+PO la confirmó el 2026-11-11 (spec §3.8 y §11-5), frente a la alternativa de
+ponderar también la fuente por distancia.
