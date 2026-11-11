@@ -78,7 +78,8 @@ const METRICAS = {
   motivoFallback: null,
   decisionVersion: null,
 };
-const VIGENTE = { id: 'c1', version: 1, sha256: sha('a') };
+const EMITIDO_V1 = new Date('2026-11-03T06:18:23Z');
+const VIGENTE = { id: 'c1', version: 1, sha256: sha('a'), emitidoEn: EMITIDO_V1 };
 const CONFIG = { kmsKeyId: 'k', certificatesBucket: 'b', verifyBaseUrl: 'https://api' };
 const CORRECCION = {
   motivo: 'factor_impreso_no_corresponde',
@@ -102,7 +103,10 @@ const reemitir = (db: never, overrides: Partial<Parameters<typeof reemitirCertif
 beforeEach(() => {
   vi.clearAllMocks();
   m.obtenerVigente.mockResolvedValue(VIGENTE);
-  m.armarDatosEmision.mockResolvedValue({ ok: true, datos: { metricas: {} } });
+  m.armarDatosEmision.mockResolvedValue({
+    ok: true,
+    datos: { viaje: { trackingCode: 'X' }, metricas: {} },
+  });
   m.emitirCertificado.mockResolvedValue({
     pdfGcsUri: 'gs://b/x.v2.pdf',
     pdfSha256: sha('b'),
@@ -210,7 +214,20 @@ describe('reemitirCertificado — reemisión', () => {
       pdfUri: 'gs://b/x.v2.pdf',
     });
     expect(m.armarDatosEmision.mock.calls[0]?.[0].metrics.emissionFactorUsed).toBe('3.24000');
-    expect(m.emitirCertificado).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }));
+    expect(m.emitirCertificado).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 2,
+        viaje: {
+          trackingCode: 'X',
+          version: {
+            numero: 2,
+            reemplazaA: 1,
+            reemplazaEmitidoEn: EMITIDO_V1,
+            motivo: 'factor_impreso_no_corresponde',
+          },
+        },
+      }),
+    );
     expect(m.crearVersionEnTx).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ sha256: sha('b'), pdfUrl: 'gs://b/x.v2.pdf' }),

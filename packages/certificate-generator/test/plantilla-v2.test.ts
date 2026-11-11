@@ -75,7 +75,12 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
   it('título único, las tres señales, pie Estimado y versión reemplazada', async () => {
     const { paginas, todo } = await texto(base, {
       ...viaje,
-      version: { numero: 2, reemplazaA: 1 },
+      version: {
+        numero: 2,
+        reemplazaA: 1,
+        reemplazaEmitidoEn: new Date('2026-11-03T06:18:23Z'),
+        motivo: 'factor_impreso_no_corresponde',
+      },
     });
     expect(todo).toContain('Certificado de huella de carbono');
     expect(todo.toLowerCase()).not.toContain('reporte estimativo');

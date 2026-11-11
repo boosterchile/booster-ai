@@ -39,3 +39,9 @@ export type {
   ResultadoEmisionCertificado,
   SidecarFirma,
 } from './tipos.js';
+export {
+  MOTIVOS_REEMISION,
+  type MotivoReemision,
+  TEXTO_MOTIVO_REEMISION,
+  type VersionCertificado,
+} from './reemision.js';
