@@ -159,6 +159,9 @@ module "service_api" {
     MATCHING_ENGINE_URL       = local.cloud_run_matching_url
     MATCHING_SHADOW           = tostring(var.matching_shadow)
     MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
+    # ADR-090 — elegibilidad por carga (spec matching-desde-la-carga parte 2).
+    # `sombra`: el matching vigente decide y la regla nueva se compara al lado.
+    MATCHING_ELEGIBILIDAD_MODO = var.matching_elegibilidad_modo
 
     # T10-21 — enrutamiento del canal WhatsApp (notification-service). Flags
     # en `false` por default: el apply no cambia el comportamiento.

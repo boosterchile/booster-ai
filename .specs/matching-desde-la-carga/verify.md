@@ -24,9 +24,11 @@ La comparación queda en:
 
 ### Cómo se activa
 
-La variable no está declarada en Terraform: sin ella rige `vigente`. Pasar a
-`sombra` es agregarla al servicio del api; pasar a `activa` es una activación
-en producción. Las dos las hace el PO.
+Desde el 2026-11-11 la variable está en Terraform
+(`var.matching_elegibilidad_modo`, `infrastructure/variables.tf`) con `sombra`
+por defecto: el PO pidió activar la sombra ese día. Rige en producción cuando
+se aplica Terraform. Pasar a `activa` es una activación en producción y la
+decide el PO; volver a `vigente` es cambiar la variable y re-aplicar.
 
 ### Criterio 2 de la spec, con la flota y las cargas del 2026-11-10
 
