@@ -122,7 +122,7 @@ prueban los tests de propiedad de la parte 1 y, aquí, 5 casos más los insumos
 de los 8 certificados emitidos. Los 80 tests unitarios del cálculo y los de
 integración del cierre pasan sin cambiar sus expectativas.
 
-### El criterio 3 de la spec no se puede cumplir como está escrito
+### El criterio 3 de la spec, como estaba escrito, no se podía cumplir
 
 El criterio pide que, para los 8 certificados emitidos en producción, el
 cálculo por ruta dé «las mismas cifras publicadas». Con los insumos leídos de
@@ -175,12 +175,13 @@ Ninguno de los dos se corrige aquí. El segundo es un cambio chico en el cierre;
 el primero es una decisión de diseño (guardar con cada certificado los insumos
 con que se calculó). Quedan para que el PO decida.
 
-### Propuesta para el criterio 3
+### El criterio 3, reescrito
 
-Reescribirlo como: «con los insumos de los 8 certificados emitidos, el cálculo
-por ruta da exactamente lo mismo que el cálculo por viaje; y cada certificado
-se reproduce con el factor vigente en su fecha». Las dos cosas quedan probadas
-en `test/unit/huella-por-ruta.test.ts`, con la salvedad del certificado 1.
+El PO lo aprobó el 2026-11-11 (spec §10-3 y §11-6): «con los insumos de los 8
+certificados emitidos, el cálculo por ruta da exactamente lo mismo que el
+cálculo por viaje, y cada certificado se reproduce con el factor vigente en su
+fecha». Las dos cosas quedan probadas en `test/unit/huella-por-ruta.test.ts`,
+con la salvedad del certificado 1.
 
 ### Otras notas
 
