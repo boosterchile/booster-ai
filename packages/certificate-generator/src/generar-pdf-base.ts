@@ -250,7 +250,12 @@ export async function generarPdfConCajas(
   }
   // ADR-091 §2: nota de método en párrafo normal, en el lugar del disclaimer.
   if (pres.presentacion === 'medido_teltonika') {
-    const lineas = partir(textoNotaMetodo(m.fuenteFactores, m.glecVersion), f.regular, 9, MX2 - MX);
+    const lineas = partir(
+      textoNotaMetodo(m.fuenteFactores, m.glecVersion, m.consolidacion !== undefined),
+      f.regular,
+      9,
+      MX2 - MX,
+    );
     c.asegurar(lineas.length * 13 + 8);
     lineas.forEach((l, i) => c.texto(l, MX, c.y - 10 - i * 13, 9, f.regular, GRIS));
     c.y -= lineas.length * 13 + 20;

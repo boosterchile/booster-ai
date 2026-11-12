@@ -432,3 +432,12 @@ No dice cuántas cargas más había ni de quién eran.
 | Una carga sola no lleva nada de esto | el mismo archivo |
 | Datos incoherentes no generan el PDF | el mismo archivo |
 | La emisión arma los datos desde la base, con el total medido o estimado según la cifra de la carga | `apps/api/test/unit/emitir-certificado-viaje.test` y `test/integration/huella-ruta-compartida` |
+
+### Parte 5 sobre el ADR-091 (2026-11-12)
+
+La parte 5 se rehízo sobre main con el ADR-091 ya implementado (#952). Una carga consolidada hereda la presentación de su ruta:
+
+- ruta medida por Teltonika (cobertura ≥ 80 %): sin sello, y la nota de método dice «La distancia de la ruta fue medida…», porque la distancia de la carga es la directa del reparto;
+- ruta estimada por Google Maps: conserva sello, disclaimer y «Estimado» en el pie.
+
+Pruebas: `packages/certificate-generator/test/consolidacion-plantilla.test.ts` (dos casos nuevos) y `test/render-helpers.test.ts`.

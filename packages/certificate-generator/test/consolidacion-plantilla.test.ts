@@ -107,6 +107,27 @@ describe('certificado de una carga consolidada', () => {
     expect(todo).not.toMatch(/Distancia: 120,0 km \(medido/);
   });
 
+  it('con la ruta medida por Teltonika va sin sello y la nota habla de la distancia de la ruta (ADR-091)', async () => {
+    const todo = await texto(consolidada);
+    expect(todo).not.toMatch(/E ?S ?T ?I ?M ?A ?D ?O/);
+    expect(todo).not.toContain('Estimado');
+    expect(todo).toContain('Distancia medida con Teltonika · consumo modelado · 96% telemetría');
+    expect(todo).toContain(
+      'La distancia de la ruta fue medida por el dispositivo Teltonika instalado en el vehículo.',
+    );
+    expect(todo).not.toContain('La distancia fue medida');
+  });
+
+  it('con la ruta estimada por Google Maps conserva el sello', async () => {
+    const todo = await texto({
+      ...consolidada,
+      routeDataSource: 'maps_directions',
+      coveragePct: 0,
+    });
+    expect(todo).toMatch(/E ?S ?T ?I ?M ?A ?D ?O/);
+    expect(todo).toContain('IMPORTANTE — DATOS SECUNDARIOS MODELADOS');
+  });
+
   it('no dice cuántas cargas más había ni de quién eran', async () => {
     const todo = await texto(consolidada);
     expect(todo).not.toMatch(/\b\d+ (cargas|servicios|generadores)\b/i);
