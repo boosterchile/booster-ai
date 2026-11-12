@@ -372,3 +372,63 @@ cambia cuando la ruta cambia. Sigue sin efecto en producción hasta encender
 | Una carga sola da la estimación del viaje; una cancelada no entra; una ruta cerrada no se vuelve a estimar | el mismo archivo |
 | Cada operación de la API estima las rutas que tocó, y un fallo de la estimación no cambia la respuesta | `routes/rutas.test` |
 | Qué decide con cada ruta | `test/unit/estimar-huella-de-ruta.test`, `test/unit/tramos-planificados.test` (rojo primero: 5 tests) |
+
+## Parte 5 — el certificado de una carga consolidada (2026-11-11)
+
+Spec §3.10 y criterio 7. Cambia la plantilla del certificado: necesita el
+visto del PO. Solo afecta a las cargas que compartieron su ruta; el
+certificado de una carga que viajó sola sale igual, byte a byte en su texto.
+
+| Archivo | Qué hace |
+|---|---|
+| `packages/certificate-generator/src/consolidacion.ts` | Los datos de consolidación, sus textos y su validación |
+| `packages/certificate-generator/src/generar-pdf-base.ts` | La sección «Carga consolidada» y la distancia directa en Resultados |
+| `apps/api/src/services/emitir-certificado-viaje.ts` | `armarDatosEmision` agrega la participación, el total de la ruta y la versión del método. Lo usan la emisión y la reemisión |
+
+### Qué dice el certificado de una carga consolidada
+
+Una sección nueva, «Carga consolidada», entre Metodología y Trayecto:
+
+> Esta carga viajó con otras cargas en la misma ruta. Su huella es la parte
+> que le corresponde de la huella total de la ruta.
+
+| Dato | Ejemplo |
+|---|---|
+| Método de reparto | Toneladas-kilómetro, distancia directa |
+| Versión del método | tkm-distancia-directa-v1 |
+| Participación de esta carga | 62,50 % |
+| Huella total de la ruta | 80,00 kg CO₂e |
+
+En Resultados, la línea de distancia pasa de «Distancia: X km (medido N %,
+estimado M %)» a «Distancia directa: X km». La distancia directa es la que
+entró al reparto y no es una medición, así que no lleva cobertura. La
+cobertura de la ruta sigue en Metodología.
+
+No dice cuántas cargas más había ni de quién eran.
+
+### Decisiones de implementación
+
+1. **Cuándo una carga es consolidada para el certificado**: su participación
+   es mayor que 0 y menor que 100. Una carga que quedó sola en una ruta
+   compartida (las demás se cancelaron antes de recogerse) se llevó el 100 % y
+   recibe el certificado de siempre.
+2. **El total de la ruta es del mismo tipo que la cifra de la carga**: medido
+   si la carga publica su cifra medida, estimado si publica la estimada.
+3. **Si falta el total de la ruta o la versión del método, no se emite**
+   (`ruta_sin_huella`). Un certificado que publica una parte sin decir de qué
+   total sería peor que no tenerlo; queda para el relleno.
+4. **El generador valida antes de firmar**: participación en (0, 100), total
+   de la ruta no menor que la cifra de la carga, versión presente.
+5. **La sección no se parte entre dos páginas.**
+6. **Ningún texto nombra una norma** para el reparto (riesgo de la spec §9):
+   las citas de GLEC e ISO 14083 para el reparto siguen sin verificar contra
+   la fuente.
+
+### Cómo se prueba
+
+| Criterio | Dónde |
+|---|---|
+| 7: muestra método, participación, versión y total; no contiene datos de otro generador | `packages/certificate-generator/test/consolidacion-plantilla.test` (rojo primero: 3 tests) |
+| Una carga sola no lleva nada de esto | el mismo archivo |
+| Datos incoherentes no generan el PDF | el mismo archivo |
+| La emisión arma los datos desde la base, con el total medido o estimado según la cifra de la carga | `apps/api/test/unit/emitir-certificado-viaje.test` y `test/integration/huella-ruta-compartida` |

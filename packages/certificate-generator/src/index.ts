@@ -45,3 +45,10 @@ export {
   TEXTO_MOTIVO_REEMISION,
   type VersionCertificado,
 } from './reemision.js';
+
+export {
+  type ConsolidacionCertificado,
+  FRASE_CONSOLIDACION,
+  TEXTO_METODO_REPARTO,
+  validarConsolidacion,
+} from './consolidacion.js';

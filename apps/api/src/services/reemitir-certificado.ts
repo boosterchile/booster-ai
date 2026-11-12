@@ -67,7 +67,8 @@ export type CodigoNoReemitido =
   | 'correccion_no_explica_cifra'
   | 'datos_insuficientes'
   | 'solicitante_no_existe'
-  | 'no_shipper';
+  | 'no_shipper'
+  | 'ruta_sin_huella';
 
 export type ResultadoReemision =
   | {
