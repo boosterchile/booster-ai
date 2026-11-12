@@ -248,7 +248,7 @@ function mapFuelToEmissionType(combustible: string): VehicleEmissionType | undef
  * Función con I/O — no debe correrse dentro de una transacción de DB
  * para no extender el lock por la duración del HTTP call (~500ms-1s).
  */
-async function obtenerDistanciaKm(opts: {
+export async function obtenerDistanciaKm(opts: {
   origenDireccion: string;
   destinoDireccion: string;
   origenRegionCode: string | null;

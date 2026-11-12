@@ -74,11 +74,13 @@ import {
   registrarRespuestaSugerenciaRuta,
 } from '../services/eco-routing-tiempo-real.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { estimarHuellaDeRuta } from '../services/estimar-huella-de-ruta.js';
 import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
+import { rutaCompartidaDelViaje } from '../services/ruta-compartida.js';
 import { safeIsoString } from '../services/safe-iso-string.js';
 import {
   aceptarSolicitudCambio,
@@ -1542,6 +1544,17 @@ export function createAssignmentsRoutes(opts: {
             vehicleId: r.vehicleId,
             routesProjectId: opts.routesProjectId,
           });
+          // Si la carga viaja con otras, la estimación es la de su ruta: se
+          // vuelve a repartir con el dato nuevo (huella-consolidada §3.9).
+          const compartida = await rutaCompartidaDelViaje(opts.db, aviso.tripId);
+          if (compartida && !compartida.cerrada) {
+            await estimarHuellaDeRuta({
+              db: opts.db,
+              logger: opts.logger,
+              rutaId: compartida.rutaId,
+              routesProjectId: opts.routesProjectId,
+            });
+          }
         } catch (err) {
           opts.logger.error({ err, tripId: aviso.tripId }, 'recalcular huella tras cambio falló');
         }

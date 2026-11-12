@@ -136,3 +136,33 @@ export function repartirDistanciaEnTramos(
     cargaKg: t.cargaKg,
   }));
 }
+
+/**
+ * Los tramos de una ruta según su plan: la carga a bordo entre cada par de
+ * paradas seguidas, en el orden de la ruta. Sirve para la estimación mientras
+ * la ruta está planificada o en curso (spec huella-consolidada §3.9).
+ *
+ * Un servicio sin peso declarado cuenta como 0, igual que en la estimación de
+ * un viaje solo.
+ */
+export function tramosPlanificados(
+  paradas: readonly { readonly tripId: string; readonly tipo: 'recogida' | 'entrega' }[],
+  pesoKgDe: ReadonlyMap<string, number>,
+  distanciasKm: readonly number[],
+): { distanciaKm: number; cargaKg: number }[] {
+  if (paradas.length < 2) {
+    throw new Error('una ruta planificada necesita al menos dos paradas');
+  }
+  if (distanciasKm.length !== paradas.length - 1) {
+    throw new Error(
+      `se necesita una distancia por tramo: ${paradas.length - 1} tramos y ${distanciasKm.length} distancias`,
+    );
+  }
+  let aBordo = 0;
+  return distanciasKm.map((distanciaKm, i) => {
+    const parada = paradas[i];
+    const peso = parada ? (pesoKgDe.get(parada.tripId) ?? 0) : 0;
+    aBordo += parada?.tipo === 'recogida' ? peso : -peso;
+    return { distanciaKm, cargaKg: Math.max(0, aBordo) };
+  });
+}

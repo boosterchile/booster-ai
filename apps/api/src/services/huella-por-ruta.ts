@@ -342,8 +342,8 @@ export async function guardarHuellaDeRutaCompartida(
   tx: Tx | Db,
   opts: {
     readonly rutaId: string;
-    readonly momento: Exclude<MomentoDelCalculo, 'estimado'>;
-    /** `null` cuando la ruta no midió su huella. */
+    readonly momento: MomentoDelCalculo;
+    /** `null` cuando la ruta no midió su huella. La estimación siempre la trae. */
     readonly huella: HuellaDeRuta | null;
     readonly nivel: NivelCalculado;
     readonly distanciaKmReal: number | null;
