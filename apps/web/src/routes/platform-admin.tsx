@@ -38,6 +38,7 @@ const ACCESOS: ReadonlyArray<{
     | '/app/platform-admin/empresas'
     | '/app/platform-admin/personal'
     | '/app/platform-admin/teltonika'
+    | '/app/platform-admin/flota'
     | '/app/platform-admin/stakeholders'
     | '/app/platform-admin/matching'
     | '/app/platform-admin/observability'
@@ -73,6 +74,12 @@ const ACCESOS: ReadonlyArray<{
     title: 'Teltonika',
     desc: 'Carga el vehículo de una empresa de transportes o escribe el IMEI si ella ya lo cargó.',
     testId: 'teltonika-link',
+  },
+  {
+    to: '/app/platform-admin/flota',
+    title: 'Flota',
+    desc: 'Los vehículos de todas las empresas en el mapa, con su equipo, lo que leen por CAN y sus certificados.',
+    testId: 'flota-link',
   },
   {
     to: '/app/platform-admin/stakeholders',

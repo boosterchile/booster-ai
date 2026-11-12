@@ -33,6 +33,7 @@ import { createAdminConfiguracionComercialRoutes } from './routes/admin-configur
 import { createAdminDispositivosPlataformaRoutes } from './routes/admin-dispositivos-plataforma.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
+import { createAdminFlotaPlataformaRoutes } from './routes/admin-flota-plataforma.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
@@ -836,6 +837,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       '/admin/plataforma/dispositivos',
       createAdminDispositivosPlataformaRoutes({ db: opts.db, logger }),
     );
+
+    // Platform-admin: la flota de todas las empresas, solo lectura
+    // (`.specs/flota-plataforma`). Mismo chain que dispositivos.
+    app.use('/admin/plataforma/flota', firebaseAuthMiddleware);
+    app.use('/admin/plataforma/flota/*', firebaseAuthMiddleware);
+    app.use('/admin/plataforma/flota', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/plataforma/flota/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/admin/plataforma/flota', createAdminFlotaPlataformaRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
     // ADR-032). Auth con requirePlatformAdmin dentro del handler (regla
