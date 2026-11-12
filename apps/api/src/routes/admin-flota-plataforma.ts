@@ -204,8 +204,8 @@ export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger 
           };
         }
 
-        // rls-allowlist: viajes del vehículo tomado por id — protegida por requirePlatformAdmin.
         const delVehiculo = await opts.db
+          // rls-allowlist: viajes del vehículo tomado por id — protegida por requirePlatformAdmin.
           .select({
             trackingCode: trips.trackingCode,
             status: assignments.status,
