@@ -8,7 +8,7 @@ import {
   calcularEmisionesRuta,
   repartirPorActividad,
 } from '@booster-ai/carbon-calculator';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { type NewMetricasRutaRow, assignments, metricasRuta, tripMetrics } from '../db/schema.js';
 
@@ -82,6 +82,91 @@ function comoRuta(params: ParametrosServicioSolo): ParametrosRuta {
   }
 }
 
+/** Un servicio de la ruta, con lo que el reparto necesita de él (§3.3). */
+export interface ServicioDeRuta {
+  readonly servicioId: string;
+  /** Peso declarado, en kg. */
+  readonly masaKg: number;
+  /** Distancia directa entre su origen y su destino, en km. */
+  readonly distanciaDirectaKm: number;
+}
+
+export interface HuellaDeRuta {
+  readonly ruta: ResultadoEmisionesRuta;
+  /** La parte de cada servicio, ordenados por identificador. */
+  readonly servicios: readonly { readonly servicioId: string; readonly huella: HuellaDeServicio }[];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Huella de una ruta y la parte de cada uno de sus servicios.
+ *
+ * La emisión sale de los tramos que el camión recorrió, con la carga que
+ * llevaba en cada uno. El reparto es por toneladas-kilómetro de distancia
+ * directa, y cada componente publicado (WTW, TTW, WTT y combustible) cumple
+ * que sus partes suman el total de la ruta (§3.4).
+ *
+ * Un servicio cancelado después de recogido va en `servicios`: participa con
+ * su actividad completa y su parte no se carga a los demás (§3.7). Quien llama
+ * decide a quién le emite certificado.
+ */
+export function calcularHuellaDeRuta(
+  params: ParametrosRuta,
+  servicios: readonly ServicioDeRuta[],
+): HuellaDeRuta {
+  const ruta = calcularEmisionesRuta(params);
+  const partes = repartirPorActividad({
+    totales: {
+      wtw: ruta.emisionesKgco2eWtw,
+      ttw: ruta.emisionesKgco2eTtw,
+      wtt: ruta.emisionesKgco2eWtt,
+      combustible: ruta.combustibleConsumido,
+    },
+    servicios: servicios.map((s) => ({
+      servicioId: s.servicioId,
+      masaKg: s.masaKg,
+      distanciaDirectaKm: s.distanciaDirectaKm,
+    })),
+  });
+  const directaDe = new Map(servicios.map((s) => [s.servicioId, s.distanciaDirectaKm]));
+  // Con un servicio la ruta es el viaje: publica sus mismas cifras (§3.5).
+  const solo = partes.length === 1;
+  return {
+    ruta,
+    servicios: partes.map((parte) => ({
+      servicioId: parte.servicioId,
+      huella: {
+        emisiones: {
+          emisionesKgco2eWtw: parte.partes.wtw,
+          emisionesKgco2eTtw: parte.partes.ttw,
+          emisionesKgco2eWtt: parte.partes.wtt,
+          combustibleConsumido: solo ? ruta.combustibleConsumido : parte.partes.combustible,
+          unidadCombustible: ruta.unidadCombustible,
+          // En una ruta compartida el servicio publica la distancia con la que
+          // entró al reparto, no los kilómetros que el camión hizo con su carga.
+          distanciaKm: solo ? ruta.distanciaKm : (directaDe.get(parte.servicioId) ?? 0),
+          intensidadGco2ePorTonKm: solo
+            ? ruta.intensidadGco2ePorTonKm
+            : parte.actividadTkm > 0
+              ? round2((parte.partes.wtw * 1000) / parte.actividadTkm)
+              : 0,
+          metodoPrecision: ruta.metodoPrecision,
+          factorEmisionUsado: ruta.factorEmisionUsado,
+          versionGlec: ruta.versionGlec,
+          fuenteFactores: ruta.fuenteFactores,
+        },
+        ruta,
+        reparto: {
+          actividadTkm: parte.actividadTkm,
+          participacionPct: parte.participacionPct,
+          versionMetodo: VERSION_METODO_REPARTO,
+        },
+      },
+    })),
+  };
+}
+
 /**
  * Huella de un servicio que viaja solo: una ruta de un tramo y el reparto de
  * su emisión entre un único servicio.
@@ -90,39 +175,14 @@ export function calcularHuellaDeServicioSolo(
   servicioId: string,
   params: ParametrosServicioSolo,
 ): HuellaDeServicio {
-  const ruta = calcularEmisionesRuta(comoRuta(params));
-  const [parte] = repartirPorActividad({
-    totales: {
-      wtw: ruta.emisionesKgco2eWtw,
-      ttw: ruta.emisionesKgco2eTtw,
-      wtt: ruta.emisionesKgco2eWtt,
-    },
-    servicios: [{ servicioId, masaKg: params.cargaKg, distanciaDirectaKm: params.distanciaKm }],
-  });
-  if (!parte) {
+  const { servicios } = calcularHuellaDeRuta(comoRuta(params), [
+    { servicioId, masaKg: params.cargaKg, distanciaDirectaKm: params.distanciaKm },
+  ]);
+  const [unico] = servicios;
+  if (!unico) {
     throw new Error(`el reparto no devolvió la parte del servicio ${servicioId}`);
   }
-  return {
-    emisiones: {
-      emisionesKgco2eWtw: parte.partes.wtw,
-      emisionesKgco2eTtw: parte.partes.ttw,
-      emisionesKgco2eWtt: parte.partes.wtt,
-      combustibleConsumido: ruta.combustibleConsumido,
-      unidadCombustible: ruta.unidadCombustible,
-      distanciaKm: ruta.distanciaKm,
-      intensidadGco2ePorTonKm: ruta.intensidadGco2ePorTonKm,
-      metodoPrecision: ruta.metodoPrecision,
-      factorEmisionUsado: ruta.factorEmisionUsado,
-      versionGlec: ruta.versionGlec,
-      fuenteFactores: ruta.fuenteFactores,
-    },
-    ruta,
-    reparto: {
-      actividadTkm: parte.actividadTkm,
-      participacionPct: parte.participacionPct,
-      versionMetodo: VERSION_METODO_REPARTO,
-    },
-  };
+  return unico.huella;
 }
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -271,4 +331,61 @@ export async function guardarMetricasDeRuta(
     .where(eq(tripMetrics.tripId, tripId));
 
   return { rutaId };
+}
+
+/**
+ * Guarda la huella de una ruta con varios servicios y deja en `metricas_viaje`
+ * la actividad y la participación de cada uno. Va en la misma transacción que
+ * las cifras de cada viaje: las partes y el total quedan escritos juntos.
+ */
+export async function guardarHuellaDeRutaCompartida(
+  tx: Tx | Db,
+  opts: {
+    readonly rutaId: string;
+    readonly momento: Exclude<MomentoDelCalculo, 'estimado'>;
+    /** `null` cuando la ruta no midió su huella. */
+    readonly huella: HuellaDeRuta | null;
+    readonly nivel: NivelCalculado;
+    readonly distanciaKmReal: number | null;
+    /** Los viajes que participan en el reparto. */
+    readonly tripIds: readonly string[];
+  },
+): Promise<void> {
+  const { rutaId, momento, huella, nivel, tripIds } = opts;
+  const columnas = columnasDeLaRuta(
+    momento,
+    huella?.servicios[0]?.huella ?? null,
+    nivel,
+    opts.distanciaKmReal,
+  );
+  await tx
+    .insert(metricasRuta)
+    .values({ rutaId, ...columnas })
+    .onConflictDoUpdate({
+      target: metricasRuta.rutaId,
+      set: { ...columnas, updatedAt: sql`now()` },
+    });
+
+  if (!huella) {
+    if (tripIds.length > 0) {
+      // rls-allowlist: métricas de los viajes de la ruta que el cierre ya tomó por id
+      await tx
+        .update(tripMetrics)
+        .set({ rutaId })
+        .where(inArray(tripMetrics.tripId, [...tripIds]));
+    }
+    return;
+  }
+  for (const servicio of huella.servicios) {
+    // rls-allowlist: métricas de un viaje de la ruta que el cierre ya tomó por id
+    await tx
+      .update(tripMetrics)
+      .set({
+        rutaId,
+        actividadTkm: servicio.huella.reparto.actividadTkm.toString(),
+        participacion: servicio.huella.reparto.participacionPct.toString(),
+        versionMetodoReparto: servicio.huella.reparto.versionMetodo,
+      })
+      .where(eq(tripMetrics.tripId, servicio.servicioId));
+  }
 }

@@ -45,6 +45,7 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
 import { desglosePropuesto, leerComercialViaje } from '../services/cambio-carga-comercial.js';
 import { cambiaComercial } from '../services/cambio-carga-valores.js';
 import { cancelarCarga } from '../services/cancelar-carga.js';
+import { cerrarRutaYCertificar } from '../services/cerrar-huella-de-ruta.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
@@ -1440,6 +1441,26 @@ export function createTripRequestsV2Routes(opts: {
           );
         case 'reason_required':
           return c.json({ error: 'reason_required', code: 'reason_required' }, 422);
+      }
+    }
+
+    // Post-commit: si la carga cancelada era lo último pendiente de una ruta
+    // con otras cargas ya entregadas, la ruta quedó cerrada y sus certificados
+    // salen ahora (huella-consolidada §3.9). Si falla, queda para el relleno.
+    if (resultado.tipo === 'cancelacion' && resultado.rutaCerradaId) {
+      try {
+        await cerrarRutaYCertificar({
+          db: opts.db,
+          logger: opts.logger,
+          rutaId: resultado.rutaCerradaId,
+          config: opts.certConfig ?? {},
+          routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId, rutaId: resultado.rutaCerradaId },
+          'el cierre de la ruta tras cancelar una carga falló',
+        );
       }
     }
 
