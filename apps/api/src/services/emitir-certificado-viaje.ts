@@ -34,7 +34,15 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
-import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
+import {
+  assignments,
+  empresas,
+  metricasRuta,
+  tripEvents,
+  tripMetrics,
+  trips,
+  vehicles,
+} from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { registrarPrimeraVersion } from './certificados-versionados.js';
@@ -70,6 +78,8 @@ export type EmitirResult =
         | 'metrics_missing'
         | 'already_issued'
         | 'no_shipper'
+        /** Carga consolidada cuya ruta no tiene huella guardada: no hay total que imprimir. */
+        | 'ruta_sin_huella'
         /** La carga viaja con otras y su ruta sigue abierta (huella-consolidada §3.9). */
         | 'ruta_no_cerrada';
     }
@@ -104,7 +114,7 @@ export async function armarDatosEmision(opts: {
   metrics: MetricsRow;
 }): Promise<
   | { ok: true; datos: DatosEmisionCertificado }
-  | { ok: false; reason: 'no_shipper' | 'trip_not_found' }
+  | { ok: false; reason: 'no_shipper' | 'trip_not_found' | 'ruta_sin_huella' }
 > {
   const { db, logger, trip, metrics } = opts;
   const tripId = trip.id;
@@ -184,6 +194,40 @@ export async function armarDatosEmision(opts: {
     }
   }
 
+  // Carga consolidada (ADR-089, spec huella-consolidada §3.10): el certificado
+  // dice qué parte de la ruta es de esta carga y cuánto fue el total. El total
+  // es del mismo tipo que la cifra de la carga: medido si la carga publica su
+  // cifra medida, estimado si publica la estimada.
+  const participacion = numOrNull(metrics.participacion ?? null);
+  let consolidacion: DatosEmisionCertificado['metricas']['consolidacion'];
+  if (participacion !== null && participacion > 0 && participacion < 100 && metrics.rutaId) {
+    // rls-allowlist: huella de la ruta del viaje ya validado por quien llama (emisión de plataforma)
+    const [deRuta] = await db
+      .select({
+        real: metricasRuta.carbonEmissionsKgco2eActual,
+        estimada: metricasRuta.carbonEmissionsKgco2eEstimated,
+      })
+      .from(metricasRuta)
+      .where(eq(metricasRuta.rutaId, metrics.rutaId))
+      .limit(1);
+    const total =
+      metrics.carbonEmissionsKgco2eActual !== null
+        ? numOrNull(deRuta?.real ?? null)
+        : numOrNull(deRuta?.estimada ?? null);
+    if (total === null || !metrics.versionMetodoReparto) {
+      logger.error(
+        { tripId, rutaId: metrics.rutaId },
+        'emitirCertificadoViaje: carga consolidada sin la huella de su ruta o sin versión del método',
+      );
+      return { ok: false, reason: 'ruta_sin_huella' };
+    }
+    consolidacion = {
+      participacionPct: participacion,
+      kgco2eWtwRuta: total,
+      versionMetodo: metrics.versionMetodoReparto,
+    };
+  }
+
   return {
     ok: true,
     datos: {
@@ -240,6 +284,7 @@ export async function armarDatosEmision(opts: {
         factorMatchingAplicado: numOrNull(metrics.factorMatchingAplicado),
         emisionesEmptyBackhaulKgco2eWtw: numOrNull(metrics.emisionesEmptyBackhaulKgco2eWtw),
         ahorroCo2eVsSinMatchingKgco2eWtw: numOrNull(metrics.ahorroCo2eVsSinMatchingKgco2e),
+        ...(consolidacion ? { consolidacion } : {}),
       },
       empresaShipper: {
         id: shipper.id,

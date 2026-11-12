@@ -18,6 +18,11 @@
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, type PDFFont, rgb, setCharacterSpacing } from 'pdf-lib';
+import {
+  FRASE_CONSOLIDACION,
+  TEXTO_METODO_REPARTO,
+  validarConsolidacion,
+} from './consolidacion.js';
 import { type FuentesCert, embeberFuentes } from './fuentes.js';
 import { lineaReemplazo, validarVersion } from './reemision.js';
 import {
@@ -166,6 +171,7 @@ export async function generarPdfConCajas(
 
   // 8. Resultados.
   const kgWtw = m.kgco2eWtwActual ?? m.kgco2eWtwEstimated ?? 0;
+  const consolidacion = validarConsolidacion(m.consolidacion, kgWtw);
   const num = formatearNumeroPrincipal(kgWtw, m.uncertaintyFactor);
   const topCaja = c.y;
   c.y -= 22;
@@ -191,8 +197,13 @@ export async function generarPdfConCajas(
   }
   const distanciaKm = m.distanciaKmActual ?? m.distanciaKmEstimated ?? 0;
   // Invariante F0-0 §7: la distancia va cualificada por la cobertura medida.
+  // Una carga consolidada publica su distancia directa: la que entró al
+  // reparto, no lo que el camión recorrió. No lleva cobertura: no es medida.
+  const distancia = consolidacion
+    ? `Distancia directa: ${numeroEsCl(distanciaKm, 1)} km`
+    : `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)})`;
   detalles.push(
-    `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)}) · Combustible: ${
+    `${distancia} · Combustible: ${
       m.combustibleConsumido !== null
         ? `${numeroEsCl(m.combustibleConsumido)} ${m.combustibleUnidad ?? ''}`
         : '—'
@@ -280,6 +291,34 @@ export async function generarPdfConCajas(
     if (lineaMetodo !== null) {
       c.par('Método', lineaMetodo, null, null, f, TAMANO_LINEA_METODO);
     }
+  }
+
+  // Carga consolidada (ADR-089): con qué método se repartió la huella de la
+  // ruta, qué parte es de esta carga y cuánto fue el total.
+  if (consolidacion) {
+    c.seccion('Carga consolidada', f);
+    const lineas = partir(FRASE_CONSOLIDACION, f.regular, 9.5, MX2 - MX);
+    // La frase y sus dos filas van juntas: no se parten entre dos páginas.
+    c.asegurar(lineas.length * 13 + 17 + 60);
+    for (const l of lineas) {
+      c.texto(l, MX, c.y, 9.5, f.regular, TEXTO);
+      c.y -= 13;
+    }
+    c.y -= 17;
+    c.par(
+      'Método de reparto',
+      TEXTO_METODO_REPARTO,
+      'Versión del método',
+      consolidacion.versionMetodo,
+      f,
+    );
+    c.par(
+      'Participación de esta carga',
+      `${numeroEsCl(consolidacion.participacionPct)} %`,
+      'Huella total de la ruta',
+      `${numeroEsCl(consolidacion.kgco2eWtwRuta)} kg CO\u2082e`,
+      f,
+    );
   }
 
   // Trayecto.
