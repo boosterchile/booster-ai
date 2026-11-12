@@ -70,6 +70,8 @@ export const CARGA_MULTILINEA = 'carga\nseca\r\nrefrigerada\npaletizada';
 const A_LARGO = 'A'.repeat(80);
 export const CASOS: Record<string, ParametrosGenerarPdf> = {
   normal: base,
+  // ADR-091: distancia medida por Teltonika, sin sello y con nota de método.
+  medidoTeltonika: { ...base, metricas: { ...metricas, coveragePct: 92.9 } },
   largo: {
     ...base,
     viaje: { ...viaje, origenDireccion: DIRECCION_112, destinoDireccion: DIRECCION_112 },

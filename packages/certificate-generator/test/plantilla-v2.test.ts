@@ -124,6 +124,57 @@ describe('plantilla v2 — estimado (criterios 2, 3, 5, 6, 9)', () => {
   });
 });
 
+describe('plantilla — medido con Teltonika (ADR-091)', () => {
+  const medido: DatosMetricasCertificado = { ...base, coveragePct: 92.9 };
+  const NOTA =
+    'La distancia fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores GLEC v2.0 (2019), Tabla 32 y GLEC Framework v3.0; no proviene de una medición del vehículo.';
+
+  it('sin sello, sin disclaimer y sin vocabulario de Estimado ni de primario', async () => {
+    const { todo } = await texto(medido);
+    expect(todo).not.toMatch(SELLO);
+    expect(todo).not.toContain('Estimado');
+    expect(todo).not.toContain('IMPORTANTE');
+    expect(todo).not.toContain('Google Routes');
+    expect(todo.toLowerCase()).not.toContain('verificable');
+    expect(todo.toLowerCase()).not.toContain('dato primario');
+  });
+
+  it('badge, nota de método y línea de método dicen qué se midió y qué se modeló', async () => {
+    const { todo } = await texto(medido);
+    expect(todo).toContain('Distancia medida con Teltonika · consumo modelado · 92% telemetría');
+    expect(todo).toContain(NOTA);
+    expect(todo).toContain('Distancia medida por GPS del vehículo');
+    expect(todo).toContain('Consumo modelado según GLEC v3.0');
+    expect(todo).toContain('429,25');
+    expect(todo).toContain('(± 21,46 kg)');
+  });
+
+  it('el pie de cada página no dice Estimado', async () => {
+    const { paginas } = await texto(medido);
+    for (const [i, p] of paginas.entries()) {
+      expect(plano(p)).toContain('BOO-TEST01 · v1');
+      expect(plano(p)).toContain(`Página ${i + 1} de ${paginas.length}`);
+    }
+  });
+
+  it('la nota de método va en la página 1 (junto al número)', async () => {
+    const { paginas } = await texto(medido);
+    expect(plano(paginas[0] ?? '')).toContain('no proviene de una medición del vehículo.');
+  });
+
+  it('con Teltonika y cobertura bajo 80 % conserva las tres señales de Estimado', async () => {
+    const { paginas, todo } = await texto({ ...base, coveragePct: 79.9 });
+    expect(todo).toMatch(SELLO);
+    expect(todo).toContain('IMPORTANTE — DATOS SECUNDARIOS MODELADOS');
+    expect(plano(paginas[0] ?? '')).toContain('BOO-TEST01 · v1 · Estimado');
+  });
+
+  it('con GPS del móvil conserva el sello aunque la cobertura sea alta', async () => {
+    const { todo } = await texto({ ...base, routeDataSource: 'movil_gps', coveragePct: 99 });
+    expect(todo).toMatch(SELLO);
+  });
+});
+
 describe('plantilla v2 — primario (criterios 3, 5, 8, 10)', () => {
   it('badge ✓ con % piso y sin ninguna señal de Estimado', async () => {
     const { todo } = await texto(primario);

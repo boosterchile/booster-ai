@@ -22,6 +22,7 @@ import { type FuentesCert, embeberFuentes } from './fuentes.js';
 import { lineaReemplazo, validarVersion } from './reemision.js';
 import {
   FRASE_ISO,
+  type Presentacion,
   TAMANO_LINEA_METODO,
   TITULO_CERT,
   TITULO_DISCLAIMER,
@@ -33,6 +34,7 @@ import {
   presentacionNivel,
   subtituloMetodologia,
   textoDisclaimer,
+  textoNotaMetodo,
 } from './render-helpers.js';
 import type {
   DatosEmpresaCertificado,
@@ -128,20 +130,14 @@ export async function generarPdfConCajas(
   c.y -= 12;
 
   // 6. Badge de calidad de datos.
+  const colores = COLORES_BADGE[pres.presentacion];
   const ancho = f.semibold.widthOfTextAtSize(pres.badge, 9.5) + 20;
   rectRedondeado(c.page, MX, c.y - 12 - 18, ancho, 18, 9, {
-    color: pres.estimado ? hex('#FEF3E2') : hex('#E6F4EA'),
-    borderColor: pres.estimado ? hex('#F0B46B') : hex('#86C79B'),
+    color: colores.fondo,
+    borderColor: colores.borde,
     borderWidth: 0.75,
   });
-  c.texto(
-    pres.badge,
-    MX + 10,
-    c.y - 12 - 12.5,
-    9.5,
-    f.semibold,
-    pres.estimado ? hex('#7C3A0A') : hex('#14532D'),
-  );
+  c.texto(pres.badge, MX + 10, c.y - 12 - 12.5, 9.5, f.semibold, colores.texto);
   c.y -= 12 + 18 + 22;
 
   // 7. Fechas (3 columnas). Null → «—», sin caer a otro dato (T3 trae las reales).
@@ -240,6 +236,13 @@ export async function generarPdfConCajas(
     c.texto(TITULO_DISCLAIMER, MX + 14, c.y - 20, 9.5, f.bold, TEXTO);
     lineas.forEach((l, i) => c.texto(l, MX + 14, c.y - 34 - i * 13, 9, f.regular, TEXTO));
     c.y -= alto + 20;
+  }
+  // ADR-091 §2: nota de método en párrafo normal, en el lugar del disclaimer.
+  if (pres.presentacion === 'medido_teltonika') {
+    const lineas = partir(textoNotaMetodo(m.fuenteFactores, m.glecVersion), f.regular, 9, MX2 - MX);
+    c.asegurar(lineas.length * 13 + 8);
+    lineas.forEach((l, i) => c.texto(l, MX, c.y - 10 - i * 13, 9, f.regular, GRIS));
+    c.y -= lineas.length * 13 + 20;
   }
 
   // Metodología (auditoría).
@@ -530,6 +533,12 @@ const AZUL = hex('#0B3D5C');
 const TEXTO = hex('#1F2933');
 const GRIS = hex('#52606D');
 const AMBAR = hex('#B45309');
+/** Colores del badge por presentación (ADR-091): ámbar solo en Estimado. */
+const COLORES_BADGE: Record<Presentacion, { fondo: RGB; borde: RGB; texto: RGB }> = {
+  primario: { fondo: hex('#E6F4EA'), borde: hex('#86C79B'), texto: hex('#14532D') },
+  medido_teltonika: { fondo: hex('#E8F1F8'), borde: hex('#8FB4D1'), texto: hex('#0B3D5C') },
+  estimado: { fondo: hex('#FEF3E2'), borde: hex('#F0B46B'), texto: hex('#7C3A0A') },
+};
 
 /** Cursor vertical con salto de página cuando un bloque no cabe. */
 class Cursor {
