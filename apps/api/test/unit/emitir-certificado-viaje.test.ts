@@ -19,6 +19,12 @@ vi.mock('../../src/observability/business-metrics.js', () => ({
 const registrarPrimeraVersion = vi.fn(async () => ({ id: 'cert-v1' }));
 vi.mock('../../src/services/certificados-versionados.js', () => ({ registrarPrimeraVersion }));
 
+// Por defecto la carga viaja sola en su ruta; cada test de ruta compartida lo cambia.
+const rutaCompartidaDelViaje = vi.fn(
+  async (): Promise<{ rutaId: string; cerrada: boolean } | null> => null,
+);
+vi.mock('../../src/services/ruta-compartida.js', () => ({ rutaCompartidaDelViaje }));
+
 const { emitirCertificado } = await import('@booster-ai/certificate-generator');
 const { emitirCertificadoViaje } = await import('../../src/services/emitir-certificado-viaje.js');
 
@@ -205,6 +211,44 @@ describe('emitirCertificadoViaje', () => {
       config: VALID_CONFIG,
     });
     expect(result).toEqual({ skipped: true, reason: 'already_issued' });
+  });
+
+  it('ruta_no_cerrada: una carga entregada en una ruta compartida abierta no recibe certificado', async () => {
+    rutaCompartidaDelViaje.mockResolvedValueOnce({ rutaId: 'ruta-1', cerrada: false });
+    const db = makeDb({ selects: [[TRIP_DELIVERED], [METRICS_BASE]] });
+    const result = await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(result).toEqual({ skipped: true, reason: 'ruta_no_cerrada' });
+    expect(emitirCertificado).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('con la ruta compartida ya cerrada, el certificado se emite', async () => {
+    rutaCompartidaDelViaje.mockResolvedValueOnce({ rutaId: 'ruta-1', cerrada: true });
+    (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
+    const db = makeDb({
+      selects: [
+        [TRIP_DELIVERED],
+        [METRICS_BASE],
+        [SHIPPER_ROW],
+        [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [CARRIER_ROW],
+        [{ plate: 'AB-CD-12' }],
+      ],
+      updates: [[]],
+      inserts: [[]],
+    });
+    const result = await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(result.skipped).toBe(false);
   });
 
   it('no_shipper si trip.generadorCargaEmpresaId es null', async () => {

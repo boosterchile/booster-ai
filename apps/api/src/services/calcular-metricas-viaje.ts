@@ -591,6 +591,170 @@ export async function recalcularNivelPostEntrega(opts: {
   );
 }
 
+/** El vehículo con lo que la medición de una ventana necesita de él. */
+export type VehiculoMedido = VehiculoFuentePosicion &
+  PerfilEnergeticoVehiculo & {
+    capacidadEstanqueL: number | null;
+    fuenteCombustibleCan: string | null;
+  };
+
+/**
+ * Mide lo que un vehículo hizo en una ventana de tiempo: su distancia real
+ * (pings y huecos rellenados con Routes), el combustible por CAN y la decisión
+ * de fuente (HC-001, HC-005). La ventana es el viaje de un servicio que va
+ * solo, o toda la ruta cuando lleva varios (huella-consolidada parte 4).
+ */
+export async function medirVentanaDelVehiculo(opts: {
+  db: Db;
+  logger: Logger;
+  vehiculo: VehiculoMedido;
+  desde: Date;
+  hasta: Date;
+  routesProjectId?: string | undefined;
+  /** Si todos los servicios de la ventana declaran su peso. */
+  pesoDeclarado: boolean;
+  /** Campos que identifican la ventana en los logs. */
+  contexto: Record<string, unknown>;
+}) {
+  const { db, logger, vehiculo, desde, hasta, routesProjectId, pesoDeclarado, contexto } = opts;
+  const fuente = fuentePosicionSegmento(vehiculo).fuente;
+
+  // Reconstrucción de la distancia real (F0-0 paso 1): pings observados +
+  // huecos rellenados por-tramo con Routes. Los pings salen de la fuente
+  // ruteada del vehículo (T11), no de `telemetria_puntos` a secas.
+  const pings = await resolverPosicionesSegmento({
+    db,
+    vehicle: vehiculo,
+    desde,
+    hasta,
+  });
+
+  // Resolver de huecos sobre Routes API con coordenadas (`location.latLng`;
+  // como texto «lat,lng» Routes responde 400). Si Routes falla, PROPAGA →
+  // abortamos (no un número parte-medido parte-inventado).
+  const estimarHuecoKm: EstimarHuecoKm = async (desde, hasta) => {
+    const rutas = await computeRoutes({
+      projectId: routesProjectId ?? '',
+      origin: { lat: desde.lat, lng: desde.lng },
+      destination: { lat: hasta.lat, lng: hasta.lng },
+      logger,
+    });
+    const mejor = rutas[0];
+    if (!mejor || mejor.distanceKm <= 0) {
+      throw new Error('Routes: sin ruta para el hueco');
+    }
+    return mejor.distanceKm;
+  };
+
+  // Política de abort → sin distancia real reconstruida. Con huella INACTIVA es
+  // un no-op honesto (el cert cae a la estimación via `??`): forzar la fuente
+  // real con coverage 0 etiquetaría la procedencia de la DISTANCIA con la
+  // fuente de la UBICACIÓN — F0-0 en miniatura. Con huella ACTIVA la
+  // degradación se REGISTRA (spec: nunca fallo silencioso), más abajo.
+  let escritura: Awaited<ReturnType<typeof computarEscrituraDistanciaReal>> = null;
+  let abortReason: AbortReconstruccion | null = null;
+  try {
+    escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
+  } catch (err) {
+    // El logger serializa `err` sin `message`: el motivo viaja en `errMessage`.
+    logger.warn(
+      {
+        err,
+        errMessage: err instanceof Error ? err.message : String(err),
+        ...contexto,
+        fuente,
+      },
+      'recalcular: reconstrucción abortada — Routes falló (roto)',
+    );
+    abortReason = 'routes_error';
+  }
+  if (abortReason === null && escritura === null) {
+    logger.info(
+      { ...contexto, fuente },
+      'recalcular: reconstrucción abortada — demasiados huecos (cap)',
+    );
+    abortReason = 'cap_exceeded';
+  }
+  if (abortReason === null && escritura !== null && escritura.distanciaKmReal === null) {
+    logger.info(
+      { ...contexto, fuente, pings: pings.length },
+      'recalcular: sin observación continua en el segmento — no aplica upgrade',
+    );
+    abortReason = 'sin_observacion';
+  }
+
+  // HC-001: la decisión de fuente se REGISTRA en columnas propias para TODO
+  // viaje entregado (historia.md R1, AC1-2), también en el early return sin
+  // opt-in. HC-005: con huella activa es además el ÚNICO camino a exacto_canbus.
+  const rec: Reconstruccion =
+    abortReason === null && escritura !== null && escritura.distanciaKmReal !== null
+      ? {
+          estado: 'ok',
+          coberturaPct: escritura.coveragePct,
+          distanciaKm: escritura.distanciaKmReal,
+        }
+      : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
+  // HC-005 fix0: la config es SOLO el interruptor de lectura. Sin '83' no hay resumen CAN y
+  // la decisión cae en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
+  const lee83 = vehiculo.fuenteCombustibleCan === '83';
+  let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
+  const ventanaMs = hasta.getTime() - desde.getTime();
+  const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
+  // Sobre el tope no se lee el 83: la decisión queda en ventana_excede_tope y la emisión, modelada.
+  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83 && ventanaExcede) {
+    logger.warn({ ...contexto, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
+  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83) {
+    try {
+      const lecturasCan: LecturaSegmentoCan[] = await cargarLecturasConsumoCan({
+        db,
+        vehicle: vehiculo,
+        desde,
+        hasta,
+      });
+      resumenCan = resumirCanSegmento(lecturasCan, rec.distanciaKm, vehiculo.capacidadEstanqueL);
+    } catch (err) {
+      logger.warn({ err, ...contexto }, 'HC-001: no se pudo resumir el CAN; decisión sin 83');
+    }
+  }
+  const consumoBase = vehiculo.consumptionLPer100kmBaseline
+    ? Number(vehiculo.consumptionLPer100kmBaseline)
+    : null;
+  // Un bug de la regla no puede tumbar el upgrade de nivel (nit 1 QA #865).
+  let decision: DecisionFuente | null = null;
+  try {
+    decision = decidirFuenteHuella({
+      gpsTeltonika: fuente === 'teltonika_gps' ? rec : null,
+      gpsMovil: fuente === 'movil_gps' ? rec : null,
+      pingsEnVentana: pings.length,
+      combustible: vehiculo.fuelType,
+      ...resumenCan,
+      can83Omitido: lee83 && ventanaExcede ? 'ventana_excede_tope' : null,
+      consumoBasePor100km: consumoBase,
+      // Igual que huellaSegunPerfil: sin combustible + consumo base es por_defecto.
+      perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
+      pesoDeclarado,
+    });
+  } catch (err) {
+    logger.error({ err, ...contexto }, 'HC-001: decidirFuenteHuella lanzó; decisión no registrada');
+  }
+  const columnasDecision =
+    decision === null
+      ? {}
+      : {
+          fuenteDistancia: decision.fuenteDistancia,
+          fuenteEnergia: decision.fuenteEnergia,
+          motivoFallback: decision.motivoFallback,
+          alertasDecision: decision.alertas,
+          decisionVersion: decision.decisionVersion,
+          // Se reescribe en cada recálculo: es la fecha de la ÚLTIMA decisión,
+          // no la primera (nit 3 QA #865). La auditoría histórica va en la reemisión versionada.
+          decididoEn: sql`now()`,
+          pesoDeclarado,
+        };
+
+  return { pings, escritura, abortReason, decision, columnasDecision, lee83, fuente };
+}
+
 async function recalcularNivelPostEntregaInner(opts: {
   db: Db;
   logger: Logger;
@@ -664,13 +828,7 @@ async function recalcularNivelPostEntregaInner(opts: {
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
     .limit(1);
-  const vehiculo:
-    | (VehiculoFuentePosicion &
-        PerfilEnergeticoVehiculo & {
-          capacidadEstanqueL: number | null;
-          fuenteCombustibleCan: string | null;
-        })
-    | undefined = vehRows[0];
+  const vehiculo: VehiculoMedido | undefined = vehRows[0];
   if (!vehiculo) {
     logger.warn(
       { tripId, vehicleId: assignment.vehicleId },
@@ -719,139 +877,17 @@ async function recalcularNivelPostEntregaInner(opts: {
     (existing.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
     'por_defecto';
 
-  // Reconstrucción de la distancia real (F0-0 paso 1): pings observados +
-  // huecos rellenados por-tramo con Routes. Los pings salen de la fuente
-  // ruteada del vehículo (T11), no de `telemetria_puntos` a secas.
-  const pings = await resolverPosicionesSegmento({
+  const medicion = await medirVentanaDelVehiculo({
     db,
-    vehicle: vehiculo,
+    logger,
+    vehiculo,
     desde: pickupAt,
     hasta: assignment.deliveredAt,
+    routesProjectId,
+    pesoDeclarado: trip.cargoWeightKg !== null,
+    contexto: { tripId, pickupAtSource },
   });
-
-  // Resolver de huecos sobre Routes API con coordenadas (`location.latLng`;
-  // como texto «lat,lng» Routes responde 400). Si Routes falla, PROPAGA →
-  // abortamos (no un número parte-medido parte-inventado).
-  const estimarHuecoKm: EstimarHuecoKm = async (desde, hasta) => {
-    const rutas = await computeRoutes({
-      projectId: routesProjectId ?? '',
-      origin: { lat: desde.lat, lng: desde.lng },
-      destination: { lat: hasta.lat, lng: hasta.lng },
-      logger,
-    });
-    const mejor = rutas[0];
-    if (!mejor || mejor.distanceKm <= 0) {
-      throw new Error('Routes: sin ruta para el hueco');
-    }
-    return mejor.distanceKm;
-  };
-
-  // Política de abort → sin distancia real reconstruida. Con huella INACTIVA es
-  // un no-op honesto (el cert cae a la estimación via `??`): forzar la fuente
-  // real con coverage 0 etiquetaría la procedencia de la DISTANCIA con la
-  // fuente de la UBICACIÓN — F0-0 en miniatura. Con huella ACTIVA la
-  // degradación se REGISTRA (spec: nunca fallo silencioso), más abajo.
-  let escritura: Awaited<ReturnType<typeof computarEscrituraDistanciaReal>> = null;
-  let abortReason: AbortReconstruccion | null = null;
-  try {
-    escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
-  } catch (err) {
-    // El logger serializa `err` sin `message`: el motivo viaja en `errMessage`.
-    logger.warn(
-      {
-        err,
-        errMessage: err instanceof Error ? err.message : String(err),
-        tripId,
-        fuente,
-        pickupAtSource,
-      },
-      'recalcular: reconstrucción abortada — Routes falló (roto)',
-    );
-    abortReason = 'routes_error';
-  }
-  if (abortReason === null && escritura === null) {
-    logger.info(
-      { tripId, fuente, pickupAtSource },
-      'recalcular: reconstrucción abortada — demasiados huecos (cap)',
-    );
-    abortReason = 'cap_exceeded';
-  }
-  if (abortReason === null && escritura !== null && escritura.distanciaKmReal === null) {
-    logger.info(
-      { tripId, fuente, pickupAtSource, pings: pings.length },
-      'recalcular: sin observación continua en el segmento — no aplica upgrade',
-    );
-    abortReason = 'sin_observacion';
-  }
-
-  // HC-001: la decisión de fuente se REGISTRA en columnas propias para TODO
-  // viaje entregado (historia.md R1, AC1-2), también en el early return sin
-  // opt-in. HC-005: con huella activa es además el ÚNICO camino a exacto_canbus.
-  const rec: Reconstruccion =
-    abortReason === null && escritura !== null && escritura.distanciaKmReal !== null
-      ? {
-          estado: 'ok',
-          coberturaPct: escritura.coveragePct,
-          distanciaKm: escritura.distanciaKmReal,
-        }
-      : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
-  // HC-005 fix0: la config es SOLO el interruptor de lectura. Sin '83' no hay resumen CAN y
-  // la decisión cae en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
-  const lee83 = vehiculo.fuenteCombustibleCan === '83';
-  let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
-  const ventanaMs = assignment.deliveredAt.getTime() - pickupAt.getTime();
-  const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
-  // Sobre el tope no se lee el 83: la decisión queda en ventana_excede_tope y la emisión, modelada.
-  if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83 && ventanaExcede) {
-    logger.warn({ tripId, ventanaMs }, 'HC-001: ventana mayor al tope; decisión sin 83');
-  } else if (fuente === 'teltonika_gps' && rec.estado === 'ok' && lee83) {
-    try {
-      const lecturasCan: LecturaSegmentoCan[] = await cargarLecturasConsumoCan({
-        db,
-        vehicle: vehiculo,
-        desde: pickupAt,
-        hasta: assignment.deliveredAt,
-      });
-      resumenCan = resumirCanSegmento(lecturasCan, rec.distanciaKm, vehiculo.capacidadEstanqueL);
-    } catch (err) {
-      logger.warn({ err, tripId }, 'HC-001: no se pudo resumir el CAN; decisión sin 83');
-    }
-  }
-  const consumoBase = vehiculo.consumptionLPer100kmBaseline
-    ? Number(vehiculo.consumptionLPer100kmBaseline)
-    : null;
-  // Un bug de la regla no puede tumbar el upgrade de nivel (nit 1 QA #865).
-  let decision: DecisionFuente | null = null;
-  try {
-    decision = decidirFuenteHuella({
-      gpsTeltonika: fuente === 'teltonika_gps' ? rec : null,
-      gpsMovil: fuente === 'movil_gps' ? rec : null,
-      pingsEnVentana: pings.length,
-      combustible: vehiculo.fuelType,
-      ...resumenCan,
-      can83Omitido: lee83 && ventanaExcede ? 'ventana_excede_tope' : null,
-      consumoBasePor100km: consumoBase,
-      // Igual que huellaSegunPerfil: sin combustible + consumo base es por_defecto.
-      perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
-      pesoDeclarado: trip.cargoWeightKg !== null,
-    });
-  } catch (err) {
-    logger.error({ err, tripId }, 'HC-001: decidirFuenteHuella lanzó; decisión no registrada');
-  }
-  const columnasDecision =
-    decision === null
-      ? {}
-      : {
-          fuenteDistancia: decision.fuenteDistancia,
-          fuenteEnergia: decision.fuenteEnergia,
-          motivoFallback: decision.motivoFallback,
-          alertasDecision: decision.alertas,
-          decisionVersion: decision.decisionVersion,
-          // Se reescribe en cada recálculo: es la fecha de la ÚLTIMA decisión,
-          // no la primera (nit 3 QA #865). La auditoría histórica va en la reemisión versionada.
-          decididoEn: sql`now()`,
-          pesoDeclarado: trip.cargoWeightKg !== null,
-        };
+  const { escritura, abortReason, decision, columnasDecision, lee83 } = medicion;
 
   if (abortReason !== null && !huellaActiva) {
     huellaSegmentoCounter.add(1, { resultado: 'opt_in_inactivo', fuente });

@@ -231,3 +231,103 @@ El certificado 8 es el único afectado: su cifra (590,746 kg CO₂e) sale de
 Este arreglo no toca filas existentes ni certificados emitidos. Corregir el
 certificado 8 sería una reemisión, que decide el PO.
 
+
+## Parte 4 — reparto en rutas con varios servicios y emisión al cerrar (2026-11-11)
+
+Hasta ahora toda ruta tenía un servicio. Esta parte cubre la ruta con varios:
+se mide entera cuando se cierra, su emisión se reparte entre los servicios y
+recién ahí salen los certificados.
+
+Nada cambia en producción al desplegar: las rutas con varios servicios solo
+las crea la API de rutas, que sigue apagada (`RUTAS_API_ACTIVADA`).
+
+| Archivo | Qué hace |
+|---|---|
+| `services/tramos-recorridos.ts` | Arma los tramos que el camión recorrió, con la carga a bordo de cada uno, y les asigna la distancia medida de la ruta |
+| `services/huella-por-ruta.ts` | `calcularHuellaDeRuta`: emisión de la ruta y la parte de cada servicio. El servicio solo es el caso de un servicio |
+| `services/cerrar-huella-de-ruta.ts` | Mide la ventana de la ruta, calcula, escribe `metricas_ruta` y las `metricas_viaje` en una transacción, y emite los certificados |
+| `services/ruta-compartida.ts` | Dice si un viaje comparte su ruta y si esa ruta ya cerró |
+| `services/calcular-metricas-viaje.ts` | La medición de una ventana (distancia, CAN y decisión de fuente) pasa a `medirVentanaDelVehiculo`, que usan el viaje solo y la ruta |
+
+### Qué cambia para una carga que viaja con otras
+
+| Momento | Antes | Ahora |
+|---|---|---|
+| Se entrega y la ruta sigue abierta | medía su huella y emitía su certificado | no mide ni emite; la liquidación no cambia |
+| Se entrega y era la última parada | lo mismo, solo para esa carga | se mide la ruta, se reparte y se certifican todas las cargas entregadas |
+| Se cancela la última carga pendiente de una ruta con otras entregadas | nada | la ruta queda cerrada y se certifican las entregadas |
+| Cualquier otro camino que pida su certificado (job de relleno) | lo emitía | `ruta_no_cerrada` mientras la ruta esté abierta |
+
+Para la carga que viaja sola en su ruta no cambia nada.
+
+### Criterios de la spec que cubre
+
+| Criterio | Cómo se prueba |
+|---|---|
+| 5: al cerrar una ruta de tres servicios quedan una fila en `metricas_ruta` y tres en `metricas_viaje` que suman el total, y se emiten tres certificados | `test/integration/huella-ruta-compartida`, contra PostgreSQL. WTW, TTW, WTT y combustible suman el total de la ruta; las participaciones suman 100 |
+| 6: una ruta `en_curso` no emite certificados aunque un servicio esté entregado | el mismo archivo, llamando a la emisión real; y `emitir-certificado-viaje.test` y `confirmar-entrega-viaje.test` |
+| 1 y 2 (suma y orden), ahora en el cálculo completo | `test/unit/huella-por-ruta.test`: los tres métodos, y el mismo resultado con los servicios en otro orden |
+| §3.5: con un servicio da lo mismo que el servicio solo | `test/unit/huella-por-ruta.test`, los cinco casos de la parte 3 |
+| §3.7: cancelado antes de su recogida no participa; cancelado después participa y su parte no se carga a los demás | `test/integration/huella-ruta-compartida` |
+
+### Decisiones de implementación
+
+Las cuatro primeras cambian cifras que el certificado publica. Necesitan el
+visto del PO junto con el momento de emisión.
+
+1. **La distancia y el combustible se miden una vez, sobre toda la ruta.** La
+   ventana va de la primera recogida a la última entrega, y se mide con el
+   mismo código que mide hoy un viaje. No se mide tramo por tramo: un tramo
+   corto con pocos puntos de GPS abortaría la ruta completa.
+2. **Los tramos salen de lo que pasó, no de lo planificado.** Cada recogida y
+   cada entrega confirmada es un instante; un tramo es lo que hay entre dos
+   instantes seguidos, con la carga que el camión llevaba. Si el conductor
+   confirma en otro orden que el de la ruta (decisión D5 de
+   ruta-parada-servicio), los tramos siguen ese orden.
+3. **La distancia medida se asigna a cada tramo según el avance observado**
+   (la distancia entre puntos de GPS que caen en el tramo). Sin avance
+   observado, por duración. El total no cambia. Esta asignación solo influye en
+   el método modelado, donde el consumo depende de la carga de cada tramo; con
+   combustible medido el total no depende de ella.
+4. **En una ruta con varios servicios, cada servicio publica su distancia
+   directa**, que es la que entró al reparto (§3.3) y la que ya tiene como
+   distancia estimada. `distancia_km_real` del viaje queda vacía y la distancia
+   real queda en `metricas_ruta`. La intensidad del servicio es su parte
+   dividida por su actividad. El combustible también se reparte, con el mismo
+   redondeo, para que el certificado siga cuadrando litros por factor.
+5. **Una carga recogida que nunca se entregó sigue a bordo hasta el final de
+   la ruta** para el cálculo por tramos. Hoy ningún camino cancela una carga
+   ya recogida; queda cubierto para cuando exista.
+6. **Opt-in mixto.** La ruta se mide si al menos un servicio tiene la medición
+   de huella activa. Un servicio sin opt-in participa en el reparto y no
+   recibe cifras reales; su parte no se carga a los demás.
+7. **Mismos cortes que el viaje solo.** Con cobertura bajo el umbral, sin un
+   peso declarado o sin la distancia directa de algún servicio, las cifras
+   reales de todos quedan vacías y el certificado usa la estimación. Nunca un
+   cero.
+8. **El nivel se deriva con un solo tramo: la ruta completa.** Un vehículo
+   tiene una sola fuente de posición, así que «la fuente más débil» (§3.8) es
+   esa, y la cobertura es la de la ventana completa.
+9. **El cierre espera al cálculo y a los certificados.** La respuesta de la
+   última entrega de una ruta compartida tarda unos segundos más. Si el cálculo
+   falla, los certificados salen con la estimación, igual que en el viaje solo.
+
+### Lo que queda fuera de esta parte
+
+- **La estimación con reparto (§3.9, segundo párrafo).** Mientras la ruta está
+  planificada o en curso, cada carga sigue mostrando la estimación que se
+  calculó al asignarla, como si viajara sola. Recalcularla cuando la ruta
+  cambia es un PR aparte, antes de encender la API.
+- **Posicionamiento y regreso medidos (§3.2 y §11-1).** La ventana sigue
+  siendo de la primera recogida a la última entrega, igual que hoy en el viaje
+  solo.
+- **Los datos de consolidación en el certificado** (parte 5) y la web
+  (parte 6).
+
+### El rojo
+
+Las dos piezas puras se escribieron con el test primero
+(`tramos-recorridos.test`, `huella-por-ruta.test`): 11 tests en rojo antes de
+la implementación, en la evidencia del PR. El test de integración se escribió
+después del servicio de cierre; encontró un error en el tramo sin duración
+(recogida y entrega en el mismo instante quedaban con carga 0), ya corregido.

@@ -37,9 +37,18 @@ vi.mock('./generar-coaching-viaje.js', () => ({
   generarCoachingViaje: vi.fn(async () => undefined),
 }));
 vi.mock('./liquidar-trip.js', () => ({ liquidarTrip: vi.fn(async () => ({ status: 'skipped' })) }));
+// Por defecto la carga viaja sola en su ruta; los tests de ruta compartida lo cambian.
+const rutaCompartidaMock = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ rutaId: string; cerrada: boolean } | null> => null),
+);
+vi.mock('./ruta-compartida.js', () => ({ rutaCompartidaDelViaje: rutaCompartidaMock }));
+const cerrarRutaMock = vi.hoisted(() => vi.fn(async () => ({ cierre: null, certificados: 0 })));
+vi.mock('./cerrar-huella-de-ruta.js', () => ({ cerrarRutaYCertificar: cerrarRutaMock }));
 
 const { confirmarEntregaViaje } = await import('./confirmar-entrega-viaje.js');
 const { liquidarTrip } = await import('./liquidar-trip.js');
+const { emitirCertificadoViaje } = await import('./emitir-certificado-viaje.js');
+const { recalcularNivelPostEntrega } = await import('./calcular-metricas-viaje.js');
 
 const noop = (): void => undefined;
 const logger = {
@@ -243,5 +252,67 @@ describe('confirmarEntregaViaje — cierre flexible documental (F4-4a)', () => {
       },
     });
     expect(r.ok).toBe(true);
+  });
+});
+
+/**
+ * huella-consolidada parte 4 (ADR-089): una carga que viaja con otras recibe
+ * su certificado cuando la ruta se cierra, no cuando se entrega.
+ */
+describe('confirmarEntregaViaje — carga en una ruta compartida', () => {
+  const limpiar = () => {
+    vi.mocked(emitirCertificadoViaje).mockClear();
+    vi.mocked(recalcularNivelPostEntrega).mockClear();
+    cerrarRutaMock.mockClear();
+  };
+
+  it('viaja sola: mide su huella y emite su certificado al entregar, como siempre', async () => {
+    limpiar();
+    const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
+    await confirmarEntregaViaje({ ...baseArgs, db });
+    expect(recalcularNivelPostEntrega).toHaveBeenCalledTimes(1);
+    expect(emitirCertificadoViaje).toHaveBeenCalledTimes(1);
+    expect(cerrarRutaMock).not.toHaveBeenCalled();
+  });
+
+  it('la ruta sigue abierta: no mide por viaje ni emite certificado (criterio 6)', async () => {
+    limpiar();
+    rutaCompartidaMock.mockResolvedValueOnce({ rutaId: 'ruta-1', cerrada: false });
+    const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
+    const r = await confirmarEntregaViaje({ ...baseArgs, db });
+    expect(r.ok).toBe(true);
+    expect(recalcularNivelPostEntrega).not.toHaveBeenCalled();
+    expect(emitirCertificadoViaje).not.toHaveBeenCalled();
+    expect(cerrarRutaMock).not.toHaveBeenCalled();
+    // La liquidación es por viaje y no espera a la ruta.
+    await vi.waitFor(() => expect(liquidarTrip).toHaveBeenCalled());
+  });
+
+  it('era la última parada: cierra la huella de la ruta y certifica desde ahí', async () => {
+    limpiar();
+    rutaCompartidaMock.mockResolvedValueOnce({ rutaId: 'ruta-1', cerrada: true });
+    const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
+    await confirmarEntregaViaje({ ...baseArgs, db });
+    expect(cerrarRutaMock).toHaveBeenCalledWith(expect.objectContaining({ rutaId: 'ruta-1' }));
+    expect(recalcularNivelPostEntrega).not.toHaveBeenCalled();
+    expect(emitirCertificadoViaje).not.toHaveBeenCalled();
+  });
+
+  it('si el cierre de la ruta falla, la entrega queda confirmada igual', async () => {
+    limpiar();
+    rutaCompartidaMock.mockResolvedValueOnce({ rutaId: 'ruta-1', cerrada: true });
+    cerrarRutaMock.mockRejectedValueOnce(new Error('sin base'));
+    const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
+    const r = await confirmarEntregaViaje({ ...baseArgs, db });
+    expect(r.ok).toBe(true);
+  });
+
+  it('si no se puede leer la ruta, se trata como viaje solo', async () => {
+    limpiar();
+    rutaCompartidaMock.mockRejectedValueOnce(new Error('sin base'));
+    const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
+    await confirmarEntregaViaje({ ...baseArgs, db });
+    expect(recalcularNivelPostEntrega).toHaveBeenCalledTimes(1);
+    expect(emitirCertificadoViaje).toHaveBeenCalledTimes(1);
   });
 });
