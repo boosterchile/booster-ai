@@ -13,6 +13,10 @@ const s = vi.hoisted(() => ({
   declararConfiguracionDeRuta: vi.fn(),
 }));
 vi.mock('../services/operar-ruta.js', () => s);
+const estimarHuellaDeRuta = vi.hoisted(() =>
+  vi.fn(async (_opts: { rutaId: string }) => ({ estado: 'estimada' })),
+);
+vi.mock('../services/estimar-huella-de-ruta.js', () => ({ estimarHuellaDeRuta }));
 
 const { createRutasRoutes } = await import('./rutas.js');
 
@@ -63,7 +67,12 @@ const CONFIG = { vehiculo_id: RUTA, unidad_arrastre_id: null, conductor_id: null
 beforeEach(() => {
   vi.clearAllMocks();
   for (const f of Object.values(s)) {
-    f.mockResolvedValue({ ok: true, ruta: { id: RUTA }, rutaNuevaId: 'nueva' });
+    f.mockResolvedValue({
+      ok: true,
+      ruta: { id: RUTA },
+      rutaNuevaId: 'nueva',
+      rutaOrigenId: 'origen',
+    });
   }
   s.listarRutas.mockResolvedValue([{ id: RUTA }]);
 });
@@ -238,5 +247,51 @@ describe('/rutas — fallos del servicio', () => {
     a.onError((err, c) => c.json({ error: err.message }, 500));
     const res = await a.request(`/rutas/${RUTA}`);
     expect(res.status).toBe(500);
+  });
+});
+
+/**
+ * huella-consolidada §3.9: la estimación de cada carga sigue a su ruta. Cada
+ * operación que cambia una ruta vuelve a estimar las rutas que tocó.
+ */
+describe('/rutas — la estimación sigue a la ruta', () => {
+  const estimadas = () => estimarHuellaDeRuta.mock.calls.map(([o]) => o.rutaId);
+  const agrupar = () =>
+    app().request(
+      `/rutas/${RUTA}/servicios`,
+      json('POST', { asignacion_id: ASIG, posicion: { recogida: 1, entrega: 2 } }),
+    );
+
+  it('agrupar estima la ruta de destino y la de origen', async () => {
+    expect((await agrupar()).status).toBe(200);
+    expect(estimadas()).toEqual([RUTA, 'origen']);
+  });
+
+  it('quitar estima la ruta y la ruta nueva del servicio', async () => {
+    await app().request(`/rutas/${RUTA}/servicios/${ASIG}`, { method: 'DELETE' });
+    expect(estimadas()).toEqual([RUTA, 'nueva']);
+  });
+
+  it('reordenar y declarar estiman la ruta', async () => {
+    await app().request(`/rutas/${RUTA}/paradas`, json('PUT', { paradas: [RUTA, ASIG] }));
+    await app().request(`/rutas/${RUTA}/configuracion`, json('PUT', CONFIG));
+    expect(estimadas()).toEqual([RUTA, RUTA]);
+  });
+
+  it('leer no estima, y una operación rechazada tampoco', async () => {
+    await app().request('/rutas');
+    await app().request(`/rutas/${RUTA}`);
+    s.agruparServicio.mockResolvedValueOnce({ ok: false, code: 'ruta_not_found' });
+    expect((await agrupar()).status).toBe(404);
+    expect(estimarHuellaDeRuta).not.toHaveBeenCalled();
+  });
+
+  it('si la estimación falla, la operación ya hecha responde igual', async () => {
+    estimarHuellaDeRuta.mockRejectedValueOnce(new Error('Routes caído'));
+    const res = await agrupar();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ruta: { id: RUTA } });
+    // La segunda ruta se estima aunque la primera haya fallado.
+    expect(estimadas()).toEqual([RUTA, 'origen']);
   });
 });

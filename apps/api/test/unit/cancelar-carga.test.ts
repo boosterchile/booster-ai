@@ -157,6 +157,8 @@ describe('cancelarCarga — después del match (cancelar)', () => {
       asignacion: ASG,
       motivo: 'El cliente postergó el pedido',
       rutaCerradaId: null,
+      // La ruta sigue vigente: quien llama recalcula su estimación.
+      rutaVigenteId: 'ruta-1',
     });
     expect(sets[0]).toMatchObject({ tabla: 'viajes', valores: { status: 'cancelado' } });
     expect(sets[1]).toMatchObject({
@@ -198,7 +200,12 @@ describe('cancelarCarga — después del match (cancelar)', () => {
       updates: [[{ id: TRIP }], [{ id: 'asg-1' }]],
     });
     const r = await cancelar(db, 'motivo');
-    expect(r).toMatchObject({ ok: true, tipo: 'cancelacion', rutaCerradaId: 'ruta-9' });
+    expect(r).toMatchObject({
+      ok: true,
+      tipo: 'cancelacion',
+      rutaCerradaId: 'ruta-9',
+      rutaVigenteId: null,
+    });
   });
 
   it('una ruta que queda cancelada o sigue en curso no es una ruta cerrada', async () => {
@@ -214,7 +221,12 @@ describe('cancelarCarga — después del match (cancelar)', () => {
       updates: [[{ id: TRIP }], [{ id: 'asg-1' }]],
     });
     const r = await cancelar(db, 'motivo');
-    expect(r).toMatchObject({ ok: true, tipo: 'cancelacion', rutaCerradaId: null });
+    expect(r).toMatchObject({
+      ok: true,
+      tipo: 'cancelacion',
+      rutaCerradaId: null,
+      rutaVigenteId: null,
+    });
   });
 
   it('invalida la solicitud de cambio pendiente con su evento (§6.6)', async () => {

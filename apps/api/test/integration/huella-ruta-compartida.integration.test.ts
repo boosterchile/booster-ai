@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../src/db/schema.js';
 import { haversineKm } from '../../src/services/calcular-cobertura-telemetria.js';
@@ -8,6 +8,9 @@ import {
   cerrarRutaYCertificar,
 } from '../../src/services/cerrar-huella-de-ruta.js';
 import { emitirCertificadoViaje } from '../../src/services/emitir-certificado-viaje.js';
+import { estimarDistanciaKm } from '../../src/services/estimar-distancia.js';
+import { estimarHuellaDeRuta } from '../../src/services/estimar-huella-de-ruta.js';
+import { calcularHuellaDeServicioSolo } from '../../src/services/huella-por-ruta.js';
 import { rutaCompartidaDelViaje } from '../../src/services/ruta-compartida.js';
 import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
@@ -43,6 +46,8 @@ interface Carga {
   readonly entrega: string | null;
   /** Cancelada después de recogida: no se entrega y no recibe certificado. */
   readonly cancelada?: string;
+  readonly origen?: { readonly direccion: string; readonly region: string };
+  readonly destino?: { readonly direccion: string; readonly region: string };
 }
 
 describe('integration: huella de una ruta con varios servicios', () => {
@@ -68,7 +73,13 @@ describe('integration: huella de una ruta con varios servicios', () => {
    */
   async function ruta(
     cargas: readonly Carga[],
-    opts: { huella?: boolean; cerrada?: boolean; minutosConGps?: number } = {},
+    opts: {
+      huella?: boolean;
+      cerrada?: boolean;
+      minutosConGps?: number;
+      /** Ruta todavía sin recorrer: sin fechas y sin GPS. */
+      planificada?: boolean;
+    } = {},
   ) {
     const { db } = handle;
     const suffix = randomUUID().slice(0, 8);
@@ -136,7 +147,7 @@ describe('integration: huella de una ruta con varios servicios', () => {
       'vehículo',
     );
 
-    const cerrada = opts.cerrada !== false;
+    const cerrada = opts.cerrada !== false && !opts.planificada;
     const instantes = cargas.flatMap((c) =>
       [c.recogida, c.entrega, c.cancelada].flatMap((x) => (x ? [t(x).getTime()] : [])),
     );
@@ -147,8 +158,8 @@ describe('integration: huella de una ruta con varios servicios', () => {
           empresaId: empresa.id,
           vehicleId: vehiculo.id,
           driverUserId: conductor.id,
-          status: cerrada ? 'cerrada' : 'en_curso',
-          startedAt: new Date(Math.min(...instantes)),
+          status: opts.planificada ? 'planificada' : cerrada ? 'cerrada' : 'en_curso',
+          startedAt: opts.planificada ? null : new Date(Math.min(...instantes)),
           closedAt: cerrada ? new Date(Math.max(...instantes)) : null,
         })
         .returning({ id: schema.rutas.id }),
@@ -164,8 +175,10 @@ describe('integration: huella de una ruta con varios servicios', () => {
           .values({
             trackingCode: randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase(),
             generadorCargaEmpresaId: empresa.id,
-            originAddressRaw: `Origen ${i}`,
-            destinationAddressRaw: `Destino ${i}`,
+            originAddressRaw: c.origen?.direccion ?? `Origen ${i}`,
+            originRegionCode: c.origen?.region ?? null,
+            destinationAddressRaw: c.destino?.direccion ?? `Destino ${i}`,
+            destinationRegionCode: c.destino?.region ?? null,
             cargoType: 'carga_seca',
             cargoWeightKg: c.pesoKg,
             pickupDateRaw: '2026-11-10',
@@ -242,7 +255,7 @@ describe('integration: huella de una ruta con varios servicios', () => {
     }
 
     // GPS del celular del conductor: un punto cada 30 s desde las 10:00.
-    const minutos = opts.minutosConGps ?? 9;
+    const minutos = opts.planificada ? 0 : (opts.minutosConGps ?? 9);
     if (minutos > 0) {
       await db.insert(schema.posicionesMovilConductor).values(
         Array.from({ length: minutos * 2 + 1 }, (_, k) => ({
@@ -254,7 +267,7 @@ describe('integration: huella de una ruta con varios servicios', () => {
         })),
       );
     }
-    return { rutaId: laRuta.id, viajes, empresaId: empresa.id };
+    return { rutaId: laRuta.id, viajes, empresaId: empresa.id, vehiculoId: vehiculo.id };
   }
 
   const metricasDeViajes = async (ids: readonly string[]) => {
@@ -516,6 +529,166 @@ describe('integration: huella de una ruta con varios servicios', () => {
     expect(await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId: randomUUID() })).toEqual({
       estado: 'omitida',
       motivo: 'ruta_no_encontrada',
+    });
+  });
+
+  /**
+   * §3.9: mientras la ruta está planificada o en curso, cada carga muestra la
+   * estimación de su parte, con el mismo reparto sobre la emisión estimada de
+   * la ruta.
+   */
+  describe('estimación mientras la ruta está abierta', () => {
+    const BODEGA = { direccion: 'Bodega Central, Quilicura', region: 'RM' };
+    // Las dos cargas salen de la misma bodega; B se entrega en Santiago y A en Valparaíso.
+    const DOS_PLANIFICADAS: Carga[] = [
+      {
+        pesoKg: 2000,
+        directaKm: '120.00',
+        recogida: null,
+        entrega: null,
+        origen: BODEGA,
+        destino: { direccion: 'Cliente A, Valparaíso', region: 'V' },
+      },
+      {
+        pesoKg: 1000,
+        directaKm: '30.00',
+        recogida: null,
+        entrega: null,
+        origen: { direccion: ' bodega central, quilicura ', region: 'RM' },
+        destino: { direccion: 'Cliente B, Maipú', region: 'RM' },
+      },
+    ];
+    /** Deja las paradas en el orden: recoge A, recoge B, entrega B, entrega A. */
+    async function ordenar(rutaId: string, viajes: readonly string[]) {
+      const [a, b] = viajes;
+      const orden: [string | undefined, 'recogida' | 'entrega', number][] = [
+        [a, 'recogida', 10],
+        [b, 'recogida', 11],
+        [b, 'entrega', 12],
+        [a, 'entrega', 13],
+      ];
+      for (const [tripId, tipo, n] of orden) {
+        await handle.db
+          .update(schema.paradasRuta)
+          .set({ orden: n })
+          .where(
+            and(
+              eq(schema.paradasRuta.rutaId, rutaId),
+              eq(schema.paradasRuta.tripId, tripId ?? ''),
+              eq(schema.paradasRuta.tipo, tipo),
+            ),
+          );
+      }
+    }
+
+    test('dos cargas: la estimación de la ruta se reparte y las partes suman el total', async () => {
+      const { rutaId, viajes } = await ruta(DOS_PLANIFICADAS, { planificada: true });
+      await ordenar(rutaId, viajes);
+
+      const r = await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      expect(r).toMatchObject({ estado: 'estimada', servicios: 2 });
+      const deRuta = await metricasDeRuta(rutaId);
+      // Bodega → bodega: 0 km. Bodega → Maipú y Maipú → Valparaíso, por la tabla de regiones.
+      const km = estimarDistanciaKm('RM', 'RM') + estimarDistanciaKm('RM', 'V');
+      expect(num(deRuta?.distanceKmEstimated)).toBe(km);
+      // 3.000 kg hasta Maipú y 2.000 kg hasta Valparaíso.
+      expect(num(deRuta?.actividadTkm)).toBeCloseTo(
+        3 * estimarDistanciaKm('RM', 'RM') + 2 * estimarDistanciaKm('RM', 'V'),
+        3,
+      );
+      expect(deRuta).toMatchObject({
+        routeDataSource: 'maps_directions',
+        precisionMethod: 'modelado',
+        carbonEmissionsKgco2eActual: null,
+      });
+      const deViajes = await metricasDeViajes(viajes);
+      expect(suma3(deViajes.map((m) => num(m.carbonEmissionsKgco2eEstimated)))).toBe(
+        num(deRuta?.carbonEmissionsKgco2eEstimated),
+      );
+      expect(suma3(deViajes.map((m) => num(m.fuelConsumedLEstimated)))).toBe(
+        num(deRuta?.fuelConsumedLEstimated),
+      );
+      // a = 2 t × 120 km y 1 t × 30 km: 240 y 30 sobre 270.
+      expect(deViajes.map((m) => num(m.participacion))).toEqual([88.89, 11.11]);
+      // La distancia directa de cada carga no se toca: es la que entra al reparto.
+      expect(deViajes.map((m) => m.distanceKmEstimated)).toEqual(['120.00', '30.00']);
+      for (const m of deViajes) {
+        expect(m).toMatchObject({ rutaId, carbonEmissionsKgco2eActual: null });
+      }
+    });
+
+    test('cambiar el orden de las paradas cambia la estimación de la ruta, no la participación', async () => {
+      const { rutaId, viajes } = await ruta(DOS_PLANIFICADAS, { planificada: true });
+      await ordenar(rutaId, viajes);
+      await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+      const antes = await metricasDeViajes(viajes);
+      const rutaAntes = num((await metricasDeRuta(rutaId))?.actividadTkm);
+
+      // Ahora entrega primero A (Valparaíso) y después B (Maipú).
+      const [a, b] = viajes;
+      await handle.db
+        .update(schema.paradasRuta)
+        .set({ orden: 20 })
+        .where(and(eq(schema.paradasRuta.tripId, a ?? ''), eq(schema.paradasRuta.tipo, 'entrega')));
+      await handle.db
+        .update(schema.paradasRuta)
+        .set({ orden: 21 })
+        .where(and(eq(schema.paradasRuta.tripId, b ?? ''), eq(schema.paradasRuta.tipo, 'entrega')));
+      await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      const despues = await metricasDeViajes(viajes);
+      expect(num((await metricasDeRuta(rutaId))?.actividadTkm)).not.toBe(rutaAntes);
+      expect(despues.map((m) => m.participacion)).toEqual(antes.map((m) => m.participacion));
+    });
+
+    test('una carga sola: su estimación es la del viaje de siempre', async () => {
+      const [sola] = DOS_PLANIFICADAS;
+      const { rutaId, viajes } = await ruta(sola ? [sola] : [], { planificada: true });
+
+      const r = await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      const esperado = calcularHuellaDeServicioSolo(viajes[0] ?? '', {
+        metodo: 'modelado',
+        distanciaKm: 120,
+        cargaKg: 2000,
+        vehiculo: {
+          combustible: 'diesel',
+          consumoBasePor100km: 30,
+          pesoVacioKg: 6000,
+          capacidadKg: 5000,
+        },
+      });
+      expect(r).toMatchObject({
+        estado: 'estimada',
+        servicios: 1,
+        emisionesKgco2e: esperado.emisiones.emisionesKgco2eWtw,
+      });
+      const [m] = await metricasDeViajes(viajes);
+      expect(num(m?.carbonEmissionsKgco2eEstimated)).toBe(esperado.emisiones.emisionesKgco2eWtw);
+      expect(num(m?.participacion)).toBe(100);
+    });
+
+    test('una carga cancelada no entra en la estimación de las demás', async () => {
+      const [a, b] = DOS_PLANIFICADAS;
+      const { rutaId, viajes } = await ruta(a && b ? [a, { ...b, cancelada: '09:45:00' }] : [], {
+        planificada: true,
+      });
+
+      const r = await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      expect(r).toMatchObject({ estado: 'estimada', servicios: 1 });
+      const [deA, deB] = await metricasDeViajes(viajes);
+      expect(num(deA?.participacion)).toBe(100);
+      expect(deB?.carbonEmissionsKgco2eEstimated).toBe('9.999');
+    });
+
+    test('una ruta cerrada no se vuelve a estimar', async () => {
+      const { rutaId } = await ruta(TRES);
+      expect(await estimarHuellaDeRuta({ db: handle.db, logger, rutaId })).toEqual({
+        estado: 'omitida',
+        motivo: 'ruta_no_vigente',
+      });
     });
   });
 });

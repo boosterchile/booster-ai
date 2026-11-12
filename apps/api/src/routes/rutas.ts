@@ -8,6 +8,7 @@ import type { Db } from '../db/client.js';
 import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { estimarHuellaDeRuta } from '../services/estimar-huella-de-ruta.js';
 import {
   type FalloDeRuta,
   agruparServicio,
@@ -66,7 +67,13 @@ const configuracionBodySchema = z.object({
 const idSchema = z.object({ id: z.string().uuid() });
 const idsQuitarSchema = idSchema.extend({ asignacion_id: z.string().uuid() });
 
-export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: boolean }) {
+export function createRutasRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  activada: boolean;
+  /** Proyecto de Routes para la distancia entre paradas; sin él se usa la tabla por región. */
+  routesProjectId?: string | undefined;
+}) {
   const app = new Hono();
 
   // Apagada, la API no existe: ni siquiera dice que hay algo detrás.
@@ -156,6 +163,8 @@ export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: bool
     ids: { empresaId: string; rutaId: string },
     ejecutar: () => Promise<T | FalloDeRuta>,
     responder: (r: T) => Response,
+    /** Las rutas cuya huella estimada cambia con la operación. */
+    afectadas: (r: T) => readonly string[] = () => [],
   ) {
     return withBusinessSpan(
       {
@@ -172,6 +181,21 @@ export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: bool
         }
         if (operacion !== 'ver') {
           opts.logger.info({ ...ids, operacion }, 'ruta modificada por la API');
+        }
+        // Después del commit: la estimación de cada carga sigue a su ruta
+        // (huella-consolidada §3.9). Si falla, la operación ya quedó hecha y
+        // la próxima vuelve a intentarlo.
+        for (const rutaId of new Set(afectadas(r))) {
+          try {
+            await estimarHuellaDeRuta({
+              db: opts.db,
+              logger: opts.logger,
+              rutaId,
+              routesProjectId: opts.routesProjectId,
+            });
+          } catch (err) {
+            opts.logger.error({ err, rutaId, operacion }, 'la estimación de la ruta falló');
+          }
         }
         return responder(r);
       },
@@ -233,6 +257,7 @@ export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: bool
             userId: auth.userId,
           }),
         (r) => c.json({ ruta: r.ruta }),
+        (r) => [r.ruta.id, r.rutaOrigenId],
       );
     },
   );
@@ -258,6 +283,7 @@ export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: bool
             userId: auth.userId,
           }),
         (r) => c.json({ ruta: r.ruta, ruta_nueva_id: r.rutaNuevaId }),
+        (r) => [r.ruta.id, r.rutaNuevaId],
       );
     },
   );
@@ -283,6 +309,7 @@ export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: bool
             userId: auth.userId,
           }),
         (r) => c.json({ ruta: r.ruta }),
+        (r) => [r.ruta.id],
       );
     },
   );
@@ -311,6 +338,7 @@ export function createRutasRoutes(opts: { db: Db; logger: Logger; activada: bool
             userId: auth.userId,
           }),
         (r) => c.json({ ruta: r.ruta }),
+        (r) => [r.ruta.id],
       );
     },
   );

@@ -314,10 +314,8 @@ visto del PO junto con el momento de emisión.
 
 ### Lo que queda fuera de esta parte
 
-- **La estimación con reparto (§3.9, segundo párrafo).** Mientras la ruta está
-  planificada o en curso, cada carga sigue mostrando la estimación que se
-  calculó al asignarla, como si viajara sola. Recalcularla cuando la ruta
-  cambia es un PR aparte, antes de encender la API.
+- **La estimación con reparto (§3.9, segundo párrafo).** Va en el PR
+  siguiente; ver «Parte 4, segunda entrega» más abajo.
 - **Posicionamiento y regreso medidos (§3.2 y §11-1).** La ventana sigue
   siendo de la primera recogida a la última entrega, igual que hoy en el viaje
   solo.
@@ -331,3 +329,46 @@ Las dos piezas puras se escribieron con el test primero
 la implementación, en la evidencia del PR. El test de integración se escribió
 después del servicio de cierre; encontró un error en el tramo sin duración
 (recogida y entrega en el mismo instante quedaban con carga 0), ya corregido.
+
+## Parte 4, segunda entrega — la estimación sigue a la ruta (2026-11-11)
+
+Spec §3.9, segundo párrafo: mientras la ruta está planificada o en curso, la
+estimación de cada carga es su parte de la emisión estimada de la ruta, y
+cambia cuando la ruta cambia. Sigue sin efecto en producción hasta encender
+`RUTAS_API_ACTIVADA`.
+
+| Archivo | Qué hace |
+|---|---|
+| `services/estimar-huella-de-ruta.ts` | Estima la ruta por sus tramos planificados, reparte y escribe `metricas_ruta` y la estimación de cada `metricas_viaje` en una transacción |
+| `services/tramos-recorridos.ts` | `tramosPlanificados`: la carga a bordo entre parada y parada, en el orden de la ruta |
+| `routes/rutas.ts` | Después de agrupar, quitar, reordenar o declarar, vuelve a estimar las rutas que la operación tocó |
+| `routes/trip-requests-v2.ts`, `routes/assignments.ts` | Lo mismo cuando se cancela una carga de la ruta o se acepta un cambio de peso |
+
+### Cómo se estima
+
+1. **Los tramos son los del plan**: las paradas en su orden, con la carga que
+   el camión lleva entre una y otra.
+2. **La distancia de cada tramo** se pide igual que la de un viaje: Routes y,
+   si falla, la tabla por región. Dos paradas seguidas en la misma dirección
+   miden 0 sin consultar.
+3. **El reparto es el del cierre**: toneladas-kilómetro de distancia directa.
+   La distancia directa de cada carga es su distancia estimada, que no se
+   toca.
+4. **Con una carga**, la ruta es su viaje: usa su distancia directa, no
+   consulta mapas y da la estimación de siempre. Así vuelve a su cifra una
+   carga que se quita de una ruta.
+5. **El retorno vacío estimado de cada carga no se recalcula.** Queda el que
+   se calculó al asignarla. Aplicarlo sobre el total de la ruta es §3.2, que
+   sigue fuera.
+6. **La estimación corre después del commit** de la operación. Si falla, la
+   operación ya quedó hecha y la siguiente vuelve a estimar.
+
+### Cómo se prueba
+
+| Qué | Dónde |
+|---|---|
+| Dos cargas: la estimación de la ruta se reparte y las partes suman el total; la distancia directa no cambia | `test/integration/huella-ruta-compartida` |
+| Reordenar las entregas cambia la emisión de la ruta y no la participación (criterio 2) | el mismo archivo |
+| Una carga sola da la estimación del viaje; una cancelada no entra; una ruta cerrada no se vuelve a estimar | el mismo archivo |
+| Cada operación de la API estima las rutas que tocó, y un fallo de la estimación no cambia la respuesta | `routes/rutas.test` |
+| Qué decide con cada ruta | `test/unit/estimar-huella-de-ruta.test`, `test/unit/tramos-planificados.test` (rojo primero: 5 tests) |

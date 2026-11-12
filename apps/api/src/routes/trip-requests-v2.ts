@@ -61,6 +61,7 @@ import {
 import { editarCargaPreMatch } from '../services/editar-carga.js';
 import { editarDatosLibres } from '../services/editar-datos-libres.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { estimarHuellaDeRuta } from '../services/estimar-huella-de-ruta.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking, coordenadaDe } from '../services/get-public-tracking.js';
 import { filasListaUnicas, serializarFilaLista } from '../services/inicio-viaje-lista.js';
@@ -1472,6 +1473,24 @@ export function createTripRequestsV2Routes(opts: {
         opts.logger.error(
           { err, tripId, rutaId: resultado.rutaCerradaId },
           'el cierre de la ruta tras cancelar una carga falló',
+        );
+      }
+    }
+
+    // Post-commit: las cargas que siguen en la ruta se reparten ahora una
+    // estimación sin la cancelada (huella-consolidada §3.9).
+    if (resultado.tipo === 'cancelacion' && resultado.rutaVigenteId) {
+      try {
+        await estimarHuellaDeRuta({
+          db: opts.db,
+          logger: opts.logger,
+          rutaId: resultado.rutaVigenteId,
+          routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId, rutaId: resultado.rutaVigenteId },
+          'la estimación de la ruta tras cancelar una carga falló',
         );
       }
     }
