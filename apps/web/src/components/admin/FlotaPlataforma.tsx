@@ -14,6 +14,7 @@ import { FleetMap, type FleetMapVehicle } from '../map/FleetMap.js';
 
 type Estado = 'activo' | 'mantenimiento' | 'retirado';
 type NivelCertificacion = 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
+type PresentacionCertificado = 'primario' | 'medido_teltonika' | 'estimado';
 
 export interface VehiculoDeFlota {
   id: string;
@@ -64,13 +65,16 @@ export interface FichaDeVehiculo {
   viajes: {
     entregados: number;
     en_curso: number;
-    certificados: Record<NivelCertificacion | 'sin_certificado', number>;
+    certificados: Record<NivelCertificacion | 'sin_certificado', number> & {
+      por_presentacion: Record<PresentacionCertificado, number>;
+    };
     ultimos: {
       codigo_seguimiento: string;
       estado: string;
       entregado_en: string | null;
       nivel_certificacion: NivelCertificacion | null;
       certificado_emitido: boolean;
+      presentacion_certificado: PresentacionCertificado | null;
     }[];
   };
 }
@@ -96,10 +100,11 @@ const TEXTO_FUENTE_CAN: Record<string, string> = {
   '89': 'Nivel de estanque en % (89)',
   sin_sensor: 'Sin configurar',
 };
-const TEXTO_NIVEL: Record<NivelCertificacion, string> = {
-  primario_verificable: 'Primario verificable',
-  secundario_modeled: 'Estimado (modelado)',
-  secundario_default: 'Estimado (por defecto)',
+/** ADR-091: quién midió la distancia del certificado. */
+const TEXTO_PRESENTACION: Record<PresentacionCertificado, string> = {
+  primario: 'combustible medido por CAN',
+  medido_teltonika: 'distancia medida con Teltonika',
+  estimado: 'estimado',
 };
 const TEXTO_ESTADO_VIAJE: Record<string, string> = {
   asignado: 'Asignado',
@@ -452,13 +457,20 @@ function Ficha({ vehiculoId, resumen }: { vehiculoId: string; resumen: VehiculoD
         <dl className="mt-2 grid grid-cols-2 gap-3">
           <Dato etiqueta="Viajes entregados">{numero(viajes.entregados)}</Dato>
           <Dato etiqueta="Viajes en curso">{numero(viajes.en_curso)}</Dato>
-          <Dato etiqueta="Certificados primarios">
-            {numero(viajes.certificados.primario_verificable)}
+          <Dato etiqueta="Certificados con combustible medido por CAN">
+            <span data-testid="cert-primario">
+              {numero(viajes.certificados.por_presentacion.primario)}
+            </span>
+          </Dato>
+          <Dato etiqueta="Certificados con distancia medida con Teltonika">
+            <span data-testid="cert-medido-teltonika">
+              {numero(viajes.certificados.por_presentacion.medido_teltonika)}
+            </span>
           </Dato>
           <Dato etiqueta="Certificados estimados">
-            {numero(
-              viajes.certificados.secundario_modeled + viajes.certificados.secundario_default,
-            )}
+            <span data-testid="cert-estimado">
+              {numero(viajes.certificados.por_presentacion.estimado)}
+            </span>
           </Dato>
           <Dato etiqueta="Entregados sin certificado">
             {numero(viajes.certificados.sin_certificado)}
@@ -477,8 +489,8 @@ function Ficha({ vehiculoId, resumen }: { vehiculoId: string; resumen: VehiculoD
                 </div>
                 {u.estado === 'entregado' ? (
                   <p className="text-neutral-600 text-xs">
-                    {u.certificado_emitido && u.nivel_certificacion
-                      ? `Certificado: ${TEXTO_NIVEL[u.nivel_certificacion]}`
+                    {u.presentacion_certificado
+                      ? `Certificado: ${TEXTO_PRESENTACION[u.presentacion_certificado]}`
                       : 'Sin certificado emitido'}
                   </p>
                 ) : null}

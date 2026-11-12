@@ -112,6 +112,7 @@ const FICHA: FichaDeVehiculo = {
       secundario_modeled: 1,
       secundario_default: 0,
       sin_certificado: 1,
+      por_presentacion: { primario: 0, medido_teltonika: 1, estimado: 0 },
     },
     ultimos: [
       {
@@ -120,6 +121,7 @@ const FICHA: FichaDeVehiculo = {
         entregado_en: null,
         nivel_certificacion: null,
         certificado_emitido: false,
+        presentacion_certificado: null,
       },
       {
         codigo_seguimiento: 'BOO-BBB222',
@@ -127,6 +129,7 @@ const FICHA: FichaDeVehiculo = {
         entregado_en: '2026-10-20T18:00:00Z',
         nivel_certificacion: 'secundario_modeled',
         certificado_emitido: true,
+        presentacion_certificado: 'medido_teltonika',
       },
       {
         codigo_seguimiento: 'BOO-CCC333',
@@ -134,6 +137,7 @@ const FICHA: FichaDeVehiculo = {
         entregado_en: '2026-10-22T18:00:00Z',
         nivel_certificacion: 'secundario_modeled',
         certificado_emitido: false,
+        presentacion_certificado: null,
       },
     ],
   },
@@ -229,7 +233,11 @@ describe('/app/platform-admin/flota', () => {
     expect(ficha).toHaveTextContent('9.832 registros');
     expect(ficha).toHaveTextContent('BOO-AAA111');
     expect(ficha).toHaveTextContent('En camino');
-    expect(ficha).toHaveTextContent('Certificado: Estimado (modelado)');
+    expect(ficha).toHaveTextContent('Certificado: distancia medida con Teltonika');
+    expect(ficha).not.toHaveTextContent('Estimado (modelado)');
+    expect(within(ficha).getByTestId('cert-primario')).toHaveTextContent('0');
+    expect(within(ficha).getByTestId('cert-medido-teltonika')).toHaveTextContent('1');
+    expect(within(ficha).getByTestId('cert-estimado')).toHaveTextContent('0');
     expect(ficha).toHaveTextContent('Sin certificado emitido');
   });
 
