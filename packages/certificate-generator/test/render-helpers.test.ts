@@ -109,3 +109,131 @@ describe('presentacionNivel (HC-004): badge, sello y disclaimer salen de la mism
     expect(p.badge).toBe('Estimado · datos secundarios modelados · 0% telemetría');
   });
 });
+
+describe('presentacionNivel (ADR-091): el sello depende de quién midió la distancia', () => {
+  const BADGE_MEDIDO = 'Distancia medida con Teltonika · consumo modelado · 92% telemetría';
+  type Caso = [
+    string,
+    Parameters<typeof import('../src/render-helpers.js').presentacionNivel>[0],
+    string,
+  ];
+  const casos: Caso[] = [
+    [
+      'primario con Teltonika',
+      {
+        certificationLevel: 'primario_verificable',
+        routeDataSource: 'teltonika_gps',
+        coveragePct: 98,
+      },
+      'primario',
+    ],
+    [
+      'primario sin fuente guardada',
+      { certificationLevel: 'primario_verificable', coveragePct: 98 },
+      'primario',
+    ],
+    [
+      'Teltonika sin CAN, cobertura 92 %',
+      {
+        certificationLevel: 'secundario_modeled',
+        routeDataSource: 'teltonika_gps',
+        coveragePct: 92.9,
+      },
+      'medido_teltonika',
+    ],
+    [
+      'Teltonika justo en 80 %',
+      {
+        certificationLevel: 'secundario_modeled',
+        routeDataSource: 'teltonika_gps',
+        coveragePct: 80,
+      },
+      'medido_teltonika',
+    ],
+    [
+      'Teltonika bajo 80 %',
+      {
+        certificationLevel: 'secundario_modeled',
+        routeDataSource: 'teltonika_gps',
+        coveragePct: 79.99,
+      },
+      'estimado',
+    ],
+    [
+      'Teltonika sin cobertura guardada',
+      { certificationLevel: 'secundario_modeled', routeDataSource: 'teltonika_gps' },
+      'estimado',
+    ],
+    [
+      'Google Maps',
+      {
+        certificationLevel: 'secundario_modeled',
+        routeDataSource: 'maps_directions',
+        coveragePct: 0,
+      },
+      'estimado',
+    ],
+    [
+      'GPS del móvil',
+      { certificationLevel: 'secundario_modeled', routeDataSource: 'movil_gps', coveragePct: 99 },
+      'estimado',
+    ],
+    [
+      'distancia declarada',
+      {
+        certificationLevel: 'secundario_modeled',
+        routeDataSource: 'manual_declared',
+        coveragePct: 99,
+      },
+      'estimado',
+    ],
+    [
+      'secundario sin fuente guardada',
+      { certificationLevel: 'secundario_modeled', coveragePct: 99 },
+      'estimado',
+    ],
+    [
+      'secundario por defecto con Teltonika',
+      {
+        certificationLevel: 'secundario_default',
+        routeDataSource: 'teltonika_gps',
+        coveragePct: 99,
+      },
+      'estimado',
+    ],
+    [
+      'sin nivel guardado, con Teltonika',
+      { routeDataSource: 'teltonika_gps', coveragePct: 99 },
+      'estimado',
+    ],
+    ['sin ningún dato', {}, 'estimado'],
+  ];
+
+  it.each(casos)('%s', async (_nombre, entrada, esperada) => {
+    const { presentacionNivel } = await import('../src/render-helpers.js');
+    const p = presentacionNivel(entrada);
+    expect(p.presentacion).toBe(esperada);
+    expect(p.estimado).toBe(esperada === 'estimado');
+  });
+
+  it('el badge de Teltonika dice qué se midió y qué no, con % piso', async () => {
+    const { presentacionNivel } = await import('../src/render-helpers.js');
+    const p = presentacionNivel({
+      certificationLevel: 'secundario_modeled',
+      routeDataSource: 'teltonika_gps',
+      coveragePct: 92.9,
+    });
+    expect(p.badge).toBe(BADGE_MEDIDO);
+  });
+
+  it('la nota de método no menciona Google Routes ni promete dato primario', async () => {
+    const { textoNotaMetodo } = await import('../src/render-helpers.js');
+    const nota = textoNotaMetodo('GLEC v2.0 (2019), Tabla 32', 'v3.0');
+    expect(nota).toBe(
+      'La distancia fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores GLEC v2.0 (2019), Tabla 32 y GLEC Framework v3.0; no proviene de una medición del vehículo.',
+    );
+    expect(nota.toLowerCase()).not.toContain('google');
+    expect(nota.toLowerCase()).not.toContain('verificable');
+    expect(nota.toLowerCase()).not.toContain('primario');
+  });
+});

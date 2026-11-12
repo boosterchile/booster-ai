@@ -46,7 +46,8 @@ async function revisar(params: (typeof CASOS)['normal']): Promise<ItemPdf[]> {
   const { bytes, cajas, textos } = await generarPdfConCajas(params);
   const items = await itemsPorPagina(bytes);
   const paginas = (await textoPorPagina(bytes)).map(sinEspacios);
-  expect(cajas.length).toBeGreaterThan(5);
+  // Sin sello ni caja de disclaimer (primario y medido con Teltonika) quedan 5.
+  expect(cajas.length).toBeGreaterThanOrEqual(5);
   expect(textos.length).toBeGreaterThan(40);
   for (const c of cajas) {
     dentro(c, `caja p${c.pagina + 1} ${JSON.stringify(c)}`, c.pie ? AREA_UTIL.y0 : TOPE_PIE);

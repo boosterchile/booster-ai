@@ -24,29 +24,68 @@ export function subtituloMetodologia(glecVersion: string): string {
   return `GLEC Framework ${glecVersion} · ISO 14083:2023 · Well-to-Wheel (combustión + upstream)`;
 }
 
+/** Las tres presentaciones del certificado (ADR-091 §1). */
+export type Presentacion = 'primario' | 'medido_teltonika' | 'estimado';
+
 export interface PresentacionNivel {
+  presentacion: Presentacion;
   /** true → sello ESTIMADO + disclaimer + «Estimado» en el pie. */
   estimado: boolean;
   badge: string;
 }
 
 /**
- * Única fuente del badge, el sello y el disclaimer (ux.md §Badge): así no
- * puede salir un badge primario con sello Estimado. La verdad es la emisión
- * (`certificationLevel`); el % es la cobertura con piso (nunca sube a 100).
+ * Cobertura mínima para que la distancia cuente como medida por el Teltonika
+ * (ADR-077 §2). Bajo este umbral la emisión guarda `maps_directions`; se
+ * repite acá para que un dato fuera de regla conserve el sello.
+ */
+const COBERTURA_MINIMA_MEDIDA_PCT = 80;
+
+/**
+ * Única fuente del badge, el sello, el disclaimer y la nota de método
+ * (ADR-091): así no puede salir un badge sin sello con disclaimer de
+ * Estimado. La verdad es la emisión (`certificationLevel` y
+ * `routeDataSource`); el % es la cobertura con piso (nunca sube a 100).
+ *
+ * Ante un dato ausente o fuera de regla, la presentación es `estimado`.
  */
 export function presentacionNivel(m: {
   certificationLevel?: NivelCertificacion;
+  routeDataSource?: DatosMetricasCertificado['routeDataSource'];
   coveragePct?: number;
 }): PresentacionNivel {
   const pct = Math.min(100, Math.max(0, Math.floor(m.coveragePct ?? 0)));
-  const estimado = m.certificationLevel !== 'primario_verificable';
+  if (m.certificationLevel === 'primario_verificable') {
+    return {
+      presentacion: 'primario',
+      estimado: false,
+      badge: `\u2713 Dato primario medido · ${pct}% telemetría`,
+    };
+  }
+  const medidaPorTeltonika =
+    m.certificationLevel === 'secundario_modeled' &&
+    m.routeDataSource === 'teltonika_gps' &&
+    (m.coveragePct ?? 0) >= COBERTURA_MINIMA_MEDIDA_PCT;
+  if (medidaPorTeltonika) {
+    return {
+      presentacion: 'medido_teltonika',
+      estimado: false,
+      badge: `Distancia medida con Teltonika · consumo modelado · ${pct}% telemetría`,
+    };
+  }
   return {
-    estimado,
-    badge: estimado
-      ? `Estimado · datos secundarios modelados · ${pct}% telemetría`
-      : `\u2713 Dato primario medido · ${pct}% telemetría`,
+    presentacion: 'estimado',
+    estimado: true,
+    badge: `Estimado · datos secundarios modelados · ${pct}% telemetría`,
   };
+}
+
+/**
+ * Nota de método de la presentación «Medido con Teltonika» (ADR-091 §2):
+ * reemplaza al disclaimer y declara que el consumo es modelado.
+ */
+export function textoNotaMetodo(fuenteFactores: string, glecVersion: string): string {
+  return `La distancia fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores ${fuenteFactores} y GLEC Framework ${glecVersion}; no proviene de una medición del vehículo.`;
 }
 
 /** Cuerpo del disclaimer: texto exacto de Felipe con fuente y versión de la emisión. */
