@@ -1,3 +1,4 @@
+import { type Presentacion, presentacionNivel } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -40,6 +41,11 @@ const idSchema = z.string().uuid();
 const consultas = getBusinessCounter('flota_plataforma_consultas_total');
 
 const NIVELES = ['primario_verificable', 'secundario_modeled', 'secundario_default'] as const;
+const PRESENTACIONES = [
+  'primario',
+  'medido_teltonika',
+  'estimado',
+] as const satisfies readonly Presentacion[];
 
 export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
@@ -205,6 +211,8 @@ export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger 
             status: assignments.status,
             deliveredAt: assignments.deliveredAt,
             certificationLevel: tripMetrics.certificationLevel,
+            routeDataSource: tripMetrics.routeDataSource,
+            coveragePct: tripMetrics.coveragePct,
             certificateIssuedAt: tripMetrics.certificateIssuedAt,
           })
           .from(assignments)
@@ -220,6 +228,19 @@ export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger 
             entregados.filter((a) => a.certificateIssuedAt && a.certificationLevel === nivel)
               .length,
           ]),
+        );
+
+        // ADR-091: la presentación sale de la misma función que usa el PDF.
+        const presentacionDe = (a: (typeof delVehiculo)[number]): Presentacion | null =>
+          a.certificateIssuedAt
+            ? presentacionNivel({
+                ...(a.certificationLevel ? { certificationLevel: a.certificationLevel } : {}),
+                ...(a.routeDataSource ? { routeDataSource: a.routeDataSource } : {}),
+                ...(a.coveragePct == null ? {} : { coveragePct: Number(a.coveragePct) }),
+              }).presentacion
+            : null;
+        const porPresentacion = Object.fromEntries(
+          PRESENTACIONES.map((p) => [p, entregados.filter((a) => presentacionDe(a) === p).length]),
         );
 
         consultas.add(1, { vista: 'ficha' });
@@ -256,6 +277,7 @@ export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger 
             certificados: {
               ...certificados,
               sin_certificado: entregados.filter((a) => !a.certificateIssuedAt).length,
+              por_presentacion: porPresentacion,
             },
             ultimos: delVehiculo.slice(0, VIAJES_EN_FICHA).map((a) => ({
               codigo_seguimiento: a.trackingCode,
@@ -263,6 +285,7 @@ export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger 
               entregado_en: a.deliveredAt ? a.deliveredAt.toISOString() : null,
               nivel_certificacion: a.certificationLevel,
               certificado_emitido: a.certificateIssuedAt != null,
+              presentacion_certificado: presentacionDe(a),
             })),
           },
         });

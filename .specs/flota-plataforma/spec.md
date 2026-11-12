@@ -119,7 +119,8 @@ la hizo, y cuenta en `flota_plataforma_consultas_total{vista}`.
       "primario_verificable": 0,
       "secundario_modeled": 1,
       "secundario_default": 0,
-      "sin_certificado": 0
+      "sin_certificado": 0,
+      "por_presentacion": { "primario": 0, "medido_teltonika": 0, "estimado": 1 }
     },
     "ultimos": [
       {
@@ -127,7 +128,8 @@ la hizo, y cuenta en `flota_plataforma_consultas_total{vista}`.
         "estado": "entregado",
         "entregado_en": "2026-10-20T18:00:00Z",
         "nivel_certificacion": "secundario_modeled",
-        "certificado_emitido": true
+        "certificado_emitido": true,
+        "presentacion_certificado": "estimado"
       }
     ]
   }
@@ -181,6 +183,13 @@ seleccionado se destaca. Un vehículo sin posición aparece en la lista con
    inverso.
 4. La ficha cuenta los viajes entregados del vehículo y sus certificados por
    nivel.
+   Enmienda del 2026-11-12 (ADR-091): además los cuenta por presentación
+   (`por_presentacion`: `primario`, `medido_teltonika`, `estimado`), con la
+   misma función que usa el PDF, y cada viaje trae `presentacion_certificado`
+   (`null` si no tiene certificado emitido). La página muestra esos tres
+   conteos; «estimados» ya no suma los certificados con distancia medida por
+   Teltonika. La presentación describe los datos guardados: un PDF emitido
+   antes del ADR-091 conserva el sello con que salió.
 5. `GET /vehiculos/flota` responde lo mismo que antes de extraer el servicio
    (sus tests no cambian).
 6. La página muestra el mapa, la lista filtra por texto y por empresa, y al

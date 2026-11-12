@@ -46,6 +46,9 @@ export {
   type VersionCertificado,
 } from './reemision.js';
 
+// ADR-091: la presentación del certificado, para quien la muestre fuera del PDF.
+export { type Presentacion, presentacionNivel } from './render-helpers.js';
+
 export {
   type ConsolidacionCertificado,
   FRASE_CONSOLIDACION,

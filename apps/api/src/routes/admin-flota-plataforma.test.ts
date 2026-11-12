@@ -223,6 +223,8 @@ describe('GET /:id — la ficha de un vehículo', () => {
     status: estado,
     deliveredAt: estado === 'entregado' ? new Date('2026-10-20T18:00:00Z') : null,
     certificationLevel: null,
+    routeDataSource: null,
+    coveragePct: null,
     certificateIssuedAt: null,
     ...extra,
   });
@@ -334,7 +336,71 @@ describe('GET /:id — la ficha de un vehículo', () => {
       entregado_en: '2026-10-20T18:00:00.000Z',
       nivel_certificacion: 'primario_verificable',
       certificado_emitido: true,
+      presentacion_certificado: 'primario',
     });
+  });
+
+  it('cuenta los certificados por presentación: quién midió la distancia (ADR-091)', async () => {
+    const emitido = { certificateIssuedAt: new Date('2026-10-20T18:05:00Z') };
+    const modelado = { ...emitido, certificationLevel: 'secundario_modeled' };
+    const { json } = await ficha([
+      [DETALLE],
+      can(),
+      [
+        viaje('BOO-1', 'entregado', { ...emitido, certificationLevel: 'primario_verificable' }),
+        viaje('BOO-2', 'entregado', {
+          ...modelado,
+          routeDataSource: 'teltonika_gps',
+          coveragePct: '96.40',
+        }),
+        viaje('BOO-3', 'entregado', {
+          ...modelado,
+          routeDataSource: 'teltonika_gps',
+          coveragePct: '80.00',
+        }),
+        viaje('BOO-4', 'entregado', {
+          ...modelado,
+          routeDataSource: 'teltonika_gps',
+          coveragePct: '79.99',
+        }),
+        viaje('BOO-5', 'entregado', {
+          ...modelado,
+          routeDataSource: 'maps_directions',
+          coveragePct: '0.00',
+        }),
+        viaje('BOO-6', 'entregado', {
+          ...modelado,
+          routeDataSource: 'movil_gps',
+          coveragePct: '99.00',
+        }),
+        viaje('BOO-7', 'entregado', { ...modelado }),
+        viaje('BOO-8', 'entregado', {
+          certificationLevel: 'secundario_modeled',
+          routeDataSource: 'teltonika_gps',
+          coveragePct: '99.00',
+        }),
+      ],
+    ]);
+    const viajes = json.viajes as {
+      certificados: Record<string, unknown>;
+      ultimos: { codigo_seguimiento: string; presentacion_certificado: string | null }[];
+    };
+    expect(viajes.certificados.por_presentacion).toEqual({
+      primario: 1,
+      medido_teltonika: 2,
+      estimado: 4,
+    });
+    expect(viajes.certificados.sin_certificado).toBe(1);
+    expect(viajes.ultimos.map((u) => u.presentacion_certificado)).toEqual([
+      'primario',
+      'medido_teltonika',
+      'medido_teltonika',
+      'estimado',
+      'estimado',
+      'estimado',
+      'estimado',
+      null,
+    ]);
   });
 
   it('muestra solo los 10 viajes más recientes, y los cuenta todos', async () => {

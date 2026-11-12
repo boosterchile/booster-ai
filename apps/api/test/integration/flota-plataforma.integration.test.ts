@@ -222,7 +222,12 @@ describe('integration: flota de todas las empresas en el panel de plataforma', (
     const viaje = async (
       vehicleId: string,
       estado: 'asignado' | 'entregado',
-      metricas?: { nivel: 'primario_verificable' | 'secundario_modeled'; emitido: boolean },
+      metricas?: {
+        nivel: 'primario_verificable' | 'secundario_modeled';
+        emitido: boolean;
+        fuente?: 'teltonika_gps' | 'maps_directions';
+        coberturaPct?: string;
+      },
     ) => {
       const { db } = handle;
       const t = uno(
@@ -268,6 +273,8 @@ describe('integration: flota de todas las empresas en el panel de plataforma', (
         await db.insert(schema.tripMetrics).values({
           tripId: t.id,
           certificationLevel: metricas.nivel,
+          routeDataSource: metricas.fuente ?? null,
+          coveragePct: metricas.coberturaPct ?? null,
           certificateIssuedAt: metricas.emitido ? hace(55) : null,
         });
       }
@@ -278,7 +285,18 @@ describe('integration: flota de todas las empresas en el panel de plataforma', (
       nivel: 'primario_verificable',
       emitido: true,
     });
-    await viaje(v.id, 'entregado', { nivel: 'secundario_modeled', emitido: true });
+    await viaje(v.id, 'entregado', {
+      nivel: 'secundario_modeled',
+      emitido: true,
+      fuente: 'teltonika_gps',
+      coberturaPct: '96.40',
+    });
+    await viaje(v.id, 'entregado', {
+      nivel: 'secundario_modeled',
+      emitido: true,
+      fuente: 'maps_directions',
+      coberturaPct: '0.00',
+    });
     await viaje(v.id, 'entregado', { nivel: 'secundario_modeled', emitido: false });
     // De otro vehículo de la misma empresa: no cuenta.
     await viaje(otro.id, 'entregado', { nivel: 'primario_verificable', emitido: true });
@@ -290,16 +308,18 @@ describe('integration: flota de todas las empresas en el panel de plataforma', (
 
     expect(json.can).toBeNull();
     expect(json.viajes).toMatchObject({
-      entregados: 3,
+      entregados: 4,
       en_curso: 1,
       certificados: {
         primario_verificable: 1,
-        secundario_modeled: 1,
+        secundario_modeled: 2,
         secundario_default: 0,
         sin_certificado: 1,
+        // ADR-091: la distancia medida por Teltonika se cuenta aparte.
+        por_presentacion: { primario: 1, medido_teltonika: 1, estimado: 1 },
       },
     });
-    expect(json.viajes.ultimos).toHaveLength(4);
+    expect(json.viajes.ultimos).toHaveLength(5);
     expect(json.viajes.ultimos.map((u) => u.codigo_seguimiento)).toContain(primario);
   });
 
