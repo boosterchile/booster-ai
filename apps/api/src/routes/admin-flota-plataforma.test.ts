@@ -275,7 +275,7 @@ describe('GET /:id — la ficha de un vehículo', () => {
     });
   });
 
-  it('avisa cuando el equipo envía el 83 y la huella no lo usa', async () => {
+  it('no avisa cuando el equipo envía el 83 sin estar marcado: la huella lo lee igual', async () => {
     const { json } = await ficha([
       [{ ...DETALLE, fuenteCombustibleCan: 'sin_sensor' }],
       can({ con83: 9808 }),
@@ -283,7 +283,8 @@ describe('GET /:id — la ficha de un vehículo', () => {
     ]);
     expect(json.can).toMatchObject({
       fuente_configurada: 'sin_sensor',
-      aviso: 'envia_83_sin_configurar',
+      con_combustible_83: 9808,
+      aviso: null,
     });
   });
 

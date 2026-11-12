@@ -181,6 +181,10 @@ seleccionado se destaca. Un vehículo sin posición aparece en la lista con
 3. La ficha marca `envia_83_sin_configurar` para un vehículo que envía el 83 y
    tiene otra fuente configurada, y `configurado_83_sin_lecturas` en el caso
    inverso.
+   Enmienda del 2026-11-12 (`.specs/huella-lee-can-por-datos`): el aviso
+   `envia_83_sin_configurar` se retira. La huella lee el 83 cuando el equipo
+   lo envía, así que ya no describe un problema. La ficha dice «Medido por
+   CAN» si el equipo envió el 83 en la ventana.
 4. La ficha cuenta los viajes entregados del vehículo y sus certificados por
    nivel.
    Enmienda del 2026-11-12 (ADR-091): además los cuenta por presentación

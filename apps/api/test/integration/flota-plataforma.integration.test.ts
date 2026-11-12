@@ -207,7 +207,7 @@ describe('integration: flota de todas las empresas en el panel de plataforma', (
       con_combustible_83: 2,
       con_nivel_84: 0,
       con_nivel_89: 3,
-      aviso: 'envia_83_sin_configurar',
+      aviso: null,
     });
     expect(new Date(String(json.can.ultima_lectura_en)).getTime()).toBeCloseTo(
       hace(10).getTime(),

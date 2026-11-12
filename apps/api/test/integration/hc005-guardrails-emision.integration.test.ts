@@ -200,8 +200,18 @@ describe('integration: guardrails CAN gobiernan la emisión (HC-005)', () => {
     expect(m).toMatchObject({ motivoFallback: 'can_no_monotono', precisionMethod: 'modelado' });
   });
 
-  test('fix0: config sin_sensor con 83 limpio → no se lee, can_sin_lecturas y modelado', async () => {
+  // `.specs/huella-lee-can-por-datos`: revierte el punto 1 de fix0.
+  test('config sin_sensor con 83 limpio → se lee por datos: can_83 y exacto_canbus', async () => {
     const { m } = await viaje({ pickedUpAt: PICKUP, io: limpio, cfg: 'sin_sensor' });
+    expect(m).toMatchObject({
+      motivoFallback: null,
+      fuenteEnergia: 'can_83',
+      precisionMethod: 'exacto_canbus',
+    });
+  });
+
+  test('config sin_sensor y equipo que no envía el 83 → can_sin_lecturas y modelado', async () => {
+    const { m } = await viaje({ pickedUpAt: PICKUP, io: () => ({}), cfg: 'sin_sensor' });
     expect(m).toMatchObject({
       motivoFallback: 'can_sin_lecturas',
       fuenteEnergia: 'modelo_perfil',

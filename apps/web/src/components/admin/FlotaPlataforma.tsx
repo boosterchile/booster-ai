@@ -60,7 +60,7 @@ export interface FichaDeVehiculo {
     con_nivel_84: number;
     con_nivel_89: number;
     ultima_lectura_en: string | null;
-    aviso: 'envia_83_sin_configurar' | 'configurado_83_sin_lecturas' | null;
+    aviso: 'configurado_83_sin_lecturas' | null;
   } | null;
   viajes: {
     entregados: number;
@@ -113,8 +113,6 @@ const TEXTO_ESTADO_VIAJE: Record<string, string> = {
   cancelado: 'Cancelado',
 };
 const TEXTO_AVISO_CAN = {
-  envia_83_sin_configurar:
-    'El equipo envía el combustible por CAN, pero no está configurado como fuente de la huella. Los certificados de este vehículo salen con consumo modelado.',
   configurado_83_sin_lecturas:
     'Está configurado el combustible por CAN, pero el equipo no lo envió en los últimos días.',
 } as const;
@@ -426,7 +424,14 @@ function Ficha({ vehiculoId, resumen }: { vehiculoId: string; resumen: VehiculoD
               </p>
             ) : null}
             <dl className="mt-2 grid grid-cols-2 gap-3">
-              <Dato etiqueta="Fuente de la huella">
+              <Dato etiqueta="Combustible para la huella">
+                <span data-testid="combustible-huella">
+                  {can.con_combustible_83 > 0
+                    ? 'Medido por CAN'
+                    : 'Modelado: el equipo no envía el consumo'}
+                </span>
+              </Dato>
+              <Dato etiqueta="Lectura de nivel en trayectos">
                 {TEXTO_FUENTE_CAN[can.fuente_configurada ?? 'sin_sensor'] ?? can.fuente_configurada}
               </Dato>
               <Dato etiqueta="Última lectura">

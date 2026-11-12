@@ -1658,32 +1658,75 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(7.3, 1);
     });
 
-    it.each(['sin_sensor', '89', null])(
-      'HC-005 fix0: config %j con 83 limpio → no lee el 83, can_sin_lecturas y modelado',
+    // `.specs/huella-lee-can-por-datos`: revierte el punto 1 de fix0. La huella
+    // lee el 83 cuando el equipo lo envía, sin mirar `fuente_combustible_can`.
+    it.each(['sin_sensor', '89', '84', null])(
+      'config %j con 83 limpio → lee el 83, exacto_canbus y primario con los mismos litros',
       async (cfg) => {
         const pings = largo();
         (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+        (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
         const db = makeDb({
           selects: selects({ vehicle: { fuenteCombustibleCan: cfg } }),
           updates: [[]],
         });
         await run(db);
-        expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
-        expect(setDe(db)).toMatchObject({
-          precisionMethod: 'modelado',
-          fuenteEnergia: 'modelo_perfil',
-          motivoFallback: 'can_sin_lecturas',
+        expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
+        const setArg = setDe(db);
+        expect(setArg).toMatchObject({
+          precisionMethod: 'exacto_canbus',
+          fuenteEnergia: 'can_83',
+          certificationLevel: 'primario_verificable',
         });
-        // fix1 QA #871: sin '83' no es un descarte del 83 → el contador no sube.
-        expect(counter('huella_canbus_no_usado_total')?.add).not.toHaveBeenCalled();
+        expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(8, 2);
       },
     );
 
-    it('HC-005 fix0: config sin 83 y ventana sobre el tope → can_sin_lecturas (la config manda)', async () => {
+    it('equipo que no envía el 83 → can_sin_lecturas, modelado y el contador de descartes no sube', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([]);
+      const db = makeDb({
+        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
+        updates: [[]],
+      });
+      await run(db);
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        fuenteEnergia: 'modelo_perfil',
+        motivoFallback: 'can_sin_lecturas',
+      });
+      // Una ausencia no es un descarte del 83.
+      expect(counter('huella_canbus_no_usado_total')?.add).not.toHaveBeenCalled();
+    });
+
+    it('config sin_sensor y 83 no monótono → modelado con su motivo, y el contador sube', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      const lecturas = conContador(pings, 8).map((l, i) =>
+        i === 20 ? { ...l, io: { '83': 0 } } : l,
+      );
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(lecturas);
+      const db = makeDb({
+        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
+        updates: [[]],
+      });
+      await run(db);
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        motivoFallback: 'can_no_monotono',
+      });
+      expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(1, {
+        motivo: 'can_no_monotono',
+      });
+    });
+
+    it('config sin_sensor y ventana sobre el tope → ventana_excede_tope, sin leer el 83', async () => {
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
       const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
       await run(db);
-      expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db).motivoFallback).toBe('ventana_excede_tope');
     });
 
     it('HC-005 fix0: muestra chica (4 L en ≈22 km, en banda) → can_muestra_insuficiente y modelado', async () => {
@@ -1696,18 +1739,6 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         precisionMethod: 'modelado',
         motivoFallback: 'can_muestra_insuficiente',
       });
-    });
-
-    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado (fix0)', async () => {
-      const pings = largo();
-      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      const db = makeDb({
-        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
-        updates: [[]],
-      });
-      await run(db);
-      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled(); // fix0: sin '83' no se lee
-      expect(setDe(db).precisionMethod).toBe('modelado');
     });
 
     it('83 en un vehículo eléctrico → no se usa (el contador mide litros)', async () => {
