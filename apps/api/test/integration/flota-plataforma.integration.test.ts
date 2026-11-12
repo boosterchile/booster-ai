@@ -166,9 +166,11 @@ describe('integration: flota de todas las empresas en el panel de plataforma', (
       posicion: { latitud: -33.2, longitud: -70.6, velocidad_kmh: 40, fuente: 'teltonika' },
     });
     expect(deB).toMatchObject({ empresa: { id: b.id, nombre: b.legalName }, posicion: null });
-    // Ordenada por empresa y patente.
-    const nombres = vehiculos.map((v) => v.empresa.nombre);
-    expect(nombres).toEqual([...nombres].sort((x, y) => x.localeCompare(y, 'es')));
+    // Ordenada por empresa: los vehículos de una misma empresa van juntos. El
+    // orden entre empresas es el de la base, que depende de su collation.
+    const empresasEnOrden = vehiculos.map((v) => v.empresa.id);
+    const bloques = empresasEnOrden.filter((id, i) => id !== empresasEnOrden[i - 1]);
+    expect(new Set(bloques).size).toBe(bloques.length);
   });
 
   test('sin acceso al panel no entrega la flota', async () => {
