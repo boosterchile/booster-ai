@@ -694,9 +694,10 @@ export async function medirVentanaDelVehiculo(opts: {
           distanciaKm: escritura.distanciaKmReal,
         }
       : { estado: 'abort', motivo: abortReason ?? 'sin_observacion' };
-  // HC-005 fix0: la config es SOLO el interruptor de lectura. Sin '83' no hay resumen CAN y
-  // la decisión cae en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
-  const lee83 = vehiculo.fuenteCombustibleCan === '83';
+  // `.specs/huella-lee-can-por-datos` (revierte el punto 1 de fix0 de HC-005): el 83 se lee
+  // cuando el equipo lo envía, sin mirar `fuente_combustible_can`. Sin lecturas la decisión cae
+  // en can_sin_lecturas; los guardrails siguen siendo el único camino a exacto_canbus.
+  const lee83 = fuente === 'teltonika_gps';
   let resumenCan: ResumenCan = { can83: null, litrosNivelSinRecarga: null };
   const ventanaMs = hasta.getTime() - desde.getTime();
   const ventanaExcede = ventanaMs > VENTANA_MAX_RESUMEN_CAN_MS;
@@ -959,9 +960,12 @@ async function recalcularNivelPostEntregaInner(opts: {
         decision?.fuenteEnergia === 'can_83' && decision.litrosCan !== null
           ? Math.round(decision.litrosCan * 10) / 10
           : null;
-      // Solo vehículos que leen el 83 (config '83'): el contador mide descartes, no ausencias
-      // (runbook incidentes-glec.md §4, QA #871 v1).
-      if (litrosCan === null && fuente === 'teltonika_gps' && lee83) {
+      // El contador mide descartes, no ausencias (runbook incidentes-glec.md §4, QA #871 v1):
+      // un equipo que no envía el 83 no cuenta, salvo que el vehículo esté marcado '83',
+      // porque ahí la ausencia es una señal (el CAN dejó de llegar).
+      const esperaEl83 = vehiculo.fuenteCombustibleCan === '83';
+      const ausencia = decision?.motivoFallback === 'can_sin_lecturas';
+      if (litrosCan === null && lee83 && (!ausencia || esperaEl83)) {
         huellaCanbusNoUsadoCounter.add(1, {
           motivo: decision?.motivoFallback ?? 'decision_no_registrada',
         });

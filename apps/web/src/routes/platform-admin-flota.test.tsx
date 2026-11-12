@@ -102,7 +102,7 @@ const FICHA: FichaDeVehiculo = {
     con_nivel_84: 0,
     con_nivel_89: 9808,
     ultima_lectura_en: new Date().toISOString(),
-    aviso: 'envia_83_sin_configurar',
+    aviso: null,
   },
   viajes: {
     entregados: 2,
@@ -226,9 +226,9 @@ describe('/app/platform-admin/flota', () => {
     expect(ficha).toHaveTextContent('Scania R450 2021');
     expect(ficha).toHaveTextContent('32 L/100 km');
     expect(ficha).toHaveTextContent('Equipo Teltonika');
-    expect(within(ficha).getByTestId('aviso-can')).toHaveTextContent(
-      'El equipo envía el combustible por CAN, pero no está configurado',
-    );
+    // El equipo envía el 83 sin estar marcado: la huella lo lee igual, no hay aviso.
+    expect(within(ficha).queryByTestId('aviso-can')).not.toBeInTheDocument();
+    expect(within(ficha).getByTestId('combustible-huella')).toHaveTextContent('Medido por CAN');
     expect(ficha).toHaveTextContent('Sin configurar');
     expect(ficha).toHaveTextContent('9.832 registros');
     expect(ficha).toHaveTextContent('BOO-AAA111');

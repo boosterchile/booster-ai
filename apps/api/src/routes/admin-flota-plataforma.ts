@@ -195,12 +195,9 @@ export function createAdminFlotaPlataformaRoutes(opts: { db: Db; logger: Logger 
             con_nivel_84: lecturas?.con84 ?? 0,
             con_nivel_89: lecturas?.con89 ?? 0,
             ultima_lectura_en: ultima ? ultima.toISOString() : null,
-            aviso:
-              con83 > 0 && !configurado83
-                ? 'envia_83_sin_configurar'
-                : con83 === 0 && configurado83
-                  ? 'configurado_83_sin_lecturas'
-                  : null,
+            // La huella lee el 83 por datos (`.specs/huella-lee-can-por-datos`): que el
+            // equipo lo envíe sin estar marcado ya no es un problema que avisar.
+            aviso: con83 === 0 && configurado83 ? 'configurado_83_sin_lecturas' : null,
           };
         }
 
