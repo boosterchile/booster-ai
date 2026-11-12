@@ -217,3 +217,40 @@ y `test/integration/ruta-consolidada.integration.test.ts` (hoja de una ruta
 con dos servicios; otro conductor de la misma empresa no la ve).
 
 Falta la pantalla del conductor que la muestra (parte 6, interfaz).
+
+## Parte 7 — seguimiento con paradas y «viaja con otras cargas» (2026-11-11)
+
+Spec §4.6 y §4.7. `services/ruta-en-seguimiento.ts` da al seguimiento lo que
+necesita de la ruta: si es compartida y qué paradas quedan antes de la entrega
+del servicio.
+
+- **Posición (§4.7):** en una ruta con otras cargas, el enlace público y el
+  detalle del generador entregan la posición solo entre la recogida y la
+  entrega de ese servicio. Antes de recogerlo, el camión anda con cargas de
+  otros. Mientras va a bordo, vale la posición que el teléfono del conductor
+  reporta con cualquiera de las cargas de la ruta: el camión es el mismo.
+- **Hora estimada (§4.7):** suma, por cada parada intermedia que queda antes
+  de su entrega, 15 minutos de detención más el desvío de pasar por ella.
+  Sin coordenadas de una parada, suma solo la detención.
+- **Generador (§4.6):** `GET /trip-requests-v2/:id` agrega
+  `assignment.viaja_consolidada`. La pantalla de seguimiento de la carga dice
+  «Viaja con otras cargas». No recibe la ruta, ni cuántas cargas son, ni de
+  quién.
+
+### Lectura del criterio 6 que conviene que el PO confirme
+
+El criterio 6 dice que el enlace «no entrega posición antes de su recogida». Lo
+apliqué a las rutas compartidas. Un servicio que viaja solo se sigue como hoy,
+también camino a recogerlo (criterio 7: «se comporta igual que hoy»).
+
+Los 15 minutos por parada son una estimación mía, no un dato medido.
+
+### Evidencia
+
+- Criterio 6: `test/integration/ruta-consolidada.integration.test.ts`: sin
+  posición antes de la recogida y después de la entrega; con posición entre
+  ambas; el enlace no trae el código, el viaje ni la asignación de la otra
+  carga; un servicio solo se sigue como siempre.
+- `viaja_consolidada`: mismo archivo, por HTTP; la respuesta no trae la ruta.
+- Hora estimada: `test/unit/ruta-en-seguimiento.test.ts`.
+- Web: `apps/web/src/routes/carga-track.test.tsx`.

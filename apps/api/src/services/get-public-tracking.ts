@@ -39,6 +39,7 @@ import { assignments, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
 import { computeRouteEta } from './compute-route-eta.js';
 import { type LivePositionSource, resolverPosicionEnVivo } from './posicion-en-vivo.js';
+import { contextoDeRuta, minutosPorParadasIntermedias } from './ruta-en-seguimiento.js';
 
 /**
  * Centroides aproximados (capital regional) para las 16 regiones de
@@ -254,6 +255,9 @@ export async function getPublicTracking(opts: {
       deliveredAt: assignments.deliveredAt,
       cancelledAt: assignments.cancelledAt,
       tokenExpiresAt: assignments.trackingTokenExpiresAt,
+      rutaId: assignments.rutaId,
+      destLat: trips.destinationLatitude,
+      destLng: trips.destinationLongitude,
     })
     // rls-allowlist: tracking público por token, sin tenant de sesión por diseño (censo §2 / rls-viabilidad §3)
     .from(assignments)
@@ -296,6 +300,8 @@ export async function getPublicTracking(opts: {
     destRegionCode: row.destRegionCode,
     routesProjectId,
     nowMs: now,
+    rutaId: row.rutaId,
+    destino: coordenadaDe(row.destLat, row.destLng),
   });
 
   return {
@@ -348,8 +354,26 @@ export async function computeLiveTracking(opts: {
   destRegionCode: string | null;
   routesProjectId?: string | undefined;
   nowMs: number;
+  /** Ruta de la asignación; sin ella el servicio se sigue como si viajara solo. */
+  rutaId?: string | null | undefined;
+  /** Coordenadas del destino, para estimar el desvío de las paradas intermedias. */
+  destino?: { lat: number; lng: number } | null | undefined;
 }): Promise<LiveTracking> {
   const { db, logger, tripId, tripStatus, nowMs } = opts;
+
+  // Ruta compartida (spec ruta-parada-servicio §4.7): la posición del camión
+  // solo se entrega entre la recogida y la entrega de ESTE servicio. Antes,
+  // el camión anda con cargas de otros.
+  const ruta = opts.rutaId ? await contextoDeRuta(db, { rutaId: opts.rutaId, tripId }) : null;
+  if (ruta?.compartida && tripStatus !== 'en_proceso') {
+    return {
+      position: null,
+      positionSource: null,
+      angleDeg: null,
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
+      etaMinutes: null,
+    };
+  }
 
   const live = await resolverPosicionEnVivo({
     db,
@@ -357,6 +381,7 @@ export async function computeLiveTracking(opts: {
     vehicleId: opts.vehicleId,
     tripStatus,
     nowMs,
+    asignacionesDeLaRuta: ruta?.compartida ? ruta.asignacionIds : undefined,
   });
 
   // La última posición es el primer elemento (DESC). avg_speed usa la
@@ -407,6 +432,17 @@ export async function computeLiveTracking(opts: {
     );
   }
 
+  // La hora estimada suma las paradas intermedias que quedan antes de la
+  // entrega de este servicio (§4.7). No dice cuántas son ni dónde quedan.
+  if (etaMinutes !== null && ruta && ruta.paradasIntermedias.length > 0) {
+    etaMinutes += minutosPorParadasIntermedias({
+      posicion: position ? { lat: position.latitude, lng: position.longitude } : null,
+      destino: opts.destino ?? null,
+      paradas: ruta.paradasIntermedias,
+      avgSpeedKmh: progress.avg_speed_kmh_last_15min,
+    });
+  }
+
   return {
     position,
     positionSource: live.source,
@@ -414,6 +450,19 @@ export async function computeLiveTracking(opts: {
     progress,
     etaMinutes,
   };
+}
+
+/** Coordenadas guardadas como `numeric` (texto) → números, o null si faltan. */
+export function coordenadaDe(
+  lat: string | null | undefined,
+  lng: string | null | undefined,
+): { lat: number; lng: number } | null {
+  if (lat == null || lng == null) {
+    return null;
+  }
+  const a = Number(lat);
+  const b = Number(lng);
+  return Number.isFinite(a) && Number.isFinite(b) ? { lat: a, lng: b } : null;
 }
 
 /**

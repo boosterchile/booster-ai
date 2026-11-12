@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -263,20 +263,31 @@ describe('ConductoresNuevoRoute', () => {
     expect(screen.getByText('Sin permisos')).toBeInTheDocument();
   });
 
+  /**
+   * Llena el formulario de alta de una vez. Tipear tecla por tecla seis campos
+   * tardaba más de 5 s en un runner lento y el test se caía por tiempo.
+   */
+  function llenarAlta(rut: string, nombre: string) {
+    const campos: [RegExp, string][] = [
+      [/^RUT/, rut],
+      [/^Nombre completo/, nombre],
+      [/^Teléfono/, '+56957790379'],
+      // Fase B: el email del conductor es obligatorio.
+      [/^Email/, 'juan@empresa.cl'],
+      [/^Número de licencia/, 'LIC-1'],
+      [/^Vencimiento de licencia/, '2027-12-31'],
+    ];
+    for (const [etiqueta, valor] of campos) {
+      fireEvent.change(screen.getByLabelText(etiqueta), { target: { value: valor } });
+    }
+  }
+
   it('submit con RUT inválido → no llama API, muestra error', async () => {
     const postSpy = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresNuevoRoute />);
 
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-9');
-    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan');
-    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
-    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
-    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
-    // Date input
-    const dateInput = screen.getByLabelText(/^Vencimiento de licencia/);
-    await userEvent.type(dateInput, '2027-12-31');
-
+    llenarAlta('11.111.111-9', 'Juan');
     await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
 
     // El RUT con dígito verificador incorrecto debería bloquear submit.
@@ -291,15 +302,7 @@ describe('ConductoresNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresNuevoRoute />);
 
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
-    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
-    // Fase B: el email del conductor es obligatorio.
-    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
-    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
-    const dateInput = screen.getByLabelText(/^Vencimiento de licencia/);
-    await userEvent.type(dateInput, '2027-12-31');
-
+    llenarAlta('11.111.111-1', 'Juan Pérez');
     await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
 
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
