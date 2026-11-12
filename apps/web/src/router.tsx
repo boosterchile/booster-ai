@@ -402,6 +402,16 @@ const platformAdminTeltonikaRoute = createRoute({
   ),
 });
 
+// .specs/flota-plataforma — la flota de todas las empresas, solo lectura.
+const platformAdminFlotaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/flota',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-flota.js'),
+    'PlatformAdminFlotaRoute',
+  ),
+});
+
 // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna).
 const platformAdminObservatorioRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -697,6 +707,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminPersonalRoute,
   confirmarAccesoBoosterRoute,
   platformAdminTeltonikaRoute,
+  platformAdminFlotaRoute,
   platformAdminStakeholdersRoute,
   platformAdminObservatorioRoute,
   platformAdminImpersonarRoute,
