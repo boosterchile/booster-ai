@@ -7,7 +7,10 @@ import {
   cerrarHuellaDeRuta,
   cerrarRutaYCertificar,
 } from '../../src/services/cerrar-huella-de-ruta.js';
-import { emitirCertificadoViaje } from '../../src/services/emitir-certificado-viaje.js';
+import {
+  armarDatosEmision,
+  emitirCertificadoViaje,
+} from '../../src/services/emitir-certificado-viaje.js';
 import { estimarDistanciaKm } from '../../src/services/estimar-distancia.js';
 import { estimarHuellaDeRuta } from '../../src/services/estimar-huella-de-ruta.js';
 import { calcularHuellaDeServicioSolo } from '../../src/services/huella-por-ruta.js';
@@ -353,6 +356,35 @@ describe('integration: huella de una ruta con varios servicios', () => {
       // La estimación previa no se toca.
       expect(m.carbonEmissionsKgco2eEstimated).toBe('9.999');
     }
+  });
+
+  test('el certificado de cada carga lleva su participación y el total de la ruta (§3.10)', async () => {
+    const { rutaId, viajes } = await ruta(TRES);
+    await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+    const total = num((await metricasDeRuta(rutaId))?.carbonEmissionsKgco2eActual);
+
+    const participaciones: number[] = [];
+    for (const tripId of viajes) {
+      const [trip] = await handle.db.select().from(schema.trips).where(eq(schema.trips.id, tripId));
+      const [metrics] = await metricasDeViajes([tripId]);
+      if (!trip || !metrics) {
+        throw new Error('fixture: viaje sin métricas');
+      }
+      const armado = await armarDatosEmision({ db: handle.db, logger, trip, metrics });
+      if (!armado.ok) {
+        throw new Error(`no se armó el certificado: ${armado.reason}`);
+      }
+      const { consolidacion } = armado.datos.metricas;
+      expect(consolidacion).toMatchObject({
+        kgco2eWtwRuta: total,
+        versionMetodo: 'tkm-distancia-directa-v1',
+      });
+      // La cifra de la carga es su participación sobre el total, salvo el redondeo.
+      const parte = armado.datos.metricas.kgco2eWtwActual ?? 0;
+      expect(parte).toBeCloseTo(((total ?? 0) * (consolidacion?.participacionPct ?? 0)) / 100, 2);
+      participaciones.push(consolidacion?.participacionPct ?? 0);
+    }
+    expect(participaciones).toEqual([62.5, 18.75, 18.75]);
   });
 
   test('cerrar dos veces deja las mismas cifras', async () => {

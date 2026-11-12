@@ -83,9 +83,17 @@ export function presentacionNivel(m: {
 /**
  * Nota de método de la presentación «Medido con Teltonika» (ADR-091 §2):
  * reemplaza al disclaimer y declara que el consumo es modelado.
+ *
+ * En una carga consolidada lo medido es la distancia de la ruta; la de la
+ * carga es la directa y sale del reparto (ADR-089), así que la nota lo dice.
  */
-export function textoNotaMetodo(fuenteFactores: string, glecVersion: string): string {
-  return `La distancia fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores ${fuenteFactores} y GLEC Framework ${glecVersion}; no proviene de una medición del vehículo.`;
+export function textoNotaMetodo(
+  fuenteFactores: string,
+  glecVersion: string,
+  consolidada = false,
+): string {
+  const distancia = consolidada ? 'La distancia de la ruta' : 'La distancia';
+  return `${distancia} fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores ${fuenteFactores} y GLEC Framework ${glecVersion}; no proviene de una medición del vehículo.`;
 }
 
 /** Cuerpo del disclaimer: texto exacto de Felipe con fuente y versión de la emisión. */

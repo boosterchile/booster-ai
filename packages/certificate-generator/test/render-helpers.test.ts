@@ -237,3 +237,12 @@ describe('presentacionNivel (ADR-091): el sello depende de quién midió la dist
     expect(nota.toLowerCase()).not.toContain('primario');
   });
 });
+
+describe('textoNotaMetodo en una carga consolidada (ADR-089 + ADR-091)', () => {
+  it('lo medido es la distancia de la ruta', async () => {
+    const { textoNotaMetodo } = await import('../src/render-helpers.js');
+    expect(textoNotaMetodo('F', 'v3.0', true)).toBe(
+      'La distancia de la ruta fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores F y GLEC Framework v3.0; no proviene de una medición del vehículo.',
+    );
+  });
+});

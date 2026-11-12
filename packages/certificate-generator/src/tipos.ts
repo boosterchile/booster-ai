@@ -11,6 +11,7 @@
  *     romper schema rompería el package.
  */
 
+import type { ConsolidacionCertificado } from './consolidacion.js';
 import type { VersionCertificado } from './reemision.js';
 
 /**
@@ -95,6 +96,12 @@ export interface DatosMetricasCertificado {
   factorMatchingAplicado?: number | null;
   emisionesEmptyBackhaulKgco2eWtw?: number | null;
   ahorroCo2eVsSinMatchingKgco2eWtw?: number | null;
+  /**
+   * ADR-089: la carga viajó con otras en la misma ruta. Las cifras de arriba
+   * son su parte, y la distancia es su distancia directa. Ausente = viajó
+   * sola y el certificado no cambia.
+   */
+  consolidacion?: ConsolidacionCertificado;
 }
 
 /**

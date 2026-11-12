@@ -251,6 +251,95 @@ describe('emitirCertificadoViaje', () => {
     expect(result.skipped).toBe(false);
   });
 
+  /**
+   * huella-consolidada parte 5 (§3.10): el certificado de una carga
+   * consolidada lleva su participación, el total de la ruta y la versión del
+   * método.
+   */
+  describe('carga consolidada', () => {
+    const CONSOLIDADA = {
+      ...METRICS_BASE,
+      rutaId: 'ruta-1',
+      participacion: '62.50',
+      versionMetodoReparto: 'tkm-distancia-directa-v1',
+    };
+    const emitirCon = async (metrics: object, deRuta: unknown[]) => {
+      rutaCompartidaDelViaje.mockResolvedValueOnce({ rutaId: 'ruta-1', cerrada: true });
+      (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
+      const db = makeDb({
+        selects: [
+          [TRIP_DELIVERED],
+          [metrics],
+          [SHIPPER_ROW],
+          [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+          [CARRIER_ROW],
+          [{ plate: 'AB-CD-12' }],
+          deRuta,
+        ],
+        updates: [[]],
+        inserts: [[]],
+      });
+      const result = await emitirCertificadoViaje({
+        db: db as never,
+        logger: noopLogger,
+        tripId: TRIP_ID,
+        config: VALID_CONFIG,
+      });
+      const llamada = (emitirCertificado as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as
+        | { metricas: { consolidacion?: unknown } }
+        | undefined;
+      return { result, consolidacion: llamada?.metricas.consolidacion };
+    };
+
+    it('con cifra estimada imprime el total estimado de la ruta', async () => {
+      const { result, consolidacion } = await emitirCon(CONSOLIDADA, [
+        { real: null, estimada: '59.520' },
+      ]);
+      expect(result.skipped).toBe(false);
+      expect(consolidacion).toEqual({
+        participacionPct: 62.5,
+        kgco2eWtwRuta: 59.52,
+        versionMetodo: 'tkm-distancia-directa-v1',
+      });
+    });
+
+    it('con cifra medida imprime el total medido de la ruta', async () => {
+      const { consolidacion } = await emitirCon(
+        { ...CONSOLIDADA, carbonEmissionsKgco2eActual: '50.000' },
+        [{ real: '80.000', estimada: '59.520' }],
+      );
+      expect(consolidacion).toMatchObject({ kgco2eWtwRuta: 80 });
+    });
+
+    it.each([
+      ['la ruta no tiene huella guardada', CONSOLIDADA, []],
+      [
+        'la carga publica su cifra medida y la ruta no tiene total medido',
+        { ...CONSOLIDADA, carbonEmissionsKgco2eActual: '50.000' },
+        [{ real: null, estimada: '59.520' }],
+      ],
+      [
+        'falta la versión del método',
+        { ...CONSOLIDADA, versionMetodoReparto: null },
+        [{ real: null, estimada: '59.520' }],
+      ],
+    ])('no emite si %s', async (_caso, metrics, deRuta) => {
+      const { result } = await emitirCon(metrics, deRuta);
+      expect(result).toEqual({ skipped: true, reason: 'ruta_sin_huella' });
+      expect(emitirCertificado).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['se llevó el 100 % de la ruta', { ...CONSOLIDADA, participacion: '100.00' }],
+      ['no tiene participación', { ...CONSOLIDADA, participacion: null }],
+      ['no anota su ruta', { ...CONSOLIDADA, rutaId: null }],
+    ])('una carga que %s sale sin datos de consolidación', async (_caso, metrics) => {
+      const { result, consolidacion } = await emitirCon(metrics, []);
+      expect(result.skipped).toBe(false);
+      expect(consolidacion).toBeUndefined();
+    });
+  });
+
   it('no_shipper si trip.generadorCargaEmpresaId es null', async () => {
     const db = makeDb({
       selects: [[{ ...TRIP_DELIVERED, generadorCargaEmpresaId: null }], [METRICS_BASE]],
