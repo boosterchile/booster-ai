@@ -452,7 +452,7 @@ son. Una carga que viaja sola no cambia.
 | Superficie | Qué muestra |
 |---|---|
 | Detalle de la carga (`/app/cargas/:id`) | «Esta cifra es la parte de tu carga en la ruta» y la participación. Si ya está entregada y el certificado no salió, dice que se emite al cerrar la ruta. |
-| Ruta del transportista (`/app/rutas`) | Total de la ruta, la presentación de ADR-091 (estimado, distancia medida con Teltonika o combustible medido por CAN) y la participación y los kg de cada carga. Una cifra real calculada con Google Maps no se etiqueta «Medida». |
+| Ruta del transportista (`/app/rutas`) | Total de la ruta, la presentación de ADR-091 y la participación y los kg de cada carga. Antes del cierre la etiqueta es «Estimación». Al cerrar, sale de `presentacionNivel`: una cifra real con Google Maps dice «Estimado», no «Medida». |
 
 `GET /trip-requests-v2/:id` agrega `metrics.consolidacion` solo cuando la ruta
 es compartida: `{ participacion_pct }`. No incluye el total. `GET /rutas/:id`

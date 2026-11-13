@@ -443,7 +443,9 @@ function DetalleDeRuta({
         >
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="font-semibold text-base text-neutral-900">Huella de la ruta</h2>
-            <p className="text-neutral-600 text-sm">{ETIQUETA_HUELLA[ruta.huella.presentacion]}</p>
+            <p className="text-neutral-600 text-sm">
+              {ruta.huella.es_estimacion ? 'Estimación' : ETIQUETA_HUELLA[ruta.huella.presentacion]}
+            </p>
           </div>
           <p className="mt-2 text-neutral-800 text-sm">
             Total de la ruta: {kgCo2(ruta.huella.emisiones_kgco2e)}
