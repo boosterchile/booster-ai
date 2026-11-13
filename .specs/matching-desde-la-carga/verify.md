@@ -118,3 +118,21 @@ recorre esos lectores con el compilador.
 
 El PR #904, abierto, también usa el número 0079. El que entre segundo
 renumera su migración a 0080.
+
+## Parte 5 — Recordatorios vehículo pendiente (2026-11-13)
+
+Job `POST /admin/jobs/vehiculo-pendiente-recordatorio` (mismo estilo que
+solicitudes de cambio):
+
+| Etapa | Condición | Destinatario | Marca de idempotencia |
+|---|---|---|---|
+| 24 h | `now ∈ [inicio−24h, inicio−2h)` y sin vehículo | oficina transportista | `asignaciones.recordatorio_vehiculo_24h_en` |
+| 2 h | `now ∈ [inicio−2h, inicio)` y sin vehículo | oficina transportista | `asignaciones.recordatorio_vehiculo_2h_en` |
+| Vencido | `now ≥ inicio` y sin vehículo | generador | `asignaciones.aviso_generador_sin_vehiculo_en` |
+
+Canales: `notifyCambioCarga` (Web Push). Migración expand `0083`. Scheduler
+en `infrastructure/vehiculo-pendiente.tf` (sin IAM; apply lo hace el PO).
+
+Evidencia: unit `recordar-vehiculo-pendiente`, `admin-jobs-vehiculo-pendiente`,
+`notify-cambio-carga` (eventos nuevos); integration
+`recordar-vehiculo-pendiente.integration.test.ts`.

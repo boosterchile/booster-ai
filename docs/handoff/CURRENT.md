@@ -31,7 +31,7 @@
 | Etapas 0–2 | En prod. Abiertos: anexo tipos de carga chilenos; chat destinatario–conductor |
 | Ruta consolidada (8 partes) | 1–7 en prod; API apagada. Parte 8 (migración contract columnas viejas): al final |
 | Huella consolidada (6 partes) | 1–5 en prod. Parte 6 (web): **#956** abierto, CI verde, espera visto PO |
-| Matching desde la carga (6 partes) | 1–3 hechas; 4–6 (aceptar sin vehículo, recordatorios, web) sin empezar. Modo sombra activo |
+| Matching desde la carga (6 partes) | 1–4 hechas en rama `cursor/matching-aceptar-sin-vehiculo-d8bd`; parte 5 (recordatorios) hecha en la misma rama; parte 6 (web) pendiente. Modo sombra activo |
 | Reemisión certificados | Partes 1–5 en prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
 | Etapas 5–6 (huella de flota; un solo sistema de diseño) | Sin empezar |
 | Fuera de plan (estos días) | Flota (#950/#954), sello por fuente (#951/#952), CAN por datos (#955): en prod |

@@ -1563,6 +1563,16 @@ export const assignments = pgTable(
     trackingLinkSentAt: timestamp('tracking_link_enviado_en', { withTimezone: true }),
     trackingLinkEmailSentAt: timestamp('tracking_link_email_enviado_en', { withTimezone: true }),
     /**
+     * matching-desde-la-carga §3.9 / §11-3 (migración 0083): marcas de
+     * idempotencia del job de recordatorios cuando la asignación sigue sin
+     * vehículo. Una por etapa (24 h, 2 h, ventana iniciada → generador).
+     */
+    vehicleReminder24hAt: timestamp('recordatorio_vehiculo_24h_en', { withTimezone: true }),
+    vehicleReminder2hAt: timestamp('recordatorio_vehiculo_2h_en', { withTimezone: true }),
+    vehicleMissingGeneratorNotifiedAt: timestamp('aviso_generador_sin_vehiculo_en', {
+      withTimezone: true,
+    }),
+    /**
      * Fix privacidad tracking público (migración 0052). Override explícito de
      * expiración del `publicTrackingToken`: NULL = derivar en el servicio
      * (entregado/cancelado + N días, cap absoluto desde `aceptado_en` —

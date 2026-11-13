@@ -29,7 +29,13 @@ export type EventoCambioCarga =
   | 'cambio_aceptado'
   | 'cambio_rechazado'
   | 'cambio_retirado'
-  | 'cambio_recordatorio';
+  | 'cambio_recordatorio'
+  /** matching-desde-la-carga §3.9: 24 h antes, oficina transportista. */
+  | 'vehiculo_pendiente_24h'
+  /** matching-desde-la-carga §3.9: 2 h antes, oficina transportista. */
+  | 'vehiculo_pendiente_2h'
+  /** matching-desde-la-carga §3.9: ventana iniciada sin vehículo → generador. */
+  | 'vehiculo_pendiente_vencido';
 
 type Grupo = 'generador' | 'transportista' | 'conductor';
 
@@ -95,6 +101,29 @@ const AVISOS: Record<EventoCambioCarga, Partial<Record<Grupo, Texto>>> = {
       title: 'Cambio sin responder',
       body: (codigo) =>
         `Tienes un cambio sin responder en ${codigo}. No se puede confirmar la recogida hasta que respondas.`,
+    },
+  },
+  // matching-desde-la-carga §3.9 / §11-3: mismos destinatarios/canales que
+  // el recordatorio de cambio (oficina; generador cuando ya venció).
+  vehiculo_pendiente_24h: {
+    transportista: {
+      title: 'Falta declarar el vehículo',
+      body: (codigo) =>
+        `Quedan 24 horas para declarar el vehículo de ${codigo}. Sin vehículo no se puede confirmar la recogida.`,
+    },
+  },
+  vehiculo_pendiente_2h: {
+    transportista: {
+      title: 'Falta declarar el vehículo',
+      body: (codigo) =>
+        `Quedan 2 horas para declarar el vehículo de ${codigo}. Sin vehículo no se puede confirmar la recogida.`,
+    },
+  },
+  vehiculo_pendiente_vencido: {
+    generador: {
+      title: 'Vehículo aún no declarado',
+      body: (codigo) =>
+        `La ventana de recogida de ${codigo} ya empezó y el transportista aún no declaró el vehículo.`,
     },
   },
 };
