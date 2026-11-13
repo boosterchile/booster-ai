@@ -145,7 +145,11 @@ const createBodySchema = z.object({
 
 const updateBodySchema = createBodySchema.partial().extend({
   vehicle_status: z.enum(vehicleStatuses).optional(),
-  /** En edición no se puede borrar la carrocería (sigue obligatoria). */
+  /**
+   * matching-desde-la-carga §3.5 / §11-1: no se puede borrar (`null` → 400
+   * por el enum). Si el vehículo aún no tiene carrocería y el PATCH omite
+   * el campo, el handler responde 400 `body_type_required`.
+   */
   body_type: bodyTypeSchema.optional(),
 });
 
@@ -795,12 +799,27 @@ export function createVehiculosRoutes(opts: {
         curbWeightKg: vehicles.curbWeightKg,
         consumptionLPer100kmBaseline: vehicles.consumptionLPer100kmBaseline,
         fuelType: vehicles.fuelType,
+        bodyType: vehicles.bodyType,
       })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
       .limit(1);
     if (!existing) {
       return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    // matching-desde-la-carga §3.5 / §11-1: carrocería obligatoria al editar
+    // si el vehículo aún no la tiene. `body_type: null` ya lo rechaza Zod
+    // (enum); aquí cubrimos el PATCH parcial que omite el campo.
+    if (body.body_type === undefined && existing.bodyType == null) {
+      return c.json(
+        {
+          error: 'body_type_required',
+          code: 'body_type_required',
+          message: 'La carrocería es obligatoria al editar un vehículo que aún no la tiene',
+        },
+        400,
+      );
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };

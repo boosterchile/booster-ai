@@ -591,6 +591,7 @@ describe('vehiculos routes', () => {
             curbWeightKg: 7000,
             consumptionLPer100kmBaseline: null,
             fuelType: null,
+            bodyType: 'plano',
           },
         ],
       });
@@ -616,9 +617,10 @@ describe('vehiculos routes', () => {
             curbWeightKg: 7000,
             consumptionLPer100kmBaseline: null,
             fuelType: null,
+            bodyType: 'plano',
           },
         ],
-        updateRows: [buildVehicleRow({ year: 2021 })],
+        updateRows: [buildVehicleRow({ year: 2021, bodyType: 'plano' })],
       });
       const localApp = await buildApp(stub.db);
       const res = await localApp.request(`/vehiculos/${VEHICLE_ID}`, {
@@ -774,8 +776,8 @@ describe('vehiculos routes', () => {
 
   it('PATCH /:id actualiza campos parciales', async () => {
     const stub = makeDbStub({
-      selectRows: [{ id: VEHICLE_ID }],
-      updateRows: [buildVehicleRow({ year: 2020, brand: 'Mercedes' })],
+      selectRows: [{ id: VEHICLE_ID, bodyType: 'plano' }],
+      updateRows: [buildVehicleRow({ year: 2020, brand: 'Mercedes', bodyType: 'plano' })],
     });
     const app = await buildApp(stub.db);
     const res = await app.request(`/vehiculos/${VEHICLE_ID}`, {
@@ -787,6 +789,54 @@ describe('vehiculos routes', () => {
     const body = (await res.json()) as { vehicle: { year: number; brand: string } };
     expect(body.vehicle.year).toBe(2020);
     expect(body.vehicle.brand).toBe('Mercedes');
+  });
+
+  // matching-desde-la-carga §3.5 / §11-1: carrocería obligatoria al editar
+  // si el vehículo aún no la tiene.
+  it('PATCH /:id omite body_type y el vehículo no tiene carrocería → 400', async () => {
+    const stub = makeDbStub({
+      selectRows: [{ id: VEHICLE_ID, bodyType: null }],
+      // Sin el gate, el PATCH parcial pasaría (200). updateRows fuerza ese camino.
+      updateRows: [buildVehicleRow({ year: 2020, bodyType: null })],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ year: 2020 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; code: string };
+    expect(body.code).toBe('body_type_required');
+  });
+
+  it('PATCH /:id con body_type null → 400', async () => {
+    const stub = makeDbStub({
+      selectRows: [{ id: VEHICLE_ID, bodyType: 'plano' }],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body_type: null }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('PATCH /:id con body_type válido en vehículo sin carrocería → 200', async () => {
+    const stub = makeDbStub({
+      selectRows: [{ id: VEHICLE_ID, bodyType: null }],
+      updateRows: [buildVehicleRow({ bodyType: 'cortina' })],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body_type: 'cortina' }),
+    });
+    expect(res.status).toBe(200);
+    const setArg = stub.spies.setUpdate.mock.calls[0]?.[0] as { bodyType: string };
+    expect(setArg.bodyType).toBe('cortina');
   });
 
   it('DELETE /:id como conductor → 403', async () => {
@@ -2226,8 +2276,8 @@ describe('capacidad de estanque y fuente CAN', () => {
     expect(prohibidoBody.message).toMatch(/dueño o un administrador/i);
 
     const stub = makeDbStub({
-      selectRows: [buildVehicleRow()],
-      updateRows: [buildVehicleRow({ capacityKg: 4000, capacityM3: 12 })],
+      selectRows: [buildVehicleRow({ bodyType: 'plano' })],
+      updateRows: [buildVehicleRow({ capacityKg: 4000, capacityM3: 12, bodyType: 'plano' })],
     });
     const app = await buildApp(stub.db, { role: 'despachador' });
     const ok = await app.request(`/vehiculos/${VEHICLE_ID}`, {
