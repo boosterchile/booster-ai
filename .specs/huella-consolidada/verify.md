@@ -441,3 +441,27 @@ La parte 5 se rehízo sobre main con el ADR-091 ya implementado (#952). Una carg
 - ruta estimada por Google Maps: conserva sello, disclaimer y «Estimado» en el pie.
 
 Pruebas: `packages/certificate-generator/test/consolidacion-plantilla.test.ts` (dos casos nuevos) y `test/render-helpers.test.ts`.
+
+## Parte 6 — web del generador y del transportista (2026-11-13)
+
+Spec §4. El generador ve que su cifra es una parte y su participación. El
+transportista ve el total de la ruta y la parte de cada carga, con el código
+que ya conoce. Ninguna pantalla nombra a los otros generadores ni dice cuántos
+son. Una carga que viaja sola no cambia.
+
+| Superficie | Qué muestra |
+|---|---|
+| Detalle de la carga (`/app/cargas/:id`) | «Esta cifra es la parte de tu carga en la ruta» y la participación. Si ya está entregada y el certificado no salió, dice que se emite al cerrar la ruta. |
+| Ruta del transportista (`/app/rutas`) | Total de la ruta, si es estimación o medición, y la participación y los kg de cada carga. |
+
+`GET /trip-requests-v2/:id` agrega `metrics.consolidacion` solo cuando la ruta
+es compartida: `{ participacion_pct }`. No incluye el total. `GET /rutas/:id`
+agrega `ruta.huella` (`null` con una sola carga o sin cifra todavía).
+
+### Cómo se prueba
+
+| Qué | Dónde |
+|---|---|
+| La carga sola no trae consolidación; la compartida trae su participación y no el total | `apps/api/test/unit/serialize-trip-metrics.test.ts` (rojo primero) |
+| La vista de una ruta con varias cargas trae el total y las partes | `apps/api/test/unit/operar-ruta.test.ts` |
+| El detalle de la carga y la pantalla de rutas muestran esos textos | `apps/web/src/routes/cargas.test.tsx`, `apps/web/src/routes/rutas.test.tsx` |

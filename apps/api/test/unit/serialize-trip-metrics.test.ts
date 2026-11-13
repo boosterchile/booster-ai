@@ -42,4 +42,14 @@ describe('serializeTripMetrics — línea de método en el detalle del viaje', (
   it('sin metodo_precision → linea_metodo null (no se asume)', () => {
     expect(serializeTripMetrics({ ...base, precisionMethod: null }).linea_metodo).toBeNull();
   });
+
+  it('una carga que viaja sola no dice que su cifra es parte de una ruta', () => {
+    expect(serializeTripMetrics({ ...base, participacion: '100.00' }).consolidacion).toBeNull();
+  });
+
+  it('una carga consolidada publica su participación y no el total de la ruta', () => {
+    const m = serializeTripMetrics({ ...base, participacion: '42.50' }, { compartida: true });
+    expect(m.consolidacion).toEqual({ participacion_pct: '42.50' });
+    expect(m).not.toHaveProperty('emisiones_ruta_kgco2e');
+  });
 });

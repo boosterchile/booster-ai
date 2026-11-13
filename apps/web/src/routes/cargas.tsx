@@ -183,6 +183,11 @@ interface TripMetrics {
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
   certificate_issued_at: string | null;
+  /**
+   * Huella consolidada §4. Presente solo cuando la carga comparte la ruta:
+   * su cifra es una parte y esta es su participación. No trae el total.
+   */
+  consolidacion?: { participacion_pct: string | null } | null;
 }
 
 interface TripDetailResponse {
@@ -219,6 +224,14 @@ const STATUS_COLORS: Record<TripStatus, string> = {
   cancelado: 'bg-neutral-100 text-neutral-600',
   expirado: 'bg-neutral-100 text-neutral-600',
 };
+
+function porcentaje(valor: string): string {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) {
+    return valor;
+  }
+  return `${n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+}
 
 function formatCLP(amount: number | null): string {
   if (amount == null) {
@@ -1820,6 +1833,18 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     ? `${tripQ.data.metrics.carbon_emissions_kgco2e_actual} kg CO₂e`
                     : '—'}
                 </DataRow>
+                {tripQ.data.metrics.consolidacion && (
+                  <div className="sm:col-span-2">
+                    <p className="text-neutral-700 text-sm">
+                      Esta cifra es la parte de tu carga en la ruta, no la del camión completo.
+                    </p>
+                    <DataRow label="Participación">
+                      {tripQ.data.metrics.consolidacion.participacion_pct
+                        ? porcentaje(tripQ.data.metrics.consolidacion.participacion_pct)
+                        : 'Se calcula con la ruta'}
+                    </DataRow>
+                  </div>
+                )}
                 <div className="sm:col-span-2">
                   <DataRow label="Método de cálculo">
                     {tripQ.data.metrics.linea_metodo ?? '—'}
@@ -1838,7 +1863,9 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 {!tripQ.data.metrics.certificate_issued_at &&
                   tripQ.data.trip_request.status === 'entregado' && (
                     <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-900 text-xs sm:col-span-2">
-                      Generando certificado de huella de carbono. Recarga en unos segundos.
+                      {tripQ.data.metrics.consolidacion
+                        ? 'El certificado se emite cuando termina la ruta, no al entregar esta carga.'
+                        : 'Generando certificado de huella de carbono. Recarga en unos segundos.'}
                     </div>
                   )}
               </div>
