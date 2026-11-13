@@ -245,6 +245,7 @@ async function huellaDeRuta(
   if (viajes.length < 2) {
     return null;
   }
+  // rls-allowlist: metricas_ruta no tiene empresa_id; la ruta ya se autorizó por empresa
   const [total] = await tx
     .select({
       estimadas: metricasRuta.carbonEmissionsKgco2eEstimated,
@@ -258,6 +259,7 @@ async function huellaDeRuta(
     return null;
   }
   const esEstimacion = total?.reales == null;
+  // rls-allowlist: partes de viajes de una ruta ya autorizada por empresa
   const partes = await tx
     .select({
       viajeId: tripMetrics.tripId,
