@@ -11,6 +11,11 @@ import {
 vi.mock('../../src/services/routes-api.js', () => ({
   computeRoutes: vi.fn(),
 }));
+vi.mock('@booster-ai/matching-algorithm', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@booster-ai/matching-algorithm')>();
+  return { ...orig, claseMasChicaElegible: vi.fn(orig.claseMasChicaElegible) };
+});
+const { claseMasChicaElegible } = await import('@booster-ai/matching-algorithm');
 // T12/T13: las métricas de negocio de la huella se capturan con spies (el meter
 // real es no-op en tests y no deja rastro).
 const { counterSpies } = vi.hoisted(() => ({
@@ -125,7 +130,9 @@ const VEH_ID = '22222222-2222-4222-8222-222222222222';
 
 const TRIP_BASE = {
   id: TRIP_ID,
+  cargoType: 'carga_seca' as const,
   cargoWeightKg: 5000,
+  cargoVolumeM3: null as number | null,
   originAddressRaw: 'Av. Apoquindo 4500, Las Condes',
   destinationAddressRaw: 'Plaza Sotomayor, Valparaíso',
   originRegionCode: 'RM',
@@ -163,7 +170,7 @@ describe('calcularMetricasEstimadas', () => {
     ).rejects.toThrow(TripNotFoundError);
   });
 
-  it('vehicleId=null → modo por_defecto camion_mediano + INSERT initial', async () => {
+  it('vehicleId=null → por_defecto con clase más chica elegible (camion_pequeno)', async () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE], // SELECT trip
@@ -182,7 +189,51 @@ describe('calcularMetricasEstimadas', () => {
     expect(result.tripId).toBe(TRIP_ID);
     expect(result.isInitialCalculation).toBe(true);
     expect(result.emisiones.metodoPrecision).toBe('por_defecto');
+    expect(result.emisiones.fuenteFactores).toContain('camion_pequeno');
     expect(result.emisiones.emisionesKgco2eWtw).toBeGreaterThan(0);
+    expect(claseMasChicaElegible).toHaveBeenCalledWith({
+      cargoType: 'carga_seca',
+      weightKg: 5000,
+      volumeM3: null,
+    });
+  });
+
+  it('vehicleId=null pasa cargoVolumeM3 a claseMasChicaElegible', async () => {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, cargoVolumeM3: 42 }], []],
+      inserts: [[]],
+    });
+
+    await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+    });
+
+    expect(claseMasChicaElegible).toHaveBeenCalledWith({
+      cargoType: 'carga_seca',
+      weightKg: 5000,
+      volumeM3: 42,
+    });
+  });
+
+  it('vehicleId=null + refrigerada → por_defecto refrigerado (no camion_mediano)', async () => {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, cargoType: 'refrigerada', cargoWeightKg: 2_000 }], []],
+      inserts: [[]],
+    });
+
+    const result = await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+    });
+
+    expect(result.emisiones.metodoPrecision).toBe('por_defecto');
+    expect(result.emisiones.fuenteFactores).toContain('refrigerado');
+    expect(result.emisiones.fuenteFactores).not.toContain('camion_mediano');
   });
 
   it('vehículo con perfil completo → modo modelado', async () => {
@@ -317,7 +368,7 @@ describe('calcularMetricasEstimadas', () => {
     expect(result.emisiones.metodoPrecision).toBe('por_defecto');
   });
 
-  it('vehicleId no encontrado en BD → fallback por_defecto camion_mediano', async () => {
+  it('vehicleId no encontrado en BD → fallback por_defecto clase más chica', async () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],

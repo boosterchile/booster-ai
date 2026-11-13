@@ -180,6 +180,37 @@ describe('CargaTrackRoute', () => {
     });
   });
 
+  // matching-desde-la-carga §3.11: sin patente el título dice «Vehículo por asignar».
+  it('asignación sin patente → título «Vehículo por asignar»', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'asignado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        empresa_legal_name: 'Transportes Andes',
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_name: null,
+        ubicacion_actual: null,
+      },
+    });
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('live-tracking')).toHaveAttribute(
+        'data-title',
+        expect.stringContaining('Vehículo por asignar'),
+      );
+    });
+  });
+
   // instrucciones-retiro: el panel se monta con el permiso de publicar cargas.
   it.each([
     ['dueno', 'true'],

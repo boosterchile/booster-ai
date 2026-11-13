@@ -638,6 +638,77 @@ describe('CargasDetalleRoute', () => {
       screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/),
     ).toBeInTheDocument();
   });
+
+  // matching-desde-la-carga §3.11 / §11-4: sin patente → «Vehículo por asignar»;
+  // el generador no ve si la unidad es de un tercero.
+  it('asignado sin patente → «Vehículo por asignar», sin rastro de tercero', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: null,
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_user_id: null,
+        driver_name: null,
+        ubicacion_actual: null,
+        es_de_tercero: true,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    const vehiculo = await screen.findByText('Vehículo por asignar');
+    expect(vehiculo).toBeInTheDocument();
+    expect(vehiculo).not.toHaveTextContent('—');
+    expect(screen.queryByText(/tercero/i)).not.toBeInTheDocument();
+  });
+
+  it('asignado con patente → muestra la patente, no «por asignar»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: 'v1',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: 'camion_mediano',
+        driver_user_id: null,
+        driver_name: null,
+        ubicacion_actual: null,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText('ABCD12')).toBeInTheDocument();
+    expect(screen.queryByText('Vehículo por asignar')).not.toBeInTheDocument();
+  });
 });
 
 // editar-anular-cargas §9: edición total antes del match.

@@ -582,6 +582,13 @@
       "when": 1781136000420,
       "tag": "0082_reemision_certificado",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1781222400420,
+      "tag": "0083_recordatorio_vehiculo_pendiente",
+      "breakpoints": true
     }
   ]
 }

@@ -119,8 +119,10 @@ function CargaTrackPage({
     <>
       <LiveTrackingScreen
         title={
-          assignment?.vehicle_plate
-            ? `Carga · ${assignment.vehicle_plate}`
+          assignment
+            ? assignment.vehicle_plate
+              ? `Carga · ${assignment.vehicle_plate}`
+              : 'Carga · Vehículo por asignar'
             : trip
               ? `Carga ${trip.id.slice(0, 8)}…`
               : 'Carga en vivo'

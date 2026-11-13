@@ -156,7 +156,8 @@ export async function cargarScorecardMedioPlazo(opts: {
       const asignaciones: AsignacionCerradaFila[] = [];
       for (const fila of filasAsignacion) {
         const recogidoEnMs = ms(fila.recogidoEn);
-        if (recogidoEnMs == null) {
+        // INNER JOIN al vehículo; el tipo de vehiculoDeAsignacion sigue siendo nullable.
+        if (recogidoEnMs == null || fila.vehicleId == null) {
           continue;
         }
         asignaciones.push({
@@ -300,7 +301,7 @@ export async function cargarScorecardMedioPlazo(opts: {
 
       const flotaPorVehiculo = new Map<string, { teltonikaImei: string | null }>();
       for (const fila of filasFlota) {
-        if (!esEmpresaCohorteProd(fila)) {
+        if (!esEmpresaCohorteProd(fila) || fila.vehicleId == null) {
           continue;
         }
         flotaPorVehiculo.set(fila.vehicleId, { teltonikaImei: fila.teltonikaImei });

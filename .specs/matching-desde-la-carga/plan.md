@@ -153,3 +153,41 @@ tabla:
 - los 16 viajes `carga_seca` conservan las mismas candidatas;
 - el viaje `agricola` se queda sin candidatas hasta que alguna transportista
   declare carrocería. Es el riesgo que la spec ya recoge en §9.
+
+## 6. Partes 4, 5 y 6 (un solo release)
+
+Planificado 2026-11-13. Spec §6: se despliegan juntas. Migración 0079 ya
+expandió `asignaciones.vehiculo_id` (opcional) y `vehiculos.es_de_tercero`.
+
+### 6.1 Parte 4 — API / núcleo
+
+1. `offer-actions.ts`: al aceptar, `vehicleId` = sugerido o `null` (no `''`).
+2. `vehiculoDeAsignacion` tipado `string | null`; lectores pre-despacho con
+   LEFT JOIN / contrato «por asignar» (inventario en `verify.md` parte 3).
+3. `confirmar-recogida-viaje.ts`: rechaza sin vehículo o sin conductor (§3.8).
+4. `PUT /rutas/:id/configuracion`: tests de criterio 4 (config no elegible,
+   cambio post-recogida); la validación de carrocería/capacidad ya vive en
+   `route-planner` / `matching-algorithm`.
+5. Estimación sin vehículo: clase más chica elegible (§3.12), no
+   `camion_mediano` fijo; al declarar, recalcula.
+6. Flota: `carroceria` obligatoria al crear/editar; alta con `es_de_tercero`.
+
+Rojo primero: integration aceptar sin vehículo; unit `offer-actions` (null);
+recogida; estimación; rutas API.
+
+### 6.2 Parte 5 — Recordatorios
+
+Job (mismo estilo que recordatorios de cambio de carga): 24 h y 2 h antes del
+inicio de la ventana → oficina; ventana iniciada sin vehículo → aviso al
+generador. Idempotencia para no repetir.
+
+### 6.3 Parte 6 — Web
+
+- Oficina: declarar/cambiar en `/app/rutas`.
+- Generador: «vehículo por asignar» hasta la declaración (no ve `es_de_tercero`).
+- Flota: alta de unidad de tercero + carrocería obligatoria.
+
+### 6.4 Fuera de este release (PO)
+
+- Encender `RUTAS_API_ACTIVADA` y pasar matching a `activa`.
+- Anexo de tipos de carga ADR-090.

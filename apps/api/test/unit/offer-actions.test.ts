@@ -469,7 +469,7 @@ describe('acceptOffer', () => {
     expect(VALID_TRIP).not.toHaveProperty('consigneeWhatsappE164');
   });
 
-  it('suggestedVehicleId null → assignment.vehicleId queda como string vacío', async () => {
+  it('suggestedVehicleId null → assignment.vehicleId queda null (sin vehículo)', async () => {
     const db = makeDb({
       selects: [
         [{ ...VALID_OFFER, suggestedVehicleId: null }],
@@ -477,7 +477,7 @@ describe('acceptOffer', () => {
         [{ ...VALID_OFFER, suggestedVehicleId: null }],
       ],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
-      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: '' }], []],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: null }], []],
     });
     const result = await acceptOffer({
       db: db as never,
@@ -487,6 +487,14 @@ describe('acceptOffer', () => {
       userId: USER_ID,
     });
     expect(result.assignment.id).toBe('assign-1');
+    const assignmentInsert = db.insertedValues[0] as { vehicleId: string | null };
+    expect(assignmentInsert.vehicleId).toBeNull();
+    expect(crearRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        assignment: expect.objectContaining({ vehicleId: null }),
+      }),
+    );
   });
 });
 

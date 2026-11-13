@@ -1272,6 +1272,38 @@ describe('PATCH /assignments/:id/confirmar-recogida', () => {
     );
   });
 
+  it('ruta sin vehículo → 409 ruta_sin_vehiculo', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'ruta_sin_vehiculo',
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('conductor') },
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ error: 'ruta_sin_vehiculo', code: 'ruta_sin_vehiculo' }),
+    );
+  });
+
+  it('ruta sin conductor → 409 ruta_sin_conductor', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'ruta_sin_conductor',
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: null }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('dueno') },
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ error: 'ruta_sin_conductor', code: 'ruta_sin_conductor' }),
+    );
+  });
+
   // T9 (medicion-huella-segmento): body opcional `{ picked_up_at }` = instante
   // del cruce del geofence. Zod valida la forma acá; las cotas (ni futuro ni
   // anterior a la aceptación) las aplica el service.

@@ -53,7 +53,9 @@ const OTHER_EMPRESA_ID = '55555555-5555-4555-8555-555555555555';
 
 const TRIP_BASE = {
   id: TRIP_ID,
+  cargoType: 'carga_seca' as const,
   cargoWeightKg: 5000,
+  cargoVolumeM3: null as number | null,
   originAddressRaw: 'Av. Apoquindo 4500, Las Condes',
   destinationAddressRaw: 'Plaza Sotomayor, Valparaíso',
   originRegionCode: 'RM',
@@ -113,7 +115,7 @@ describe('generarEcoPreview — ownership y not found', () => {
 });
 
 describe('generarEcoPreview — fallback (sin routesApiKey)', () => {
-  it('sin vehículo → modo por_defecto + tabla_chile + camion_mediano', async () => {
+  it('sin vehículo → por_defecto con clase más chica elegible + tabla_chile', async () => {
     const db = makeDb({
       selects: [
         [

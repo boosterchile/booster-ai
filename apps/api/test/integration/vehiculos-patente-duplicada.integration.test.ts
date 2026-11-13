@@ -107,6 +107,7 @@ describe('integration: patente duplicada en vehículos → 409', () => {
   const body = (plate: string) => ({
     plate,
     vehicle_type: 'camion_pesado',
+    body_type: 'furgon_cerrado',
     capacity_kg: 15000,
     year: 2018,
     brand: 'SCANIA',
