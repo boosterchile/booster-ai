@@ -8,7 +8,9 @@ import type { Carroceria } from './tabla.js';
  * sin tracto (capacidad 0) ni arrastres sueltos.
  *
  * Sirve a `claseMasChicaElegible` (§3.12) sin acoplar matching-algorithm a
- * carbon-calculator.
+ * carbon-calculator. Los camiones rígidos van sin carrocería en el catálogo;
+ * la estimación §3.12 elige por capacidad entre genéricas y solo usa
+ * `refrigerado`/`tanque` cuando la carga lo exige (no vía §3.5 null-body).
  */
 export const DEFAULTS_POR_TIPO_CAPACIDAD = {
   camioneta: {

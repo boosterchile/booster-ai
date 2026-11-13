@@ -1,13 +1,17 @@
 import type { RequisitosDeCarga, TipoDeUnidad } from './configuraciones.js';
-import { configuracionesElegibles } from './configuraciones.js';
 import { DEFAULTS_POR_TIPO_CAPACIDAD } from './defaults-clase.js';
-import type { Carroceria } from './tabla.js';
+import {
+  CARROCERIAS,
+  COMPATIBILIDAD_CARGA_CARROCERIA,
+  type Carroceria,
+  type TipoDeCarga,
+} from './tabla.js';
 
 /**
  * Catálogo de clases por defecto para estimar huella sin vehículo declarado
- * (matching-desde-la-carga §3.12). Cada entrada es una motriz virtual con la
- * capacidad y carrocería típicas del tipo legacy; se elige la de menor
- * capacidad útil que cumple §3.3.
+ * (matching-desde-la-carga §3.12). La carrocería no cambia la clase de
+ * emisión: se elige por capacidad entre clases genéricas; `refrigerado` y
+ * `tanque` solo cuando la carga exige esa especialidad en la tabla §3.4.
  */
 export type ClaseVehiculoPorDefecto = keyof typeof DEFAULTS_POR_TIPO_CAPACIDAD;
 
@@ -34,31 +38,68 @@ const CATALOGO: readonly ClaseCatalogo[] = (
   }))
   .sort((a, b) => a.capacityKg - b.capacityKg || a.tipoVehiculo.localeCompare(b.tipoVehiculo));
 
+/** Clases cuya carrocería del catálogo no es especializada (capacidad pura). */
+const CLASES_GENERICAS: ReadonlySet<ClaseVehiculoPorDefecto> = new Set([
+  'camioneta',
+  'furgon_pequeno',
+  'furgon_mediano',
+  'camion_pequeno',
+  'camion_mediano',
+  'camion_pesado',
+]);
+
+const FALLBACK: ClaseVehiculoPorDefecto = 'camion_pesado';
+
 /**
- * Clase de vehículo más chica (por capacidad) que cumple §3.3 para la carga.
- * Si ninguna alcanza, la más grande del catálogo (estimación conservadora).
+ * Si la tabla §3.4 admite una sola carrocería y esa es la del refrigerado o
+ * del tanque del catálogo, la carga exige esa clase especializada.
  */
-export function claseMasChicaElegible(carga: RequisitosDeCarga): ClaseVehiculoPorDefecto {
-  for (const clase of CATALOGO) {
-    const flota = [
-      {
-        id: clase.tipoVehiculo,
-        unitCategory: 'motriz' as const,
-        unitType: clase.unitType,
-        bodyType: clase.bodyType,
-        capacityKg: clase.capacityKg,
-        capacityM3: null,
-      },
-    ];
-    if (configuracionesElegibles(carga, flota).length > 0) {
+function especialidadExigida(cargoType: TipoDeCarga): 'refrigerado' | 'tanque' | null {
+  const fila = COMPATIBILIDAD_CARGA_CARROCERIA[cargoType];
+  const aptas = CARROCERIAS.filter((c) => fila[c]);
+  if (aptas.length === 1 && aptas[0] === 'refrigerado') {
+    return 'refrigerado';
+  }
+  if (aptas.length === 1 && aptas[0] === 'cisterna') {
+    return 'tanque';
+  }
+  return null;
+}
+
+function cabePorCapacidad(clase: ClaseCatalogo, carga: RequisitosDeCarga): boolean {
+  const peso = carga.weightKg ?? 0;
+  return clase.capacityKg >= peso;
+}
+
+function porCapacidad(
+  candidatas: readonly ClaseCatalogo[],
+  carga: RequisitosDeCarga,
+): ClaseVehiculoPorDefecto | null {
+  for (const clase of candidatas) {
+    if (cabePorCapacidad(clase, carga)) {
       return clase.tipoVehiculo;
     }
   }
-  const ultima = CATALOGO[CATALOGO.length - 1];
-  if (!ultima) {
-    throw new Error('catálogo de clases por defecto vacío');
+  return null;
+}
+
+/**
+ * Clase de vehículo más chica (por capacidad) para estimar huella §3.12.
+ * Genéricas por peso; especializada solo si la carga lo exige; si ninguna
+ * alcanza → `camion_pesado` (no `tanque`).
+ */
+export function claseMasChicaElegible(carga: RequisitosDeCarga): ClaseVehiculoPorDefecto {
+  const especialidad = especialidadExigida(carga.cargoType);
+  if (especialidad) {
+    const especializada = CATALOGO.find((c) => c.tipoVehiculo === especialidad);
+    if (especializada && cabePorCapacidad(especializada, carga)) {
+      return especialidad;
+    }
+    return FALLBACK;
   }
-  return ultima.tipoVehiculo;
+
+  const genericas = CATALOGO.filter((c) => CLASES_GENERICAS.has(c.tipoVehiculo));
+  return porCapacidad(genericas, carga) ?? FALLBACK;
 }
 
 /** Entre varias cargas, la clase de mayor capacidad entre las elegidas por cada una. */
