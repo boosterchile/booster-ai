@@ -227,6 +227,72 @@ describe('/app/rutas', () => {
     expect(await screen.findByText(/no opera como transportista/)).toBeInTheDocument();
   });
 
+  it('una ruta con varias cargas muestra el total y la parte de cada una', async () => {
+    servir({
+      detalle: {
+        'ruta-a': {
+          ...RUTA_A,
+          huella: {
+            es_estimacion: true,
+            presentacion: 'estimado',
+            emisiones_kgco2e: '100.000',
+            servicios: [
+              {
+                viaje_id: 'viaje-BOO-AAA111',
+                codigo_seguimiento: 'BOO-AAA111',
+                participacion_pct: '40.00',
+                emisiones_kgco2e: '40.000',
+              },
+              {
+                viaje_id: 'viaje-BOO-BBB222',
+                codigo_seguimiento: 'BOO-BBB222',
+                participacion_pct: '60.00',
+                emisiones_kgco2e: '60.000',
+              },
+            ],
+          },
+        },
+        'ruta-b': RUTA_B,
+      },
+    });
+    await abrir();
+    const huella = await screen.findByRole('region', { name: 'Huella de la ruta' });
+    expect(huella).toHaveTextContent('Estimación');
+    expect(huella).not.toHaveTextContent('Medida');
+    expect(huella).toHaveTextContent('100,000 kg CO₂e');
+    expect(huella).toHaveTextContent('BOO-AAA111');
+    expect(huella).toHaveTextContent('40,00 %');
+    expect(huella).toHaveTextContent('60,000 kg CO₂e');
+  });
+
+  it('una ruta cerrada con distancia de mapas no dice Medida', async () => {
+    servir({
+      detalle: {
+        'ruta-a': {
+          ...RUTA_A,
+          huella: {
+            es_estimacion: false,
+            presentacion: 'estimado',
+            emisiones_kgco2e: '98.000',
+            servicios: [
+              {
+                viaje_id: 'viaje-BOO-AAA111',
+                codigo_seguimiento: 'BOO-AAA111',
+                participacion_pct: '40.00',
+                emisiones_kgco2e: '39.200',
+              },
+            ],
+          },
+        },
+      },
+    });
+    await abrir();
+    const huella = await screen.findByRole('region', { name: 'Huella de la ruta' });
+    expect(huella).toHaveTextContent('Estimado');
+    expect(huella).not.toHaveTextContent('Medida');
+    expect(huella).not.toHaveTextContent('Estimación');
+  });
+
   it('lista las rutas con su camión, conductor y cargas', async () => {
     renderRoute();
     const a = await screen.findByRole('button', { name: /ABCD12 · 2 cargas/ });

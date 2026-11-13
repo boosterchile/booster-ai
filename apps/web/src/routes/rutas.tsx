@@ -46,6 +46,17 @@ interface DetalleRuta {
   capacidad: { kg: number; m3: number | null } | null;
   paradas: ParadaRuta[];
   tramos: { desde: number; hasta: number; masa_kg: number }[];
+  huella: {
+    es_estimacion: boolean;
+    presentacion: 'primario' | 'medido_teltonika' | 'estimado';
+    emisiones_kgco2e: string;
+    servicios: {
+      viaje_id: string;
+      codigo_seguimiento: string;
+      participacion_pct: string;
+      emisiones_kgco2e: string | null;
+    }[];
+  } | null;
 }
 
 interface Violacion {
@@ -55,7 +66,29 @@ interface Violacion {
   capacidad_kg?: number;
 }
 
+const ETIQUETA_HUELLA = {
+  primario: 'Combustible medido por CAN',
+  medido_teltonika: 'Distancia medida con Teltonika',
+  estimado: 'Estimado',
+} as const;
 const kg = (n: number) => `${n.toLocaleString('es-CL')} kg`;
+const kgCo2 = (valor: string | null) => {
+  if (valor == null) {
+    return '—';
+  }
+  const n = Number(valor);
+  if (!Number.isFinite(n)) {
+    return valor;
+  }
+  return `${n.toLocaleString('es-CL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg CO₂e`;
+};
+const porcentaje = (valor: string) => {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) {
+    return valor;
+  }
+  return `${n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+};
 const cargas = (n: number) => (n === 1 ? '1 carga' : `${n} cargas`);
 
 const MENSAJES: Record<string, string> = {
@@ -401,6 +434,36 @@ function DetalleDeRuta({
           Camión {ruta.vehiculo?.patente ?? 'sin declarar'} · Conductor{' '}
           {ruta.conductor?.nombre ?? 'sin declarar'}
         </p>
+      )}
+
+      {ruta.huella && (
+        <section
+          aria-label="Huella de la ruta"
+          className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold text-base text-neutral-900">Huella de la ruta</h2>
+            <p className="text-neutral-600 text-sm">
+              {ruta.huella.es_estimacion ? 'Estimación' : ETIQUETA_HUELLA[ruta.huella.presentacion]}
+            </p>
+          </div>
+          <p className="mt-2 text-neutral-800 text-sm">
+            Total de la ruta: {kgCo2(ruta.huella.emisiones_kgco2e)}
+          </p>
+          <ul className="mt-3 space-y-1 text-sm">
+            {ruta.huella.servicios.map((s) => (
+              <li
+                key={s.viaje_id}
+                className="flex flex-wrap justify-between gap-2 text-neutral-700"
+              >
+                <span className="font-mono text-xs">{s.codigo_seguimiento}</span>
+                <span>
+                  {porcentaje(s.participacion_pct)} · {kgCo2(s.emisiones_kgco2e)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section
