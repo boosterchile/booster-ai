@@ -127,7 +127,9 @@ renumera su migración a 0080.
   `ruta_sin_conductor`.
 - Estimación sin vehículo: `claseMasChicaElegible` (matching-algorithm), con
   el volumen de la carga; al declarar, `estimarHuellaDeRuta` recalcula.
-- Flota API: `body_type` obligatorio create; `es_de_tercero` en create/PATCH.
+- Flota API: `body_type` obligatorio create y PATCH (si el vehículo no tiene
+  carrocería y el body la omite → 400; `null` → 400); `es_de_tercero` en
+  create/PATCH.
 - Tracking público: LEFT JOIN al vehículo; sin patente responde
   `por_asignar` («Vehículo por asignar»).
 - Lectores pre-despacho (trips/assignments/`me`): LEFT JOIN / null seguro.
@@ -149,7 +151,11 @@ en `infrastructure/vehiculo-pendiente.tf` (sin IAM; apply lo hace el PO).
 Evidencia: unit `recordar-vehiculo-pendiente`, `admin-jobs-vehiculo-pendiente`,
 `notify-cambio-carga` (eventos nuevos); integration
 `recordar-vehiculo-pendiente.integration.test.ts`. Si el push falla o
-`enviados===0`, se libera la marca y la etapa se reintenta.
+`enviados===0`, se libera la marca y la etapa se reintenta **salvo tope**:
+en `ventana_iniciada`, si `pickup_window_start` lleva más de
+`TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS` (7) días vencida, no se reclama ni
+se libera la marca (deja de reintentar). Las etapas 24 h / 2 h ya cierran
+al pasar al tramo siguiente.
 
 ## Parte 6 — Web (2026-11-13)
 
