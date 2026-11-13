@@ -127,7 +127,8 @@ const createBodySchema = z.object({
   vehicle_type: z.enum(vehicleTypes),
   unit_category: unitCategorySchema.optional(),
   unit_type: unitTypeSchema.optional(),
-  body_type: bodyTypeSchema.nullable().optional(),
+  /** matching-desde-la-carga §4: carrocería obligatoria al crear. */
+  body_type: bodyTypeSchema,
   capacity_kg: z.number().int().min(0).max(100_000),
   capacity_m3: z.number().int().positive().max(500).nullable().optional(),
   year: z.number().int().min(1980).max(2100).nullable().optional(),
@@ -138,10 +139,14 @@ const createBodySchema = z.object({
   consumption_l_per_100km_baseline: z.number().positive().max(99.99).nullable().optional(),
   capacidad_estanque_l: capacidadEstanqueLInputSchema,
   fuente_combustible_can: fuenteCombustibleCanSchema.optional(),
+  /** Unidad de un tercero (ADR-090 / matching-desde-la-carga §3.10). */
+  es_de_tercero: z.boolean().optional(),
 });
 
 const updateBodySchema = createBodySchema.partial().extend({
   vehicle_status: z.enum(vehicleStatuses).optional(),
+  /** En edición no se puede borrar la carrocería (sigue obligatoria). */
+  body_type: bodyTypeSchema.optional(),
 });
 
 /**
@@ -648,19 +653,17 @@ export function createVehiculosRoutes(opts: {
     // haya mandado él mismo.
     let unitCategory: UnitCategory;
     let unitType: UnitType;
-    let bodyType: BodyType | null;
+    const bodyType: BodyType = body.body_type;
     let derivadoDeTipoLegacy = false;
 
     if (body.unit_type === undefined) {
       const derivado = derivarUnidadDesdeTipoLegacy(body.vehicle_type);
       unitType = derivado.unitType;
       unitCategory = body.unit_category ?? derivado.unitCategory;
-      bodyType = body.body_type !== undefined ? (body.body_type ?? null) : derivado.bodyType;
       derivadoDeTipoLegacy = true;
     } else {
       unitType = body.unit_type;
       unitCategory = body.unit_category ?? 'motriz';
-      bodyType = body.body_type ?? null;
     }
 
     // D4 condición 3 — CHECK tipo↔categoría (+ D4.5) validado en Zod/runtime
@@ -701,6 +704,7 @@ export function createVehiculosRoutes(opts: {
             body.consumption_l_per_100km_baseline != null
               ? body.consumption_l_per_100km_baseline.toString()
               : null,
+          esDeTercero: body.es_de_tercero ?? false,
         })
         .returning();
 
@@ -814,6 +818,9 @@ export function createVehiculosRoutes(opts: {
     }
     if (body.body_type !== undefined) {
       updates.bodyType = body.body_type;
+    }
+    if (body.es_de_tercero !== undefined) {
+      updates.esDeTercero = body.es_de_tercero;
     }
     if (body.capacity_kg !== undefined) {
       updates.capacityKg = body.capacity_kg;
@@ -1682,6 +1689,7 @@ function serializeVehicle(row: typeof vehicles.$inferSelect) {
     curb_weight_kg: row.curbWeightKg,
     consumption_l_per_100km_baseline: row.consumptionLPer100kmBaseline,
     teltonika_imei: row.teltonikaImei,
+    es_de_tercero: row.esDeTercero,
     status: row.vehicleStatus,
     created_at: row.createdAt,
     updated_at: row.updatedAt,

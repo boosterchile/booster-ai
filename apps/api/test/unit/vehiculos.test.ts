@@ -77,6 +77,7 @@ function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
     capacidadEstanqueL: null,
     fuenteCombustibleCan: 'sin_sensor',
     teltonikaImei: null,
+    esDeTercero: false,
     lastInspectionAt: null,
     inspectionExpiresAt: null,
     vehicleStatus: 'activo',
@@ -193,6 +194,7 @@ describe('vehiculos routes', () => {
         plate: 'AB-CD-12',
         vehicle_type: 'camion_pequeno',
         unit_type: 'camion_rigido',
+        body_type: 'plano',
         capacity_kg: 3500,
       }),
     });
@@ -212,6 +214,7 @@ describe('vehiculos routes', () => {
         plate: 'ab·cd·12',
         vehicle_type: 'camion_pequeno',
         unit_type: 'camion_rigido',
+        body_type: 'plano',
         capacity_kg: 3500,
       }),
     });
@@ -245,6 +248,7 @@ describe('vehiculos routes', () => {
           plate,
           vehicle_type: 'camion_pequeno',
           unit_type: 'camion_rigido',
+          body_type: 'plano',
           capacity_kg: 3500,
         }),
       });
@@ -287,6 +291,7 @@ describe('vehiculos routes', () => {
         plate: 'AB-CD-12',
         vehicle_type: 'camion_pequeno',
         unit_type: 'camion_rigido',
+        body_type: 'plano',
         capacity_kg: 3500,
       }),
     });
@@ -304,6 +309,46 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({ vehicle_type: 'camion_pequeno', capacity_kg: 3500 }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it('POST / sin body_type → 400 (carrocería obligatoria)', async () => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request('/vehiculos', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        plate: 'AB-CD-12',
+        vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
+        capacity_kg: 3500,
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST / con es_de_tercero persiste la marca', async () => {
+    const stub = makeDbStub({
+      insertRows: [buildVehicleRow({ esDeTercero: true, bodyType: 'plano' })],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/vehiculos', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        plate: 'AB-CD-12',
+        vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
+        body_type: 'plano',
+        capacity_kg: 3500,
+        es_de_tercero: true,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const inserted = stub.spies.valuesInsert.mock.calls[0]?.[0] as { esDeTercero: boolean };
+    expect(inserted.esDeTercero).toBe(true);
+    const body = (await res.json()) as { vehicle: { es_de_tercero: boolean } };
+    expect(body.vehicle.es_de_tercero).toBe(true);
   });
 
   // ---------------------------------------------------------------------
@@ -328,6 +373,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'camion_pequeno',
+          body_type: 'plano',
           capacity_kg: 3500,
         }),
       });
@@ -346,6 +392,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'semi_remolque',
+          body_type: 'plano',
           unit_category: 'motriz',
           unit_type: 'semirremolque',
           capacity_kg: 30000,
@@ -365,6 +412,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'semi_remolque',
+          body_type: 'plano',
           unit_category: 'arrastre',
           unit_type: 'semirremolque',
           capacity_kg: 30000,
@@ -384,6 +432,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'semi_remolque',
+          body_type: 'plano',
           unit_category: 'arrastre',
           unit_type: 'semirremolque',
           capacity_kg: 30000,
@@ -416,6 +465,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'semi_remolque',
+          body_type: 'plano',
           unit_category: 'arrastre',
           unit_type: 'semirremolque',
           capacity_kg: 30000,
@@ -453,6 +503,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'camion_pesado',
+          body_type: 'plano',
           unit_category: 'motriz',
           unit_type: 'tracto_camion',
           capacity_kg: 0,
@@ -472,6 +523,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'camion_pesado',
+          body_type: 'plano',
           unit_category: 'motriz',
           unit_type: 'tracto_camion',
           capacity_kg: 0,
@@ -491,6 +543,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'camion_pesado',
+          body_type: 'plano',
           unit_category: 'motriz',
           unit_type: 'tracto_camion',
           capacity_kg: 0,
@@ -511,6 +564,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate: 'AB-CD-12',
           vehicle_type: 'camioneta',
+          body_type: 'plano',
           unit_category: 'motriz',
           unit_type: 'camioneta',
           capacity_kg: 0,
@@ -618,7 +672,7 @@ describe('vehiculos routes', () => {
               vehicleType,
               unitCategory: expectedUnitCategory,
               unitType: expectedUnitType,
-              bodyType: expectedBodyType,
+              bodyType: expectedBodyType ?? 'plano',
               capacityKg: 1000,
               curbWeightKg: 'curb_weight_kg' in extraFields ? extraFields.curb_weight_kg : null,
             }),
@@ -631,6 +685,7 @@ describe('vehiculos routes', () => {
           body: JSON.stringify({
             plate: 'AB-CD-12',
             vehicle_type: vehicleType,
+            body_type: expectedBodyType ?? 'plano',
             capacity_kg: 1000,
             ...extraFields,
           }),
@@ -641,7 +696,7 @@ describe('vehiculos routes', () => {
         };
         expect(body.vehicle.unit_category).toBe(expectedUnitCategory);
         expect(body.vehicle.unit_type).toBe(expectedUnitType);
-        expect(body.vehicle.body_type).toBe(expectedBodyType);
+        expect(body.vehicle.body_type).toBe(expectedBodyType ?? 'plano');
 
         // Condición 1 del PO (fix C1): log estructurado cada vez que la
         // derivación dispara, con vehicle_type origen + unidad derivada +
@@ -651,7 +706,7 @@ describe('vehiculos routes', () => {
             vehicleType,
             derivedUnitCategory: expectedUnitCategory,
             derivedUnitType: expectedUnitType,
-            derivedBodyType: expectedBodyType,
+            derivedBodyType: expectedBodyType ?? 'plano',
             empresaId: EMPRESA_ID,
             vehicleId: VEHICLE_ID,
           }),
@@ -671,6 +726,7 @@ describe('vehiculos routes', () => {
           plate: 'AB-CD-12',
           vehicle_type: 'camion_pequeno',
           unit_type: 'camion_rigido',
+          body_type: 'plano',
           capacity_kg: 3500,
         }),
       });
@@ -2081,6 +2137,7 @@ describe('capacidad de estanque y fuente CAN', () => {
     plate: 'ABCD12',
     vehicle_type: 'camion_pequeno',
     unit_type: 'camion_rigido',
+    body_type: 'plano',
     capacity_kg: 3500,
   };
 

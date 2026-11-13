@@ -561,6 +561,35 @@ describe('integration: API de rutas', () => {
     expect(sin.body.violaciones).toEqual([{ motivo: 'en_curso_sin_conductor' }]);
   });
 
+  test('declarar rechaza carrocería incompatible con la carga (criterio 4)', async () => {
+    const { f, b, rutaA } = await dosCargas();
+    await agrupar(f, rutaA, b);
+    const jaula = uno(
+      await handle.db
+        .insert(schema.vehicles)
+        .values({
+          empresaId: f.empresa.id,
+          plate: `JA${randomUUID().slice(0, 4).toUpperCase()}`,
+          vehicleType: 'camion_mediano',
+          unitCategory: 'motriz',
+          unitType: 'camion_rigido',
+          bodyType: 'jaula',
+          capacityKg: 10_000,
+        })
+        .returning(),
+      'vehículo jaula',
+    );
+    const r = await api(f).put(`/rutas/${rutaA}/configuracion`, {
+      vehiculo_id: jaula.id,
+      unidad_arrastre_id: null,
+      conductor_id: f.conductor.id,
+    });
+    expect(r.status).toBe(422);
+    expect(r.body.violaciones).toEqual(
+      expect.arrayContaining([expect.objectContaining({ motivo: 'carroceria_incompatible' })]),
+    );
+  });
+
   test('declarar rechaza un camión que no alcanza, ajeno o que no es motriz, y un conductor ajeno', async () => {
     const { f, b, rutaA } = await dosCargas();
     await agrupar(f, rutaA, b);
