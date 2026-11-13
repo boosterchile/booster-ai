@@ -9,8 +9,8 @@ import { type EventoCambioCarga, notifyCambioCarga } from './notify-cambio-carga
  * Recordatorios cuando una asignación aceptada sigue sin vehículo
  * (matching-desde-la-carga §3.9 / §11-3).
  *
- * Etapas (cada una se marca una sola vez en la misma tx que el
- * `FOR UPDATE SKIP LOCKED`, para no spamear ni pisarse entre corridas):
+ * Etapas (claim con `FOR UPDATE SKIP LOCKED` + marca de idempotencia;
+ * si el aviso falla o `enviados===0` se limpia la marca para reintentar):
  *   - 24 h antes del inicio de la ventana → oficina transportista
  *   - 2 h antes → oficina transportista
  *   - ventana ya iniciada → aviso al generador
@@ -98,7 +98,7 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
           : { vehicleMissingGeneratorNotifiedAt: now };
 
     // rls-allowlist: job de plataforma cross-empresa (§3.9); marca las filas
-    // bloqueadas arriba.
+    // bloqueadas arriba (claim). Si el aviso no es útil se libera abajo.
     return await tx
       .update(assignments)
       .set(marca)
@@ -110,6 +110,18 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
         driverUserId: assignments.driverUserId,
       });
   });
+}
+
+/** Limpia la marca de claim para que la próxima corrida pueda reintentar. */
+async function liberarEtapa(db: Db, etapa: EtapaVehiculoPendiente, id: string): Promise<void> {
+  const limpia =
+    etapa === '24h'
+      ? { vehicleReminder24hAt: null }
+      : etapa === '2h'
+        ? { vehicleReminder2hAt: null }
+        : { vehicleMissingGeneratorNotifiedAt: null };
+  // rls-allowlist: job de plataforma cross-empresa (§3.9); libera claim fallido.
+  await db.update(assignments).set(limpia).where(eq(assignments.id, id));
 }
 
 export async function recordarVehiculoPendiente(deps: {
@@ -134,7 +146,7 @@ export async function recordarVehiculoPendiente(deps: {
     const evento = EVENTO_POR_ETAPA[etapa];
     for (const t of tomadas) {
       try {
-        await avisar(
+        const resultado = await avisar(
           { db, logger },
           {
             tripId: t.tripId,
@@ -146,12 +158,35 @@ export async function recordarVehiculoPendiente(deps: {
             evento,
           },
         );
+        if (resultado.enviados === 0) {
+          await liberarEtapa(db, etapa, t.id);
+          fallidos += 1;
+          logger.warn(
+            {
+              assignmentId: t.id,
+              tripId: t.tripId,
+              etapa,
+              destinatarios: resultado.destinatarios,
+              enviados: resultado.enviados,
+            },
+            'recordatorio de vehículo pendiente sin destinatarios alcanzados',
+          );
+          continue;
+        }
         if (etapa === 'ventana_iniciada') {
           avisadosGenerador += 1;
         } else {
           recordadosOficina += 1;
         }
       } catch (err) {
+        try {
+          await liberarEtapa(db, etapa, t.id);
+        } catch (liberarErr) {
+          logger.error(
+            { err: liberarErr, assignmentId: t.id, tripId: t.tripId, etapa },
+            'no se pudo liberar la marca de recordatorio de vehículo pendiente',
+          );
+        }
         fallidos += 1;
         logger.warn(
           { err, assignmentId: t.id, tripId: t.tripId, etapa },

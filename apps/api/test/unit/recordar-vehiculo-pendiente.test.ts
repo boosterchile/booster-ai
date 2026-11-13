@@ -22,8 +22,8 @@ const logger = {
 
 /**
  * Stub de BD: cada etapa (24h / 2h / ventana) hace su propia tx con
- * select…for update + update returning. `colas` lista, por etapa, las
- * candidatas que el select devolvería y lo que el update marca.
+ * select…for update + update returning (claim). Si el aviso falla o
+ * `enviados===0`, el job limpia la marca con `db.update` fuera de la tx.
  */
 function makeDb(colas: {
   '24h'?: {
@@ -58,6 +58,14 @@ function makeDb(colas: {
   let etapaIdx = 0;
   const forFns: Array<ReturnType<typeof vi.fn>> = [];
   const updateFns: Array<ReturnType<typeof vi.fn>> = [];
+  const liberaciones: Array<{ set: unknown }> = [];
+
+  const updateTop = vi.fn(() => ({
+    set: vi.fn((vals: unknown) => {
+      liberaciones.push({ set: vals });
+      return { where: vi.fn(async () => []) };
+    }),
+  }));
 
   const db = {
     transaction: vi.fn(async (cb: (tx: unknown) => unknown) => {
@@ -86,9 +94,10 @@ function makeDb(colas: {
       };
       return cb(tx);
     }),
+    update: updateTop,
   };
 
-  return { db: db as never, forFns, updateFns };
+  return { db: db as never, forFns, updateFns, updateTop, liberaciones };
 }
 
 beforeEach(() => {
@@ -172,8 +181,8 @@ describe('recordarVehiculoPendiente (matching-desde-la-carga §3.9 / §11-3)', (
     });
   });
 
-  it('un aviso que falla cuenta como fallido y no suma al canal', async () => {
-    const { db } = makeDb({
+  it('un aviso que falla cuenta como fallido, limpia la marca y no suma al canal', async () => {
+    const { db, updateTop, liberaciones } = makeDb({
       '24h': {
         candidatas: [{ id: 'a1' }],
         tomadas: [{ id: 'a1', tripId: 't1', empresaId: 'e1', driverUserId: null }],
@@ -194,5 +203,40 @@ describe('recordarVehiculoPendiente (matching-desde-la-carga §3.9 / §11-3)', (
       avisadosGenerador: 1,
       fallidos: 1,
     });
+    expect(updateTop).toHaveBeenCalledTimes(1);
+    expect(liberaciones[0]?.set).toEqual({ vehicleReminder24hAt: null });
+  });
+
+  it('enviados===0 cuenta fallido, limpia la marca y permite reintento', async () => {
+    const { db, updateTop, liberaciones } = makeDb({
+      '2h': {
+        candidatas: [{ id: 'a2' }],
+        tomadas: [{ id: 'a2', tripId: 't2', empresaId: 'e2', driverUserId: null }],
+      },
+    });
+    const avisar = vi.fn(async () => ({ destinatarios: 2, enviados: 0 }));
+    expect(await recordarVehiculoPendiente({ db, logger, now: ahora, avisar })).toEqual({
+      recordadosOficina: 0,
+      avisadosGenerador: 0,
+      fallidos: 1,
+    });
+    expect(updateTop).toHaveBeenCalledTimes(1);
+    expect(liberaciones[0]?.set).toEqual({ vehicleReminder2hAt: null });
+  });
+
+  it('aviso útil no limpia la marca (idempotencia en éxito)', async () => {
+    const { db, updateTop } = makeDb({
+      '24h': {
+        candidatas: [{ id: 'a1' }],
+        tomadas: [{ id: 'a1', tripId: 't1', empresaId: 'e1', driverUserId: null }],
+      },
+    });
+    const avisar = vi.fn(async () => ({ destinatarios: 1, enviados: 1 }));
+    expect(await recordarVehiculoPendiente({ db, logger, now: ahora, avisar })).toEqual({
+      recordadosOficina: 1,
+      avisadosGenerador: 0,
+      fallidos: 0,
+    });
+    expect(updateTop).not.toHaveBeenCalled();
   });
 });

@@ -190,4 +190,41 @@ describe('integration: recordatorios de vehículo pendiente (§3.9)', () => {
     expect(avisar).not.toHaveBeenCalled();
     expect(r2).toEqual({ recordadosOficina: 0, avisadosGenerador: 0, fallidos: 0 });
   });
+
+  test('si el push falla o enviados===0 limpia la marca y reintenta', async () => {
+    const a24 = await asignacionSinVehiculo({ ventanaEn: h(10) });
+    const a2 = await asignacionSinVehiculo({ ventanaEn: h(1) });
+
+    const avisar = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw new Error('push caído');
+      })
+      .mockImplementationOnce(async () => ({ destinatarios: 1, enviados: 0 }))
+      .mockImplementation(async () => ({ destinatarios: 1, enviados: 1 }));
+
+    const r1 = await recordarVehiculoPendiente({
+      db: handle.db,
+      logger,
+      now: ahora,
+      avisar,
+    });
+    expect(r1.fallidos).toBeGreaterThanOrEqual(2);
+    expect(r1.recordadosOficina).toBe(0);
+    expect((await leer(a24.id)).vehicleReminder24hAt).toBeNull();
+    expect((await leer(a2.id)).vehicleReminder2hAt).toBeNull();
+
+    avisar.mockClear();
+    avisar.mockImplementation(async () => ({ destinatarios: 1, enviados: 1 }));
+    const r2 = await recordarVehiculoPendiente({
+      db: handle.db,
+      logger,
+      now: ahora,
+      avisar,
+    });
+    expect(r2.fallidos).toBe(0);
+    expect(r2.recordadosOficina).toBeGreaterThanOrEqual(2);
+    expect((await leer(a24.id)).vehicleReminder24hAt).toBeInstanceOf(Date);
+    expect((await leer(a2.id)).vehicleReminder2hAt).toBeInstanceOf(Date);
+  });
 });
