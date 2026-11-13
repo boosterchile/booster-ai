@@ -46,8 +46,9 @@ export interface PublicTrackingFoundResponse {
     cargo_type: string;
   };
   vehicle: {
+    /** Sin vehículo declarado: `'por_asignar'`. */
     type: string;
-    plate_partial: string;
+    plate_partial: string | null;
   };
   position: PublicTrackingPosition | null;
   /**

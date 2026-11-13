@@ -103,9 +103,10 @@ describe('getPublicTracking', () => {
       originComunaCode?: string | null;
       destComunaCode?: string | null;
       cargoType: string;
-      vehicleId: string;
-      vehicleType: string;
-      vehiclePlate: string;
+      /** Null = asignación aceptada sin vehículo (matching-desde-la-carga §3.7). */
+      vehicleId: string | null;
+      vehicleType: string | null;
+      vehiclePlate: string | null;
       /** Nuevos (fix privacidad): default aceptado=ahora, resto null → no expira. */
       acceptedAt?: Date;
       deliveredAt?: Date | null;
@@ -156,12 +157,19 @@ describe('getPublicTracking', () => {
     const limitFn = vi.fn(() => Promise.resolve(responses[callIdx++] ?? []));
     const orderByFn = vi.fn(() => ({ limit: limitFn }));
     const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+    // Lookup: assignments ⋈ trips (INNER) ⟕ vehicles (LEFT) — sin vehículo
+    // la fila del token sigue existiendo.
+    const leftJoinFn = vi.fn(() => ({ where: whereFn }));
     const innerJoin2 = vi.fn(() => ({ where: whereFn, innerJoin: () => ({ where: whereFn }) }));
-    const innerJoin1 = vi.fn(() => ({ innerJoin: innerJoin2, where: whereFn }));
-    const fromFn = vi.fn(() => ({ innerJoin: innerJoin1, where: whereFn }));
+    const innerJoin1 = vi.fn(() => ({
+      innerJoin: innerJoin2,
+      leftJoin: leftJoinFn,
+      where: whereFn,
+    }));
+    const fromFn = vi.fn(() => ({ innerJoin: innerJoin1, leftJoin: leftJoinFn, where: whereFn }));
     const selectFn = vi.fn(() => ({ from: fromFn }));
 
-    return { db: { select: selectFn } as never, selectFn };
+    return { db: { select: selectFn } as never, selectFn, leftJoinFn, innerJoin1 };
   }
 
   beforeEach(() => {
@@ -191,6 +199,34 @@ describe('getPublicTracking', () => {
     const { db } = makeDbStub({ assignmentRow: null });
     const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
     expect(result.status).toBe('not_found');
+  });
+
+  it('token válido sin vehículo → found con vehículo por asignar (LEFT JOIN)', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const { db, leftJoinFn, innerJoin1 } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a-sin-veh',
+        tripStatus: 'asignado',
+        trackingCode: 'BOO-PEND01',
+        originAddr: 'origen',
+        destAddr: 'destino',
+        cargoType: 'carga_seca',
+        vehicleId: null,
+        vehicleType: null,
+        vehiclePlate: null,
+      },
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.trip.tracking_code).toBe('BOO-PEND01');
+      expect(result.vehicle).toEqual({ type: 'por_asignar', plate_partial: null });
+      expect(result.position).toBeNull();
+      expect(result.position_source).toBeNull();
+      expect(result.eta_minutes).toBeNull();
+    }
+    expect(innerJoin1).toHaveBeenCalled();
+    expect(leftJoinFn).toHaveBeenCalled();
   });
 
   it('found sin pings → position null + progress null', async () => {
