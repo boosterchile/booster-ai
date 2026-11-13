@@ -378,7 +378,41 @@ describe('VehicleForm — validación de rangos y 400 legible', () => {
     fireEvent.change(screen.getByLabelText(/Capacidad \(kg\)/), {
       target: { value: capacityKg },
     });
+    // matching-desde-la-carga §11-1: carrocería obligatoria en alta/edición.
+    fireEvent.change(screen.getByLabelText(/Carrocería/), { target: { value: 'plano' } });
   }
+
+  // matching-desde-la-carga parte 6 / §11-1 y §3.10.
+  it('sin carrocería → error de campo, sin llamar al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
+    renderNuevo();
+    fireEvent.change(screen.getByLabelText(/Patente/), { target: { value: 'JLKT54' } });
+    fireEvent.change(screen.getByLabelText(/Capacidad \(kg\)/), { target: { value: '10000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Elige la carrocería del vehículo')).toBeInTheDocument(),
+    );
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('con carrocería y unidad de tercero → el body manda body_type y es_de_tercero', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      vehicle: { id: 'v-nuevo', plate: 'JLKT54' },
+    });
+    renderNuevo();
+    fillBase();
+    fireEvent.click(screen.getByLabelText(/Unidad de un tercero/));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    const body = postSpy.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      plate: 'JLKT54',
+      body_type: 'plano',
+      es_de_tercero: true,
+    });
+  });
 
   it('capacity_m3 fuera de rango → error de campo, sin llamar al API', async () => {
     const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
@@ -513,12 +547,16 @@ function makeVehicleRow(
     status: 'activo' | 'mantenimiento' | 'retirado';
     capacidad_estanque_l: number | null;
     fuente_combustible_can: '84' | '83' | '89' | 'sin_sensor';
+    body_type: string | null;
+    es_de_tercero: boolean;
   }> = {},
 ) {
   return {
     id: 'veh-1',
     plate: 'ABCD12',
     type: 'camion_pequeno',
+    body_type: 'plano',
+    es_de_tercero: false,
     capacity_kg: 5000,
     capacity_m3: null,
     year: 2020,

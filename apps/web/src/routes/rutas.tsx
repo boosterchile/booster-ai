@@ -619,6 +619,7 @@ function CamionYConductor({
             disabled={conCargaRecogida || flotaQ.isLoading}
             onChange={(e) => setElegido({ ...elegido, vehiculo: e.target.value })}
           >
+            {!actual.vehiculo && <option value="">Elegir camión</option>}
             {camiones.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.plate}

@@ -541,5 +541,76 @@ describe('/app/rutas', () => {
       expect(await within(f).findByText(/No pudimos cargar tu flota/)).toBeInTheDocument();
       expect(within(f).getByRole('button', { name: 'Guardar' })).toBeDisabled();
     });
+
+    // matching-desde-la-carga parte 6: ruta aceptada sin vehículo aún.
+    it('sin camión declarado ofrece elegir y guardar la configuración', async () => {
+      servir({
+        rutas: [resumen('ruta-a', { vehiculo: null, conductor: null, servicios: 1 })],
+        detalle: {
+          'ruta-a': {
+            ...RUTA_A,
+            vehiculo: null,
+            unidad_arrastre: null,
+            conductor: null,
+            paradas: [
+              parada('p1', 0, 'recogida', 'BOO-AAA111'),
+              parada('p2', 1, 'entrega', 'BOO-AAA111'),
+            ],
+            tramos: [tramo(0, 1000)],
+          },
+        },
+      });
+      renderRoute();
+      await userEvent.click(await screen.findByRole('button', { name: /Sin camión · 1 carga/ }));
+      const f = await screen.findByRole('group', { name: 'Camión y conductor' });
+      const camion = within(f).getByLabelText('Camión');
+      expect(camion).toHaveValue('');
+      expect(within(camion).getByRole('option', { name: 'Elegir camión' })).toBeInTheDocument();
+      expect(within(f).getByRole('button', { name: 'Guardar' })).toBeDisabled();
+
+      apiPut.mockResolvedValue({
+        ruta: {
+          ...RUTA_A,
+          vehiculo: { id: 'v1', patente: 'ABCD12' },
+          conductor: { id: 'c1', nombre: 'Juan Pérez' },
+        },
+      });
+      await userEvent.selectOptions(camion, 'v1');
+      await userEvent.selectOptions(within(f).getByLabelText('Conductor'), 'c1');
+      await userEvent.click(within(f).getByRole('button', { name: 'Guardar' }));
+      expect(apiPut).toHaveBeenCalledWith(
+        '/rutas/ruta-a/configuracion',
+        { vehiculo_id: 'v1', unidad_arrastre_id: null, conductor_id: 'c1' },
+        expect.anything(),
+      );
+    });
+
+    it('rechazo por carrocería incompatible al declarar se explica a la oficina', async () => {
+      servir({
+        rutas: [resumen('ruta-a', { vehiculo: null, servicios: 1 })],
+        detalle: {
+          'ruta-a': {
+            ...RUTA_A,
+            vehiculo: null,
+            paradas: [
+              parada('p1', 0, 'recogida', 'BOO-AAA111'),
+              parada('p2', 1, 'entrega', 'BOO-AAA111'),
+            ],
+            tramos: [tramo(0, 1000)],
+          },
+        },
+      });
+      apiPut.mockRejectedValue(
+        new ApiError(422, 'ruta_invalida', {
+          violaciones: [{ motivo: 'carroceria_incompatible' }],
+        }),
+      );
+      renderRoute();
+      await userEvent.click(await screen.findByRole('button', { name: /Sin camión · 1 carga/ }));
+      const f = await screen.findByRole('group', { name: 'Camión y conductor' });
+      await userEvent.selectOptions(within(f).getByLabelText('Camión'), 'v2');
+      await userEvent.click(within(f).getByRole('button', { name: 'Guardar' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('carrocería');
+    });
   });
 });

@@ -1776,7 +1776,9 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 <DataRow label="Transportista">
                   {tripQ.data.assignment.empresa_legal_name ?? '—'}
                 </DataRow>
-                <DataRow label="Vehículo">{tripQ.data.assignment.vehicle_plate ?? '—'}</DataRow>
+                <DataRow label="Vehículo">
+                  {tripQ.data.assignment.vehicle_plate ?? 'Vehículo por asignar'}
+                </DataRow>
                 <DataRow label="Precio acordado">
                   {formatCLP(tripQ.data.assignment.agreed_price_clp)}
                 </DataRow>
