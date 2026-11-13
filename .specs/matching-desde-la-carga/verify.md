@@ -119,6 +119,19 @@ recorre esos lectores con el compilador.
 El PR #904, abierto, también usa el número 0079. El que entre segundo
 renumera su migración a 0080.
 
+## Parte 4 — Aceptar sin vehículo (2026-11-13)
+
+- `acceptOffer` escribe `vehiculo_id` null (no `''`); la ruta hija nace sin
+  vehículo. Integration: `aceptar-sin-vehiculo.integration.test.ts`.
+- `confirmarRecogidaViaje` rechaza con `ruta_sin_vehiculo` /
+  `ruta_sin_conductor`.
+- Estimación sin vehículo: `claseMasChicaElegible` (matching-algorithm), con
+  el volumen de la carga; al declarar, `estimarHuellaDeRuta` recalcula.
+- Flota API: `body_type` obligatorio create; `es_de_tercero` en create/PATCH.
+- Tracking público: LEFT JOIN al vehículo; sin patente responde
+  `por_asignar` («Vehículo por asignar»).
+- Lectores pre-despacho (trips/assignments/`me`): LEFT JOIN / null seguro.
+
 ## Parte 5 — Recordatorios vehículo pendiente (2026-11-13)
 
 Job `POST /admin/jobs/vehiculo-pendiente-recordatorio` (mismo estilo que
@@ -135,4 +148,21 @@ en `infrastructure/vehiculo-pendiente.tf` (sin IAM; apply lo hace el PO).
 
 Evidencia: unit `recordar-vehiculo-pendiente`, `admin-jobs-vehiculo-pendiente`,
 `notify-cambio-carga` (eventos nuevos); integration
-`recordar-vehiculo-pendiente.integration.test.ts`.
+`recordar-vehiculo-pendiente.integration.test.ts`. Si el push falla o
+`enviados===0`, se libera la marca y la etapa se reintenta.
+
+## Parte 6 — Web (2026-11-13)
+
+- Generador (`cargas`, `carga-track`, tracking público): sin patente →
+  «Vehículo por asignar». No ve `es_de_tercero`.
+- Oficina (`rutas`): opción «Elegir camión» cuando falta declarar; errores
+  422 de elegibilidad visibles.
+- Flota (`vehiculos`): carrocería obligatoria create/edit; checkbox unidad
+  de tercero.
+
+Evidencia: tests de `cargas`, `rutas`, `vehiculos`, `carga-track`,
+`public-tracking`.
+
+**Prod usable de declarar en rutas** sigue dependiendo de
+`RUTAS_API_ACTIVADA` (PO). El cron de recordatorios requiere
+`terraform apply` del archivo `vehiculo-pendiente.tf` (sin IAM nuevo).

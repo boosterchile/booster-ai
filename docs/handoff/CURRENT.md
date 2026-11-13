@@ -31,14 +31,14 @@
 | Etapas 0–2 | En prod. Abiertos: anexo tipos de carga chilenos; chat destinatario–conductor |
 | Ruta consolidada (8 partes) | 1–7 en prod; API apagada. Parte 8 (migración contract columnas viejas): al final |
 | Huella consolidada (6 partes) | 1–5 en prod. Parte 6 (web): **#956** abierto, CI verde, espera visto PO |
-| Matching desde la carga (6 partes) | 1–4 hechas en rama `cursor/matching-aceptar-sin-vehiculo-d8bd`; parte 5 (recordatorios) hecha en la misma rama; parte 6 (web) pendiente. Modo sombra activo |
+| Matching desde la carga (6 partes) | 1–3 en prod. **4–6 listas en rama** `cursor/matching-aceptar-sin-vehiculo-d8bd` (PR). Modo sombra activo |
 | Reemisión certificados | Partes 1–5 en prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
 | Etapas 5–6 (huella de flota; un solo sistema de diseño) | Sin empezar |
 | Fuera de plan (estos días) | Flota (#950/#954), sello por fuente (#951/#952), CAN por datos (#955): en prod |
 
 ## WIP y PRs
 
-- **Cupos agente (máx. 3):** #956 (huella web consolidada). Libres: 2.
+- **Cupos agente (máx. 3):** #956 (huella web consolidada); matching 4–6 en rama `cursor/matching-aceptar-sin-vehiculo-d8bd`. Libre: 1.
 - **Drafts viejos (otras sesiones):** #876, #877 (certificado), #748 (retiro demo). No se tocan sin pedido.
 
 ## Pendientes del PO (orden del informe v3)
@@ -49,12 +49,13 @@
 4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta).
 5. Pasar matching de `sombra` a `activa` con comparaciones a la vista.
 6. Mirar el mapa de Flota en prod (el agente no tiene clave Maps).
-7. Visto a #956 (cambia interfaz).
+7. Visto a #956 (cambia interfaz) y al PR de matching 4–6 (API + UI).
+8. `terraform apply` de `infrastructure/vehiculo-pendiente.tf` (scheduler; sin IAM nuevo) tras el merge de matching.
 
 ## Lo que sigue del lado del agente
 
 1. Merge de #956 tras el visto → cierra huella consolidada.
-2. Matching partes 4–6 (un release; cambian API e interfaz → visto en el PR).
+2. Merge de matching 4–6 tras el visto (API + UI + migración 0083 expand + scheduler TF sin IAM).
 3. Rutas parte 8 solo con rutas encendidas y estables (contract + lista ADR-076).
 4. Etapas 5 y 6.
 5. Poner al día el plan de trabajo cuando exista de nuevo en el repo (hoy no está versionado).
