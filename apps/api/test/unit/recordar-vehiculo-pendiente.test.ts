@@ -5,9 +5,8 @@ beforeAll(() => {
   process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
 });
 
-const { recordarVehiculoPendiente } = await import(
-  '../../src/services/recordar-vehiculo-pendiente.js'
-);
+const { recordarVehiculoPendiente, TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS, debeReintentarEtapa } =
+  await import('../../src/services/recordar-vehiculo-pendiente.js');
 
 const noop = (): void => undefined;
 const logger = {
@@ -25,34 +24,18 @@ const logger = {
  * select…for update + update returning (claim). Si el aviso falla o
  * `enviados===0`, el job limpia la marca con `db.update` fuera de la tx.
  */
+type TomadaStub = {
+  id: string;
+  tripId: string;
+  empresaId: string;
+  driverUserId: string | null;
+  pickupWindowStart?: Date | null;
+};
+
 function makeDb(colas: {
-  '24h'?: {
-    candidatas: Array<{ id: string }>;
-    tomadas: Array<{
-      id: string;
-      tripId: string;
-      empresaId: string;
-      driverUserId: string | null;
-    }>;
-  };
-  '2h'?: {
-    candidatas: Array<{ id: string }>;
-    tomadas: Array<{
-      id: string;
-      tripId: string;
-      empresaId: string;
-      driverUserId: string | null;
-    }>;
-  };
-  ventana_iniciada?: {
-    candidatas: Array<{ id: string }>;
-    tomadas: Array<{
-      id: string;
-      tripId: string;
-      empresaId: string;
-      driverUserId: string | null;
-    }>;
-  };
+  '24h'?: { candidatas: Array<{ id: string }>; tomadas: TomadaStub[] };
+  '2h'?: { candidatas: Array<{ id: string }>; tomadas: TomadaStub[] };
+  ventana_iniciada?: { candidatas: Array<{ id: string }>; tomadas: TomadaStub[] };
 }) {
   const etapas = ['24h', '2h', 'ventana_iniciada'] as const;
   let etapaIdx = 0;
@@ -73,7 +56,13 @@ function makeDb(colas: {
       const cola = etapa
         ? (colas[etapa] ?? { candidatas: [], tomadas: [] })
         : { candidatas: [], tomadas: [] };
-      const forFn = vi.fn(async () => cola.candidatas);
+      // El claim selecciona id + pickupWindowStart; el stub lo toma de la tomada.
+      const forFn = vi.fn(async () =>
+        cola.candidatas.map((c) => {
+          const t = cola.tomadas.find((x) => x.id === c.id);
+          return { id: c.id, pickupWindowStart: t?.pickupWindowStart ?? null };
+        }),
+      );
       forFns.push(forFn);
       const updateTx = vi.fn(() => ({
         set: vi.fn(() => ({
@@ -238,5 +227,69 @@ describe('recordarVehiculoPendiente (matching-desde-la-carga §3.9 / §11-3)', (
       fallidos: 0,
     });
     expect(updateTop).not.toHaveBeenCalled();
+  });
+
+  it(`ventana iniciada hace más de ${TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS} días: enviados===0 no libera (tope, no reintenta)`, async () => {
+    const vencidaHace = TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS * 24 * 60 * 60 * 1000 + 60_000;
+    const { db, updateTop, liberaciones } = makeDb({
+      ventana_iniciada: {
+        candidatas: [{ id: 'a-old' }],
+        tomadas: [
+          {
+            id: 'a-old',
+            tripId: 't-old',
+            empresaId: 'e1',
+            driverUserId: null,
+            pickupWindowStart: new Date(ahora.getTime() - vencidaHace),
+          },
+        ],
+      },
+    });
+    const avisar = vi.fn(async () => ({ destinatarios: 2, enviados: 0 }));
+    expect(await recordarVehiculoPendiente({ db, logger, now: ahora, avisar })).toEqual({
+      recordadosOficina: 0,
+      avisadosGenerador: 0,
+      fallidos: 1,
+    });
+    expect(avisar).toHaveBeenCalled();
+    expect(updateTop).not.toHaveBeenCalled();
+    expect(liberaciones).toHaveLength(0);
+  });
+
+  it('ventana iniciada reciente: enviados===0 sí libera para reintentar', async () => {
+    const { db, updateTop, liberaciones } = makeDb({
+      ventana_iniciada: {
+        candidatas: [{ id: 'a-new' }],
+        tomadas: [
+          {
+            id: 'a-new',
+            tripId: 't-new',
+            empresaId: 'e1',
+            driverUserId: null,
+            pickupWindowStart: new Date(ahora.getTime() - 60_000),
+          },
+        ],
+      },
+    });
+    const avisar = vi.fn(async () => ({ destinatarios: 1, enviados: 0 }));
+    expect(await recordarVehiculoPendiente({ db, logger, now: ahora, avisar })).toEqual({
+      recordadosOficina: 0,
+      avisadosGenerador: 0,
+      fallidos: 1,
+    });
+    expect(updateTop).toHaveBeenCalledTimes(1);
+    expect(liberaciones[0]?.set).toEqual({ vehicleMissingGeneratorNotifiedAt: null });
+  });
+
+  it('debeReintentarEtapa: 24h/2h siempre; ventana_iniciada solo dentro del tope', () => {
+    const hacePoco = new Date(ahora.getTime() - 3_600_000);
+    const haceDemasiado = new Date(
+      ahora.getTime() - (TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS + 1) * 86_400_000,
+    );
+    expect(debeReintentarEtapa('24h', haceDemasiado, ahora)).toBe(true);
+    expect(debeReintentarEtapa('2h', haceDemasiado, ahora)).toBe(true);
+    expect(debeReintentarEtapa('ventana_iniciada', hacePoco, ahora)).toBe(true);
+    expect(debeReintentarEtapa('ventana_iniciada', haceDemasiado, ahora)).toBe(false);
+    expect(debeReintentarEtapa('ventana_iniciada', null, ahora)).toBe(false);
   });
 });

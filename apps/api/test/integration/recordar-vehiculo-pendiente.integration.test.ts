@@ -191,6 +191,27 @@ describe('integration: recordatorios de vehículo pendiente (§3.9)', () => {
     expect(r2).toEqual({ recordadosOficina: 0, avisadosGenerador: 0, fallidos: 0 });
   });
 
+  test('ventana iniciada fuera del tope de antigüedad: no reclama ni avisa', async () => {
+    const { TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS } = await import(
+      '../../src/services/recordar-vehiculo-pendiente.js'
+    );
+    const fuera = await asignacionSinVehiculo({
+      ventanaEn: h(-(TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS * 24 + 1)),
+    });
+    const avisar = vi.fn(async () => ({ destinatarios: 1, enviados: 1 }));
+    const r = await recordarVehiculoPendiente({
+      db: handle.db,
+      logger,
+      now: ahora,
+      avisar,
+    });
+    expect(
+      avisar.mock.calls.some((c) => (c[1] as { tripId: string }).tripId === fuera.tripId),
+    ).toBe(false);
+    expect((await leer(fuera.id)).vehicleMissingGeneratorNotifiedAt).toBeNull();
+    expect(r.avisadosGenerador).toBe(0);
+  });
+
   test('si el push falla o enviados===0 limpia la marca y reintenta', async () => {
     const a24 = await asignacionSinVehiculo({ ventanaEn: h(10) });
     const a2 = await asignacionSinVehiculo({ ventanaEn: h(1) });

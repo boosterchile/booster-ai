@@ -10,7 +10,8 @@ import { type EventoCambioCarga, notifyCambioCarga } from './notify-cambio-carga
  * (matching-desde-la-carga §3.9 / §11-3).
  *
  * Etapas (claim con `FOR UPDATE SKIP LOCKED` + marca de idempotencia;
- * si el aviso falla o `enviados===0` se limpia la marca para reintentar):
+ * si el aviso falla o `enviados===0` se limpia la marca para reintentar,
+ * salvo que la etapa haya agotado su tope — ver `debeReintentarEtapa`):
  *   - 24 h antes del inicio de la ventana → oficina transportista
  *   - 2 h antes → oficina transportista
  *   - ventana ya iniciada → aviso al generador
@@ -22,6 +23,15 @@ import { type EventoCambioCarga, notifyCambioCarga } from './notify-cambio-carga
  */
 
 const TOPE_POR_CORRIDA = 200;
+
+/**
+ * Tope de antigüedad para la etapa `ventana_iniciada`: no se reclama ni se
+ * reintenta si `pickup_window_start` lleva más de estos días vencida.
+ * Las etapas 24 h / 2 h ya tienen techo natural (cierran al cruzar al
+ * siguiente tramo). Sin este tope, un push sin destinatarios reintentaría
+ * cada 15 min sin fin.
+ */
+export const TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS = 7;
 
 export type EtapaVehiculoPendiente = '24h' | '2h' | 'ventana_iniciada';
 
@@ -36,7 +46,24 @@ type Tomada = {
   tripId: string;
   empresaId: string;
   driverUserId: string | null;
+  pickupWindowStart: Date | null;
 };
+
+/** ¿Liberar la marca tras fallo / `enviados===0` para que la próxima corrida reintente? */
+export function debeReintentarEtapa(
+  etapa: EtapaVehiculoPendiente,
+  pickupWindowStart: Date | null,
+  now: Date,
+): boolean {
+  if (etapa !== 'ventana_iniciada') {
+    return true;
+  }
+  if (pickupWindowStart == null) {
+    return false;
+  }
+  const topeMs = TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS * 86_400_000;
+  return now.getTime() - pickupWindowStart.getTime() < topeMs;
+}
 
 const EVENTO_POR_ETAPA: Record<EtapaVehiculoPendiente, EventoCambioCarga> = {
   '24h': 'vehiculo_pendiente_24h',
@@ -70,14 +97,18 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
             )
           : and(
               isNull(assignments.vehicleMissingGeneratorNotifiedAt),
-              // start ≤ now
+              // start ≤ now y aún dentro del tope de antigüedad
               lte(trips.pickupWindowStart, now),
+              gt(
+                trips.pickupWindowStart,
+                new Date(now.getTime() - TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS * 86_400_000),
+              ),
             );
 
     // rls-allowlist: job de plataforma cross-empresa (§3.9); solo lee
     // asignaciones sin vehículo con etapa pendiente.
     const filas = await tx
-      .select({ id: assignments.id })
+      .select({ id: assignments.id, pickupWindowStart: trips.pickupWindowStart })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .where(and(base, porEtapa))
@@ -90,6 +121,7 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
     }
 
     const ids = filas.map((f) => f.id);
+    const ventanaPorId = new Map(filas.map((f) => [f.id, f.pickupWindowStart]));
     const marca =
       etapa === '24h'
         ? { vehicleReminder24hAt: now }
@@ -99,7 +131,7 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
 
     // rls-allowlist: job de plataforma cross-empresa (§3.9); marca las filas
     // bloqueadas arriba (claim). Si el aviso no es útil se libera abajo.
-    return await tx
+    const marcadas = await tx
       .update(assignments)
       .set(marca)
       .where(and(inArray(assignments.id, ids), eq(assignments.status, 'asignado'), sinVehiculo))
@@ -109,6 +141,10 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
         empresaId: assignments.empresaId,
         driverUserId: conductorDeAsignacion,
       });
+    return marcadas.map((m) => ({
+      ...m,
+      pickupWindowStart: ventanaPorId.get(m.id) ?? null,
+    }));
   });
 }
 
@@ -159,18 +195,31 @@ export async function recordarVehiculoPendiente(deps: {
           },
         );
         if (resultado.enviados === 0) {
-          await liberarEtapa(db, etapa, t.id);
           fallidos += 1;
-          logger.warn(
-            {
-              assignmentId: t.id,
-              tripId: t.tripId,
-              etapa,
-              destinatarios: resultado.destinatarios,
-              enviados: resultado.enviados,
-            },
-            'recordatorio de vehículo pendiente sin destinatarios alcanzados',
-          );
+          if (debeReintentarEtapa(etapa, t.pickupWindowStart, now)) {
+            await liberarEtapa(db, etapa, t.id);
+            logger.warn(
+              {
+                assignmentId: t.id,
+                tripId: t.tripId,
+                etapa,
+                destinatarios: resultado.destinatarios,
+                enviados: resultado.enviados,
+              },
+              'recordatorio de vehículo pendiente sin destinatarios alcanzados',
+            );
+          } else {
+            logger.warn(
+              {
+                assignmentId: t.id,
+                tripId: t.tripId,
+                etapa,
+                pickupWindowStart: t.pickupWindowStart,
+                topeDias: TOPE_ANTIGUEDAD_VENTANA_INICIADA_DIAS,
+              },
+              'recordatorio de vehículo pendiente agotado por antigüedad; no se reintenta',
+            );
+          }
           continue;
         }
         if (etapa === 'ventana_iniciada') {
@@ -179,15 +228,17 @@ export async function recordarVehiculoPendiente(deps: {
           recordadosOficina += 1;
         }
       } catch (err) {
-        try {
-          await liberarEtapa(db, etapa, t.id);
-        } catch (liberarErr) {
-          logger.error(
-            { err: liberarErr, assignmentId: t.id, tripId: t.tripId, etapa },
-            'no se pudo liberar la marca de recordatorio de vehículo pendiente',
-          );
-        }
         fallidos += 1;
+        if (debeReintentarEtapa(etapa, t.pickupWindowStart, now)) {
+          try {
+            await liberarEtapa(db, etapa, t.id);
+          } catch (liberarErr) {
+            logger.error(
+              { err: liberarErr, assignmentId: t.id, tripId: t.tripId, etapa },
+              'no se pudo liberar la marca de recordatorio de vehículo pendiente',
+            );
+          }
+        }
         logger.warn(
           { err, assignmentId: t.id, tripId: t.tripId, etapa },
           'recordatorio de vehículo pendiente falló',
