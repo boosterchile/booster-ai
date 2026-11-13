@@ -226,6 +226,7 @@ describe('verRuta y listarRutas', () => {
     const r = await verRuta(db, { empresaId: 'empresa-1', rutaId: 'ruta-a' });
     expect(r.ok && r.ruta.huella).toEqual({
       es_estimacion: true,
+      presentacion: 'estimado',
       emisiones_kgco2e: '100.000',
       servicios: [
         {
@@ -242,6 +243,63 @@ describe('verRuta y listarRutas', () => {
         },
       ],
     });
+  });
+
+  it('una ruta cerrada con distancia de mapas no se presenta como medida', async () => {
+    const fila = {
+      estimadas: '100.000',
+      reales: '98.000',
+      fuente: 'maps_directions' as const,
+      cobertura: '0.00',
+      nivel: 'secundario_modeled' as const,
+    };
+    const { db } = baseFalsa({
+      rutas: [[ruta('ruta-a')]],
+      paradas: [JUNTAS],
+      asignaciones: [[servicio('a'), servicio('b')]],
+      unidades: [[unidad('veh-1')]],
+      viajes: [[viaje('a'), viaje('b')]],
+      usuarios: [[{ id: 'conductor-1', nombre: 'Juan' }]],
+      metricas_ruta: [[fila]],
+      metricas_viaje: [
+        [
+          {
+            viajeId: 'viaje-a',
+            participacion: '40.00',
+            estimadas: '40.000',
+            reales: '39.200',
+          },
+        ],
+      ],
+    });
+    const r = await verRuta(db, { empresaId: 'empresa-1', rutaId: 'ruta-a' });
+    expect(r.ok && r.ruta.huella?.es_estimacion).toBe(false);
+    expect(r.ok && r.ruta.huella?.presentacion).toBe('estimado');
+  });
+
+  it('una ruta medida por Teltonika se presenta como distancia medida', async () => {
+    const { db } = baseFalsa({
+      rutas: [[ruta('ruta-a')]],
+      paradas: [JUNTAS],
+      asignaciones: [[servicio('a'), servicio('b')]],
+      unidades: [[unidad('veh-1')]],
+      viajes: [[viaje('a'), viaje('b')]],
+      usuarios: [[{ id: 'conductor-1', nombre: 'Juan' }]],
+      metricas_ruta: [
+        [
+          {
+            estimadas: '100.000',
+            reales: '98.000',
+            fuente: 'teltonika_gps',
+            cobertura: '100.00',
+            nivel: 'secundario_modeled',
+          },
+        ],
+      ],
+      metricas_viaje: [[]],
+    });
+    const r = await verRuta(db, { empresaId: 'empresa-1', rutaId: 'ruta-a' });
+    expect(r.ok && r.ruta.huella?.presentacion).toBe('medido_teltonika');
   });
 
   it('sin vehículo ni conductor, y con una parada sin servicio, no inventa nada', async () => {

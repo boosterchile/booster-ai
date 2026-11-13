@@ -1,3 +1,4 @@
+import { type Presentacion, presentacionNivel } from '@booster-ai/certificate-generator';
 import { componeConArrastre } from '@booster-ai/matching-algorithm';
 import {
   type Aviso,
@@ -108,6 +109,8 @@ export interface VistaDeRuta {
    */
   readonly huella: {
     readonly es_estimacion: boolean;
+    /** ADR-091: quién midió. No se deduce de que ya exista la cifra real. */
+    readonly presentacion: Presentacion;
     readonly emisiones_kgco2e: string;
     readonly servicios: readonly {
       readonly viaje_id: string;
@@ -250,15 +253,18 @@ async function huellaDeRuta(
     .select({
       estimadas: metricasRuta.carbonEmissionsKgco2eEstimated,
       reales: metricasRuta.carbonEmissionsKgco2eActual,
+      fuente: metricasRuta.routeDataSource,
+      cobertura: metricasRuta.coveragePct,
+      nivel: metricasRuta.certificationLevel,
     })
     .from(metricasRuta)
     .where(eq(metricasRuta.rutaId, rutaId))
     .limit(1);
   const emisiones = total?.reales ?? total?.estimadas ?? null;
-  if (emisiones == null) {
+  if (!total || emisiones == null) {
     return null;
   }
-  const esEstimacion = total?.reales == null;
+  const esEstimacion = total.reales == null;
   // rls-allowlist: partes de viajes de una ruta ya autorizada por empresa
   const partes = await tx
     .select({
@@ -276,6 +282,11 @@ async function huellaDeRuta(
     );
   return {
     es_estimacion: esEstimacion,
+    presentacion: presentacionNivel({
+      ...(total.nivel ? { certificationLevel: total.nivel } : {}),
+      ...(total.fuente ? { routeDataSource: total.fuente } : {}),
+      ...(total.cobertura == null ? {} : { coveragePct: Number(total.cobertura) }),
+    }).presentacion,
     emisiones_kgco2e: emisiones,
     servicios: viajes.flatMap((v) => {
       const parte = partes.find((p) => p.viajeId === v.id);

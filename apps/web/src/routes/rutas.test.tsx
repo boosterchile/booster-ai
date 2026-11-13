@@ -234,6 +234,7 @@ describe('/app/rutas', () => {
           ...RUTA_A,
           huella: {
             es_estimacion: true,
+            presentacion: 'estimado',
             emisiones_kgco2e: '100.000',
             servicios: [
               {
@@ -256,7 +257,8 @@ describe('/app/rutas', () => {
     });
     await abrir();
     const huella = await screen.findByRole('region', { name: 'Huella de la ruta' });
-    expect(huella).toHaveTextContent('Estimación');
+    expect(huella).toHaveTextContent('Estimado');
+    expect(huella).not.toHaveTextContent('Medida');
     expect(huella).toHaveTextContent('100,000 kg CO₂e');
     expect(huella).toHaveTextContent('BOO-AAA111');
     expect(huella).toHaveTextContent('40,00 %');
