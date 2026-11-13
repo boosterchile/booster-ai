@@ -40,6 +40,8 @@ interface Estado {
   assignmentStatus: string;
   tripStatus: string;
   driverUserId: string | null;
+  /** matching-desde-la-carga §3.8: sin vehículo no se confirma la recogida. */
+  vehicleId?: string | null;
   pickedUpAt: Date | null;
   /** Aceptación de la oferta: cota inferior del `pickedUpAt` provisto (T9). */
   acceptedAt?: Date;
@@ -75,6 +77,7 @@ function makeDb(estado: Estado, opts: { assignmentExists?: boolean } = {}) {
                         assignmentId: ASSIGNMENT_ID,
                         assignmentStatus: estado.assignmentStatus,
                         driverUserId: estado.driverUserId,
+                        vehicleId: estado.vehicleId === undefined ? 'veh-1' : estado.vehicleId,
                         pickedUpAt: estado.pickedUpAt,
                         acceptedAt: estado.acceptedAt ?? ACCEPTED_AT,
                         empresaId: EMPRESA_ID,
@@ -239,6 +242,42 @@ describe('confirmarRecogidaViaje', () => {
       return;
     }
     expect(r.code).toBe('assignment_not_found');
+  });
+
+  it('sin vehículo en la ruta → ruta_sin_vehiculo', async () => {
+    const { db, updates } = makeDb({
+      assignmentStatus: 'asignado',
+      tripStatus: 'asignado',
+      driverUserId: DRIVER_ID,
+      vehicleId: null,
+      pickedUpAt: null,
+    });
+    const r = await confirmarRecogidaViaje({ db, logger, assignmentId: ASSIGNMENT_ID, actor });
+    expect(r).toEqual({ ok: false, code: 'ruta_sin_vehiculo' });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('sin conductor en la ruta → ruta_sin_conductor', async () => {
+    const { db, updates } = makeDb({
+      assignmentStatus: 'asignado',
+      tripStatus: 'asignado',
+      driverUserId: null,
+      vehicleId: 'veh-1',
+      pickedUpAt: null,
+    });
+    const r = await confirmarRecogidaViaje({
+      db,
+      logger,
+      assignmentId: ASSIGNMENT_ID,
+      actor: {
+        userId: 'jefa-1',
+        empresaId: EMPRESA_ID,
+        esConductorAsignado: false,
+        esCarrierConEscritura: true,
+      },
+    });
+    expect(r).toEqual({ ok: false, code: 'ruta_sin_conductor' });
+    expect(updates).toHaveLength(0);
   });
 
   it('un conductor que NO es el asignado no puede confirmar', async () => {
