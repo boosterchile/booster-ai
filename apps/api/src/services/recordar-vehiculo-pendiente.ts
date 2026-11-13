@@ -1,7 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
+import { conductorDeAsignacion, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, trips } from '../db/schema.js';
 import { type EventoCambioCarga, notifyCambioCarga } from './notify-cambio-carga.js';
 
@@ -107,7 +107,7 @@ async function tomarEtapa(db: Db, etapa: EtapaVehiculoPendiente, now: Date): Pro
         id: assignments.id,
         tripId: assignments.tripId,
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       });
   });
 }

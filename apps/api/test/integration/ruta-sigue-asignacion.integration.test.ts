@@ -311,21 +311,23 @@ describe('integration: la ruta sigue a su asignación', () => {
     });
   });
 
-  test('una recogida sin conductor se confirma igual y la ruta no pasa a en curso', async () => {
+  test('una recogida sin conductor se rechaza (ruta_sin_conductor)', async () => {
     const e = await aceptada();
     const r = await recoger(e);
-    expect(r.ok).toBe(true);
+    expect(r).toMatchObject({ ok: false, code: 'ruta_sin_conductor' });
 
     const { asignacion, ruta, paradas } = await leer(e.assignment.id);
-    expect(asignacion?.status).toBe('recogido');
+    expect(asignacion?.status).toBe('asignado');
     expect(ruta).toMatchObject({ status: 'planificada', startedAt: null });
     expect(paradas.map((p) => p.resolvedAt)).toEqual([null, null]);
   });
 
-  test('al asignar el conductor que faltaba, la ruta recogida pasa a en curso', async () => {
+  test('tras asignar el conductor que faltaba, la recogida pone la ruta en curso', async () => {
     const e = await aceptada();
-    await recoger(e);
+    expect(await recoger(e)).toMatchObject({ ok: false, code: 'ruta_sin_conductor' });
     await asignarConductor(e);
+    const r = await recoger(e);
+    expect(r.ok).toBe(true);
 
     const { asignacion, ruta, paradas } = await leer(e.assignment.id);
     expect(ruta).toMatchObject({
