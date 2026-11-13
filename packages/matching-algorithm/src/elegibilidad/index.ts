@@ -26,3 +26,8 @@ export {
   candidatasPorCarga,
   compararCandidatas,
 } from './candidatas.js';
+export {
+  type ClaseVehiculoPorDefecto,
+  claseMasChicaElegible,
+  claseMasChicaQueCubre,
+} from './clase-mas-chica.js';

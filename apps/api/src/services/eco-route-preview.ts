@@ -4,6 +4,7 @@ import {
   calcularEmisionesViaje,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
+import { claseMasChicaElegible } from '@booster-ai/matching-algorithm';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { offers, trips, vehicles } from '../db/schema.js';
@@ -229,7 +230,11 @@ export async function generarEcoPreview(opts: {
       metodo: 'por_defecto',
       distanciaKm: distanceKm,
       cargaKg,
-      tipoVehiculo: 'camion_mediano',
+      tipoVehiculo: claseMasChicaElegible({
+        cargoType: trip.cargoType,
+        weightKg: trip.cargoWeightKg,
+        volumeM3: trip.cargoVolumeM3,
+      }),
     });
   }
 

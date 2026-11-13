@@ -5,6 +5,7 @@ import {
   derivarNivelRuta,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
+import { claseMasChicaQueCubre } from '@booster-ai/matching-algorithm';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { tripMetrics, trips, vehicles } from '../db/schema.js';
@@ -76,7 +77,9 @@ export async function estimarHuellaDeRuta(opts: {
   const viajes = await db
     .select({
       id: trips.id,
+      cargoType: trips.cargoType,
       cargoWeightKg: trips.cargoWeightKg,
+      cargoVolumeM3: trips.cargoVolumeM3,
       origen: trips.originAddressRaw,
       destino: trips.destinationAddressRaw,
       origenRegion: trips.originRegionCode,
@@ -169,6 +172,15 @@ export async function estimarHuellaDeRuta(opts: {
   const consumoBase = veh?.consumptionLPer100kmBaseline
     ? Number(veh.consumptionLPer100kmBaseline)
     : null;
+  const tipoPorDefecto =
+    veh?.vehicleType ??
+    claseMasChicaQueCubre(
+      viajes.map((v) => ({
+        cargoType: v.cargoType,
+        weightKg: v.cargoWeightKg,
+        volumeM3: v.cargoVolumeM3,
+      })),
+    );
   const params: ParametrosRuta =
     veh?.fuelType && consumoBase != null
       ? {
@@ -181,7 +193,7 @@ export async function estimarHuellaDeRuta(opts: {
             capacidadKg: veh.capacityKg,
           },
         }
-      : { metodo: 'por_defecto', tramos, tipoVehiculo: veh?.vehicleType ?? 'camion_mediano' };
+      : { metodo: 'por_defecto', tramos, tipoVehiculo: tipoPorDefecto };
 
   let huella: HuellaDeRuta;
   try {
