@@ -128,8 +128,9 @@ function huellaSegunPerfil(opts: {
   cargaKg: number;
   cargoType: TipoDeCarga;
   cargoWeightKg: number | null;
+  cargoVolumeM3: number | null;
 }): HuellaDeServicio {
-  const { tripId, veh, distanciaKm, cargaKg, cargoType, cargoWeightKg } = opts;
+  const { tripId, veh, distanciaKm, cargaKg, cargoType, cargoWeightKg, cargoVolumeM3 } = opts;
   if (veh) {
     const consumoBase = veh.consumptionLPer100kmBaseline
       ? Number(veh.consumptionLPer100kmBaseline)
@@ -161,7 +162,7 @@ function huellaSegunPerfil(opts: {
     tipoVehiculo: claseMasChicaElegible({
       cargoType,
       weightKg: cargoWeightKg,
-      volumeM3: null,
+      volumeM3: cargoVolumeM3,
     }),
   });
 }
@@ -394,6 +395,7 @@ async function calcularMetricasEstimadasInner(
     cargaKg,
     cargoType: trip.cargoType,
     cargoWeightKg: trip.cargoWeightKg,
+    cargoVolumeM3: trip.cargoVolumeM3,
   });
   const { emisiones } = huellaEstimada;
 
@@ -1008,6 +1010,7 @@ async function recalcularNivelPostEntregaInner(opts: {
               cargaKg: trip.cargoWeightKg,
               cargoType: trip.cargoType,
               cargoWeightKg: trip.cargoWeightKg,
+              cargoVolumeM3: trip.cargoVolumeM3,
             });
       huella = 'medida';
     }

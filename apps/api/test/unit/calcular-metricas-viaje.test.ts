@@ -11,6 +11,11 @@ import {
 vi.mock('../../src/services/routes-api.js', () => ({
   computeRoutes: vi.fn(),
 }));
+vi.mock('@booster-ai/matching-algorithm', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@booster-ai/matching-algorithm')>();
+  return { ...orig, claseMasChicaElegible: vi.fn(orig.claseMasChicaElegible) };
+});
+const { claseMasChicaElegible } = await import('@booster-ai/matching-algorithm');
 // T12/T13: las métricas de negocio de la huella se capturan con spies (el meter
 // real es no-op en tests y no deja rastro).
 const { counterSpies } = vi.hoisted(() => ({
@@ -186,6 +191,31 @@ describe('calcularMetricasEstimadas', () => {
     expect(result.emisiones.metodoPrecision).toBe('por_defecto');
     expect(result.emisiones.fuenteFactores).toContain('camion_pequeno');
     expect(result.emisiones.emisionesKgco2eWtw).toBeGreaterThan(0);
+    expect(claseMasChicaElegible).toHaveBeenCalledWith({
+      cargoType: 'carga_seca',
+      weightKg: 5000,
+      volumeM3: null,
+    });
+  });
+
+  it('vehicleId=null pasa cargoVolumeM3 a claseMasChicaElegible', async () => {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, cargoVolumeM3: 42 }], []],
+      inserts: [[]],
+    });
+
+    await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+    });
+
+    expect(claseMasChicaElegible).toHaveBeenCalledWith({
+      cargoType: 'carga_seca',
+      weightKg: 5000,
+      volumeM3: 42,
+    });
   });
 
   it('vehicleId=null + refrigerada → por_defecto refrigerado (no camion_mediano)', async () => {
