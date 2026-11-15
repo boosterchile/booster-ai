@@ -1,3 +1,4 @@
+import { type Presentacion, presentacionNivel } from '@booster-ai/certificate-generator';
 import { componeConArrastre } from '@booster-ai/matching-algorithm';
 import {
   type Aviso,
@@ -19,8 +20,10 @@ import {
   assignments,
   conductores,
   eventosRuta,
+  metricasRuta,
   paradasRuta,
   rutas,
+  tripMetrics,
   trips,
   users,
   vehicles,
@@ -100,6 +103,22 @@ export interface VistaDeRuta {
     readonly volumen_m3: number;
     readonly capacidad_m3: number;
   }[];
+  /**
+   * Huella consolidada §4. Solo en una ruta con más de una carga, y solo
+   * cuando ya hay cifra. El total es de la ruta; cada servicio trae su parte.
+   */
+  readonly huella: {
+    readonly es_estimacion: boolean;
+    /** ADR-091: quién midió. No se deduce de que ya exista la cifra real. */
+    readonly presentacion: Presentacion;
+    readonly emisiones_kgco2e: string;
+    readonly servicios: readonly {
+      readonly viaje_id: string;
+      readonly codigo_seguimiento: string;
+      readonly participacion_pct: string;
+      readonly emisiones_kgco2e: string | null;
+    }[];
+  } | null;
 }
 
 const tramoPublico = (t: Tramo) => ({
@@ -213,6 +232,76 @@ async function vistaDe(tx: Tx, cargada: RutaCargada): Promise<VistaDeRuta> {
       volumen_m3: a.volumenM3,
       capacidad_m3: a.capacidadM3,
     })),
+    huella: await huellaDeRuta(tx, fila.id, viajes),
+  };
+}
+
+/**
+ * Total de la ruta y la parte de cada carga. Una ruta de una sola carga no
+ * la trae: su huella sigue siendo la del viaje.
+ */
+async function huellaDeRuta(
+  tx: Tx,
+  rutaId: string,
+  viajes: readonly { id: string; trackingCode: string }[],
+): Promise<VistaDeRuta['huella']> {
+  if (viajes.length < 2) {
+    return null;
+  }
+  // rls-allowlist: metricas_ruta no tiene empresa_id; la ruta ya se autorizó por empresa
+  const [total] = await tx
+    .select({
+      estimadas: metricasRuta.carbonEmissionsKgco2eEstimated,
+      reales: metricasRuta.carbonEmissionsKgco2eActual,
+      fuente: metricasRuta.routeDataSource,
+      cobertura: metricasRuta.coveragePct,
+      nivel: metricasRuta.certificationLevel,
+    })
+    .from(metricasRuta)
+    .where(eq(metricasRuta.rutaId, rutaId))
+    .limit(1);
+  const emisiones = total?.reales ?? total?.estimadas ?? null;
+  if (!total || emisiones == null) {
+    return null;
+  }
+  const esEstimacion = total.reales == null;
+  // rls-allowlist: partes de viajes de una ruta ya autorizada por empresa
+  const partes = await tx
+    .select({
+      viajeId: tripMetrics.tripId,
+      participacion: tripMetrics.participacion,
+      estimadas: tripMetrics.carbonEmissionsKgco2eEstimated,
+      reales: tripMetrics.carbonEmissionsKgco2eActual,
+    })
+    .from(tripMetrics)
+    .where(
+      inArray(
+        tripMetrics.tripId,
+        viajes.map((v) => v.id),
+      ),
+    );
+  return {
+    es_estimacion: esEstimacion,
+    presentacion: presentacionNivel({
+      ...(total.nivel ? { certificationLevel: total.nivel } : {}),
+      ...(total.fuente ? { routeDataSource: total.fuente } : {}),
+      ...(total.cobertura == null ? {} : { coveragePct: Number(total.cobertura) }),
+    }).presentacion,
+    emisiones_kgco2e: emisiones,
+    servicios: viajes.flatMap((v) => {
+      const parte = partes.find((p) => p.viajeId === v.id);
+      if (!parte?.participacion) {
+        return [];
+      }
+      return [
+        {
+          viaje_id: v.id,
+          codigo_seguimiento: v.trackingCode,
+          participacion_pct: parte.participacion,
+          emisiones_kgco2e: esEstimacion ? parte.estimadas : parte.reales,
+        },
+      ];
+    }),
   };
 }
 

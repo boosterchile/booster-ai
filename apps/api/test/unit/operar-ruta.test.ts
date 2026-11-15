@@ -3,8 +3,10 @@ import {
   assignments,
   conductores,
   eventosRuta,
+  metricasRuta,
   paradasRuta,
   rutas,
+  tripMetrics,
   trips,
   users,
   vehicles,
@@ -51,6 +53,8 @@ function baseFalsa(respuestas: Partial<Record<string, Filas[]>>) {
     [trips, 'viajes'],
     [users, 'usuarios'],
     [conductores, 'conductores'],
+    [metricasRuta, 'metricas_ruta'],
+    [tripMetrics, 'metricas_viaje'],
   ]);
   const colas = new Map(Object.entries(respuestas).map(([k, v]) => [k, [...(v ?? [])]]));
   const siguiente = (tabla: unknown): Filas => {
@@ -190,6 +194,112 @@ describe('verRuta y listarRutas', () => {
     expect(vista?.paradas[3]?.servicio).toMatchObject({ direccion: 'Destino', ventana: null });
     // El servicio cancelado sin recoger no cuenta a bordo.
     expect(vista?.tramos.map((t) => t.masa_kg)).toEqual([1000, 1000, 1000]);
+    expect(vista?.huella).toBeNull();
+  });
+
+  it('con varias cargas entrega el total de la ruta y la parte de cada una', async () => {
+    const { db } = baseFalsa({
+      rutas: [[ruta('ruta-a')]],
+      paradas: [JUNTAS],
+      asignaciones: [[servicio('a'), servicio('b')]],
+      unidades: [[unidad('veh-1')]],
+      viajes: [[viaje('a'), viaje('b')]],
+      usuarios: [[{ id: 'conductor-1', nombre: 'Juan' }]],
+      metricas_ruta: [[{ estimadas: '100.000', reales: null }]],
+      metricas_viaje: [
+        [
+          {
+            viajeId: 'viaje-a',
+            participacion: '40.00',
+            estimadas: '40.000',
+            reales: null,
+          },
+          {
+            viajeId: 'viaje-b',
+            participacion: '60.00',
+            estimadas: '60.000',
+            reales: null,
+          },
+        ],
+      ],
+    });
+    const r = await verRuta(db, { empresaId: 'empresa-1', rutaId: 'ruta-a' });
+    expect(r.ok && r.ruta.huella).toEqual({
+      es_estimacion: true,
+      presentacion: 'estimado',
+      emisiones_kgco2e: '100.000',
+      servicios: [
+        {
+          viaje_id: 'viaje-a',
+          codigo_seguimiento: 'BOO-A',
+          participacion_pct: '40.00',
+          emisiones_kgco2e: '40.000',
+        },
+        {
+          viaje_id: 'viaje-b',
+          codigo_seguimiento: 'BOO-B',
+          participacion_pct: '60.00',
+          emisiones_kgco2e: '60.000',
+        },
+      ],
+    });
+  });
+
+  it('una ruta cerrada con distancia de mapas no se presenta como medida', async () => {
+    const fila = {
+      estimadas: '100.000',
+      reales: '98.000',
+      fuente: 'maps_directions' as const,
+      cobertura: '0.00',
+      nivel: 'secundario_modeled' as const,
+    };
+    const { db } = baseFalsa({
+      rutas: [[ruta('ruta-a')]],
+      paradas: [JUNTAS],
+      asignaciones: [[servicio('a'), servicio('b')]],
+      unidades: [[unidad('veh-1')]],
+      viajes: [[viaje('a'), viaje('b')]],
+      usuarios: [[{ id: 'conductor-1', nombre: 'Juan' }]],
+      metricas_ruta: [[fila]],
+      metricas_viaje: [
+        [
+          {
+            viajeId: 'viaje-a',
+            participacion: '40.00',
+            estimadas: '40.000',
+            reales: '39.200',
+          },
+        ],
+      ],
+    });
+    const r = await verRuta(db, { empresaId: 'empresa-1', rutaId: 'ruta-a' });
+    expect(r.ok && r.ruta.huella?.es_estimacion).toBe(false);
+    expect(r.ok && r.ruta.huella?.presentacion).toBe('estimado');
+  });
+
+  it('una ruta medida por Teltonika se presenta como distancia medida', async () => {
+    const { db } = baseFalsa({
+      rutas: [[ruta('ruta-a')]],
+      paradas: [JUNTAS],
+      asignaciones: [[servicio('a'), servicio('b')]],
+      unidades: [[unidad('veh-1')]],
+      viajes: [[viaje('a'), viaje('b')]],
+      usuarios: [[{ id: 'conductor-1', nombre: 'Juan' }]],
+      metricas_ruta: [
+        [
+          {
+            estimadas: '100.000',
+            reales: '98.000',
+            fuente: 'teltonika_gps',
+            cobertura: '100.00',
+            nivel: 'secundario_modeled',
+          },
+        ],
+      ],
+      metricas_viaje: [[]],
+    });
+    const r = await verRuta(db, { empresaId: 'empresa-1', rutaId: 'ruta-a' });
+    expect(r.ok && r.ruta.huella?.presentacion).toBe('medido_teltonika');
   });
 
   it('sin vehículo ni conductor, y con una parada sin servicio, no inventa nada', async () => {
