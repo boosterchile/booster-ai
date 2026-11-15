@@ -411,3 +411,69 @@ resource "google_project_iam_member" "claude_cloud_readonly_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.claude_cloud_readonly.email}"
 }
+
+# -----------------------------------------------------------------------------
+# Cursor Cloud Agent — escritura mínima para terraform apply de schedulers
+# -----------------------------------------------------------------------------
+# Autorización PO (Felipe Vicencio, 2026-11-15): «ampliar entonces» — ampliar
+# IAM de cursor-agent@ para poder aplicar el job
+# google_cloud_scheduler_job.vehiculo_pendiente_recordatorio (y crons del
+# mismo patrón). Archivo protegido (IAM en infrastructure/); se declara en el PR.
+#
+# La SA ya existe fuera de Terraform (llave en el entorno Cursor Cloud). No
+# gestionamos su lifecycle aquí — solo bindings. Ya tiene roles/viewer +
+# lecturas auxiliares; NO puede impersonar github-deployer@.
+#
+# Mínimo explícito (nada más):
+#   (a) roles/storage.objectUser en el bucket de tfstate → lock create/delete
+#       + write del state (storage.objects.create/delete/get/update/list).
+#   (b) custom role cursorAgentSchedulerWriter → CRUD de Cloud Scheduler jobs
+#       (sin roles/cloudscheduler.admin ni appengine/serviceusage extra).
+#   (c) roles/iam.serviceAccountUser SOLO sobre internal_cron_invoker → actAs
+#       para el OIDC del http_target (requerido al create/update del job).
+# Lecturas de Cloud Run URL / SA email: cubiertas por roles/viewer existente.
+# NO se otorga redis.instances.getAuthString (solo ensucia el plan completo;
+# el target del scheduler no lo necesita).
+
+locals {
+  cursor_agent_member = "serviceAccount:cursor-agent@${google_project.booster_ai.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_storage_bucket_iam_member" "cursor_agent_tfstate" {
+  bucket = var.tfstate_bucket
+  role   = "roles/storage.objectUser"
+  member = local.cursor_agent_member
+}
+
+resource "google_project_iam_custom_role" "cursor_agent_scheduler_writer" {
+  role_id     = "cursorAgentSchedulerWriter"
+  title       = "Cursor Agent — Cloud Scheduler writer"
+  description = "Mínimo para terraform create/update/delete de google_cloud_scheduler_job. Autorizado PO 2026-11-15."
+  project     = google_project.booster_ai.project_id
+  permissions = [
+    "cloudscheduler.jobs.create",
+    "cloudscheduler.jobs.delete",
+    "cloudscheduler.jobs.enable",
+    "cloudscheduler.jobs.fullView",
+    "cloudscheduler.jobs.get",
+    "cloudscheduler.jobs.list",
+    "cloudscheduler.jobs.pause",
+    "cloudscheduler.jobs.run",
+    "cloudscheduler.jobs.update",
+    "cloudscheduler.locations.get",
+    "cloudscheduler.locations.list",
+  ]
+  stage = "GA"
+}
+
+resource "google_project_iam_member" "cursor_agent_scheduler_writer" {
+  project = google_project.booster_ai.project_id
+  role    = google_project_iam_custom_role.cursor_agent_scheduler_writer.id
+  member  = local.cursor_agent_member
+}
+
+resource "google_service_account_iam_member" "cursor_agent_act_as_cron_invoker" {
+  service_account_id = google_service_account.internal_cron_invoker.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = local.cursor_agent_member
+}
