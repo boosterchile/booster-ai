@@ -1,14 +1,14 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 · `main` = `27f33609` (#958) · prod aún en imagen `25049f1b` (release del 2026-11-13; **código mergeado sin desplegar**: #956 y #958). Horas en America/Santiago.
+**Última actualización**: 2026-11-15 · 17:40 America/Santiago · `main` = `3c1b36af` (handoff #959; código #956/#958 en `27f33609`) · prod aún en imagen `25049f1b`. Horas en America/Santiago.
 **Anterior**: CURRENT del 2026-11-13 (#957). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `27f33609` | Matching 4–6 (#958) + huella web consolidada (#956) |
-| Prod (Cloud Run) | `25049f1b` | Sin release desde el 13-nov. Falta `gh workflow run release.yml --ref main` (PO) |
+| `main` | `3c1b36af` | Matching 4–6 (#958) + huella web (#956) + handoff |
+| Prod (Cloud Run) | `25049f1b` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) en **waiting** (gate `production`) |
 
 **Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe.
 
@@ -29,9 +29,9 @@
 
 ## Pendientes del PO (orden)
 
-1. **Release a prod** de `main` (`27f33609`) → gate humano → canary.
-2. Tras el release: comprobar que migración `0083` quedó aplicada.
-3. `terraform apply` de `infrastructure/vehiculo-pendiente.tf` (solo el job Scheduler; plan debe ser `1 to add, 0 to change, 0 to destroy`). Checklist en el comentario de revisión de #958.
+1. **Aprobar** el environment `production` del [release 43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) (SHA `27f33609`).
+2. Tras el deploy: comprobar migración `0083` aplicada.
+3. `terraform apply` de `infrastructure/vehiculo-pendiente.tf` (ADC del PO / Claude Code: la SA `cursor-agent` no tiene `cloudscheduler.jobs.create`). Plan debe ser `1 to add, 0 to change, 0 to destroy`. Checklist en #958.
 4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta). **Antes** de pasar matching a `activa`.
 5. Pasar matching `sombra` → `activa` con comparaciones a la vista.
 6. Un viaje con camión CAN (KZXB64, LFGR63, KFKW23, PLFL57, RCPC20) → primer certificado primario.
