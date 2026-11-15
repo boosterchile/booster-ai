@@ -21,7 +21,7 @@
 | Frente | Estado |
 |---|---|
 | Huella consolidada (6 partes) | **En prod** (#956). `/app/rutas` sigue detrás del flag |
-| Matching desde la carga (6 partes) | **En prod** (#958) con el cron de recordatorio activo. Modo sombra; declarar vehículo usable solo con `RUTAS_API_ACTIVADA` |
+| Matching desde la carga (6 partes) | **En prod** (#958) con el cron de recordatorio activo. Modo sombra; declarar vehículo usable solo con `RUTAS_API_ACTIVADA`. IAM de `cursor-agent` para futuros apply **pendiente** (#962) |
 | Ruta consolidada | 1–7 en prod (API apagada). Parte 8 (migración contract): al final, con rutas estables |
 | Reemisión certificados | Partes 1–5 en main/prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
 | Etapas 5–6 | Sin empezar (huella de flota; un solo sistema de diseño) |
@@ -29,13 +29,13 @@
 
 ## WIP
 
-- Cupos agente: **0/3** abiertos propios. Drafts viejos #876, #877, #748: no tocar sin pedido.
+- Cupos agente: **1/3** — PR [#962](https://github.com/boosterchile/booster-ai/pull/962) IAM `cursor-agent` (scheduler/tfstate); pendiente visto PO + one-shot IAM (chicken-egg). Drafts viejos #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
 1. ~~Aprobar environment `production` del release~~ — hecho (~17:45); deploy success 18:23.
 2. ~~Confirmar migración `0083`~~ — confirmada (84 aplicadas).
-3. ~~`terraform apply` de `infrastructure/vehiculo-pendiente.tf`~~ — aplicado por el PO (1 to add); primera corrida 200 con 0/0/0.
+3. ~~`terraform apply` de `infrastructure/vehiculo-pendiente.tf`~~ — aplicado por el PO (1 to add); primera corrida 200 con 0/0/0. Queda apply del IAM mínimo de `cursor-agent` (#962; chicken-egg: la SA no puede `setIamPolicy` ni tomar lock). One-shot con ADC del PO tras merge + visto PO — ver Evidencia del PR. **No** bypass `gcloud scheduler jobs create`.
 4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta). **Antes** de pasar matching a `activa`.
 5. Pasar matching `sombra` → `activa` con comparaciones a la vista.
 6. Un viaje con camión CAN (KZXB64, LFGR63, KFKW23, PLFL57, RCPC20) → primer certificado primario.
@@ -44,10 +44,10 @@
 
 ## Lo que sigue del lado del agente
 
-1. Nada bloqueante de código hasta los flags (o pedido del PO).
+1. Esperar APPROVE del PO en #962 (IAM). Tras merge, el PO aplica el one-shot IAM (o el agente reintenta apply tras propagación). Nada más de código bloqueante hasta los flags.
 2. Candidatos siguientes: etapa 5 (huella de flota), etapa 6 (sistema de diseño), o rutas parte 8 solo con rutas encendidas.
 3. Poner al día el plan de trabajo cuando exista de nuevo en el repo.
 
 ## Riesgos abiertos
 
-Tras deploy de #958: recogida exige conductor (BOO-4XZH2K sin conductor no se recoge). Carrocería obligatoria en create/PATCH. CAN sin viaje real. Ruta consolidada sin prueba real. Certificados no reproducibles. ADR-091 sin contraste normativo. Los 20 vehículos de prod siguen sin carrocería: la próxima edición en la web la exigirá.
+Tras deploy de #958: recogida exige conductor (BOO-4XZH2K sin conductor no se recoge). Carrocería obligatoria en create/PATCH. CAN sin viaje real. Ruta consolidada sin prueba real. Certificados no reproducibles. ADR-091 sin contraste normativo. Los 20 vehículos de prod siguen sin carrocería: la próxima edición en la web la exigirá. Cron recordatorio ya corre en Scheduler; IAM de `cursor-agent` aún no permite apply futuros sin el one-shot del PO (#962).
