@@ -169,7 +169,8 @@ export function serializeTripMetrics(
     | 'certificateSha256'
     | 'certificateKmsKeyVersion'
     | 'certificateIssuedAt'
-  >,
+  > & { participacion?: string | null },
+  opts?: { readonly compartida?: boolean },
 ) {
   return {
     distance_km_estimated: m.distanceKmEstimated,
@@ -186,6 +187,9 @@ export function serializeTripMetrics(
     certificate_sha256: m.certificateSha256,
     certificate_kms_key_version: m.certificateKmsKeyVersion,
     certificate_issued_at: m.certificateIssuedAt,
+    // Huella consolidada §4: el generador ve que su cifra es una parte y cuál
+    // es su participación. El total de la ruta no sale por aquí.
+    consolidacion: opts?.compartida ? { participacion_pct: m.participacion ?? null } : null,
   };
 }
 
@@ -794,7 +798,9 @@ export function createTripRequestsV2Routes(opts: {
             viaja_consolidada: viajaConsolidada,
           }
         : null,
-      metrics: metricsRow ? serializeTripMetrics(metricsRow) : null,
+      metrics: metricsRow
+        ? serializeTripMetrics(metricsRow, { compartida: viajaConsolidada })
+        : null,
     });
   });
 

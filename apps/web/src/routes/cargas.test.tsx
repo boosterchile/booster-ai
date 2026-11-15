@@ -637,6 +637,52 @@ describe('CargasDetalleRoute', () => {
     expect(
       screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/parte de tu carga/)).toBeNull();
+  });
+
+  it('carga consolidada → dice que la cifra es su parte y cuándo sale el certificado', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 'trip-1',
+        tracking_code: 'BST-999',
+        status: 'entregado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        cargo_volume_m3: null,
+        pickup_window_start: null,
+        pickup_window_end: null,
+        created_at: '2026-05-10T10:00:00Z',
+      },
+      events: [],
+      assignment: null,
+      metrics: {
+        distance_km_estimated: '120.00',
+        distance_km_actual: null,
+        carbon_emissions_kgco2e_estimated: '40.000',
+        carbon_emissions_kgco2e_actual: null,
+        precision_method: 'modelado',
+        glec_version: 'v3.0',
+        route_data_source: 'teltonika_gps',
+        coverage_pct: '100.00',
+        certification_level: 'secundario_modeled',
+        linea_metodo: 'Consumo modelado según GLEC v3.0',
+        certificate_pdf_url: null,
+        certificate_sha256: null,
+        certificate_kms_key_version: null,
+        certificate_issued_at: null,
+        consolidacion: { participacion_pct: '42.50' },
+      },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/parte de tu carga en la ruta/)).toBeInTheDocument();
+    expect(screen.getByText('42,50 %')).toBeInTheDocument();
+    expect(screen.getByText(/cuando termina la ruta/)).toBeInTheDocument();
+    expect(screen.queryByText(/Generando certificado/)).toBeNull();
   });
 });
 
