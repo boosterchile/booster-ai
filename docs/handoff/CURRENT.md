@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 · 19:05 America/Santiago · `main` = `4f6fcf48` (handoff #961; código #956/#958 en `27f33609`) · prod en imagen `27f33609` (revisión `booster-ai-api-00476-lts`, 100%). Horas en America/Santiago.
+**Última actualización**: 2026-11-15 · 18:52 America/Santiago · `main` = `4f6fcf48` (handoff #961; código #956/#958 en `27f33609`) · prod en imagen `27f33609` (revisión `booster-ai-api-00476-lts`, 100%). Horas en America/Santiago.
 **Anterior**: CURRENT del 2026-11-15 18:26 (#961, release success, cron pendiente). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
