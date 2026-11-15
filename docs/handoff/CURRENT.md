@@ -1,69 +1,49 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-13 · `main` = `25049f1b` (#955) · prod = imagen `25049f1b` en los 8 servicios de Cloud Run (release terminado ~11:53 hora de Santiago). Horas en America/Santiago salvo que se diga otra.
-**Anterior**: CURRENT del 2026-10-29, archivado en [`2026-10-29-snapshot-current-2026-09.md`](2026-10-29-snapshot-current-2026-09.md) y en el propio CURRENT de esa fecha (reemplazado aquí).
-**Método**: corte del informe de ejecución v3 (2026-11-13, 12:10 Santiago): `git` sobre `origin/main`, GitHub, Cloud Run solo lectura y BD de prod solo `SELECT`. Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`. **Aquí no se declara cerrado ningún slot: eso lo hace el PO.**
+**Última actualización**: 2026-11-15 · `main` = `27f33609` (#958) · prod aún en imagen `25049f1b` (release del 2026-11-13; **código mergeado sin desplegar**: #956 y #958). Horas en America/Santiago.
+**Anterior**: CURRENT del 2026-11-13 (#957). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
-## Estado de prod (verificado 2026-11-13)
+## Estado de prod vs main
 
-| Componente | Estado |
-|---|---|
-| api · web · document-service · matching-engine · notification-service · sms-fallback-gateway · telemetry-processor · whatsapp-bot | 100 % en imagen `25049f1b` |
-| `/health` del api | 200 |
-| Migraciones | 83 aplicadas, ninguna pendiente |
-| Staging | Proyecto gemelo aún no existe; `release-staging.yml` se salta (deuda ADR-083) |
-| Release en curso | Ninguno |
+| | Commit | Notas |
+|---|---|---|
+| `main` | `27f33609` | Matching 4–6 (#958) + huella web consolidada (#956) |
+| Prod (Cloud Run) | `25049f1b` | Sin release desde el 13-nov. Falta `gh workflow run release.yml --ref main` (PO) |
 
-**Flags relevantes (prod):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Ruta consolidada y web de rutas desplegadas pero inaccesibles mientras el interruptor esté apagado.
+**Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe.
 
-### Datos de prod (solo lectura, ~12:05 Santiago)
-
-- **Certificados: 8, todos v1.** Último 2026-11-03. Primarios: 0. Distancia Maps: 5 (cobertura 0 %). Teltonika: 3 (cobertura 100 %, con sello «Estimado» de la regla anterior a ADR-091).
-- **Vehículos: 20.** Diez con Teltonika. **Cinco envían CAN (elemento 83):** KZXB64, LFGR63, KFKW23, PLFL57, RCPC20. Desde #955 la huella lee ese dato por telemetría; el flag manual solo avisa si deja de llegar.
-- **Por qué no hay primario:** el único viaje CAN fue BOO-HC7DJX (KZXB64, 20-oct) y cayó a Maps (#836 corregido después). Ningún camión con CAN ha viajado desde entonces.
-- **Rutas: 10, todas de una sola carga.** Reparto y plantilla consolidada sin ejercicio real.
-- **Viajes: 17 creados; 10 a asignación; 9 entregados; 1 asignado.** Último viaje creado: 30-oct. Matching en sombra con poco o nada que comparar.
-
-## Plan de trabajo — corte 2026-11-13
+## Plan — corte post-merge 2026-11-15
 
 | Frente | Estado |
 |---|---|
-| Etapas 0–2 | En prod. Abiertos: anexo tipos de carga chilenos; chat destinatario–conductor |
-| Ruta consolidada (8 partes) | 1–7 en prod; API apagada. Parte 8 (migración contract columnas viejas): al final |
-| Huella consolidada (6 partes) | 1–5 en prod. Parte 6 (web): **#956** abierto, CI verde, espera visto PO |
-| Matching desde la carga (6 partes) | 1–3 en prod. **4–6 listas en rama** `cursor/matching-aceptar-sin-vehiculo-d8bd` (PR). Modo sombra activo |
-| Reemisión certificados | Partes 1–5 en prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
-| Etapas 5–6 (huella de flota; un solo sistema de diseño) | Sin empezar |
-| Fuera de plan (estos días) | Flota (#950/#954), sello por fuente (#951/#952), CAN por datos (#955): en prod |
+| Huella consolidada (6 partes) | **Cerrada en main** (#956). Visible en prod tras release; `/app/rutas` sigue detrás del flag |
+| Matching desde la carga (6 partes) | **Cerrada en main** (#958). Modo sombra; declarar vehículo usable en prod solo con `RUTAS_API_ACTIVADA` |
+| Ruta consolidada | 1–7 en prod (API apagada). Parte 8 (migración contract): al final, con rutas estables |
+| Reemisión certificados | Partes 1–5 en main/prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
+| Etapas 5–6 | Sin empezar (huella de flota; un solo sistema de diseño) |
+| Etapas 0–2 abiertos | Anexo tipos de carga chilenos; chat destinatario–conductor |
 
-## WIP y PRs
+## WIP
 
-- **Cupos agente (máx. 3):** #956 (huella web consolidada); matching 4–6 en rama `cursor/matching-aceptar-sin-vehiculo-d8bd`. Libre: 1.
-- **Drafts viejos (otras sesiones):** #876, #877 (certificado), #748 (retiro demo). No se tocan sin pedido.
+- Cupos agente: **0/3** abiertos propios. Drafts viejos #876, #877, #748: no tocar sin pedido.
 
-## Pendientes del PO (orden del informe v3)
+## Pendientes del PO (orden)
 
-1. Un viaje con un camión que lea CAN (cualquiera de los cinco) → primer certificado primario.
-2. Reemitir BOO-YWKZWR (job en seco por defecto).
-3. Decidir reemisión de los 3 certificados Teltonika sin sello.
-4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta).
-5. Pasar matching de `sombra` a `activa` con comparaciones a la vista.
-6. Mirar el mapa de Flota en prod (el agente no tiene clave Maps).
-7. Visto a #956 (cambia interfaz) y al PR de matching 4–6 (API + UI).
-8. `terraform apply` de `infrastructure/vehiculo-pendiente.tf` (scheduler; sin IAM nuevo) tras el merge de matching.
+1. **Release a prod** de `main` (`27f33609`) → gate humano → canary.
+2. Tras el release: comprobar que migración `0083` quedó aplicada.
+3. `terraform apply` de `infrastructure/vehiculo-pendiente.tf` (solo el job Scheduler; plan debe ser `1 to add, 0 to change, 0 to destroy`). Checklist en el comentario de revisión de #958.
+4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta). **Antes** de pasar matching a `activa`.
+5. Pasar matching `sombra` → `activa` con comparaciones a la vista.
+6. Un viaje con camión CAN (KZXB64, LFGR63, KFKW23, PLFL57, RCPC20) → primer certificado primario.
+7. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello.
+8. Mirar Flota/Maps en prod.
 
 ## Lo que sigue del lado del agente
 
-1. Merge de #956 tras el visto → cierra huella consolidada.
-2. Merge de matching 4–6 tras el visto (API + UI + migración 0083 expand + scheduler TF sin IAM).
-3. Rutas parte 8 solo con rutas encendidas y estables (contract + lista ADR-076).
-4. Etapas 5 y 6.
-5. Poner al día el plan de trabajo cuando exista de nuevo en el repo (hoy no está versionado).
+1. Nada bloqueante de código hasta el release/flags (o pedido del PO).
+2. Candidatos siguientes: etapa 5 (huella de flota), etapa 6 (sistema de diseño), o rutas parte 8 solo con rutas encendidas.
+3. Poner al día el plan de trabajo cuando exista de nuevo en el repo.
 
-## Riesgos abiertos (sin cambio)
+## Riesgos abiertos
 
-CAN sin viaje real · tres camiones CAN sin revisión manual del contador · ruta consolidada sin prueba real · mapa Flota sin verificar aquí · certificados no reproducibles (factor/perfil no versionados) · ADR-091 sin contraste normativo GLEC/ISO · GPS teléfono conserva sello Estimado · QR de retiro punta a punta sin verificar · Fase A TRL 10 sin re-auditoría desde 2026-10-29.
-
-## ADRs recientes (huella / rutas / matching)
-
-- ADR-088 ruta-parada-servicio · ADR-089 reparto huella · ADR-090 matching desde la carga · ADR-091 sello estimado por fuente (vigente; contraste normativo pendiente).
+Tras deploy de #958: recogida exige conductor (BOO-4XZH2K sin conductor no se recoge). Carrocería obligatoria en create/PATCH. CAN sin viaje real. Ruta consolidada sin prueba real. Certificados no reproducibles. ADR-091 sin contraste normativo.
