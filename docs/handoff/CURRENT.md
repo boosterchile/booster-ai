@@ -12,7 +12,7 @@
 
 **Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe.
 
-**Post-deploy verificado (18:24):** `GET https://api.boosterchile.com/health` y `/ready` OK. `POST /admin/jobs/vehiculo-pendiente-recordatorio` → 401 (ruta viva, exige OIDC). Job Scheduler `vehiculo-pendiente-recordatorio` **aún no existe**. Migración `0083`: no verificable por SQL desde la SA (IAP tunnel 4033); el API arranca con migrator en startup y `/ready` reporta DB ok — confirmar con query a `drizzle.__drizzle_migrations` desde el bastion del PO.
+**Post-deploy verificado (18:24):** `GET https://api.boosterchile.com/health` y `/ready` OK. `POST /admin/jobs/vehiculo-pendiente-recordatorio` → 401 (ruta viva, exige OIDC). Job Scheduler `vehiculo-pendiente-recordatorio` **aún no existe**. Migración `0083`: SQL vía `agent-query` bloqueado (IAP tunnel 4033 a `db-bastion`). Evidencia indirecta: revisión `00476-lts` logueó `Drizzle migrate() complete` a las 20:51:57 UTC al arrancar; journal en repo incluye `0083_recordatorio_vehiculo_pendiente`. Confirmar tag en `drizzle.__drizzle_migrations` desde el bastion del PO.
 
 ## Plan — corte post-merge 2026-11-15
 
