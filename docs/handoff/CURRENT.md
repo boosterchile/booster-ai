@@ -1,13 +1,13 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 · 18:52 America/Santiago · `main` = `4f6fcf48` (handoff #961; código #956/#958 en `27f33609`) · prod en imagen `27f33609` (revisión `booster-ai-api-00476-lts`, 100%). Horas en America/Santiago.
-**Anterior**: CURRENT del 2026-11-15 18:26 (#961, release success, cron pendiente). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-15 · 20:04 America/Santiago · `main` = `ddc0d8e0` (IAM #962; código #956/#958 en `27f33609`) · prod en imagen `27f33609` (revisión `booster-ai-api-00476-lts`, 100%). Horas en America/Santiago.
+**Anterior**: CURRENT del 2026-11-15 18:52 (#963, cron activo, IAM de `cursor-agent` pendiente). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `4f6fcf48` | Matching 4–6 (#958) + huella web (#956) + handoffs |
+| `main` | `ddc0d8e0` | Matching 4–6 (#958) + huella web (#956) + IAM de `cursor-agent` (#962) + handoffs |
 | Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success** (18:23 America/Santiago) |
 
 **Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe.
@@ -16,12 +16,14 @@
 
 **Cron `vehiculo-pendiente-recordatorio` (~18:30):** `terraform apply` del PO desde un worktree de `origin/main`; plan guardado `1 to add, 0 to change, 0 to destroy` sobre `google_cloud_scheduler_job.vehiculo_pendiente_recordatorio`. Job `ENABLED`, `*/15 * * * *` America/Santiago, OIDC `internal-cron-invoker`. Primera corrida 21:45 UTC (18:45): `200` en 26 ms, `recordadosOficina=0`, `avisadosGenerador=0`, `fallidos=0`, sin `skipped`. Reverso: `gcloud scheduler jobs pause vehiculo-pendiente-recordatorio --location southamerica-east1`.
 
+**IAM de `cursor-agent` (#962) aplicado:** `terraform apply` del PO desde un worktree de `origin/main` (`ddc0d8e0`), con plan guardado y `-target` sobre los cuatro recursos: `4 to add, 0 to change, 0 to destroy`. Comprobado en GCP: `cursor-agent@` tiene `roles/storage.objectUser` en `booster-ai-tfstate-494222`, el rol `cursorAgentSchedulerWriter` a nivel de proyecto (8 permisos de Scheduler, sin `run`/`enable`/`pause`) y `roles/iam.serviceAccountUser` sobre `internal-cron-invoker`. No se corrió un `terraform plan` completo después del apply con `-target`.
+
 ## Plan — corte post-merge 2026-11-15
 
 | Frente | Estado |
 |---|---|
 | Huella consolidada (6 partes) | **En prod** (#956). `/app/rutas` sigue detrás del flag |
-| Matching desde la carga (6 partes) | **En prod** (#958) con el cron de recordatorio activo. Modo sombra; declarar vehículo usable solo con `RUTAS_API_ACTIVADA`. IAM de `cursor-agent` para futuros apply **pendiente** (#962) |
+| Matching desde la carga (6 partes) | **En prod** (#958) con el cron de recordatorio activo. Modo sombra; declarar vehículo usable solo con `RUTAS_API_ACTIVADA`. IAM de `cursor-agent` para futuros apply de schedulers **aplicado** (#962) |
 | Ruta consolidada | 1–7 en prod (API apagada). Parte 8 (migración contract): al final, con rutas estables |
 | Reemisión certificados | Partes 1–5 en main/prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
 | Etapas 5–6 | Sin empezar (huella de flota; un solo sistema de diseño) |
@@ -29,13 +31,13 @@
 
 ## WIP
 
-- Cupos agente: **1/3** — PR [#962](https://github.com/boosterchile/booster-ai/pull/962) IAM `cursor-agent` (scheduler/tfstate); pendiente visto PO + one-shot IAM (chicken-egg). Drafts viejos #876, #877, #748: no tocar sin pedido.
+- Cupos agente: **0/3** abiertos propios (#962 mergeado y aplicado). Drafts viejos #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
 1. ~~Aprobar environment `production` del release~~ — hecho (~17:45); deploy success 18:23.
 2. ~~Confirmar migración `0083`~~ — confirmada (84 aplicadas).
-3. ~~`terraform apply` de `infrastructure/vehiculo-pendiente.tf`~~ — aplicado por el PO (1 to add); primera corrida 200 con 0/0/0. Queda apply del IAM mínimo de `cursor-agent` (#962; chicken-egg: la SA no puede `setIamPolicy` ni tomar lock). One-shot con ADC del PO tras merge + visto PO — ver Evidencia del PR. **No** bypass `gcloud scheduler jobs create`.
+3. ~~`terraform apply` de `infrastructure/vehiculo-pendiente.tf`~~ — aplicado por el PO (1 to add); primera corrida 200 con 0/0/0. El IAM mínimo de `cursor-agent` (#962) también quedó aplicado por el PO (4 to add).
 4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta). **Antes** de pasar matching a `activa`.
 5. Pasar matching `sombra` → `activa` con comparaciones a la vista.
 6. Un viaje con camión CAN (KZXB64, LFGR63, KFKW23, PLFL57, RCPC20) → primer certificado primario.
@@ -44,10 +46,10 @@
 
 ## Lo que sigue del lado del agente
 
-1. Esperar APPROVE del PO en #962 (IAM). Tras merge, el PO aplica el one-shot IAM (o el agente reintenta apply tras propagación). Nada más de código bloqueante hasta los flags.
+1. Nada bloqueante de código hasta los flags (o pedido del PO). Con el IAM de #962 aplicado, `cursor-agent` puede aplicar por Terraform los próximos jobs de Scheduler; el resto de la infraestructura sigue en manos del PO.
 2. Candidatos siguientes: etapa 5 (huella de flota), etapa 6 (sistema de diseño), o rutas parte 8 solo con rutas encendidas.
 3. Poner al día el plan de trabajo cuando exista de nuevo en el repo.
 
 ## Riesgos abiertos
 
-Tras deploy de #958: recogida exige conductor (BOO-4XZH2K sin conductor no se recoge). Carrocería obligatoria en create/PATCH. CAN sin viaje real. Ruta consolidada sin prueba real. Certificados no reproducibles. ADR-091 sin contraste normativo. Los 20 vehículos de prod siguen sin carrocería: la próxima edición en la web la exigirá. Cron recordatorio ya corre en Scheduler; IAM de `cursor-agent` aún no permite apply futuros sin el one-shot del PO (#962).
+Tras deploy de #958: recogida exige conductor (BOO-4XZH2K sin conductor no se recoge). Carrocería obligatoria en create/PATCH. CAN sin viaje real. Ruta consolidada sin prueba real. Certificados no reproducibles. ADR-091 sin contraste normativo. Los 20 vehículos de prod siguen sin carrocería: la próxima edición en la web la exigirá. `cursor-agent` puede crear, modificar y borrar cualquier job de Scheduler del proyecto y actuar como `internal-cron-invoker` (riesgo aceptado y documentado en `infrastructure/iam.tf`), y puede escribir el state de Terraform (bucket con versionado y borrado suave de 7 días).
