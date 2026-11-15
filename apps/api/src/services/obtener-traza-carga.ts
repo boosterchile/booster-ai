@@ -76,19 +76,19 @@ export async function obtenerTrazaCarga(opts: {
     .where(and(eq(assignments.id, assignmentId), eq(assignments.empresaId, empresaId)))
     .limit(1);
 
-  if (!row) {
+  if (!row || row.vehicleId == null) {
+    // Sin vehículo no hay traza GPS; el INNER JOIN ya la excluye en la práctica.
     return { kind: 'not_found' };
   }
 
+  const vehicleId = row.vehicleId;
   const desde = row.pickup;
   const hasta = row.delivered ?? now;
   const distanciaEsperadaKm = row.distanciaEstimada !== null ? Number(row.distanciaEstimada) : null;
 
   // Sin ventana (pickup null) → traza vacía, pero seguimos exponiendo la ruta
   // esperada + la distancia estimada.
-  const puntos = desde
-    ? await cargarTrazaPoints({ db, vehicleId: row.vehicleId, desde, hasta })
-    : [];
+  const puntos = desde ? await cargarTrazaPoints({ db, vehicleId, desde, hasta }) : [];
 
   const base = construirResumen(puntos);
   const coberturaPct =
@@ -100,7 +100,7 @@ export async function obtenerTrazaCarga(opts: {
   logger.info(
     {
       assignmentId,
-      vehicleId: row.vehicleId,
+      vehicleId,
       puntosTotal: puntos.length,
       delivered: row.delivered !== null,
       conRutaEsperada: row.polyline !== null,

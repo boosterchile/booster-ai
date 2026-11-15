@@ -229,7 +229,7 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
           tripId: offer.tripId,
           offerId: offer.id,
           empresaId: offer.empresaId,
-          vehicleId: offer.suggestedVehicleId ?? '',
+          vehicleId: offer.suggestedVehicleId ?? null,
           status: 'asignado',
           agreedPriceClp: offer.proposedPriceClp,
           acceptedAt: now,

@@ -237,3 +237,60 @@ describe('notifyCambioCarga — recordatorio (§8)', () => {
     expect(payload.tag).toBe('viaje:trip-1:cambio_recordatorio');
   });
 });
+
+describe('notifyCambioCarga — vehículo pendiente (§3.9)', () => {
+  it('24 h: solo oficina, con tag propio', async () => {
+    const db = makeDb([{ userId: 'u-dueno' }]);
+    await notifyCambioCarga(
+      { db, logger },
+      {
+        tripId: 'trip-1',
+        asignacion: { id: 'asg-1', empresaId: 'emp-t', driverUserId: 'u-cond' },
+        evento: 'vehiculo_pendiente_24h',
+      },
+    );
+    expect(sendPushMock).toHaveBeenCalledTimes(1);
+    const { userId, payload } = sendPushMock.mock.calls[0]?.[0] as {
+      userId: string;
+      payload: { body: string; tag: string };
+    };
+    expect(userId).toBe('u-dueno');
+    expect(payload.body).toMatch(/Quedan 24 horas/);
+    expect(payload.tag).toBe('viaje:trip-1:vehiculo_pendiente_24h');
+  });
+
+  it('2 h: solo oficina', async () => {
+    const db = makeDb([{ userId: 'u-dueno' }]);
+    await notifyCambioCarga(
+      { db, logger },
+      {
+        tripId: 'trip-1',
+        asignacion: { id: 'asg-1', empresaId: 'emp-t', driverUserId: null },
+        evento: 'vehiculo_pendiente_2h',
+      },
+    );
+    const { payload } = sendPushMock.mock.calls[0]?.[0] as { payload: { body: string } };
+    expect(payload.body).toMatch(/Quedan 2 horas/);
+  });
+
+  it('ventana iniciada: solo al generador (su carga)', async () => {
+    const db = makeDb([{ userId: 'u-dueno' }]);
+    await notifyCambioCarga(
+      { db, logger },
+      {
+        tripId: 'trip-1',
+        asignacion: { id: 'asg-1', empresaId: 'emp-t', driverUserId: 'u-cond' },
+        evento: 'vehiculo_pendiente_vencido',
+      },
+    );
+    expect(sendPushMock).toHaveBeenCalledTimes(1);
+    const { userId, payload } = sendPushMock.mock.calls[0]?.[0] as {
+      userId: string;
+      payload: { body: string; tag: string; data: { url: string } };
+    };
+    expect(userId).toBe('u-gen');
+    expect(payload.body).toMatch(/aún no declaró el vehículo/);
+    expect(payload.tag).toBe('viaje:trip-1:vehiculo_pendiente_vencido');
+    expect(payload.data.url).toBe('/app/cargas/trip-1');
+  });
+});

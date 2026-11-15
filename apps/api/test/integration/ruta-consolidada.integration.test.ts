@@ -430,12 +430,13 @@ describe('integration: ruta con varios servicios', () => {
     expect((await asignacion(a)).vehicleId).toBe(f.vehiculo.id);
   });
 
-  test('una recogida sin conductor en la ruta se confirma y la ruta no pasa a en curso', async () => {
+  test('una recogida sin conductor en la ruta se rechaza (ruta_sin_conductor)', async () => {
     const f = await flota();
     const a = await aceptada(f, 1000);
     const b = await aceptada(f, 2000);
     const rutaId = await agrupar(a, b);
-    expect((await recoger(f, a)).ok).toBe(true);
+    const r = await recoger(f, a);
+    expect(r).toMatchObject({ ok: false, code: 'ruta_sin_conductor' });
     const { ruta, paradas } = await leer(rutaId);
     expect(ruta.status).toBe('planificada');
     expect(paradas.every((p) => p.resolvedAt === null)).toBe(true);

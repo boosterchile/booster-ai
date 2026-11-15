@@ -1076,6 +1076,9 @@ export function createAssignmentsRoutes(opts: {
     if (assignment.status !== 'asignado' && assignment.status !== 'recogido') {
       return c.json({ error: 'assignment_not_active', code: 'assignment_not_active' }, 409);
     }
+    if (assignment.vehicleId == null) {
+      return c.json({ error: 'ruta_sin_vehiculo', code: 'ruta_sin_vehiculo' }, 409);
+    }
 
     await opts.db.insert(posicionesMovilConductor).values({
       assignmentId,

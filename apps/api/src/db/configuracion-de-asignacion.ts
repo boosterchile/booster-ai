@@ -31,10 +31,11 @@ function deLaRuta<T>(columnaRuta: SQL, columnaAsignacion: unknown): SQL<T> {
 }
 
 /**
- * Vehículo del servicio. Hoy toda ruta lo tiene; cuando aceptar deje de
- * exigirlo (ADR-090), esta expresión podrá ser nula y su tipo cambia con ella.
+ * Vehículo del servicio. Opcional desde matching-desde-la-carga parte 4
+ * (ADR-090): aceptar deja la asignación y su ruta sin vehículo hasta
+ * declararlo al despachar (spec §3.7–3.8).
  */
-export const vehiculoDeAsignacion: SQL<string> = deLaRuta<string>(
+export const vehiculoDeAsignacion: SQL<string | null> = deLaRuta<string | null>(
   NOMBRE_COLUMNA.vehiculo,
   assignments.vehicleId,
 );

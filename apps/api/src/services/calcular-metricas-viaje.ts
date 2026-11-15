@@ -11,6 +11,7 @@ import {
   derivarNivelRuta,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
+import { type TipoDeCarga, claseMasChicaElegible } from '@booster-ai/matching-algorithm';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
@@ -79,7 +80,8 @@ type PerfilEnergeticoVehiculo = Pick<
 /**
  * Emisiones GLEC según el perfil declarado del vehículo: perfil completo
  * (combustible + consumo base) → `modelado`; incompleto → `por_defecto` con el
- * tipo de vehículo como proxy; sin vehículo → `por_defecto` camión mediano.
+ * tipo de vehículo como proxy; sin vehículo → `por_defecto` con la clase más
+ * chica elegible para la carga (matching-desde-la-carga §3.12).
  * Misma regla en la estimación (al asignar) y en la huella real (al cerrar):
  * el método no cambia por el momento del cálculo, solo la distancia.
  */
@@ -124,8 +126,11 @@ function huellaSegunPerfil(opts: {
   veh: PerfilEnergeticoVehiculo | undefined;
   distanciaKm: number;
   cargaKg: number;
+  cargoType: TipoDeCarga;
+  cargoWeightKg: number | null;
+  cargoVolumeM3: number | null;
 }): HuellaDeServicio {
-  const { tripId, veh, distanciaKm, cargaKg } = opts;
+  const { tripId, veh, distanciaKm, cargaKg, cargoType, cargoWeightKg, cargoVolumeM3 } = opts;
   if (veh) {
     const consumoBase = veh.consumptionLPer100kmBaseline
       ? Number(veh.consumptionLPer100kmBaseline)
@@ -154,7 +159,11 @@ function huellaSegunPerfil(opts: {
     metodo: 'por_defecto',
     distanciaKm,
     cargaKg,
-    tipoVehiculo: 'camion_mediano',
+    tipoVehiculo: claseMasChicaElegible({
+      cargoType,
+      weightKg: cargoWeightKg,
+      volumeM3: cargoVolumeM3,
+    }),
   });
 }
 
@@ -379,7 +388,15 @@ async function calcularMetricasEstimadasInner(
   // se trata como 0 (es un preview pre-asignación); la huella REAL del cierre
   // exige peso declarado (T13, `recalcularNivelPostEntrega`).
   const cargaKg = trip.cargoWeightKg ?? 0;
-  const huellaEstimada = huellaSegunPerfil({ tripId, veh, distanciaKm, cargaKg });
+  const huellaEstimada = huellaSegunPerfil({
+    tripId,
+    veh,
+    distanciaKm,
+    cargaKg,
+    cargoType: trip.cargoType,
+    cargoWeightKg: trip.cargoWeightKg,
+    cargoVolumeM3: trip.cargoVolumeM3,
+  });
   const { emisiones } = huellaEstimada;
 
   // (4) Persistencia — tx corta con todo pre-computado.
@@ -991,6 +1008,9 @@ async function recalcularNivelPostEntregaInner(opts: {
               veh: vehiculo,
               distanciaKm: distanciaKmReal,
               cargaKg: trip.cargoWeightKg,
+              cargoType: trip.cargoType,
+              cargoWeightKg: trip.cargoWeightKg,
+              cargoVolumeM3: trip.cargoVolumeM3,
             });
       huella = 'medida';
     }

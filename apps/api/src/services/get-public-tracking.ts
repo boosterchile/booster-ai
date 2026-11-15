@@ -129,10 +129,13 @@ export interface PublicTrackingResponse {
     cargo_type: string;
   };
   vehicle: {
-    /** Tipo del vehículo (e.g. 'camion_3_4'). */
+    /**
+     * Tipo del vehículo (e.g. 'camion_3_4'). Sin vehículo declarado aún
+     * (matching-desde-la-carga §3.7 / §3.11): `'por_asignar'`.
+     */
     type: string;
-    /** Últimos 4 chars de la plate, formato `**** XX12`. Privacy. */
-    plate_partial: string;
+    /** Últimos 4 chars de la plate, formato `**** XX12`. Privacy. Null si por asignar. */
+    plate_partial: string | null;
   };
   /** Posición reciente del vehículo. null si no hay lectura <30min. */
   position: PublicTrackingPosition | null;
@@ -235,6 +238,8 @@ export async function getPublicTracking(opts: {
   }
 
   // Lookup por token. Index UNIQUE garantiza O(log n).
+  // LEFT JOIN al vehículo: aceptar sin vehículo (§3.7) no debe devolver
+  // not_found con un token válido.
   const rows = await db
     .select({
       assignmentId: assignments.id,
@@ -262,7 +267,7 @@ export async function getPublicTracking(opts: {
     // rls-allowlist: tracking público por token, sin tenant de sesión por diseño (censo §2 / rls-viabilidad §3)
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+    .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(eq(assignments.publicTrackingToken, token))
     .limit(1);
 
@@ -289,20 +294,29 @@ export async function getPublicTracking(opts: {
 
   // Datos vivos (position/progress/eta): una sola lectura, compartida con el
   // detalle del generador. El corte por estado (fix privacidad) vive adentro.
-  const live = await computeLiveTracking({
-    db,
-    logger,
-    assignmentId: row.assignmentId,
-    vehicleId: row.vehicleId,
-    tripId: row.tripId,
-    tripStatus: row.tripStatus,
-    destinationAddress: row.destAddr,
-    destRegionCode: row.destRegionCode,
-    routesProjectId,
-    nowMs: now,
-    rutaId: row.rutaId,
-    destino: coordenadaDe(row.destLat, row.destLng),
-  });
+  // Sin vehículo no hay telemetría ni GPS móvil que consultar.
+  const live: LiveTracking = row.vehicleId
+    ? await computeLiveTracking({
+        db,
+        logger,
+        assignmentId: row.assignmentId,
+        vehicleId: row.vehicleId,
+        tripId: row.tripId,
+        tripStatus: row.tripStatus,
+        destinationAddress: row.destAddr,
+        destRegionCode: row.destRegionCode,
+        routesProjectId,
+        nowMs: now,
+        rutaId: row.rutaId,
+        destino: coordenadaDe(row.destLat, row.destLng),
+      })
+    : {
+        position: null,
+        positionSource: null,
+        angleDeg: null,
+        progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
+        etaMinutes: null,
+      };
 
   return {
     status: 'found',
@@ -313,10 +327,16 @@ export async function getPublicTracking(opts: {
       destination_address: zona(row.destComunaCode, row.destRegionCode),
       cargo_type: row.cargoType,
     },
-    vehicle: {
-      type: row.vehicleType,
-      plate_partial: maskPlate(row.vehiclePlate),
-    },
+    vehicle:
+      row.vehicleId && row.vehicleType && row.vehiclePlate
+        ? {
+            type: row.vehicleType,
+            plate_partial: maskPlate(row.vehiclePlate),
+          }
+        : {
+            type: 'por_asignar',
+            plate_partial: null,
+          },
     position: live.position,
     position_source: live.positionSource,
     progress: live.progress,

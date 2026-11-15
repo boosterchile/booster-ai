@@ -2,7 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { assertTransicion } from '@booster-ai/trip-state-machine';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
+import { conductorDeAsignacion, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripChangeRequests, tripEvents, trips } from '../db/schema.js';
 import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 
@@ -43,7 +43,15 @@ export type ConfirmarRecogidaResult =
   | { ok: true; alreadyPickedUp: boolean; pickedUpAt: Date; tripId: string }
   | {
       ok: false;
-      code: 'assignment_not_found' | 'forbidden' | 'invalid_status' | 'invalid_picked_up_at';
+      code:
+        | 'assignment_not_found'
+        | 'forbidden'
+        | 'invalid_status'
+        | 'invalid_picked_up_at'
+        /** matching-desde-la-carga §3.8: la ruta aún no declara vehículo. */
+        | 'ruta_sin_vehiculo'
+        /** matching-desde-la-carga §3.8: la ruta aún no declara conductor. */
+        | 'ruta_sin_conductor';
       currentStatus?: string;
     }
   /** editar-anular-cargas §6.12: hay un cambio sin responder; no se recoge. */
@@ -94,6 +102,7 @@ export async function confirmarRecogidaViaje(opts: {
         assignmentId: assignments.id,
         assignmentStatus: assignments.status,
         driverUserId: conductorDeAsignacion,
+        vehicleId: vehiculoDeAsignacion,
         pickedUpAt: assignments.pickedUpAt,
         acceptedAt: assignments.acceptedAt,
         empresaId: assignments.empresaId,
@@ -140,6 +149,23 @@ export async function confirmarRecogidaViaje(opts: {
         code: 'invalid_status' as const,
         currentStatus: row.assignmentStatus,
       };
+    }
+
+    // matching-desde-la-carga §3.8: no se confirma la recogida sin vehículo y
+    // conductor declarados en la ruta.
+    if (row.vehicleId == null) {
+      logger.info(
+        { assignmentId, tripId: row.tripId },
+        'confirmar-recogida bloqueada: ruta sin vehículo',
+      );
+      return { ok: false as const, code: 'ruta_sin_vehiculo' as const };
+    }
+    if (row.driverUserId == null) {
+      logger.info(
+        { assignmentId, tripId: row.tripId },
+        'confirmar-recogida bloqueada: ruta sin conductor',
+      );
+      return { ok: false as const, code: 'ruta_sin_conductor' as const };
     }
 
     // rls-allowlist: solicitud del viaje de una asignación ya autorizada arriba (empresaId o conductor).

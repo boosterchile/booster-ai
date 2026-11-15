@@ -45,8 +45,11 @@ export async function leerViajesEntregados(db: Db): Promise<ViajeEntregado[]> {
     )
     .then((filas) =>
       filas.flatMap((f) =>
-        // deliveredAt es NOT NULL por el WHERE; el tipo de Drizzle no lo sabe.
-        f.entregadoEn ? [{ ...f, entregadoEn: f.entregadoEn }] : [],
+        // deliveredAt y vehículo son NOT NULL por el WHERE / INNER JOIN; el
+        // tipo de Drizzle no lo sabe (vehiculoDeAsignacion es string | null).
+        f.entregadoEn && f.vehiculoId
+          ? [{ ...f, entregadoEn: f.entregadoEn, vehiculoId: f.vehiculoId }]
+          : [],
       ),
     );
 }

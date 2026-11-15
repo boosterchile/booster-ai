@@ -130,8 +130,9 @@ export interface AsignarConductorOutput {
   driverName: string | null;
   /** true si el usuario todavía no activó (firebase_uid pending-rut:). */
   driverPending: boolean;
-  previousVehicleId: string;
-  newVehicleId: string;
+  /** Puede ser null si la asignación aún no declara vehículo (§3.7). */
+  previousVehicleId: string | null;
+  newVehicleId: string | null;
 }
 
 /**

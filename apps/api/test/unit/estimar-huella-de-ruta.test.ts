@@ -79,7 +79,9 @@ const ruta = (servicios: ReturnType<typeof servicio>[], extra: object = {}) => (
 });
 const viaje = (id: string, pesoKg: number | null, origen = `Origen ${id}`) => ({
   id,
+  cargoType: 'carga_seca' as const,
   cargoWeightKg: pesoKg,
+  cargoVolumeM3: null as number | null,
   origen,
   destino: `Destino ${id}`,
   origenRegion: 'RM',
