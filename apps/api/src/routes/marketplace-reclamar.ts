@@ -15,6 +15,7 @@ import {
 } from '../services/offer-actions.js';
 import {
   EmpresaNoTransportistaError,
+  PrecioReclamoInvalidoError,
   ViajeNoReclamableError,
   ZonaNoCubreError,
   reclamarViaje,
@@ -78,6 +79,9 @@ export function createMarketplaceReclamarRoutes(opts: {
         ),
       );
 
+    // Listado por región de zona de la empresa activa (regionCodes ya
+    // filtrados por empresaId); viajes no tienen empresa_id — aislamiento
+    // por zona + sin oferta propia pendiente.
     const rows = await opts.db
       .select({
         id: trips.id,
@@ -92,6 +96,7 @@ export function createMarketplaceReclamarRoutes(opts: {
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
       })
+      // rls-allowlist: marketplace por zona (regionCodes filtrados por empresaId)
       .from(trips)
       .where(
         and(
@@ -184,6 +189,16 @@ export function createMarketplaceReclamarRoutes(opts: {
       }
       if (err instanceof ZonaNoCubreError) {
         return c.json({ error: 'zone_not_covered', code: 'zone_not_covered' }, 403);
+      }
+      if (err instanceof PrecioReclamoInvalidoError) {
+        return c.json(
+          {
+            error: 'claim_price_invalid',
+            code: 'claim_price_invalid',
+            proposed_price_clp: err.proposedPriceClp,
+          },
+          422,
+        );
       }
       if (err instanceof EmpresaNoTransportistaError) {
         return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);

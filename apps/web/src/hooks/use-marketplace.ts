@@ -37,7 +37,7 @@ interface ReclamarResponse {
 export function useViajesAbiertos(opts: { enabled?: boolean } = {}) {
   const scope = useEmpresaScope();
   return useQuery<ViajesAbiertosResponse>({
-    queryKey: scope.key('marketplace', 'viajes-abiertos'),
+    queryKey: scope.key('offers', 'viajes-abiertos'),
     queryFn: () => api.get<ViajesAbiertosResponse>('/marketplace/viajes-abiertos', scope.init),
     enabled: opts.enabled ?? true,
     staleTime: 15_000,
@@ -58,7 +58,6 @@ export function useReclamarViajeMutation() {
     mutationFn: ({ viajeId }) =>
       api.post<ReclamarResponse>(`/marketplace/viajes/${viajeId}/reclamar`, {}, scope.init),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['marketplace'] });
       void queryClient.invalidateQueries({ queryKey: ['offers'] });
     },
   });

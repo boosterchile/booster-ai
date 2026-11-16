@@ -37,6 +37,20 @@ export class EmpresaNoTransportistaError extends Error {
   }
 }
 
+/**
+ * Security: el reclamo no puede fijar agreedPriceClp en 0 ni tomar el precio
+ * de ofertas ajenas. Fuente canónica: `viajes.precio_propuesto_clp` (> 0).
+ */
+export class PrecioReclamoInvalidoError extends Error {
+  constructor(
+    public readonly tripId: string,
+    public readonly proposedPriceClp: number | null,
+  ) {
+    super(`Viaje ${tripId} sin precio canónico válido para reclamo`);
+    this.name = 'PrecioReclamoInvalidoError';
+  }
+}
+
 export interface ReclamarViajeOptions {
   db: Db;
   logger: Logger;
@@ -98,6 +112,7 @@ async function reclamarViajeInner(opts: ReclamarViajeOptions): Promise<ReclamarV
       id: trips.id,
       status: trips.status,
       originRegionCode: trips.originRegionCode,
+      proposedPriceClp: trips.proposedPriceClp,
     })
     .from(trips)
     .where(eq(trips.id, tripId))
@@ -111,6 +126,10 @@ async function reclamarViajeInner(opts: ReclamarViajeOptions): Promise<ReclamarV
   }
   if (!trip.originRegionCode) {
     throw new ViajeNoReclamableError(tripId, 'sin_region_origen');
+  }
+  const precioCanonico = trip.proposedPriceClp;
+  if (precioCanonico == null || precioCanonico <= 0) {
+    throw new PrecioReclamoInvalidoError(tripId, precioCanonico);
   }
 
   const zonaRows = await db
@@ -145,14 +164,9 @@ async function reclamarViajeInner(opts: ReclamarViajeOptions): Promise<ReclamarV
 
   let offerId = ofertaPropia?.id;
   if (!offerId) {
-    const precioRef = (
-      await db
-        .select({ proposedPriceClp: offers.proposedPriceClp })
-        .from(offers)
-        .where(and(eq(offers.tripId, tripId), eq(offers.status, 'pendiente')))
-        .limit(1)
-    )[0];
-    const proposedPriceClp = precioRef?.proposedPriceClp ?? 0;
+    // Precio canónico del viaje — nunca 0 ni precio de ofertas ajenas
+    // (Security Review HIGH discussion_r4588729632).
+    const proposedPriceClp = precioCanonico;
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
     const [creada] = await db
       .insert(offers)

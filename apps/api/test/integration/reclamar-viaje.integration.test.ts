@@ -159,12 +159,15 @@ describe('integration: reclamar viaje sin oferta', () => {
           cargoType: 'agricola',
           cargoWeightKg: 1000,
           pickupDateRaw: '2026-11-20',
+          proposedPriceClp: 220_000,
           status: 'ofertas_enviadas',
         })
         .returning(),
       'viaje',
     );
     // Oferta solo a `otra` — el transportista reclamante NO tiene oferta.
+    // Precio de la oferta ajena distinto del canónico del viaje: el reclamo
+    // debe usar el del viaje, no este ni 0.
     const ofertaOtra = uno(
       await db
         .insert(schema.offers)
@@ -195,6 +198,9 @@ describe('integration: reclamar viaje sin oferta', () => {
     expect(r.assignment.empresaId).toBe(e.transportista.id);
     expect(r.assignment.vehicleId).toBeNull();
     expect(r.assignment.offerId).toBeTruthy();
+    expect(r.assignment.agreedPriceClp).toBe(220_000);
+    expect(r.assignment.agreedPriceClp).not.toBe(0);
+    expect(r.assignment.agreedPriceClp).not.toBe(150_000);
 
     const [viaje] = await handle.db
       .select({ status: schema.trips.status })
@@ -235,5 +241,39 @@ describe('integration: reclamar viaje sin oferta', () => {
         userId: e.usuario.id,
       }),
     ).rejects.toMatchObject({ name: 'ViajeNoReclamableError' });
+  });
+
+  test('sin ofertas pendientes y sin precio canónico → rechaza (no agreedPrice 0)', async () => {
+    const e = await escenarioReclamable();
+    await handle.db
+      .update(schema.trips)
+      .set({ proposedPriceClp: null })
+      .where(eq(schema.trips.id, e.viaje.id));
+    await handle.db.delete(schema.offers).where(eq(schema.offers.tripId, e.viaje.id));
+
+    await expect(
+      reclamarViaje({
+        db: handle.db,
+        logger,
+        tripId: e.viaje.id,
+        empresaId: e.transportista.id,
+        userId: e.usuario.id,
+      }),
+    ).rejects.toMatchObject({ name: 'PrecioReclamoInvalidoError' });
+  });
+
+  test('sin ofertas pendientes usa precio del viaje (>0), nunca 0', async () => {
+    const e = await escenarioReclamable();
+    await handle.db.delete(schema.offers).where(eq(schema.offers.tripId, e.viaje.id));
+
+    const r = await reclamarViaje({
+      db: handle.db,
+      logger,
+      tripId: e.viaje.id,
+      empresaId: e.transportista.id,
+      userId: e.usuario.id,
+    });
+    expect(r.assignment.agreedPriceClp).toBe(220_000);
+    expect(r.assignment.agreedPriceClp).toBeGreaterThan(0);
   });
 });
