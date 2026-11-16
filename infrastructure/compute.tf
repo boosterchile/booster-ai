@@ -212,6 +212,11 @@ module "service_api" {
     # deep-link al dashboard en el template de WhatsApp.
     WEB_APP_URL = "https://app.${var.domain}"
 
+    # Remitente canónico de todos los correos Resend (PO 2026-11-16).
+    # Antes caía al default de config.ts (`no-reply@`); contacto@ es el From
+    # único. El dominio debe estar verificado en Resend (email.tf / DNS).
+    EMAIL_FROM = "Booster <contacto@${var.domain}>"
+
     # KMS key para firmar certificados de huella de carbono (RSA-PSS 4096
     # SHA256). El servicio emitirCertificadoViaje hace asymmetricSign con
     # esta key cuando un viaje pasa a entregado. Bucket de almacenamiento

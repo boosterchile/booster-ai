@@ -93,7 +93,7 @@ describe('ResendEmailSender', () => {
 
     const r = await new ResendEmailSender({
       apiKey: 're_test_key',
-      from: 'Booster <no-reply@boosterchile.com>',
+      from: 'Booster <contacto@boosterchile.com>',
       logger: makeLogger() as never,
     }).send(MENSAJE);
 
@@ -115,7 +115,7 @@ describe('ResendEmailSender', () => {
     const body = JSON.parse(init.body as string);
     expect(body).toEqual(
       expect.objectContaining({
-        from: 'Booster <no-reply@boosterchile.com>',
+        from: 'Booster <contacto@boosterchile.com>',
         to: ['fvp@live.cl'],
         subject: MENSAJE.subject,
       }),
@@ -129,7 +129,7 @@ describe('ResendEmailSender', () => {
     );
     const r = await new ResendEmailSender({
       apiKey: 're_test_key',
-      from: 'Booster <no-reply@boosterchile.com>',
+      from: 'Booster <contacto@boosterchile.com>',
       logger: makeLogger() as never,
     }).send(MENSAJE);
     expect(r).toEqual({ enviado: false, motivo: 'error_red' });
