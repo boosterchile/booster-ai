@@ -257,6 +257,15 @@ describe('integration: huella de una ruta con varios servicios', () => {
       viajes.push(viaje.id);
     }
 
+    // La ruta que se cierra ya trae su estimación (la escribe cada operación de
+    // la oficina). Es la referencia de plausibilidad del cierre: las trazas de
+    // abajo miden ≈9 km.
+    if (cerrada) {
+      await db
+        .insert(schema.metricasRuta)
+        .values({ rutaId: laRuta.id, distanceKmEstimated: '10.00' });
+    }
+
     // GPS del celular del conductor: un punto cada 30 s desde las 10:00.
     const minutos = opts.planificada ? 0 : (opts.minutosConGps ?? 9);
     if (minutos > 0) {
