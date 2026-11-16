@@ -711,10 +711,11 @@ export const apiEnvSchema = commonEnvSchema
     RESEND_API_KEY: z.string().min(8).optional(),
 
     /**
-     * Remitente de los correos salientes. El dominio debe estar verificado en
-     * Resend (registros DNS) o el proveedor rechaza el envío con 422.
+     * Remitente de los correos salientes (decisión PO 2026-11-16: canónico
+     * global `contacto@boosterchile.com`). El dominio debe estar verificado
+     * en Resend (registros DNS) o el proveedor rechaza el envío con 422.
      */
-    EMAIL_FROM: z.string().min(3).default('Booster <no-reply@boosterchile.com>'),
+    EMAIL_FROM: z.string().min(3).default('Booster <contacto@boosterchile.com>'),
 
     /**
      * onboarding-flow-redesign T1.3 — TTL del token one-shot, en horas. Default

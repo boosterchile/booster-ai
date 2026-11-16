@@ -9,13 +9,45 @@ como **equipo de Booster** (no como cliente externo).
 `POST /admin/personal-booster` (`.specs/alta-personal-booster`,
 `.specs/acceso-panel-plataforma`, runbook
 `docs/qa/runbook-bootstrap-platform-admin.md` §0).  
-**Auth en prod**: `AUTH_UNIVERSAL_V1_ACTIVATED=true` → login **RUT + clave
-numérica de 6 dígitos**, tarjeta «Booster» en
-`https://app.boosterchile.com/login`.  
-**Conflicto a escalar**: el PO dijo «correo + clave»; el producto shipped
-activa con Firebase **sin password** (email sintético
-`users+<rut>@boosterchile.invalid`) y la credencial es la clave numérica en
-BD (`/auth/activar` + `/auth/login-rut`). **No** inventar bypass email/password.
+**Auth invitados (producto shipped)**: `AUTH_UNIVERSAL_V1_ACTIVATED=true` →
+login **RUT + clave numérica de 6 dígitos**, tarjeta «Booster».  
+**From canónico (PO 2026-11-16)**: todas las comunicaciones salen de
+`Booster <contacto@boosterchile.com>`.  
+**Conflicto a escalar (invitados)**: el PO dijo que ellos entrarían con
+«correo + clave»; el alta crea Firebase **sin password** (email sintético
+`users+<rut>@boosterchile.invalid`) y la credencial es la clave numérica
+(`/auth/activar` + `/auth/login-rut`). **No** inventar bypass.
+
+## From Resend — actual vs canónico
+
+| Capa | Valor |
+|---|---|
+| Default `apps/api` (`config.ts` `EMAIL_FROM`) | **antes** `Booster <no-reply@boosterchile.com>` → **este PR** `Booster <contacto@boosterchile.com>` |
+| Cloud Run prod (revisión actual) | `EMAIL_FROM` **no** está en env → usaba el default `no-reply@` |
+| Terraform `module.service_api` | **este PR** fija `EMAIL_FROM = "Booster <contacto@${var.domain}>"` |
+| `RESEND_API_KEY` | secret montado (`resend-api-key`) |
+
+**Qué falta para que el From sea `contacto@` en prod**
+
+1. Merge + release (o apply TF que inyecte `EMAIL_FROM`) — sin eso prod sigue
+   en `no-reply@` vía default viejo.
+2. En Resend: dominio `boosterchile.com` (o el sender `contacto@`) **verified**.
+   DNS ya tipado en `infrastructure/email.tf` (`var.resend_dns_records`). Si
+   Resend rechaza con 422, el alta igual crea la cuenta y el panel muestra el
+   código una vez; hay que entregarlo a mano.
+3. `cursor-agent@` **no** tiene `secretmanager.versions.access` ni
+   `run.services.update` → no puede flippear el env ni leer la key.
+
+Interim owner/Claude Code (si no se espera al release), con ADC owner:
+
+```bash
+# Solo si Resend ya acepta contacto@ como From
+gcloud run services update booster-ai-api \
+  --region=southamerica-west1 --project=booster-ai-494222 \
+  --update-env-vars='EMAIL_FROM=Booster <contacto@boosterchile.com>'
+```
+
+Preferible: merge de este cambio + `terraform apply` / release canónico.
 
 ## Estado verificado (solo lectura, Cursor Cloud)
 
@@ -23,47 +55,61 @@ BD (`/auth/activar` + `/auth/login-rut`). **No** inventar bypass email/password.
 |---|---|
 | Firebase Auth `gerencia@boosterchile.com` | **no existe** |
 | Firebase Auth `sandoval.felipe@gmail.com` | **no existe** |
-| Firebase Auth `dev@boosterchile.com` (PO) | existe (`google.com` + `password`) |
-| `BOOSTER_PLATFORM_ADMIN_EMAILS` en Cloud Run | solo `dev@boosterchile.com` (respaldo OK; el panel otorga la marca) |
-| `RESEND_API_KEY` montado en API | sí (`secret: resend-api-key`) → el alta en **prod** puede enviar el correo |
-| `cursor-agent@` | **sin** `secretmanager.versions.access`, **sin** sesión del PO → **no** puede llamar `/admin/personal-booster` ni leer DB |
+| Firebase Auth `dev@boosterchile.com` (PO) | existe (`google.com` + `password`, emailVerified) |
+| `BOOSTER_PLATFORM_ADMIN_EMAILS` | solo `dev@boosterchile.com` |
+| `RESEND_API_KEY` | montado |
+| `EMAIL_FROM` en Cloud Run | **ausente** (cae a default; pre-merge = `no-reply@`) |
+| `AUTH_UNIVERSAL_V1_ACTIVATED` | `true` |
+| `cursor-agent@` | sin secret access / sin sesión PO → **no** ejecuta el alta |
 
-## Bloqueo para ejecutar desde Cloud
+## Login de Felipe (PO) — RUT **y** correo
 
-Faltan del PO (obligatorios por Zod `altaPersonalBoosterSchema`):
+El panel **no** exige RUT en el guard: `requirePlatformAdmin` /
+`tieneAccesoPlataforma` aceptan `es_admin_plataforma` **o** correo en
+`BOOSTER_PLATFORM_ADMIN_EMAILS` (`dev@` está).
+
+| Camino | URL | Credencial |
+|---|---|---|
+| RUT (universal) | `https://app.boosterchile.com/login` → tarjeta **Booster** | RUT `14289398-3` + clave numérica |
+| Correo / Google (legacy) | `https://app.boosterchile.com/login?legacy=1` | Google con `dev@boosterchile.com`, o email+password Firebase |
+
+Notas:
+
+- Con universal ON, el form correo/Google **no** aparece en `/login` sin
+  `?legacy=1` (escape hatch; no hay link visible en la UI principal).
+- Histórico: `signInWithPassword` con una clave que el PO recordaba falló
+  (`INVALID_LOGIN_CREDENTIALS`) — la cuenta **sí** tiene `passwordHash`; si
+  Google no alcanza, resetear password en Identity Platform / «Olvidé mi
+  contraseña» del form legacy.
+- Tras login con `dev@`, `GET /me` auto-provisiona / reconoce platform-admin
+  por allowlist.
+
+## Bloqueo para invitar a gerencia@ / sandoval.felipe@
+
+Faltan del PO (Zod `altaPersonalBoosterSchema`):
 
 1. **Nombre completo** de cada persona.
-2. **RUT** válido de cada persona (DV correcto; forma canónica `12345678-K`).
+2. **RUT** válido de cada una (DV correcto).
 
-Sin eso no se puede dar el alta. Tampoco hay token Firebase del PO en este
-entorno.
+Sin eso no hay alta. Este entorno no tiene token Firebase del PO.
 
-## Camino preferido (UI, 2 minutos por persona) — lo hace Felipe
+## Camino preferido (UI) — lo hace Felipe
 
-1. Entra a `https://app.boosterchile.com/login` → tarjeta **Booster** → RUT
-   `14289398-3` + su clave numérica.
-2. Abre `https://app.boosterchile.com/app/platform-admin/personal`.
-3. Por cada invitado: correo, nombre completo, RUT → confirma.
-4. El panel muestra el **código de 6 dígitos una sola vez** y Resend intenta
-   enviarlo a ese correo con el enlace a `/activar`. Si no llega el mail,
-   cópialo y entrégalo a mano (el UI ya lo advierte).
-5. La persona abre `https://app.boosterchile.com/activar`, ingresa **su RUT**,
-   el código y elige su **clave de 6 dígitos**.
-6. Entra en `https://app.boosterchile.com/login` → **Booster** → RUT + clave.
-
-«Quitar acceso» en la misma pantalla desmarca `es_admin_plataforma`. No hace
-falta `terraform apply` por persona (la lista de Terraform es solo respaldo
-del primer admin).
+1. Entra (RUT **o** `?legacy=1` con `dev@`) → panel
+   `https://app.boosterchile.com/app/platform-admin/personal`.
+2. Por cada invitado: correo, nombre, RUT → confirma.
+3. Código de 6 dígitos una sola vez + intento de correo Resend (From
+   `contacto@` tras el deploy de este cambio).
+4. Invitado: `https://app.boosterchile.com/activar` → RUT + código + clave 6
+   dígitos.
+5. Invitado entra: `/login` → **Booster** → RUT + clave.
 
 ## One-shot API (Claude Code / sesión del PO)
 
-Sustituir `NOMBRE`, `RUT` y el `ID_TOKEN` (Firebase ID token de una sesión
-platform-admin activa). **No** pegar el token en chats ni commits.
+Sustituir `NOMBRE`, `RUT` y `ID_TOKEN`. **No** pegar el token en chats.
 
 ```bash
 API=https://api.boosterchile.com
-# ID_TOKEN = Authorization Bearer de la sesión de Felipe en el panel
-# (DevTools → Network → cualquier /admin/* → header Authorization)
 
 curl -sS -X POST "$API/admin/personal-booster" \
   -H "Authorization: Bearer $ID_TOKEN" \
@@ -76,35 +122,27 @@ curl -sS -X POST "$API/admin/personal-booster" \
   -d '{"email":"sandoval.felipe@gmail.com","full_name":"NOMBRE","rut":"RUT"}'
 ```
 
-Respuesta esperada (cuenta nueva): `201` con
-`{ ok, user_id, vinculo: "nueva", codigo_activacion, expira_en, en_lista }`.
-El código **no** debe loguearse. Si `codigo_activacion` viene y el mail no
-llega, reenviar con:
+Re-emisión de código:
 
 ```bash
 curl -sS -X POST "$API/admin/personal-booster/$USER_ID/codigo" \
   -H "Authorization: Bearer $ID_TOKEN"
 ```
 
-## Cómo sigue entrando Felipe
-
-Sin cambio: `https://app.boosterchile.com/login` → Booster → RUT
-`14289398-3` + su clave. Su correo `dev@boosterchile.com` sigue en la lista
-de respaldo Terraform.
-
 ## Qué NO hacer
 
-- Invitarlos vía `/me/empresa/miembros` (flujo de empresa cliente; rechaza
-  personal Booster con `cuenta_personal_booster`).
+- Invitar vía `/me/empresa/miembros` (cliente; `cuenta_personal_booster`).
 - Tratarlos como `generador`/`transportista`.
-- Crear usuarios Firebase a mano con email/password «porque el PO dijo correo»
-  — contradice ADR-035 + alta-personal-booster SC7.
-- Correr `bootstrap-platform-admin.ts` para estos dos (es reparación / primer
-  admin; exige allowlist Terraform y fija clave el operador).
+- Crear Firebase email/password a mano para los invitados (bypass).
+- Usar `bootstrap-platform-admin.ts` para estos dos (es reparación / primer
+  admin).
 - Mutar prod desde `cursor-agent@` sin sesión del PO.
 
-## Si el PO insiste en correo + clave
+## Preguntas al PO
 
-Escala: habría que **cambiar producto** (ADR/spec: login email+clave para
-personal sin RUT, o coexistencia). Hoy `AUTH_UNIVERSAL_V1_ACTIVATED=true` y
-`/activar` no setea password Firebase. No se implementa en este oneshot.
+1. **Nombre completo + RUT** de `gerencia@` y de `sandoval.felipe@`?
+2. Invitados: ¿aceptan login **RUT + clave** (producto actual) o exigen
+   correo+clave (cambio de producto / ADR)?
+3. ¿Confirmado en Resend que el dominio acepta From `contacto@boosterchile.com`?
+4. ¿Merge+release de `EMAIL_FROM=contacto@` ahora, o interim
+   `gcloud run services update` con owner?
