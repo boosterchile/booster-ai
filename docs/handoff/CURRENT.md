@@ -57,7 +57,7 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 
 ## WIP
 
-- Specs BARH-23/24 **aceptadas** por el PO (2026-11-16 «ok», enfoque 1): `.specs/reclamar-carga-sin-oferta/`, `.specs/viaje-propio-transportista/` — sigue `plan.md` + impl. Drafts #876, #877, #748: no tocar sin pedido.
+- Specs BARH-23/24 **aceptadas** (2026-11-16). `plan.md` en curso → impl TDD (23 claim primero, luego 24). Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
