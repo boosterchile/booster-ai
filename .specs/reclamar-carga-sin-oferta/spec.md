@@ -2,7 +2,7 @@
 
 - **Author**: agente (Cursor), por encargo del PO
 - **Date**: 2026-11-16
-- **Status**: Borrador — decisiones de producto del PO en chat; pendiente revisión del texto por el PO antes de implementar
+- **Status**: Aceptada por el PO en el chat del 2026-11-16 («ok»)
 - **Linked**: [ADR-090](../../docs/adr/090-matching-desde-la-carga-vehiculo-al-despachar.md), `.specs/matching-desde-la-carga/`, `.specs/ruta-parada-servicio/`, BARH-24 (`.specs/viaje-propio-transportista/`)
 - **Frente**: pedido explícito del PO (no ocupa slot TRL 10 hasta que el PO lo declare en `frentes-vivos.md`)
 

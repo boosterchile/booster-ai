@@ -57,22 +57,21 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 
 ## WIP
 
-- Specs borrador BARH-23/24 (enfoque 1): `.specs/reclamar-carga-sin-oferta/`, `.specs/viaje-propio-transportista/` — **pendiente visto del PO al texto** antes de implementar. Drafts #876, #877, #748: no tocar sin pedido.
+- Specs BARH-23/24 **aceptadas** por el PO (2026-11-16 «ok», enfoque 1): `.specs/reclamar-carga-sin-oferta/`, `.specs/viaje-propio-transportista/` — sigue `plan.md` + impl. Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
-1. **Revisar y aceptar** specs BARH-23/24 (borrador con decisiones del chat 2026-11-16).
-2. Invitados completan `/crear-cuenta` + login correo+clave (`gerencia@`, `sandoval.felipe@`). (Opcional) confirmar mails From `contacto@`.
-3. (Opcional) TF / env `EMAIL_FROM` en Cloud Run — sin urgencia; default de imagen ya es `contacto@`.
-4. Mirar el primer matching real en `activa`; transportistas declaren carrocería.
-5. Un viaje con camión CAN → primer certificado primario.
-6. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello / cifras bajas.
-7. Mirar Flota/Maps en prod.
-8. (Opcional) Staging gemelo ADR-083.
+1. Invitados completan `/crear-cuenta` + login correo+clave (`gerencia@`, `sandoval.felipe@`). (Opcional) confirmar mails From `contacto@`.
+2. (Opcional) TF / env `EMAIL_FROM` en Cloud Run — sin urgencia; default de imagen ya es `contacto@`.
+3. Mirar el primer matching real en `activa`; transportistas declaren carrocería.
+4. Un viaje con camión CAN → primer certificado primario.
+5. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello / cifras bajas.
+6. Mirar Flota/Maps en prod.
+7. (Opcional) Staging gemelo ADR-083. Visto ADR nuevo BARH-23/24 cuando el plan lo pida (archivo protegido).
 
 ## Lo que sigue del lado del agente
 
-1. Tras visto PO a las specs BARH-23/24: `plan.md` + implementación (ADR nuevo solo con permiso explícito).
+1. BARH-23/24: `plan.md` + implementación (ADR nuevo solo con permiso explícito del PO).
 2. Observar / anotar el primer matching real en `activa` (logs + ofertas).
 3. Con el primer cierre post-#977: confirmar v3 / no-plausible.
 4. Cuando un invitado complete `/crear-cuenta` + login: anotar aquí (no asumir cuentas creadas solo por el envío).

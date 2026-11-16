@@ -2,7 +2,7 @@
 
 - **Author**: agente (Cursor), por encargo del PO
 - **Date**: 2026-11-16
-- **Status**: Borrador — decisiones de producto del PO en chat; pendiente revisión del texto por el PO antes de implementar
+- **Status**: Aceptada por el PO en el chat del 2026-11-16 («ok»)
 - **Linked**: [ADR-088](../../docs/adr/088-ruta-parada-servicio.md), `.specs/ruta-parada-servicio/`, `.specs/matching-desde-la-carga/`, BARH-23 (`.specs/reclamar-carga-sin-oferta/`)
 - **Frente**: pedido explícito del PO (no ocupa slot TRL 10 hasta que el PO lo declare en `frentes-vivos.md`)
 
