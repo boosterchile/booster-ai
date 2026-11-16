@@ -6,6 +6,8 @@ import {
   type VinculoPersonalBooster,
   altaPersonalBoosterResponseSchema,
   altaPersonalBoosterSchema,
+  invitarPersonalBoosterCorreoResponseSchema,
+  invitarPersonalBoosterCorreoSchema,
   listaPersonalBoosterResponseSchema,
   quitarAccesoPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
@@ -28,6 +30,7 @@ import {
   tieneConfirmacionPendiente,
   tieneVinculoConEmpresa,
 } from '../services/confirmacion-acceso-booster.js';
+import { emitirInvitacionPersonalBooster } from '../services/invitar-correo-cuenta.js';
 import { enviarAvisoAccesoPanel } from '../services/notifications/aviso-acceso-panel-email.js';
 import { enviarCorreoActivacionPersonalBooster } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -82,6 +85,8 @@ type ResultadoAlta =
  *   GET  /admin/personal-booster                       → lista del personal
  *   POST /admin/personal-booster                       → alta con correo, nombre
  *                                                        y RUT: otorga el acceso
+ *   POST /admin/personal-booster/invitar               → ADR-093: invita solo con
+ *                                                        correo → UI /crear-cuenta
  *   POST /admin/personal-booster/:userId/codigo        → código nuevo para quien
  *                                                        no activó
  *   POST /admin/personal-booster/:userId/quitar-acceso → quita el acceso
@@ -520,6 +525,55 @@ export function createAdminPersonalBoosterRoutes(opts: {
         );
       },
     );
+  });
+
+  /**
+   * ADR-093 — invitación por correo a `/crear-cuenta` (usuario nuevo).
+   * Body mínimo `{ email }`; sin nombre/RUT/clave del admin.
+   * Debe ir antes de `/:userId/*` para no capturarse como UUID inválido.
+   */
+  app.post('/invitar', zValidator('json', invitarPersonalBoosterCorreoSchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+
+    const body = c.req.valid('json');
+
+    return await withBusinessSpan({ name: 'personal_booster.invitar_correo' }, async (span) => {
+      const r = await emitirInvitacionPersonalBooster({
+        db: opts.db,
+        logger: opts.logger,
+        emailSender: opts.emailSender,
+        webAppUrl: opts.webAppUrl,
+        email: body.email,
+        emitidoPorUsuarioId: admin.userContext.user.id,
+      });
+
+      if (!r.ok) {
+        getBusinessCounter('personal_booster_invitar_correo_total').add(1, {
+          resultado: r.code,
+        });
+        setResultAttributes(span, { 'personal_booster.resultado': r.code });
+        return c.json({ error: 'conflict', code: r.code }, 409);
+      }
+
+      getBusinessCounter('personal_booster_invitar_correo_total').add(1, { resultado: 'ok' });
+      setResultAttributes(span, {
+        'personal_booster.resultado': 'ok',
+        'personal_booster.invitacion_id': r.invitacionId,
+      });
+
+      return c.json(
+        invitarPersonalBoosterCorreoResponseSchema.parse({
+          ok: true,
+          invitacion_id: r.invitacionId,
+          email: r.email,
+          expira_en: r.expiraEn.toISOString(),
+        }),
+        201,
+      );
+    });
   });
 
   // Sin body a propósito: un zValidator json rechazaría el POST vacío.

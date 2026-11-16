@@ -589,6 +589,13 @@
       "when": 1781222400420,
       "tag": "0083_recordatorio_vehiculo_pendiente",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1781308800420,
+      "tag": "0084_invitaciones_correo_cuenta",
+      "breakpoints": true
     }
   ]
 }

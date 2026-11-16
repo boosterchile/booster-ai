@@ -46,6 +46,7 @@ import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createAuthActivarRoutes } from './routes/auth-activar.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createAuthImpersonateRoutes } from './routes/auth-impersonate.js';
+import { createAuthInvitarCuentaRoutes } from './routes/auth-invitar-cuenta.js';
 import { createAuthUniversalRoutes } from './routes/auth-universal.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
@@ -1234,6 +1235,22 @@ export function createServer(opts: CreateServerOptions): Hono {
         logger,
         firebaseAuth: opts.firebaseAuth,
         rateLimitPerRut: rateLimitActivarPorRut,
+      }),
+    );
+
+    // ADR-093 — GET/POST /auth/invitar-cuenta. Pre-auth: token de invitación
+    // one-shot; la persona crea correo+clave en la UI /crear-cuenta.
+    app.route(
+      '/auth',
+      createAuthInvitarCuentaRoutes({
+        db: opts.db,
+        logger,
+        firebaseAuth: opts.firebaseAuth,
+        rateLimit: createRateLimitSignupMiddleware({
+          redis: redisForRateLimit,
+          logger,
+          keyPrefix: 'rl:invitar-cuenta:',
+        }),
       }),
     );
 

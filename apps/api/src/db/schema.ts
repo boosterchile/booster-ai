@@ -3531,3 +3531,42 @@ export const confirmacionesAccesoBooster = pgTable(
   }),
 );
 export type ConfirmacionAccesoBoosterRow = typeof confirmacionesAccesoBooster.$inferSelect;
+
+/**
+ * Invitaciones por correo a la UI `/crear-cuenta` (ADR-093, migración 0084).
+ * El admin invita con el correo; la persona consigna datos y clave Firebase.
+ * Token solo como hash; una pendiente por email (`consumido_en` NULL).
+ */
+export const invitacionesCorreoCuenta = pgTable(
+  'invitaciones_correo_cuenta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: varchar('email', { length: 255 }).notNull(),
+    tipo: text('tipo').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiraEn: timestamp('expira_en', { withTimezone: true }).notNull(),
+    consumidoEn: timestamp('consumido_en', { withTimezone: true }),
+    emitidoPorUsuarioId: uuid('emitido_por_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    organizacionStakeholderId: uuid('organizacion_stakeholder_id').references(
+      () => organizacionesStakeholder.id,
+      { onDelete: 'restrict' },
+    ),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenHashUq: uniqueIndex('uq_invitaciones_correo_cuenta_token_hash').on(table.tokenHash),
+    emailPendienteUq: uniqueIndex('uq_invitaciones_correo_cuenta_email_pendiente')
+      .on(table.email)
+      .where(sql`consumido_en IS NULL`),
+    expiraIdx: index('idx_invitaciones_correo_cuenta_expira')
+      .on(table.expiraEn)
+      .where(sql`consumido_en IS NULL`),
+    tipoCheck: check(
+      'chk_invitaciones_correo_cuenta_tipo',
+      sql`${table.tipo} IN ('personal_booster', 'stakeholder')`,
+    ),
+  }),
+);
+export type InvitacionCorreoCuentaRow = typeof invitacionesCorreoCuenta.$inferSelect;

@@ -235,6 +235,14 @@ const activarRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/activar.js'), 'ActivarRoute'),
 });
 
+// ADR-093 — /crear-cuenta: invitación por correo → consignar datos + clave
+// Firebase (personal Booster / stakeholder). Pública por token.
+const crearCuentaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/crear-cuenta',
+  component: lazyRouteComponent(() => import('./routes/crear-cuenta.js'), 'CrearCuentaRoute'),
+});
+
 const conductoresListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductores',
@@ -688,6 +696,7 @@ const routeTree = rootRoute.addChildren([
   equipoRoute,
   zonasMatchingRoute,
   activarRoute,
+  crearCuentaRoute,
   conductoresListRoute,
   conductoresNuevoRoute,
   conductoresDetalleRoute,

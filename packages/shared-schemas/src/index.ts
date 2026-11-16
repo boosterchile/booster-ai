@@ -84,3 +84,5 @@ export * from './domain/transport-document.js';
 export * from './domain/pago-viaje.js';
 // Alta del personal de Booster desde el panel (.specs/alta-personal-booster).
 export * from './domain/personal-booster.js';
+// ADR-093 — invitación correo + UI creación (Booster / Stakeholder).
+export * from './domain/invitar-correo-cuenta.js';
