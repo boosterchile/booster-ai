@@ -74,6 +74,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createTripRequestsV2Routes: { category: 'ENFORCED', rationale: '' },
   createOfferRoutes: { category: 'ENFORCED', rationale: '' },
   createMarketplaceReclamarRoutes: { category: 'ENFORCED', rationale: '' },
+  createViajesPropiosRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyAssignmentsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminDispositivosRoutes: { category: 'ENFORCED', rationale: '' },
   // Platform-admin asocia Teltonika sin membresía de la empresa. firebaseAuth
