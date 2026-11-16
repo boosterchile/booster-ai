@@ -71,7 +71,7 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 
 ## Lo que sigue del lado del agente
 
-1. BARH-23/24: `plan.md` + implementación (ADR nuevo solo con permiso explícito del PO).
+1. BARH-23/24: merge `plan.md` → impl TDD claim → viaje propio (ADR solo con permiso PO).
 2. Observar / anotar el primer matching real en `activa` (logs + ofertas).
 3. Con el primer cierre post-#977: confirmar v3 / no-plausible.
 4. Cuando un invitado complete `/crear-cuenta` + login: anotar aquí (no asumir cuentas creadas solo por el envío).

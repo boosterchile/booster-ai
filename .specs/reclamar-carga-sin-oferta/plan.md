@@ -70,9 +70,7 @@
 - Create/Modify: ruta web bajo `/app/…` (p. ej. sección en ofertas o `/app/marketplace`)
 - Modify: `apps/web/src/components/nav-items.ts`
 
-- [ ] **Step 1:** Test componente/hook rojo (lista + botón Reclamar).
-- [ ] **Step 2:** Implementar llamada API + toast errores.
-- [ ] **Step 3:** Commit `feat(web): UI reclamar cargas sin oferta`.
+- [x] **Step 1–3:** UI en `/app/ofertas` («Otras cargas en tu zona») + hooks marketplace + ViajeAbiertoCard + test.
 
 ---
 
