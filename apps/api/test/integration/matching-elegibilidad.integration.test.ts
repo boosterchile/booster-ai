@@ -85,6 +85,7 @@ describe('integration: elegibilidad por carga en el matching', () => {
   beforeEach(() => {
     info.mockClear();
     error.mockClear();
+    vi.mocked(elegibilidad.cargarCandidatasPorCarga).mockClear();
   });
 
   async function crearEmpresa(nombre: string, transportista: boolean) {
@@ -111,6 +112,36 @@ describe('integration: elegibilidad por carga en el matching', () => {
   type Vehiculo = Partial<schema.NewVehicleRow> & Pick<schema.NewVehicleRow, 'capacityKg'>;
 
   /**
+   * Códigos ya reservados en esta suite. El matching filtra candidatas por
+   * `zonas.codigo_region = viajes.origen_codigo_region` (varchar 4): si dos
+   * escenarios reutilizan el mismo código, aparece una oferta fantasma.
+   * `Z` + 3 hex (~4096) colisionaba en CI (birthday paradox sobre la BD
+   * serial del job). Aquí se reserva un código libre en BD + Set local.
+   */
+  const regionesReservadas = new Set<string>();
+
+  async function regionLibre(): Promise<string> {
+    const { db } = handle;
+    for (let intento = 0; intento < 64; intento++) {
+      const region = randomUUID().replace(/-/g, '').slice(0, 4).toUpperCase();
+      if (regionesReservadas.has(region)) {
+        continue;
+      }
+      const ocupada = await db
+        .select({ id: schema.zones.id })
+        .from(schema.zones)
+        .where(eq(schema.zones.regionCode, region))
+        .limit(1);
+      if (ocupada.length > 0) {
+        continue;
+      }
+      regionesReservadas.add(region);
+      return region;
+    }
+    throw new Error('fixture: no hay regionCode libre en zonas (varchar 4)');
+  }
+
+  /**
    * Una región propia por escenario: las zonas de otros tests no aportan
    * candidatas. Devuelve la transportista con su flota y un viaje por emparejar.
    */
@@ -120,7 +151,7 @@ describe('integration: elegibilidad por carga en el matching', () => {
       Partial<Pick<schema.NewTripRow, 'cargoVolumeM3'>>;
   }) {
     const { db } = handle;
-    const region = `Z${randomUUID().slice(0, 3)}`;
+    const region = await regionLibre();
     const transportista = await crearEmpresa(`Transportista ${region}`, true);
     await db.insert(schema.zones).values({
       empresaId: transportista.id,
@@ -128,14 +159,14 @@ describe('integration: elegibilidad por carga en el matching', () => {
       zoneType: 'recogida',
     });
     const vehiculos: string[] = [];
-    for (const [i, v] of opts.flota.entries()) {
+    for (const v of opts.flota) {
       vehiculos.push(
         uno(
           await db
             .insert(schema.vehicles)
             .values({
               empresaId: transportista.id,
-              plate: `${region.slice(1).toUpperCase()}${i}${randomUUID().slice(0, 2).toUpperCase()}`,
+              plate: randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase(),
               vehicleType: 'camion_mediano',
               unitType: 'camion_rigido',
               ...v,
@@ -160,7 +191,7 @@ describe('integration: elegibilidad por carga en el matching', () => {
         })
         .returning({ id: schema.trips.id }),
     );
-    return { transportistaId: transportista.id, vehiculos, tripId: viaje.id };
+    return { transportistaId: transportista.id, vehiculos, tripId: viaje.id, region };
   }
 
   const ofertas = (tripId: string) =>
@@ -187,6 +218,37 @@ describe('integration: elegibilidad por carga en el matching', () => {
     flota: [{ capacityKg: 10_000, bodyType: 'tolva' as const }],
     carga: { cargoType: 'refrigerada' as const, cargoWeightKg: 5_000 },
   };
+
+  test('aislamiento: no reutiliza un regionCode ya ocupado en zonas (evita oferta fantasma)', async () => {
+    const { db } = handle;
+    // Simula residuo de otro escenario/suite en la BD serial del job: una
+    // transportista ajena en una región concreta. Si escenario reusara ese
+    // código, matching vigente devolvería 2 ofertas.
+    const regionOcupada = await regionLibre();
+    const fantasma = await crearEmpresa(`Fantasma ${regionOcupada}`, true);
+    await db.insert(schema.zones).values({
+      empresaId: fantasma.id,
+      regionCode: regionOcupada,
+      zoneType: 'recogida',
+    });
+    await db.insert(schema.vehicles).values({
+      empresaId: fantasma.id,
+      plate: randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase(),
+      vehicleType: 'camion_mediano',
+      unitType: 'camion_rigido',
+      capacityKg: 10_000,
+      bodyType: 'tolva',
+    });
+
+    const e = await escenario(FRIO_EN_TOLVA);
+    expect(e.region).not.toBe(regionOcupada);
+
+    await runMatching({ db, logger, tripId: e.tripId, elegibilidad: 'sombra' });
+
+    expect(await ofertas(e.tripId)).toEqual([
+      { empresaId: e.transportistaId, suggestedVehicleId: e.vehiculos[0] },
+    ]);
+  });
 
   test('modo vigente: no calcula la elegibilidad por carga ni la registra', async () => {
     const e = await escenario(FRIO_EN_TOLVA);
