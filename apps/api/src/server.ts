@@ -59,6 +59,7 @@ import { createHealthSignupFlowRouter } from './routes/health-signup-flow.js';
 import { createHealthRouter } from './routes/health.js';
 import { createPickupInstructionsRoutes } from './routes/instrucciones-retiro.js';
 import { createInternalSafetyEventsRoutes } from './routes/internal-safety-events.js';
+import { createMarketplaceReclamarRoutes } from './routes/marketplace-reclamar.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConfirmarAccesoBoosterRoutes } from './routes/me-confirmar-acceso-booster.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -629,6 +630,25 @@ export function createServer(opts: CreateServerOptions): Hono {
         ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
         // seguimiento-por-correo: sin RESEND_API_KEY el sender registra el
         // intento y la marca queda libre para cuando exista el secreto.
+        notifyTrackingLinkEmail: {
+          db: opts.db,
+          logger,
+          emailSender,
+          webAppUrl: config.WEB_APP_URL,
+        },
+      }),
+    );
+
+    // BARH-23 — reclamar cargas sin oferta (matching intacto).
+    app.use('/marketplace/*', guardiaVisibilidadTransportista);
+    app.use('/marketplace/*', firebaseAuthMiddleware);
+    app.use('/marketplace/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/marketplace',
+      createMarketplaceReclamarRoutes({
+        db: opts.db,
+        logger,
+        ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
         notifyTrackingLinkEmail: {
           db: opts.db,
           logger,

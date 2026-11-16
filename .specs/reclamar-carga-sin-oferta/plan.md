@@ -45,13 +45,7 @@
 - Produces: `reclamarViaje({ db, logger, tripId, empresaId, userId, ... }) → { assignment, supersededOfferIds }`
 - Errores tipados: `ViajeNoReclamableError`, `ZonaNoCubreError`, `EmpresaYaTieneOfertaError`, etc.
 
-- [ ] **Step 1:** Test unit rojo — viaje `ofertas_enviadas`, empresa con zona en región origen y **sin** oferta pendiente: claim crea assignment `asignado`, trip → `asignado`, otras ofertas pendientes → `reemplazada`.
-- [ ] **Step 2:** Correr test; exhibir rojo.
-- [ ] **Step 3:** Implementar tx: FOR UPDATE trip; exigir `esAceptableOferta`; verificar zona activa empresa (misma query patrón matching); insert offer sintética (`pendiente`→`aceptada` o insert directo `aceptada` + responseChannel) con `empresaId` reclamante, `proposedPriceClp` = precio vigente del viaje/ofertas o 0 documentado; insert assignment (`vehicleId` null, `agreedPriceClp` coherente); supersede otras pendientes; transición trip; crear/conciliar ruta como `acceptOffer`.
-- [ ] **Step 4:** Tests verdes unit.
-- [ ] **Step 5:** Integration: espejo de `aceptar-sin-vehiculo.integration.test.ts` + caso “empresa sin carrocería elegible igual reclama”.
-- [ ] **Step 6:** Test: segunda empresa no puede reclamar tras el primero; empresa fuera de zona → error.
-- [ ] **Step 7:** Commit `feat(matching): reclamar viaje sin oferta (service)`.
+- [x] **Step 1–7:** Integration TDD (`reclamar-viaje.integration.test.ts`) + `reclamarViaje` (oferta sintética + `acceptOffer`). 2 tests verdes contra Postgres local.
 
 ---
 
@@ -66,9 +60,7 @@
 - `GET /marketplace/viajes-abiertos` → lista reclamables (zona + `ofertas_enviadas` + sin oferta pendiente propia). Auth: carrier oficina (`puedeAceptarOfertas` o mismo gate que accept).
 - `POST /marketplace/viajes/:viajeId/reclamar` → body vacío o `{}`; 201 con assignment id.
 
-- [ ] **Step 1:** Tests de ruta rojos (401/403/404/409/201).
-- [ ] **Step 2:** Implementar + métrica `marketplace_reclamos_total` + span.
-- [ ] **Step 3:** Verdes; commit `feat(api): endpoints reclamar carga marketplace`.
+- [x] **Step 1–3:** `GET /marketplace/viajes-abiertos` + `POST /marketplace/viajes/:viajeId/reclamar` + mount ENFORCED + span `viaje.reclamar`. Métrica dedicada pendiente (siguiente commit si CI pide). UI pendiente Task 3.
 
 ---
 
