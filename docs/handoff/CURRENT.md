@@ -1,16 +1,16 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 ~13:25 · America/Santiago.  
-**Prod**: `e0f3ccf4` (release [43874760833](https://github.com/boosterchile/booster-ai/actions/runs/43874760833), 11:06) — api `booster-ai-api-00480-zps`, web `00426-ljx`, tráfico 100 % — #986 invitación por correo + #984 remitente `contacto@`.  
-**`main`**: tip post-#990; el código en prod sigue `e0f3ccf4`.  
+**Última actualización**: 2026-11-16 20:30 · America/Santiago.  
+**Prod**: `e0f3ccf4` (release [43874760833](https://github.com/boosterchile/booster-ai/actions/runs/43874760833), 11:06) — api `booster-ai-api-00481-4wf` (misma imagen; revisión nueva por el apply de las 20:22), web `00426-ljx`, tráfico 100 % — #986 invitación por correo + #984 remitente `contacto@`.  
+**`main`**: `96bb7155` (#996); por delante de prod con #993 y #995 sin desplegar.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `9f44887e` | #989/#988 handoff; #986 BARH-21 invitación; #985 ADR-093; #984 remitente |
-| Prod (Cloud Run) | `e0f3ccf4` | Release 43874760833 success (disparo y aprobación del PO). Los 8 servicios al 100 % en su última revisión. Api `booster-ai-api-00480-zps` |
+| `main` | `96bb7155` | #996 IAM de `cursor-agent` (aplicado); #995 BARH-24 viaje propio y #993 BARH-23 reclamar carga, **sin desplegar**; #992 plan |
+| Prod (Cloud Run) | `e0f3ccf4` | Release 43874760833 success (disparo y aprobación del PO). Los 8 servicios al 100 % en su última revisión. Api `booster-ai-api-00481-4wf` tras el apply de Terraform |
 
 **Flags en prod:** rutas API encendida y matching en modo `activa`, conservados tras el release. Staging gemelo aún no existe — `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
 
@@ -32,17 +32,25 @@ Verificado tras el deploy:
 **Sin verificar / opcional:**
 
 - Que Resend acepte el remitente `contacto@` en el correo real (lo dirá el smoke o el invitado).
-- La variable del remitente declarada en `infrastructure/compute.tf` no está en el servicio: queda para el próximo `terraform apply` del PO. No urge, el valor coincide con el de por defecto.
 
 Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deploy-barh21-invite-oneshot.md).  
 **Cursor no** dispara release ni `terraform apply` ni envía invitaciones.
+
+## Terraform — IAM de `cursor-agent` y remitente (PO, 2026-11-16 20:22)
+
+El PO aplicó un plan guardado, preparado desde `origin/main` (`96bb7155`, #996): 2 recursos nuevos, 1 cambio, 0 destrucciones.
+
+- `cursor-agent@` recibe `roles/run.developer` solo sobre el servicio `booster-ai-api`, y `roles/iam.serviceAccountUser` sobre la cuenta de ejecución de Cloud Run.
+- El servicio del api declara ahora el remitente `contacto@` como variable. Revisión `booster-ai-api-00481-4wf`, misma imagen `e0f3ccf4`; matching `activa` y rutas encendidas conservados.
+- Verificado: los dos permisos en las políticas, `/health` y `/ready` en 200, sin errores del api desde el apply, y un `terraform plan` completo posterior con «No changes».
+- Consecuencia: `cursor-agent` puede publicar revisiones del api (imagen, variables) sin pasar por el Environment `production`. El gate humano del release sigue para los otros servicios. Riesgo declarado en `infrastructure/iam.tf`.
 
 ## Resumen operativo (prod actual)
 
 - Matching `activa` desde 01:15 (PO apply). **Sin observar** matching real aún → al primer matching: log `matching: elegibilidad por carga` + ofertas; registrar aquí.
 - Rutas API ON; prueba dos cargas OK (datos de prueba en prod).
 - #977 en prod: regla 50 % distancia medida. **Sin observar** cierre real post-deploy. Certificados con cifra baja (BOO-BKAXIK, BOO-KY7G69, BOO-4FF3XA, BOO-VZYIN2) sin reemitir.
-- Remitente de los correos: `contacto@`, por el valor por defecto de la imagen (la variable no está en Cloud Run; Terraform opcional para fijarla).
+- Remitente de los correos: `contacto@`, declarado en el servicio del api desde el apply de las 20:22.
 - `sms-fallback-gateway`: aviso Twilio faltante (deuda previa).
 
 ## Plan post-deploy 2026-11-15 — **cerrado**
@@ -62,7 +70,7 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 ## Pendientes del PO (orden)
 
 1. Invitados completan `/crear-cuenta` + login correo+clave (`gerencia@`, `sandoval.felipe@`). (Opcional) confirmar mails From `contacto@`.
-2. (Opcional) TF / env `EMAIL_FROM` en Cloud Run — sin urgencia; default de imagen ya es `contacto@`.
+2. Decidir el release de #993 (BARH-23) y #995 (BARH-24), en `main` sin desplegar.
 3. Mirar el primer matching real en `activa`; transportistas declaren carrocería.
 4. Un viaje con camión CAN → primer certificado primario.
 5. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello / cifras bajas.
@@ -75,8 +83,8 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 2. Observar / anotar el primer matching real en `activa` (logs + ofertas).
 3. Con el primer cierre post-#977: confirmar v3 / no-plausible.
 4. Cuando un invitado complete `/crear-cuenta` + login: anotar aquí (no asumir cuentas creadas solo por el envío).
-5. `cursor-agent` **no** muta Cloud Run env, no dispara release, no envía invitaciones.
+5. `cursor-agent` puede actualizar el servicio del api (permiso del 2026-11-16); **no** dispara release, no corre `terraform apply`, no envía invitaciones.
 
 ## Riesgos abiertos
 
-Matching `activa` sin matching real observado; sin carrocería, solo `carga_seca`/`otra`. Recogida exige conductor. Certificados no reproducibles / cifras bajas sin reemitir. `cursor-agent` sin `run.services.update` / sin `actions:write` para release. Cuentas BARH-21 aún no confirmadas (invites enviados; falta `/crear-cuenta`).
+Matching `activa` sin matching real observado; sin carrocería, solo `carga_seca`/`otra`. Recogida exige conductor. Certificados no reproducibles / cifras bajas sin reemitir. `cursor-agent` con `run.developer` sobre el api: puede cambiar su configuración sin gate humano; sigue sin `actions:write` para release. #993 y #995 en `main` sin desplegar. Cuentas BARH-21 aún no confirmadas (invites enviados; falta `/crear-cuenta`).
