@@ -23,8 +23,10 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const signInUniversalWithCustomTokenMock = vi.fn();
+const signInWithEmailMock = vi.fn();
 vi.mock('../../hooks/use-auth.js', () => ({
   signInUniversalWithCustomToken: signInUniversalWithCustomTokenMock,
+  signInWithEmail: (...args: unknown[]) => signInWithEmailMock(...args),
 }));
 
 vi.mock('../../lib/api-url.js', () => ({
@@ -228,10 +230,39 @@ describe('LoginUniversal', () => {
 
   it('botón "Cambiar tipo de usuario" en form vuelve al selector', async () => {
     render(<LoginUniversal />);
-    await userEvent.click(screen.getByTestId('login-tipo-stakeholder'));
+    await userEvent.click(screen.getByTestId('login-tipo-transporte'));
     expect(screen.getByTestId('login-universal-form')).toBeInTheDocument();
     await userEvent.click(screen.getByTestId('login-back-to-selector'));
     expect(screen.getByTestId('login-universal-selector')).toBeInTheDocument();
+  });
+
+  it('ADR-093: tipo Booster → form correo + clave (no RUT)', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-booster'));
+    expect(screen.getByTestId('login-universal-email-form')).toBeInTheDocument();
+    expect(screen.getByTestId('login-email-input')).toBeInTheDocument();
+    expect(screen.getByTestId('login-password-input')).toBeInTheDocument();
+    expect(screen.queryByTestId('login-rut-input')).not.toBeInTheDocument();
+  });
+
+  it('ADR-093: tipo Stakeholder → form correo + clave', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-stakeholder'));
+    expect(screen.getByTestId('login-universal-email-form')).toBeInTheDocument();
+  });
+
+  it('ADR-093: Booster login email → signInWithEmail + navigate /app', async () => {
+    signInWithEmailMock.mockResolvedValueOnce({ uid: 'fb-1' });
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-booster'));
+    await userEvent.type(screen.getByTestId('login-email-input'), 'gerencia@boosterchile.com');
+    await userEvent.type(screen.getByTestId('login-password-input'), 'Secreta99');
+    await userEvent.click(screen.getByTestId('login-submit'));
+    await waitFor(() =>
+      expect(signInWithEmailMock).toHaveBeenCalledWith('gerencia@boosterchile.com', 'Secreta99'),
+    );
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/app' });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -289,7 +320,7 @@ describe('LoginUniversal — cuenta sin activar según el tipo elegido (SC1)', (
     return screen.findByTestId('needs-activation-go-activar');
   }
 
-  it.each(['carga', 'transporte', 'booster', 'stakeholder'])(
+  it.each(['carga', 'transporte'])(
     'tipo %s → «Activar mi cuenta» lleva a /activar con el RUT',
     async (tipo) => {
       const principal = await loginSinActivar(tipo);
@@ -300,7 +331,7 @@ describe('LoginUniversal — cuenta sin activar según el tipo elegido (SC1)', (
     },
   );
 
-  it.each(['carga', 'transporte', 'booster', 'stakeholder'])(
+  it.each(['carga', 'transporte'])(
     'tipo %s → ofrece también el camino del conductor',
     async (tipo) => {
       await loginSinActivar(tipo);
@@ -360,7 +391,7 @@ describe('LoginUniversal — cuenta sin activar según el tipo elegido (SC1)', (
  * de activación lo encuentra en el formulario, sin fallar un login antes.
  */
 describe('LoginUniversal — aviso del código de activación en el formulario (SC2)', () => {
-  it.each(['carga', 'transporte', 'booster', 'stakeholder'])(
+  it.each(['carga', 'transporte'])(
     'tipo %s → «¿Te dieron un código de activación? Activa tu cuenta» enlaza a /activar',
     async (tipo) => {
       render(<LoginUniversal />);
@@ -371,6 +402,16 @@ describe('LoginUniversal — aviso del código de activación en el formulario (
       expect(link).toHaveAttribute('href', '/activar');
       expect(link).toHaveTextContent('Activa tu cuenta');
       expect(screen.queryByTestId('login-link-activar-conductor')).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(['booster', 'stakeholder'])(
+    'tipo %s (ADR-093) → form correo+clave sin aviso de código RUT',
+    async (tipo) => {
+      render(<LoginUniversal />);
+      await userEvent.click(screen.getByTestId(`login-tipo-${tipo}`));
+      expect(screen.getByTestId('login-universal-email-form')).toBeInTheDocument();
+      expect(screen.queryByTestId('login-link-activar-codigo')).not.toBeInTheDocument();
     },
   );
 

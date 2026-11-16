@@ -41,6 +41,7 @@ describe('router', () => {
         'app/zonas',
         'app/platform-admin/personal',
         'app/confirmar-acceso-booster',
+        'crear-cuenta',
         'solicitar-acceso',
       ]),
     );

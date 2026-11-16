@@ -17,36 +17,26 @@ import {
   Users,
 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
-import { signInUniversalWithCustomToken } from '../../hooks/use-auth.js';
+import { signInUniversalWithCustomToken, signInWithEmail } from '../../hooks/use-auth.js';
 import { getApiUrl } from '../../lib/api-url.js';
 
 /**
- * ADR-035 — Login universal RUT + clave numérica (Wave 4 PR 2).
+ * Login universal (ADR-035 + ADR-093).
  *
  * Surface única para todos los roles. Dos pasos:
  *
- *   1. **Selector tipo usuario**: 5 botones (Generador de carga /
- *      Transporte / Conductor / Stakeholder / Booster). El selector
- *      determina la **vista inicial** post-login, NO el rol — el rol
- *      sigue viniendo de memberships del user.
+ *   1. **Selector tipo usuario**: 5 botones. Hint de vista, no autorización.
  *
- *   2. **Form RUT + clave**: con el tipo preseleccionado, el usuario
- *      ingresa su RUT chileno + 6 dígitos. Backend valida con scrypt
- *      timing-safe contra `usuarios.clave_numerica_hash`.
+ *   2. **Credencial por tipo** (ADR-093):
+ *      - Generador / Transporte / Conductor → RUT + clave numérica
+ *      - Booster / Stakeholder → correo + clave Firebase
  *
- * Subdominios (transporte.boosterchile.com, conductor.boosterchile.com,
- * etc.) son 301 redirects al canónico con `?tipo=<rol>` que pre-selecciona
- * el botón correspondiente.
- *
- * El tipo "Booster" (platform admin) requiere allowlist server-side
- * adicional. Si un user sin allowlist elige "Booster", el AppRoute lo
- * redirigirá a su surface real post-login.
- *
- * NeedsRotation: si el backend responde 410 (user sin clave seteada),
- * mostramos un mensaje guiando al usuario a usar su método anterior
- * (Google / email+password legacy) para activar su clave. La UI de
- * rotación entra en Wave 4 PR 3.
+ * NeedsRotation: 410 en login-rut guía a método anterior / activación.
  */
+
+function usaCorreoClave(tipo: UserTypeHint | null): boolean {
+  return tipo === 'booster' || tipo === 'stakeholder';
+}
 
 type UniversalLoginSearch = {
   tipo?: UserTypeHint;
@@ -117,6 +107,8 @@ export function LoginUniversal() {
   const [tipo, setTipo] = useState<UserTypeHint | null>(preselectedTipo ?? null);
   const [rut, setRut] = useState('');
   const [clave, setClave] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [rutError, setRutError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -134,6 +126,8 @@ export function LoginUniversal() {
     setStep('form');
     setRut('');
     setClave('');
+    setEmail('');
+    setPassword('');
     setRutError(null);
     setSubmitError(null);
   }
@@ -143,8 +137,48 @@ export function LoginUniversal() {
     setTipo(null);
     setRut('');
     setClave('');
+    setEmail('');
+    setPassword('');
     setRutError(null);
     setSubmitError(null);
+  }
+
+  async function handleSubmitEmail(e: FormEvent) {
+    e.preventDefault();
+    setSubmitError(null);
+    const correo = email.trim().toLowerCase();
+    if (!correo.includes('@')) {
+      setSubmitError('Ingresa un correo válido.');
+      return;
+    }
+    if (password.length < 6) {
+      setSubmitError('Ingresa tu clave.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await signInWithEmail(correo, password);
+      void navigate({ to: '/app' });
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code: unknown }).code)
+          : '';
+      if (
+        code === 'auth/invalid-credential' ||
+        code === 'auth/wrong-password' ||
+        code === 'auth/user-not-found' ||
+        code === 'auth/invalid-email'
+      ) {
+        setSubmitError('Correo o clave incorrectos. Verifica e intenta de nuevo.');
+      } else if (code === 'auth/user-disabled') {
+        setSubmitError('Esta cuenta está desactivada. Contacta a soporte.');
+      } else {
+        setSubmitError(err instanceof Error ? err.message : 'Error al conectar con el servidor.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -236,6 +270,22 @@ export function LoginUniversal() {
     return <NeedsRotationView onBack={handleBackToSelector} message={submitError} />;
   }
 
+  if (usaCorreoClave(tipo)) {
+    return (
+      <EmailFormView
+        tipo={tipo}
+        email={email}
+        password={password}
+        submitError={submitError}
+        submitting={submitting}
+        onChangeEmail={setEmail}
+        onChangePassword={setPassword}
+        onSubmit={handleSubmitEmail}
+        onBack={handleBackToSelector}
+      />
+    );
+  }
+
   return (
     <FormView
       tipo={tipo}
@@ -293,7 +343,8 @@ function SelectorView({ onSelect }: { onSelect: (t: UserTypeHint) => void }) {
         </div>
 
         <p className="mt-6 text-center text-neutral-500 text-xs">
-          Tu acceso usa RUT + clave numérica. Lo mismo que tu app de banco.
+          Generador, transporte y conductor: RUT + clave numérica. Booster y stakeholder: correo +
+          clave.
         </p>
 
         {/* Puerta discreta de contacto comercial (spec ws2-descubribilidad-login,
@@ -333,6 +384,106 @@ interface FormViewProps {
   onChangeClave: (v: string) => void;
   onSubmit: (e: FormEvent) => void;
   onBack: () => void;
+}
+
+interface EmailFormViewProps {
+  tipo: UserTypeHint | null;
+  email: string;
+  password: string;
+  submitError: string | null;
+  submitting: boolean;
+  onChangeEmail: (v: string) => void;
+  onChangePassword: (v: string) => void;
+  onSubmit: (e: FormEvent) => void;
+  onBack: () => void;
+}
+
+/** ADR-093 — correo + clave Firebase para Booster y Stakeholder. */
+function EmailFormView(props: EmailFormViewProps) {
+  const label = props.tipo ? USER_TYPE_HINT_LABEL[props.tipo] : 'Ingresar';
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
+      <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-700">
+            <KeyRound className="h-5 w-5" aria-hidden />
+          </div>
+          <div>
+            <div className="text-neutral-500 text-xs">Ingresar como</div>
+            <h1 className="font-semibold text-neutral-900">{label}</h1>
+          </div>
+        </div>
+
+        <form
+          onSubmit={props.onSubmit}
+          noValidate
+          className="mt-6 space-y-4"
+          data-testid="login-universal-email-form"
+        >
+          <label className="flex flex-col gap-1">
+            <span className="font-medium text-neutral-700 text-sm">Correo</span>
+            <input
+              type="email"
+              autoComplete="username"
+              value={props.email}
+              onChange={(e) => props.onChangeEmail(e.target.value)}
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              placeholder="tu@correo.cl"
+              data-testid="login-email-input"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-medium text-neutral-700 text-sm">Clave</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={props.password}
+              onChange={(e) => props.onChangePassword(e.target.value)}
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              data-testid="login-password-input"
+            />
+          </label>
+
+          {props.submitError && (
+            <div
+              className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"
+              role="alert"
+            >
+              {props.submitError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={props.submitting}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            data-testid="login-submit"
+          >
+            {props.submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Entrando…
+              </>
+            ) : (
+              <>
+                Entrar
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={props.onBack}
+            className="w-full text-center text-neutral-500 text-sm hover:text-neutral-700"
+            data-testid="login-back-to-selector"
+          >
+            Cambiar tipo de usuario
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function FormView(props: FormViewProps) {

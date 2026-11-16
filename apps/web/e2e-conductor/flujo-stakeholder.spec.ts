@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { revisarPantalla } from './a11y.js';
 import { CREDENCIAL_F, reseedFlujosE2e } from './flujos.js';
-import { loginRutClave } from './helpers.js';
+import { loginCorreoClave } from './helpers.js';
 
 /**
  * T10-10 — el admin de plataforma crea una organización stakeholder e
@@ -18,7 +18,7 @@ test.describe('stakeholder: alta por el admin → activación → zonas', () => 
   });
 
   test('el admin crea la organización e invita a una persona', async ({ page }) => {
-    await loginRutClave(page, CREDENCIAL_F.admin);
+    await loginCorreoClave(page, CREDENCIAL_F.admin);
     await page.waitForURL(/\/app\/platform-admin/, { timeout: 20_000 });
     await revisarPantalla(page, '/app/platform-admin');
 

@@ -216,6 +216,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     rationale:
       'POST /auth/activar (equipo-de-la-empresa, alta-personal-booster): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`) o, para el personal de Booster sin invitación, `es_admin_plataforma = true` (la marca la pone un platform-admin desde el panel). Una cuenta con `es_admin_plataforma = true` activa solo con un código del panel vigente según `activacion_vence_en` (solo los emisores del panel lo dejan; los demás lo ponen en NULL), también si tiene invitaciones; driver-activate aplica la misma regla. Ninguno de los dos activa una cuenta `suspendido` o `eliminado`. El código se consume de un solo uso (el hash y `activacion_vence_en` se borran, y la escritura exige que el hash siga siendo el verificado) y el endpoint corre tras límites de intentos fail-closed con cubos propios. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido / suspendida o eliminada: sin oráculo de enumeración; sin código pendiente se verifica igual contra un hash de relleno.',
   },
+  createAuthInvitarCuentaRoutes: {
+    category: 'INTENTIONAL-OPEN',
+    rationale:
+      'GET/POST /auth/invitar-cuenta (ADR-093): pre-auth POR DISEÑO — consume token opaco one-shot de invitación por correo a la UI /crear-cuenta. GET lee el secreto solo del header x-invite-token (nunca query; Cloud Run logs). Defensas: token hasheado en DB, vencimiento 7 días, un solo uso atómico, Zod en boundaries, rate-limit IP, uniform 410 invitacion_invalida. Crea Firebase email/password + fila usuarios; personal Booster queda es_admin_plataforma. Sin sesión Firebase previa.',
+  },
   createAuthUniversalRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:

@@ -9,6 +9,9 @@ import {
   altaPersonalBoosterResponseSchema,
   altaPersonalBoosterSchema,
   ensureRutHasDash,
+  invitacionCorreoCuentaErrorCodeSchema,
+  invitarPersonalBoosterCorreoResponseSchema,
+  invitarPersonalBoosterCorreoSchema,
   listaPersonalBoosterResponseSchema,
   personalBoosterErrorCodeSchema,
   quitarAccesoPersonalBoosterResponseSchema,
@@ -238,6 +241,12 @@ export function PersonalBooster() {
   const [errorQuitar, setErrorQuitar] = useState<{ userId: string; mensaje: string } | null>(null);
   const [accesoQuitado, setAccesoQuitado] = useState<string | null>(null);
 
+  /** ADR-093 — invitar usuario nuevo solo con correo → /crear-cuenta. */
+  const [emailInvitar, setEmailInvitar] = useState('');
+  const [enviandoInvitar, setEnviandoInvitar] = useState(false);
+  const [errorInvitar, setErrorInvitar] = useState<string | null>(null);
+  const [okInvitar, setOkInvitar] = useState<string | null>(null);
+
   const cargar = useCallback(async () => {
     setCargando(true);
     setErrorLista(null);
@@ -375,19 +384,107 @@ export function PersonalBooster() {
     setPedidosDeFoco((n) => n + 1);
   }
 
+  async function invitarPorCorreo(e: FormEvent) {
+    e.preventDefault();
+    setErrorInvitar(null);
+    setOkInvitar(null);
+    const parsed = invitarPersonalBoosterCorreoSchema.safeParse({ email: emailInvitar });
+    if (!parsed.success) {
+      setErrorInvitar('Revisa el correo: no parece una dirección válida.');
+      return;
+    }
+    setEnviandoInvitar(true);
+    try {
+      const body = invitarPersonalBoosterCorreoResponseSchema.safeParse(
+        await api.post<unknown>('/admin/personal-booster/invitar', parsed.data),
+      );
+      if (!body.success) {
+        throw respuestaInesperada('invitar_correo', body.error);
+      }
+      setOkInvitar(
+        `Enviamos la invitación a ${body.data.email}. La persona crea su cuenta en el enlace (vence el ${fechaHora(body.data.expira_en)}).`,
+      );
+      setEmailInvitar('');
+      void cargar();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const code = invitacionCorreoCuentaErrorCodeSchema.safeParse(err.code);
+        if (code.success && code.data === 'email_already_registered') {
+          setErrorInvitar('Ese correo ya tiene una cuenta en Booster.');
+          return;
+        }
+      }
+      setErrorInvitar(mensajeError(err));
+    } finally {
+      setEnviandoInvitar(false);
+    }
+  }
+
   const cerrarPanel = () => setPanel(null);
 
   return (
     <div className="mt-6 space-y-8">
       <OrdenDelAlta />
 
+      <section
+        className="rounded-lg border border-primary-200 bg-primary-50/40 p-5 shadow-sm"
+        data-testid="personal-invitar-correo"
+      >
+        <div className="flex items-start gap-3">
+          <UserPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
+          <div>
+            <h2 className="font-semibold text-neutral-900">Invitar por correo (usuario nuevo)</h2>
+            <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+              Solo el correo. Le llega un enlace From contacto@ para crear su cuenta (datos + clave)
+              y entrar con correo y clave como Booster.
+            </p>
+          </div>
+        </div>
+        <form
+          onSubmit={invitarPorCorreo}
+          noValidate
+          className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end"
+        >
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="font-medium text-neutral-700 text-sm">Correo del invitado</span>
+            <input
+              type="email"
+              value={emailInvitar}
+              onChange={(ev) => setEmailInvitar(ev.target.value)}
+              autoComplete="off"
+              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              placeholder="gerencia@boosterchile.com"
+              data-testid="personal-invitar-email"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={enviandoInvitar}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            data-testid="personal-invitar-submit"
+          >
+            {enviandoInvitar ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Enviar invitación
+          </button>
+        </form>
+        {errorInvitar ? (
+          <p className="mt-3 text-danger-700 text-sm" role="alert">
+            {errorInvitar}
+          </p>
+        ) : null}
+        {okInvitar ? (
+          <output className="mt-3 block text-sm text-success-700">{okInvitar}</output>
+        ) : null}
+      </section>
+
       <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
         <div className="flex items-start gap-3">
           <UserPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
           <div>
-            <h2 className="font-semibold text-neutral-900">Dar de alta</h2>
+            <h2 className="font-semibold text-neutral-900">Dar de alta (flujo RUT legado)</h2>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Con su correo, nombre completo y RUT. No cargas su clave: la elige ella al activar.
+              Solo para cuentas que aún deban activar con RUT + código. Usuarios nuevos: usa
+              «Invitar por correo».
             </p>
           </div>
         </div>
