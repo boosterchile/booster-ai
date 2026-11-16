@@ -99,3 +99,17 @@ Desde ahí, Cloud Build actualiza la imagen con `kubectl set image`, igual que e
 
 - **Destruir staging** (si se decide): `terraform destroy` con el state de staging y lista de verificación. Cloud SQL tiene `deletion_protection = true` fijo en `data.tf`. Antes del destroy, desactívala solo en la instancia de staging (`gcloud sql instances patch <instancia> --no-deletion-protection --project=booster-ai-stg-494222`). Nunca toques el `.tf` ni prod.
 - **Drift**: `terraform-drift.yml` vigila prod. Agregar un job de staging queda pendiente hasta que staging exista (ADR-083 §Consecuencias).
+
+## Gaps conocidos (auditoría docs 2026-11-16)
+
+Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.md`](../handoff/2026-11-16-staging-checklist-adr083.md). Resumen:
+
+| Ítem | Quién | Estado |
+|---|---|---|
+| Terraform + workflows + este runbook en `main` | Repo | **Listo** |
+| Proyecto `booster-ai-stg-494222`, billing, `apply`, secretos, Firebase | **PO** | Pendiente |
+| Environment GitHub `staging` (hoy solo existe `production`) | **PO** | Pendiente — créalo antes de cargar las vars de §6 |
+| Vars repo `STAGING_PROJECT_ID` / `STAGING_URL` | **PO** | Pendiente — sin ellas `release-staging.yml` se salta |
+| Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Docs / decisión PO | Pendiente — ver checklist §3; no cambiar workflows sin acuerdo |
+| Job drift de staging | Repo (después de que exista el entorno) | Pendiente declarado |
+| Nightly E2E contra prod | Deuda CLAUDE.md | Hasta que exista `STAGING_URL` |
