@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Inbox, Plus, Truck, UserRound, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { z } from 'zod';
@@ -189,10 +190,23 @@ function RutasContenido({ me }: { me: MeOnboarded }) {
 
   return (
     <>
-      <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">Rutas</h1>
-      <p className="mt-1 text-neutral-600 text-sm">
-        Junta en un mismo camión las cargas que ya aceptaste y ordena sus paradas.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">Rutas</h1>
+          <p className="mt-1 text-neutral-600 text-sm">
+            Junta en un mismo camión las cargas que ya aceptaste y ordena sus paradas.
+          </p>
+        </div>
+        {puedeArmar && activa && (
+          <Link
+            to="/app/viajes-propios/nuevo"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Nuevo viaje propio
+          </Link>
+        )}
+      </div>
 
       {!esTransportista && (
         <output className="mt-6 block rounded-md border border-warning-500/30 bg-warning-50 p-4 text-sm text-warning-700">

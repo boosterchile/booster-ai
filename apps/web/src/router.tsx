@@ -104,6 +104,16 @@ const rutasRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/rutas.js'), 'RutasRoute'),
 });
 
+// BARH-24 — alta de viaje propio del transportista (fuera del matching).
+const viajePropioNuevoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/viajes-propios/nuevo',
+  component: lazyRouteComponent(
+    () => import('./routes/viaje-propio-nuevo.js'),
+    'ViajePropioNuevoRoute',
+  ),
+});
+
 const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/perfil',
@@ -681,6 +691,7 @@ const routeTree = rootRoute.addChildren([
   ofertasRoute,
   serviciosRoute,
   rutasRoute,
+  viajePropioNuevoRoute,
   perfilRoute,
   empresaRoute,
   conductorDashboardRoute,
