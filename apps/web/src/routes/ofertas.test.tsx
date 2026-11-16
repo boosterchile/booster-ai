@@ -35,6 +35,18 @@ vi.mock('../hooks/use-offers.js', () => ({
   useOffersMine: useOffersMineMock,
 }));
 
+const useViajesAbiertosMock = vi.fn();
+vi.mock('../hooks/use-marketplace.js', () => ({
+  useViajesAbiertos: useViajesAbiertosMock,
+  useReclamarViajeMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock('../components/offers/ViajeAbiertoCard.js', () => ({
+  ViajeAbiertoCard: (props: { viaje: { id: string } }) => (
+    <div data-testid="viaje-abierto-card" data-id={props.viaje.id} />
+  ),
+}));
+
 const signOutUserMock = vi.fn();
 vi.mock('../hooks/use-auth.js', () => ({
   signOutUser: signOutUserMock,
@@ -77,6 +89,13 @@ function makeMe(isTransportista: boolean): MeOnboarded {
 beforeEach(() => {
   vi.clearAllMocks();
   providedContext = { kind: 'unmanaged' };
+  useViajesAbiertosMock.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: { viajes: [] },
+    refetch: vi.fn(),
+    isFetching: false,
+  });
 });
 
 afterEach(() => {
@@ -141,8 +160,9 @@ describe('OfertasRoute', () => {
     expect(screen.getAllByTestId('offer-card')).toHaveLength(2);
   });
 
-  it('click Actualizar → refetch', () => {
+  it('click Actualizar → refetch ofertas y marketplace', () => {
     const refetch = vi.fn();
+    const refetchAbiertos = vi.fn();
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     useOffersMineMock.mockReturnValue({
       isLoading: false,
@@ -151,9 +171,38 @@ describe('OfertasRoute', () => {
       refetch,
       isFetching: false,
     });
+    useViajesAbiertosMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { viajes: [] },
+      refetch: refetchAbiertos,
+      isFetching: false,
+    });
     renderWithQueryClient(<OfertasRoute />);
     screen.getByRole('button', { name: /Actualizar/ }).click();
     expect(refetch).toHaveBeenCalled();
+    expect(refetchAbiertos).toHaveBeenCalled();
+  });
+
+  it('carrier dueño → sección Otras cargas en tu zona', () => {
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    useOffersMineMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { offers: [] },
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+    useViajesAbiertosMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { viajes: [{ id: 'v1' }] },
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+    renderWithQueryClient(<OfertasRoute />);
+    expect(screen.getByText(/Otras cargas en tu zona/)).toBeInTheDocument();
+    expect(screen.getByTestId('viaje-abierto-card')).toBeInTheDocument();
   });
 
   it('isFetching=true → botón muestra "Actualizando"', () => {

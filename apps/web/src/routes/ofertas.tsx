@@ -3,7 +3,9 @@ import { EmptyState } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
+import { ViajeAbiertoCard } from '../components/offers/ViajeAbiertoCard.js';
 import { VoiceAcceptOfferControl } from '../components/offers/VoiceAcceptOfferControl.js';
+import { useViajesAbiertos } from '../hooks/use-marketplace.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useOffersMine } from '../hooks/use-offers.js';
 import { flagsDe } from '../lib/capacidades.js';
@@ -38,6 +40,8 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
   const veTarjetaVoz = flags.aceptarPorVoz;
 
   const offersQuery = useOffersMine({ enabled: isCarrier });
+  // BARH-23: cargas en zona sin oferta propia (marketplace abierto).
+  const abiertosQuery = useViajesAbiertos({ enabled: isCarrier && flags.aceptarOferta });
 
   return (
     <Layout me={me} title="Ofertas activas">
@@ -51,21 +55,25 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
             Ofertas activas
           </h1>
           <p className="mt-1 text-neutral-600 text-sm">
-            Cargas disponibles para tu empresa. Las ofertas expiran en 1 hora.
+            Cargas disponibles para tu empresa. Las ofertas expiran en 1 hora. También puedes
+            reclamar cargas de tu zona que el matching no te ofreció.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
           <button
             type="button"
-            onClick={() => offersQuery.refetch()}
-            disabled={offersQuery.isFetching}
+            onClick={() => {
+              void offersQuery.refetch();
+              void abiertosQuery.refetch();
+            }}
+            disabled={offersQuery.isFetching || abiertosQuery.isFetching}
             className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw
-              className={`h-4 w-4 ${offersQuery.isFetching ? 'animate-spin' : ''}`}
+              className={`h-4 w-4 ${offersQuery.isFetching || abiertosQuery.isFetching ? 'animate-spin' : ''}`}
               aria-hidden
             />
-            {offersQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
+            {offersQuery.isFetching || abiertosQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
           </button>
         </div>
       </div>
@@ -120,6 +128,39 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
             <OfferCard key={o.id} offer={o} puedeDecidir={flags.aceptarOferta} />
           ))}
         </div>
+      )}
+
+      {isCarrier && flags.aceptarOferta && (
+        <section className="mt-10" aria-labelledby="marketplace-abiertos-titulo">
+          <h2
+            id="marketplace-abiertos-titulo"
+            className="font-semibold text-lg text-neutral-900 tracking-tight"
+          >
+            Otras cargas en tu zona
+          </h2>
+          <p className="mt-1 text-neutral-600 text-sm">
+            Cargas con ofertas abiertas que el matching no te envió. Puedes reclamarlas si puedes
+            moverlas (p. ej. con un vehículo de tercero en tu flota).
+          </p>
+          {abiertosQuery.isLoading && (
+            <div className="mt-4 text-neutral-500 text-sm">Cargando cargas de la zona…</div>
+          )}
+          {abiertosQuery.isError && (
+            <output className="mt-4 block rounded-md border border-danger-500/30 bg-danger-50 p-4 text-danger-700 text-sm">
+              No pudimos cargar las cargas de la zona.
+            </output>
+          )}
+          {abiertosQuery.data && abiertosQuery.data.viajes.length === 0 && (
+            <p className="mt-4 text-neutral-500 text-sm">No hay otras cargas reclamables ahora.</p>
+          )}
+          {abiertosQuery.data && abiertosQuery.data.viajes.length > 0 && (
+            <div className="mt-4 space-y-4">
+              {abiertosQuery.data.viajes.map((v) => (
+                <ViajeAbiertoCard key={v.id} viaje={v} puedeReclamar={flags.aceptarOferta} />
+              ))}
+            </div>
+          )}
+        </section>
       )}
     </Layout>
   );
