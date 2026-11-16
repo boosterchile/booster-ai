@@ -141,6 +141,14 @@ const TRIP_BASE = {
   createdAt: new Date('2026-05-01T09:00:00Z'),
 };
 
+/**
+ * Distancia estimada de los viajes de `recalcularNivelPostEntrega`. Las trazas
+ * de estos tests miden desde ≈1,45 km: con 2 km de referencia todas pasan el
+ * mínimo de plausibilidad (50 %, spec distancia-medida-plausible) y los casos
+ * siguen probando lo suyo. Los de plausibilidad fijan su propia referencia.
+ */
+const KM_ESTIMADOS = '2';
+
 /** HC-001 parte 2: el único UPDATE escribe solo las columnas de la decisión. */
 function expectSoloDecision(db: { update: unknown }) {
   expect(db.update).toHaveBeenCalledTimes(1);
@@ -714,7 +722,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS }],
         [], // no assignment
       ],
     });
@@ -730,7 +738,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS }],
         [{ vehicleId: null, deliveredAt: ASSIGN_DELIVERED }],
       ],
     });
@@ -750,7 +758,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: null }],
       ],
@@ -784,7 +792,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: '860693084796730' }],
       ],
@@ -802,7 +810,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [],
       ],
@@ -825,7 +833,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE], // pickupWindowStart 10:00 (planificada)
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: RECOGIDA_REAL }],
         [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
@@ -855,7 +863,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: null }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: null }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
@@ -878,7 +886,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [{ ...TRIP_BASE, pickupWindowStart: null }],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
@@ -921,7 +929,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
   };
   const selectsTeltonika = () => [
     [TRIP_BASE],
-    [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+    [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
     [{ vehicleId: VEH_ID, deliveredAt: DELIVERED, pickedUpAt: null }],
     [{ id: VEH_ID, teltonikaImei: '123456789012345', teltonikaImeiEspejo: null }],
   ];
@@ -965,9 +973,9 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     // descartar el hueco subestimaría (el error de backhaul que F0-0 corrige).
     const observadoKm = haversineKm(-33.4, -70.6, -33.41, -70.61);
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(observadoKm + 5, 6);
-    // Y NO la distancia estimada del trip (100 km): ése ES el bug F0-0 — con
+    // Y NO la distancia estimada del trip (KM_ESTIMADOS): ése ES el bug F0-0 — con
     // 260k pings reales en la DB el certificado caía igual al fallback estimado.
-    expect(Number(setArg.distanceKmActual)).not.toBeCloseTo(100, 6);
+    expect(Number(setArg.distanceKmActual)).not.toBeCloseTo(Number(KM_ESTIMADOS), 6);
   });
 
   it('kmCubiertos en el resultado = Σ tramos observados (excluye los huecos estimados por Routes)', async () => {
@@ -1155,7 +1163,14 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     } = {},
   ) => [
     [{ ...TRIP_BASE, generadorCargaEmpresaId: null, carbonMeasurementOverride: null, ...o.trip }],
-    [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado', ...o.metrics }],
+    [
+      {
+        tripId: TRIP_ID,
+        distanceKmEstimated: KM_ESTIMADOS,
+        precisionMethod: 'modelado',
+        ...o.metrics,
+      },
+    ],
     [
       {
         vehicleId: VEH_ID,
@@ -1335,6 +1350,78 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       1,
       expect.objectContaining({ motivo: 'sin_observacion' }),
     );
+  });
+
+  // spec distancia-medida-plausible (A con 50 %), criterio 5.
+  // 15 posiciones cada 20 s dentro de unos 40 m: sin huecos, cobertura 100 %,
+  // y la «distancia» es solo la deriva del GPS (ruta de prueba del 2026-11-15).
+  const quieto = () =>
+    Array.from({ length: 15 }, (_, i) => ({
+      tMs: i * 20_000,
+      lat: -29.981 + (i % 2) * 0.00002,
+      lng: -71.3503 + (i % 3) * 0.00002,
+    }));
+
+  it.each([
+    ['móvil', { teltonikaImei: null }],
+    ['Teltonika', {}],
+  ] as const)(
+    'NO PLAUSIBLE (%s) — quieto con cobertura 100 % y referencia 11,69 km → cae a la estimación, sin cifras reales',
+    async (_c, vehicle) => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(quieto());
+      const db = makeDb({
+        selects: selects({ metrics: { distanceKmEstimated: '11.69' }, vehicle }),
+        updates: [[]],
+      });
+      const res = await run(db);
+      expect(res.abortReason).toBe('no_plausible');
+      expect(res.huella).toBe('degradada_cobertura');
+      expect(res.emisionesKgco2eReales).toBeNull();
+      expect(res.distanciaKmReal).toBeNull();
+      const setArg = setDe(db);
+      expect(setArg.routeDataSource).toBe('maps_directions');
+      expect(setArg.distanceKmActual).toBeNull();
+      expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
+      expect(Number(setArg.coveragePct)).toBe(0);
+      expect(setArg.fuenteDistancia).toBe('routes_estimada');
+      expect(setArg.motivoFallback).toBe('distancia_no_plausible');
+      expect(setArg.decisionVersion).toBe(3);
+      expect(setArg).not.toHaveProperty('emissionFactorUsed');
+      expect(counter('huella_cobertura_degradada_total')?.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ motivo: 'no_plausible' }),
+      );
+      expect(computeRoutes).not.toHaveBeenCalled();
+    },
+  );
+
+  it('NO PLAUSIBLE con opt-in INACTIVO → no guarda distancia real; solo la decisión de fuente', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(quieto());
+    const db = makeDb({
+      selects: selects({
+        metrics: { distanceKmEstimated: '11.69' },
+        empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }],
+      }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.recomputed).toBe(false);
+    expect(res.abortReason).toBe('no_plausible');
+    expect(res.distanciaKmReal).toBeNull();
+    expectSoloDecision(db);
+    expect(setDe(db).motivoFallback).toBe('distancia_no_plausible');
+  });
+
+  it('PLAUSIBLE en el borde — medido ≥ 50 % de la referencia → sigue medida', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({ metrics: { distanceKmEstimated: (kmContinuo * 2).toFixed(6) } }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.abortReason ?? null).toBeNull();
+    expect(res.huella).toBe('medida');
+    expect(Number(setDe(db).distanceKmActual)).toBeCloseTo(kmContinuo, 6);
   });
 
   it('sin observación con opt-in INACTIVO → sigue sin UPDATE (comportamiento T11 intacto)', async () => {

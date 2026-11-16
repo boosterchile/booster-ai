@@ -259,6 +259,7 @@ describe('cargarLecturasConsumoCan', () => {
       consumoBasePor100km: null,
       perfilEnergetico: 'consumo_base',
       pesoDeclarado: true,
+      distanciaReferenciaKm: km,
     });
     expect(d).toMatchObject({ fuenteEnergia: 'can_83', alertas: ['discrepancia_can'] });
   });

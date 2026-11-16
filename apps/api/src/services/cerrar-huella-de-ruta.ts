@@ -182,6 +182,20 @@ export async function cerrarHuellaDeRuta(opts: {
     cargada.fila.closedAt ?? new Date(),
   );
 
+  // rls-allowlist: métricas de la ruta tomada por id (cierre de plataforma)
+  const [previa] = await db
+    .select({
+      precisionMethod: metricasRuta.precisionMethod,
+      distanceKmEstimated: metricasRuta.distanceKmEstimated,
+    })
+    .from(metricasRuta)
+    .where(eq(metricasRuta.rutaId, rutaId))
+    .limit(1);
+  // Referencia de plausibilidad: la distancia estimada de la ruta completa
+  // (spec distancia-medida-plausible). Sin ella la medición no cuenta como medida.
+  const distanciaReferenciaKm =
+    previa?.distanceKmEstimated == null ? null : Number(previa.distanceKmEstimated);
+
   const medicion = await medirVentanaDelVehiculo({
     db,
     logger,
@@ -190,6 +204,7 @@ export async function cerrarHuellaDeRuta(opts: {
     hasta: recorrido.hasta,
     routesProjectId,
     pesoDeclarado,
+    distanciaReferenciaKm,
     contexto: { rutaId },
   });
   const { pings, escritura, abortReason, decision, columnasDecision, fuente } = medicion;
@@ -274,12 +289,6 @@ export async function cerrarHuellaDeRuta(opts: {
     return { estado: 'calculada', rutaId, huella: resultado, emisionesKgco2e: null, entregados };
   }
 
-  // rls-allowlist: métricas de la ruta tomada por id (cierre de plataforma)
-  const [previa] = await db
-    .select({ precisionMethod: metricasRuta.precisionMethod })
-    .from(metricasRuta)
-    .where(eq(metricasRuta.rutaId, rutaId))
-    .limit(1);
   const metodoFinal =
     huella?.ruta.metodoPrecision ??
     previa?.precisionMethod ??

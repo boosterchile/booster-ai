@@ -107,6 +107,7 @@ describe('resumirCanSegmento (HC-001 parte 2)', () => {
       consumoBasePor100km: null,
       perfilEnergetico: 'consumo_base',
       pesoDeclarado: true,
+      distanciaReferenciaKm: 400,
     });
     expect(r.litrosNivelSinRecarga).toBeCloseTo(120, 6);
     expect(d).toMatchObject({ fuenteEnergia: 'can_83', alertas: [] });
