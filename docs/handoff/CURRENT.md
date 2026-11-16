@@ -1,20 +1,20 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 00:50 · PDF de la ruta de prueba revisados: huella impresa casi nula; regla de plausibilidad en `main` (#977), **sin desplegar** · veredicto prod: matching **sigue `sombra`** (PO dijo «corrido»; apply **no** aterrizó). `RUTAS_API_ACTIVADA` **ON**. Oneshot matching re-pasado. Horas en America/Santiago.
-**Anterior**: veredicto matching 00:32 (#978); re-smoke «verifica» 23:49 + #976 oneshot; #975 ruta dos cargas. Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-16 01:40 · matching **en `activa` en prod** desde las 01:15 (apply del PO, verificado); default en Terraform con #980 · `RUTAS_API_ACTIVADA` **ON** · regla de plausibilidad en `main` (#977), **sin desplegar**. Horas en America/Santiago.
+**Anterior**: PDF y #977 (#979); veredicto matching 00:32 (#978); #975 ruta dos cargas. Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `9d94e267` | #978 handoff matching; #977 distancia medida plausible (`1aaa3c07`); #976 handoff/oneshot matching; #975 ruta dos cargas; #971 rutas cableadas |
-| Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success**. Api revisión `booster-ai-api-00477-6tg` (rutas ON; matching aún sombra) |
+| `main` | `9f405e1c` | #980 matching `activa` por defecto; #979 y #978 handoff; #977 distancia medida plausible (`1aaa3c07`); #976 handoff/oneshot matching; #975 ruta dos cargas; #971 rutas cableadas |
+| Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success**. Api revisión `booster-ai-api-00478-tkx` (misma imagen; rutas ON; matching `activa`) |
 
-**Flags en prod:** `RUTAS_API_ACTIVADA=true` (revisión `booster-ai-api-00477-6tg`, 100 %). `MATCHING_ELEGIBILIDAD_MODO=sombra` (**sin cambio** pese al visto PO). Staging gemelo aún no existe — checklist: `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
+**Flags en prod:** `RUTAS_API_ACTIVADA=true` y `MATCHING_ELEGIBILIDAD_MODO=activa` (revisión `booster-ai-api-00478-tkx`, 100 %). Staging gemelo aún no existe — checklist: `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
 
-**Veredicto matching «corrido» (00:32 -03):** gcloud `MATCHING_ELEGIBILIDAD_MODO=sombra`, `RUTAS_API_ACTIVADA=true`; latestReady `booster-ai-api-00477-6tg` 100 %; `/health` `/ready` 200; `/feature-flags` → `rutas_api_activada: true` (elegibilidad no se expone en ese endpoint). **No** hay revisión nueva tras el flip de rutas → apply `activa` no corrió. Re-pasar: `docs/handoff/2026-11-16-matching-elegibilidad-activa-oneshot.md`.
+**Flip del matching a `activa` (01:14–01:16):** pedido por el PO. Plan desde worktree de `origin/main` (`5cccedce`) acotado a `module.service_api`, con la variable `matching_elegibilidad_modo` en `activa`: `0 to add, 1 to change, 0 to destroy`, solo `MATCHING_ELEGIBILIDAD_MODO "sombra" -> "activa"`; `check-validated-secret-placeholders` OK. Lo aplicó el PO. Después: `/health` y `/ready` 200, `rutas_api_activada: true`, `GET /rutas` sin auth 401, 0 errores del api. Con #980 el default de `matching_elegibilidad_modo` es `activa`; plan completo con ese default: `No changes`. **Sin observar:** ningún matching real corrió aún en `activa`. Evidencia previa en sombra: 2 comparaciones (las cargas de prueba, carga seca), ambas coincidentes. Reverso: default `sombra` (o `-var`) y apply.
 
-**Re-smoke rutas (23:48–23:49 -03):** rutas ON; matching sombra; misma revisión `00477-6tg`.
+**Antes del flip (00:32):** el handoff registraba el visto del PO y un apply que no había aterrizado; prod seguía en `sombra` en la revisión `00477-6tg`.
 
 **Apply del flip de rutas (22:31–22:32):** plan `-target=module.service_api` solo agregó `RUTAS_API_ACTIVADA="true"`. Lo aplicó el PO. Smoke + `/app/rutas` con sesión transportista OK. Reverso: `docs/handoff/2026-11-16-rutas-api-activada-oneshot.md`.
 
@@ -31,17 +31,17 @@
 | Frente | Estado |
 |---|---|
 | Huella consolidada (6 partes) | **En prod** (#956). `/app/rutas` visible |
-| Matching desde la carga (6 partes) | **En prod** (#958) + cron + IAM; modo **sombra** (visto PO para `activa`; apply pendiente) |
+| Matching desde la carga (6 partes) | **En prod** (#958) + cron + IAM; modo **activa** desde el 2026-11-16 01:15 |
 | Ruta consolidada | 1–7 en prod, **API encendida**. Parte 8 (migración contract): al final |
 | Reemisión certificados | Partes 1–5 en main/prod. Parte 6: reemitir BOO-YWKZWR — PO |
 | Etapas 5–6 | Sin empezar |
 | Etapas 0–2 abiertos | ADR-092 (#967 DRAFT); chat destinatario–conductor (#968 DRAFT) |
 
-**Rutas ON.** Matching `activa`: **visto PO sí**; **runtime sigue sombra** — falta apply owner/Claude Code.
+**Rutas ON y matching `activa`.** Con la flota sin carrocería declarada, la regla por carga solo ofrece cargas `carga_seca` y `otra`.
 
 ## WIP
 
-- Cupos agente: este PR handoff (veredicto matching + oneshot re-pasado). Drafts #876, #877, #748: no tocar sin pedido.
+- Cupos agente: este PR handoff (matching en `activa`). Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
@@ -49,7 +49,7 @@
 2. ~~Confirmar migración `0083`~~ — confirmada.
 3. ~~`terraform apply` del cron y del IAM de `cursor-agent`~~ — aplicados.
 4. ~~Visto y apply de `RUTAS_API_ACTIVADA`~~ — aplicado 22:32; ruta dos cargas OK. PDF revisados (ver arriba). **Falta:** decidir la reemisión de los 4 certificados con cifras bajas; mirar la vista del generador.
-5. ~~Visto matching `sombra` → `activa`~~ — sí. **Falta apply** (oneshot re-pasado; Cursor no puede mutar Cloud Run env). Evidencia sombra: `docs/handoff/2026-11-16-evidencia-matching-sombra.md`.
+5. ~~Visto y apply de matching `sombra` → `activa`~~ — aplicado 01:15; default en Terraform (#980). **Falta:** mirar el primer matching real y que los transportistas declaren carrocería.
 6. Un viaje con camión CAN → primer certificado primario.
 7. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello.
 8. Mirar Flota/Maps en prod.
@@ -57,8 +57,8 @@
 
 ## Lo que sigue del lado del agente
 
-1. Owner/Claude Code: apply oneshot matching (`docs/handoff/2026-11-16-matching-elegibilidad-activa-oneshot.md`); luego smoke gcloud + health.
-2. Tras apply real: actualizar CURRENT a matching `activa` + rutas ON.
+1. Con la primera carga nueva: revisar el log `matching: elegibilidad por carga` (modo `activa`) y las ofertas que generó.
+2. Registrar aquí el resultado del primer matching real en `activa`.
 3. `cursor-agent` **no** puede mutar Cloud Run env — sin interim `gcloud run services update` desde aquí.
 4. Tras el release con #977: confirmar en prod que un cierre no plausible cae a la estimación. Las demás observaciones de la prueba de ruta, si el PO lo pide.
 5. Staging: el agente no crea proyecto ni aplica Terraform.
@@ -66,4 +66,4 @@
 
 ## Riesgos abiertos
 
-Recogida exige conductor. Carrocería obligatoria. CAN sin viaje real. Ruta consolidada probada con un generador y camión sin telemetría. Cuatro certificados emitidos con distancia medida bajo el 50 % de la estimada (BOO-BKAXIK, BOO-KY7G69, BOO-4FF3XA, BOO-VZYIN2), sin reemitir; la regla de #977 no está en prod. El backfill manual de distancia no pasa por esa regla. Certificados no reproducibles. `cursor-agent` escribe Scheduler + tfstate pero **no** puede mutar Cloud Run env.
+Recogida exige conductor. Carrocería obligatoria. CAN sin viaje real. Matching en `activa` sin ningún matching real observado; sin carrocería declarada, las cargas que no son `carga_seca` u `otra` quedan sin candidatos. Ruta consolidada probada con un generador y camión sin telemetría. Cuatro certificados emitidos con distancia medida bajo el 50 % de la estimada (BOO-BKAXIK, BOO-KY7G69, BOO-4FF3XA, BOO-VZYIN2), sin reemitir; la regla de #977 no está en prod. El backfill manual de distancia no pasa por esa regla. Certificados no reproducibles. `cursor-agent` escribe Scheduler + tfstate pero **no** puede mutar Cloud Run env.
