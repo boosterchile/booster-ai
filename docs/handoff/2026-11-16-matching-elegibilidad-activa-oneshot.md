@@ -6,9 +6,12 @@
 401; ruta con dos cargas punta a punta (#975).  
 **Alcance de este paso**: solo `MATCHING_ELEGIBILIDAD_MODO`. **No** tocar
 `RUTAS_API_ACTIVADA` (sigue `true`).  
-**Visto PO**: **pendiente**. No aplicar hasta confirmación explícita aparte
-(CURRENT ítem 5). Evidencia sombra: `docs/handoff/2026-11-16-evidencia-matching-sombra.md`
-(0 comparaciones live al corte #969).
+**Visto PO**: **sí** (explícito «sí» al flip; luego dijo «corrido» asumiendo apply).  
+**Estado runtime (re-verificado 2026-11-16 00:32 -03)**: **sigue `sombra`** — el apply
+**no** aterrizó. Última revisión lista sigue `booster-ai-api-00477-6tg` (misma que
+el flip de rutas). Re-pasar este oneshot ya. Evidencia sombra previa:
+`docs/handoff/2026-11-16-evidencia-matching-sombra.md` (0 comparaciones live al
+corte #969).
 
 ## Por qué ya está «cableado» (a diferencia de rutas pre-#971)
 
@@ -25,7 +28,7 @@
 ## One-shot canónico (preferido) — Terraform
 
 Correr como `dev@boosterchile.com` (ADC / Claude Code con cuenta owner), con
-`main` al día (`e2af0901` o más nuevo; rutas ya ON):
+`main` al día (`1aaa3c07` o más nuevo; rutas ya ON; matching aún sombra):
 
 ```bash
 cd infrastructure
@@ -92,21 +95,24 @@ Tras el primer matching real en `activa`: revisar logs
 `workload.googleapis.com/matching_elegibilidad_comparaciones_total`
 (`scripts/ops/matching-sombra-evidencia.sh` sigue útil para contraste).
 
-## Baseline pre-flip (agente, 2026-11-15 23:48–23:49 -03)
+## Baseline pre-flip (re-verificado 2026-11-16 00:32 -03)
 
 | Check | Resultado |
 |---|---|
 | `GET /health` | 200 ok |
-| `GET /ready` | 200 ready |
-| `GET /feature-flags` | `rutas_api_activada: true` |
-| `GET /rutas` (sin auth) | 401 Unauthorized |
-| Revisión lista | `booster-ai-api-00477-6tg` (100 % tráfico) |
+| `GET /ready` | 200 ready (db ok, 37 ms) |
+| `GET /feature-flags` | `rutas_api_activada: true` (elegibilidad **no** se expone aquí) |
+| Revisión lista | `booster-ai-api-00477-6tg` (100 % tráfico; tag canary en `00476-lts` sin %) |
 | `RUTAS_API_ACTIVADA` (gcloud) | `true` |
-| `MATCHING_ELEGIBILIDAD_MODO` (gcloud) | `sombra` (**sin cambio**) |
+| `MATCHING_ELEGIBILIDAD_MODO` (gcloud) | `sombra` (**apply no aterrizó**) |
+
+Baseline anterior (23:48–23:49 -03): mismo resultado (`sombra`, rutas ON, misma revisión).
 
 ## Qué NO hace este documento
 
-- No autoriza el apply: falta el visto explícito del PO.
+- No ejecuta `terraform apply` ni `gcloud run services update` desde Cursor
+  (`cursor-agent` sin `run.services.update`).
 - No cambia el default de Terraform a `activa` (queda `sombra` hasta
   decisión del PO; el flip va por `-var` o por un PR aparte con visto).
-- No ejecuta `terraform apply` ni `gcloud run services update`.
+- Tras un apply exitoso: actualizar `docs/handoff/CURRENT.md` (matching
+  `activa` + rutas ON) con smoke fresco.
