@@ -89,6 +89,7 @@ import { createTrayectosTeltonikaRoutes } from './routes/trayectos-teltonika.js'
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
+import { createViajesPropiosRoutes } from './routes/viajes-propios.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
 import {
   cargarCandidatosBackfill,
@@ -1124,6 +1125,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/trayectos-teltonika', firebaseAuthMiddleware);
     app.use('/trayectos-teltonika', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/trayectos-teltonika', createTrayectosTeltonikaRoutes({ db: opts.db, logger }));
+
+    // BARH-24 — alta de viaje propio (fuera del matching).
+    app.use('/viajes-propios/*', guardiaVisibilidadTransportista);
+    app.use('/viajes-propios/*', firebaseAuthMiddleware);
+    app.use('/viajes-propios/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/viajes-propios', guardiaVisibilidadTransportista);
+    app.use('/viajes-propios', firebaseAuthMiddleware);
+    app.use('/viajes-propios', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/viajes-propios', createViajesPropiosRoutes({ db: opts.db, logger }));
 
     // Rutas con varias paradas (ADR-088): API del transportista, detrás de
     // RUTAS_API_ACTIVADA. Mismos middlewares que /assignments, incluida la

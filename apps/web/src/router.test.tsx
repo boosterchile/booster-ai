@@ -33,6 +33,7 @@ describe('router', () => {
         'app/vehiculos/$id/live',
         'app/cargas',
         'app/cargas/nueva',
+        'app/viajes-propios/nuevo',
         'app/cargas/$id',
         'app/cargas/$id/track',
         'app/certificados',

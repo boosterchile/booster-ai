@@ -13,6 +13,15 @@ import type { MeResponse } from '../hooks/use-me.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...props }: { children: ReactNode; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+  useNavigate: () => vi.fn(),
+}));
+
 let providedContext: { kind: string; me?: MeOnboarded } = { kind: 'unmanaged' };
 vi.mock('../components/ProtectedRoute.js', () => ({
   ProtectedRoute: ({ children }: { children: (ctx: unknown) => ReactNode }) =>
@@ -225,6 +234,12 @@ describe('/app/rutas', () => {
     providedContext = { kind: 'onboarded', me: makeMe({ transportista: false }) };
     renderRoute();
     expect(await screen.findByText(/no opera como transportista/)).toBeInTheDocument();
+  });
+
+  it('transportista con rutas activas → enlace a nuevo viaje propio', async () => {
+    renderRoute();
+    const enlace = await screen.findByRole('link', { name: /nuevo viaje propio/i });
+    expect(enlace).toHaveAttribute('href', '/app/viajes-propios/nuevo');
   });
 
   it('una ruta con varias cargas muestra el total y la parte de cada una', async () => {
