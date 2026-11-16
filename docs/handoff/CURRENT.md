@@ -1,18 +1,20 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 22:50 · `RUTAS_API_ACTIVADA=true` **aplicado en prod** por el PO (22:32) y verificado; `/app/rutas` probado con sesión de transportista (22:42) · matching sigue `sombra`. Horas en America/Santiago.
-**Anterior**: CURRENT del flip de rutas aplicado (#972). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-15 23:05 · `RUTAS_API_ACTIVADA=true` **aplicado en prod** por el PO (22:32) y verificado; `/app/rutas` probado con sesión de transportista (22:42); plan completo de Terraform sin cambios (22:57) · matching sigue `sombra`. Horas en America/Santiago.
+**Anterior**: CURRENT de la prueba de `/rutas` (#973). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `de30d1bc` | #972 handoff del flip; #971 cableado `RUTAS_API_ACTIVADA`; #970 staging checklist; #969 evidencia matching sombra; + chat DRAFT (#968) + ADR-092 DRAFT (#967) |
+| `main` | `3e3acf8f` | #973 y #972 handoff del flip; #971 cableado `RUTAS_API_ACTIVADA`; #970 staging checklist; #969 evidencia matching sombra; + chat DRAFT (#968) + ADR-092 DRAFT (#967) |
 | Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success** (18:23). Api en revisión `booster-ai-api-00477-6tg` (misma imagen, flag de rutas encendido) |
 
 **Flags en prod:** `RUTAS_API_ACTIVADA=true` desde el 2026-11-15 22:32 (revisión `booster-ai-api-00477-6tg`, 100 % del tráfico). `MATCHING_ELEGIBILIDAD_MODO=sombra` (**sin cambio**). Staging gemelo aún no existe — checklist: `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
 
 **Apply del flip de rutas (22:31–22:32):** plan desde worktree de `origin/main` (`e2af0901`) con `-target=module.service_api`: `0 to add, 1 to change, 0 to destroy`, solo agrega `RUTAS_API_ACTIVADA="true"`; sin drift ajeno; `check-validated-secret-placeholders` OK. Lo aplicó el PO. Smoke posterior: `/health` y `/ready` 200; `/feature-flags` → `rutas_api_activada: true`; `GET /rutas` sin auth → 401. **Con sesión de transportista (22:42, sesión del PO en Chrome, Transportes Van Oosterwyk):** `app.boosterchile.com/app/rutas` carga, el menú muestra «Rutas», lista vacía («No tienes rutas activas»); `GET /rutas` → 200 (0,4–0,5 s) desde `booster-ai-api-00477-6tg` según los registros de Cloud Run; consola sin errores. **Sin probar:** una ruta con dos cargas punta a punta (la cuenta no tiene rutas activas). Reverso: `docs/handoff/2026-11-16-rutas-api-activada-oneshot.md`.
+
+**Plan completo tras el flip (22:57):** `terraform plan` sin `-target` desde worktree de `origin/main` (`3e3acf8f`): 427 recursos refrescados, `No changes. Your infrastructure matches the configuration.`, sin advertencias. El drift de Redis `getAuthString` ya no aparece. Nada aplicado.
 
 **Post-deploy verificado (18:24–18:47):** los 8 servicios sirven `27f33609`. Migración `0083` confirmada (84 filas). Cron `vehiculo-pendiente-recordatorio` ENABLED. IAM `cursor-agent` (#962) aplicado (solo Scheduler + tfstate; **no** Cloud Run update).
 
@@ -31,7 +33,7 @@
 
 ## WIP
 
-- Cupos agente: este PR de handoff (prueba de `/rutas`). Drafts #876, #877, #748: no tocar sin pedido.
+- Cupos agente: este PR de handoff (plan completo sin cambios). Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
@@ -54,4 +56,4 @@
 
 ## Riesgos abiertos
 
-Recogida exige conductor. Carrocería obligatoria. CAN sin viaje real. Ruta consolidada encendida pero sin prueba real con dos cargas. Certificados no reproducibles. `cursor-agent` escribe Scheduler + tfstate pero **no** puede mutar Cloud Run env. Drift Redis `getAuthString` en plan completo del cron. El flip de rutas se aplicó con `-target`: no se corrió un plan completo después.
+Recogida exige conductor. Carrocería obligatoria. CAN sin viaje real. Ruta consolidada encendida pero sin prueba real con dos cargas. Certificados no reproducibles. `cursor-agent` escribe Scheduler + tfstate pero **no** puede mutar Cloud Run env.
