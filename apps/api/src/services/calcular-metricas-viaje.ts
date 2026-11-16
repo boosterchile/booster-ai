@@ -18,8 +18,10 @@ import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
 import {
   type DecisionFuente,
+  PLAUSIBILIDAD_MIN_PCT,
   type Reconstruccion,
   decidirFuenteHuella,
+  esDistanciaPlausible,
 } from '../domain/decidir-fuente-huella.js';
 import {
   type LecturaSegmentoCan,
@@ -538,7 +540,9 @@ async function calcularMetricasEstimadasInner(
  */
 /** Motivo por el que NO se persistió una distancia real. Contable (F0-0): distingue
  *  "no aplica" (sin_observacion) de "está roto" (routes_error). */
-type AbortReconstruccion = 'sin_observacion' | 'cap_exceeded' | 'routes_error';
+// `no_plausible` (spec distancia-medida-plausible): se reconstruyó, pero la
+// distancia no alcanza el mínimo sobre la referencia del recorrido.
+type AbortReconstruccion = 'sin_observacion' | 'cap_exceeded' | 'routes_error' | 'no_plausible';
 
 /** De dónde salió el ancla de inicio de la ventana medida (T11, spec Q6). */
 type AnclaVentana = 'recogido_en' | 'pickup_window_start' | 'created_at';
@@ -630,10 +634,17 @@ export async function medirVentanaDelVehiculo(opts: {
   routesProjectId?: string | undefined;
   /** Si todos los servicios de la ventana declaran su peso. */
   pesoDeclarado: boolean;
+  /**
+   * Distancia estimada del recorrido de la ventana (del viaje, o de la ruta si
+   * lleva varios servicios). Es la referencia de plausibilidad: sin ella, o con
+   * una medición bajo `PLAUSIBILIDAD_MIN_PCT`, la distancia no cuenta como medida.
+   */
+  distanciaReferenciaKm: number | null;
   /** Campos que identifican la ventana en los logs. */
   contexto: Record<string, unknown>;
 }) {
   const { db, logger, vehiculo, desde, hasta, routesProjectId, pesoDeclarado, contexto } = opts;
+  const { distanciaReferenciaKm } = opts;
   const fuente = fuentePosicionSegmento(vehiculo).fuente;
 
   // Reconstrucción de la distancia real (F0-0 paso 1): pings observados +
@@ -751,6 +762,7 @@ export async function medirVentanaDelVehiculo(opts: {
       // Igual que huellaSegunPerfil: sin combustible + consumo base es por_defecto.
       perfilEnergetico: vehiculo.fuelType && consumoBase != null ? 'consumo_base' : 'ninguno',
       pesoDeclarado,
+      distanciaReferenciaKm,
     });
   } catch (err) {
     logger.error({ err, ...contexto }, 'HC-001: decidirFuenteHuella lanzó; decisión no registrada');
@@ -769,6 +781,24 @@ export async function medirVentanaDelVehiculo(opts: {
           decididoEn: sql`now()`,
           pesoDeclarado,
         };
+
+  // Plausibilidad (spec distancia-medida-plausible). Va después de la decisión:
+  // esta recibe la reconstrucción tal como salió y registra su propio motivo
+  // (`distancia_no_plausible`); para los cierres, la ventana queda sin distancia real.
+  if (rec.estado === 'ok' && !esDistanciaPlausible(rec.distanciaKm, distanciaReferenciaKm)) {
+    logger.info(
+      {
+        ...contexto,
+        fuente,
+        pings: pings.length,
+        distanciaMedidaKm: rec.distanciaKm,
+        distanciaReferenciaKm,
+        minimoPct: PLAUSIBILIDAD_MIN_PCT,
+      },
+      'recalcular: distancia medida no plausible para el recorrido — cae a la estimación',
+    );
+    abortReason = 'no_plausible';
+  }
 
   return { pings, escritura, abortReason, decision, columnasDecision, lee83, fuente };
 }
@@ -903,6 +933,8 @@ async function recalcularNivelPostEntregaInner(opts: {
     hasta: assignment.deliveredAt,
     routesProjectId,
     pesoDeclarado: trip.cargoWeightKg !== null,
+    distanciaReferenciaKm:
+      existing.distanceKmEstimated == null ? null : Number(existing.distanceKmEstimated),
     contexto: { tripId, pickupAtSource },
   });
   const { escritura, abortReason, decision, columnasDecision, lee83 } = medicion;

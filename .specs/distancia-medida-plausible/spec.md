@@ -1,6 +1,6 @@
 # Distancia medida plausible: no aceptar como «medida» una distancia que no cubre el recorrido
 
-**Estado**: borrador, espera la decisión del PO sobre §4 · **Fecha**: 2026-11-15 · **Frente**: Slot 1 «Huella de carbono punta a punta» (T10-01 y T10-05 de `.specs/trl10/spec.md`) · **Dominio crítico (huella/GLEC)**: TDD con rojo exhibido.
+**Estado**: aceptada · **Fecha**: 2026-11-15 · **Decisión**: PO, 2026-11-16 («A con 50 %») · **Frente**: Slot 1 «Huella de carbono punta a punta» (T10-01 y T10-05 de `.specs/trl10/spec.md`) · **Dominio crítico (huella/GLEC)**: TDD con rojo exhibido.
 
 Enmienda el corte de «distancia usable» de la decisión de fuente (HC-001, `apps/api/src/domain/decidir-fuente-huella.ts`) y los cortes de degradación del cierre del viaje y de la ruta. No cambia `.specs/hueco-detenido-deriva/spec.md`: la regla de los 25 m se mantiene.
 
@@ -29,7 +29,7 @@ No es solo la prueba. Estado de `metricas_viaje` en prod al 2026-11-15 para los 
 
 La regla afecta a las dos fuentes GPS y tanto al viaje solo como a la ruta con varios servicios.
 
-Hay además una incoherencia entre dos funciones: al confirmar la primera entrega de la ruta de prueba, `clasificar-cobertura-cero.ts` informó «sin desplazamiento» y la pantalla mostró la estimación; el cierre de la ruta, segundos después, la dio por medida.
+Al confirmar la primera entrega de la ruta de prueba, la pantalla del conductor informó «sin desplazamiento» y mostró la estimación; el cierre de la ruta, minutos después, la dio por medida. No es una incoherencia entre funciones: en el primer momento las posiciones sumaban 0 km y en el cierre ya sumaban 0,03 km. La regla de «más de 0 km» es la que cambia de veredicto con unos metros de deriva.
 
 ## 2. Objetivo
 
@@ -37,15 +37,20 @@ Una distancia solo cuenta como medida si es plausible para el recorrido declarad
 
 ## 3. Entradas y salidas
 
-- **Entradas**: las que ya recibe la decisión de fuente, más una distancia de referencia del recorrido. Para un viaje solo, `distancia_km_estimada`. Para una ruta, la distancia estimada de la ruta (`metricas_ruta.distancia_km_estimada`). Según la opción de §4, también las coordenadas de origen y destino de cada servicio.
+- **Entradas**: las que ya recibe la decisión de fuente, más una distancia de referencia del recorrido (`distanciaReferenciaKm`). Para un viaje solo, `metricas_viaje.distancia_km_estimada`. Para una ruta con varios servicios, `metricas_ruta.distancia_km_estimada`. Si la referencia falta o no es mayor que 0, la distancia no cuenta como medida.
 - **Salidas**:
   - `decidirFuenteHuella` devuelve `routes_estimada` cuando la distancia medida no pasa la regla, con un `motivo_fallback` nuevo: `distancia_no_plausible`.
-  - El cierre del viaje y el de la ruta dejan `distancia_km_real` y `emisiones_kgco2e_reales` en `null` en ese caso. El certificado usa la estimación, como en cualquier otra degradación.
+  - `medirVentanaDelVehiculo` devuelve `abortReason = 'no_plausible'`. El cierre del viaje y el de la ruta lo tratan como cualquier ventana sin distancia reconstruida: `distancia_km_real` y `emisiones_kgco2e_reales` en `null`, `fuente_dato_ruta = maps_directions`, `cobertura_pct = 0`. El certificado usa la estimación, como en cualquier otra degradación.
+  - Sin Teltonika, si al GPS del móvil solo lo descartó la plausibilidad, el motivo registrado es `distancia_no_plausible` (y no `sin_dispositivo`), porque es el que explica el cierre.
   - `DECISION_VERSION` sube a 3.
 - `motivo_fallback` es `varchar` en `metricas_viaje` y en `certificados_viaje`: el motivo nuevo no necesita migración.
 - No cambia ningún contrato público de la API ni las fórmulas GLEC.
 
-## 4. Regla: opciones para la decisión del PO
+## 4. Regla
+
+**Decisión del PO (2026-11-16): opción A con X = 50 %.** La distancia medida cuenta como medida solo si es al menos el 50 % de la distancia de referencia. Sin tope superior: el PO no lo pidió y no hay ningún caso. La constante es `PLAUSIBILIDAD_MIN_PCT = 50`.
+
+Opciones que se evaluaron:
 
 | Opción | Regla | A favor | En contra |
 |---|---|---|---|
@@ -58,17 +63,11 @@ Con los datos de §1:
 - Con X = 50 % caen a la estimación BOO-BKAXIK, BOO-KY7G69 y la ruta de prueba. BOO-YWKZWR sigue medida.
 - Con X = 25 % caen BOO-BKAXIK y la ruta de prueba. BOO-KY7G69 sigue medida con 41,6 %.
 
-Recomendación: **opción A con X = 50 %**. Es la más simple de auditar y deja fuera los tres casos que hoy subestiman la huella. BOO-KY7G69 quedaría en la estimación hasta entender por qué midió menos de la mitad.
+Se eligió A con 50 % por ser la más simple de auditar y dejar fuera los tres casos que hoy subestiman la huella. BOO-KY7G69 queda en la estimación hasta entender por qué midió menos de la mitad.
 
-Preguntas abiertas para el PO:
-
-1. ¿Opción A, B o C, y con qué umbral?
-2. ¿Hace falta un tope superior (medido muy por encima de lo estimado)? Hoy no hay ningún caso; BOO-YWKZWR está en 108,6 %.
-3. ¿Se reemiten los certificados afectados (§6)?
+Sigue abierto para el PO: si se reemiten los certificados afectados (§6).
 
 ## 5. Criterios de éxito (verificables por test)
-
-Se escriben con la opción y el umbral que decida el PO. Con la recomendación (A, 50 %):
 
 1. `decidirFuenteHuella`: una reconstrucción `ok` con cobertura 100 % y distancia bajo el 50 % de la referencia devuelve `routes_estimada` y `motivo_fallback = distancia_no_plausible`, para `teltonika_gps` y para `movil_gps`.
 2. Borde: 49,9 % cae a la estimación; 50,0 % sigue medida.
@@ -76,8 +75,8 @@ Se escriben con la opción y el umbral que decida el PO. Con la recomendación (
 4. Sin distancia de referencia (nula o ≤ 0) la distancia no cuenta como medida y el motivo es `distancia_no_plausible`.
 5. `recalcularNivelPostEntrega`, caso de la ruta de prueba aplicado a un viaje solo: 15 posiciones dentro de 40 m, sin huecos, referencia 11,69 km. No persiste `distancia_km_real` ni `emisiones_kgco2e_reales`, y el resultado es la degradación a la estimación.
 6. `cerrarHuellaDeRuta`, mismo caso con dos servicios y referencia 37,75 km: `metricas_ruta` y los dos `metricas_viaje` quedan sin cifras reales, y el reparto se calcula sobre la estimación.
-7. `clasificar-cobertura-cero` y el cierre dan el mismo veredicto para una misma traza sin desplazamiento.
-8. El certificado de un viaje degradado por esta regla imprime la estimación y no declara «distancia medida» ni «100 % telemetría».
+7. Los cierres persisten `fuente_dato_ruta = maps_directions` y `cobertura_pct = 0` en ese caso. Con esas columnas la plantilla del certificado ya imprime la estimación y no declara «distancia medida» ni «100 % telemetría»: es el mismo camino de una ventana sin observación, cubierto por sus tests.
+8. Con opt-in de huella inactivo y distancia no plausible no se guarda distancia real; solo queda la decisión de fuente.
 
 ## 6. Fuera de alcance
 
@@ -86,13 +85,16 @@ Se escriben con la opción y el umbral que decida el PO. Con la recomendación (
 - Distinguir el equipo que envía la posición. Todas las posiciones del móvil llegan hoy con `fuente = browser`, así que ese campo no separa un teléfono de un computador.
 - Los campos «Fecha del viaje» y «Salida · Llegada» vacíos y la unidad del factor en la plantilla del certificado: se vieron en la misma revisión y van aparte.
 - El umbral de 25 m del hueco detenido.
+- La explicación de cobertura 0 que ve el conductor (`clasificar-cobertura-cero.ts`). Para un cierre degradado por esta regla responde `medicion_no_cerrada`. Un motivo propio cambia el contrato de `GET /resultado` y el texto de la pantalla, así que lo decide el PO aparte.
+- El backfill manual de distancia (`backfill-distancia-real.ts`, ruta de administración). Reconstruye por su cuenta y no pasa por esta regla; antes de volver a correrlo hay que aplicarle el mismo corte.
 
 ## 7. Plan TDD
 
-1. Rojo: tests nuevos en `decidir-fuente-huella.test.ts` (criterios 1–4), `test/unit/calcular-metricas-viaje.test.ts` (criterio 5), el test del cierre de ruta (criterio 6) y `clasificar-cobertura-cero.test.ts` (criterio 7), corridos contra el código actual. El output del rojo va en la Evidencia del PR.
-2. Verde: la regla entra en una sola función pura, usada por `usable` y por los dos cierres; `DECISION_VERSION = 3`; motivo nuevo en `MOTIVOS_FALLBACK` y en los textos del certificado y de la pantalla del conductor.
-3. Tests, lint, typecheck y build del monorepo en verde.
+1. Rojo: tests nuevos en `decidir-fuente-huella.test.ts` (criterios 1–4), `test/unit/calcular-metricas-viaje.test.ts` (criterios 5, 7 y 8) y `test/unit/cerrar-huella-de-ruta.test.ts` (criterios 6 y 7), corridos contra el código actual. El output del rojo va en la Evidencia del PR.
+2. Verde: la regla es una función pura (`esDistanciaPlausible`), usada por `usable` y por `medirVentanaDelVehiculo`, que alimenta los dos cierres; `DECISION_VERSION = 3`; motivo nuevo en `MOTIVOS_FALLBACK`. El motivo no se imprime en el certificado ni en la web, así que no hay textos que cambiar.
+3. Los tests existentes de `recalcularNivelPostEntrega` usaban una estimación de 100 km con trazas de 1,4 km. Se les baja la estimación a 2 km para que sigan probando lo suyo; no cambia ninguna de sus aserciones salvo la que comparaba contra 100.
+4. Tests, lint, typecheck y build del monorepo en verde.
 
 ## 8. Evidencia
 
-Se completa en el PR de implementación.
+En el PR #977.

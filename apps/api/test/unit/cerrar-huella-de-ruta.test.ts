@@ -330,6 +330,57 @@ describe('cerrarHuellaDeRuta: la ruta que no alcanza a medirse', () => {
     }
   });
 
+  // spec distancia-medida-plausible (A con 50 %), criterio 6.
+  it('la distancia estimada de la ruta es la referencia de plausibilidad de la medición', async () => {
+    cargarRuta.mockResolvedValueOnce(rutaCargada(DOS));
+    medirVentanaDelVehiculo.mockResolvedValueOnce(medida());
+    const base = lecturas({});
+    const { db } = makeDb([
+      ...base.slice(0, 4),
+      [{ precisionMethod: 'modelado', distanceKmEstimated: '37.75' }],
+    ]);
+    await cerrarHuellaDeRuta({ db, logger, rutaId: 'ruta-1' });
+    expect(medirVentanaDelVehiculo).toHaveBeenCalledWith(
+      expect.objectContaining({ distanciaReferenciaKm: 37.75 }),
+    );
+  });
+
+  it('sin estimación de la ruta, la referencia es null (la medición no cuenta como medida)', async () => {
+    cargarRuta.mockResolvedValueOnce(rutaCargada(DOS));
+    medirVentanaDelVehiculo.mockResolvedValueOnce(medida());
+    const { db } = makeDb(lecturas({}));
+    await cerrarHuellaDeRuta({ db, logger, rutaId: 'ruta-1' });
+    expect(medirVentanaDelVehiculo).toHaveBeenCalledWith(
+      expect.objectContaining({ distanciaReferenciaKm: null }),
+    );
+  });
+
+  it('distancia no plausible (0,03 km de 37,75): cifras reales en null y fuente de mapas', async () => {
+    const sets = await sinCifras(
+      'degradada_cobertura',
+      medida({
+        escritura: { distanciaKmReal: 0.03, coveragePct: 100, kmCubiertos: 0.03 },
+        abortReason: 'no_plausible',
+      }),
+      lecturas({}),
+    );
+    expect(guardarHuellaDeRutaCompartida.mock.calls[0]?.[1]).toMatchObject({
+      momento: 'real',
+      huella: null,
+      distanciaKmReal: null,
+    });
+    expect(sets).toHaveLength(2);
+    for (const s of sets) {
+      expect(s).toMatchObject({
+        carbonEmissionsKgco2eActual: null,
+        fuelConsumedLActual: null,
+        distanceKmActual: null,
+        routeDataSource: 'maps_directions',
+        coveragePct: '0',
+      });
+    }
+  });
+
   it('cobertura bajo el umbral', async () => {
     await sinCifras(
       'degradada_cobertura',

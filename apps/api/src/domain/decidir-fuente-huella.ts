@@ -11,7 +11,9 @@ import { KM_MINIMOS_KM_POR_LITRO, LITROS_MINIMOS_KM_POR_LITRO } from './combusti
  * Reglas: historia.md R1–R3/R5 y datos-can.md §4 (prevalece sobre R2/AC4).
  * El opt-in no es input (R4, historia.md rev. 3: siempre se emite).
  */
-export const DECISION_VERSION = 2; // v2 (HC-005): gobierna la emisión + nivel_no_evaluado
+// v2 (HC-005): gobierna la emisión + nivel_no_evaluado.
+// v3 (spec distancia-medida-plausible): la distancia medida debe ser plausible.
+export const DECISION_VERSION = 3;
 
 /** Fallback de fuente: por qué la distancia o la energía no son medidas. */
 export const MOTIVOS_FALLBACK = [
@@ -23,6 +25,7 @@ export const MOTIVOS_FALLBACK = [
   'routes_error',
   'cobertura_bajo_umbral',
   'distancia_invalida', // reconstrucción ok pero km ≤0 o no finito
+  'distancia_no_plausible', // medida bajo PLAUSIBILIDAD_MIN_PCT de la referencia, o sin referencia
   'peso_ausente',
   'can_sin_lecturas',
   'can_cobertura_insuficiente',
@@ -64,6 +67,30 @@ export interface Resumen83 {
   litros: number;
 }
 
+/**
+ * Mínimo que debe alcanzar la distancia medida, como porcentaje de la distancia
+ * de referencia del recorrido, para contar como medida. Decisión del PO
+ * 2026-11-16 (`.specs/distancia-medida-plausible/`): la cobertura mide la
+ * continuidad de la observación, no que lo observado cubra el recorrido; un
+ * equipo quieto da cobertura 100 % con unos metros de deriva.
+ */
+export const PLAUSIBILIDAD_MIN_PCT = 50;
+
+/**
+ * La distancia medida es plausible para el recorrido: al menos
+ * `PLAUSIBILIDAD_MIN_PCT` de la referencia. Sin referencia válida no lo es.
+ * Sin tope superior: un desvío puede alargar el recorrido.
+ */
+export function esDistanciaPlausible(
+  medidaKm: number,
+  referenciaKm: number | null | undefined,
+): boolean {
+  if (referenciaKm == null || !Number.isFinite(referenciaKm) || !(referenciaKm > 0)) {
+    return false;
+  }
+  return Number.isFinite(medidaKm) && medidaKm * 100 >= referenciaKm * PLAUSIBILIDAD_MIN_PCT;
+}
+
 /** Reconstrucción de la distancia en la ventana con una fuente GPS. */
 export type Reconstruccion =
   | { estado: 'ok'; coberturaPct: number; distanciaKm: number }
@@ -86,6 +113,11 @@ export interface EntradaDecisionFuente {
   consumoBasePor100km: number | null;
   perfilEnergetico: 'consumo_base' | 'tipo_vehiculo' | 'ninguno';
   pesoDeclarado: boolean;
+  /**
+   * Distancia estimada del recorrido (del viaje, o de la ruta si lleva varios
+   * servicios). null u omitida = sin referencia: nada cuenta como medido.
+   */
+  distanciaReferenciaKm?: number | null;
 }
 
 export interface DecisionFuente {
@@ -109,8 +141,10 @@ type Distancia = {
 
 const fin = (x: number) => Number.isFinite(x);
 
-/** Usable para R1: ok, cobertura en [80, 100] y km > 0, todo finito (entrada inválida no lanza). */
-function usable(r: Reconstruccion | null): r is Extract<Reconstruccion, { estado: 'ok' }> {
+type ReconstruccionOk = Extract<Reconstruccion, { estado: 'ok' }>;
+
+/** Cobertura en [80, 100] y km > 0, todo finito (entrada inválida no lanza). */
+function coberturaYDistanciaValidas(r: Reconstruccion | null): r is ReconstruccionOk {
   return (
     r?.estado === 'ok' &&
     fin(r.coberturaPct) &&
@@ -121,9 +155,21 @@ function usable(r: Reconstruccion | null): r is Extract<Reconstruccion, { estado
   );
 }
 
+/** Usable para R1: cobertura y distancia válidas, y distancia plausible para el recorrido. */
+function usable(
+  r: Reconstruccion | null,
+  referenciaKm: number | null | undefined,
+): r is ReconstruccionOk {
+  return coberturaYDistanciaValidas(r) && esDistanciaPlausible(r.distanciaKm, referenciaKm);
+}
+
 function motivoNoUsable(r: Reconstruccion, pings: number): MotivoFallback {
   if (r.estado === 'ok') {
-    return fin(r.distanciaKm) && r.distanciaKm > 0 ? 'cobertura_bajo_umbral' : 'distancia_invalida';
+    if (!(fin(r.distanciaKm) && r.distanciaKm > 0)) {
+      return 'distancia_invalida';
+    }
+    // Con cobertura y distancia válidas, lo único que la descartó es la plausibilidad.
+    return coberturaYDistanciaValidas(r) ? 'distancia_no_plausible' : 'cobertura_bajo_umbral';
   }
   if (r.motivo === 'routes_error') {
     return 'routes_error';
@@ -134,12 +180,13 @@ function motivoNoUsable(r: Reconstruccion, pings: number): MotivoFallback {
   return pings === 0 ? 'sin_pings_en_ventana' : 'sin_observacion_continua';
 }
 
-/** R1: Teltonika ≥80 %, si no móvil ≥80 %, si no Routes con motivo. */
+/** R1: Teltonika ≥80 % y plausible, si no móvil ≥80 % y plausible, si no Routes con motivo. */
 function distancia(e: EntradaDecisionFuente): Distancia {
   const t = e.gpsTeltonika;
   const m = e.gpsMovil;
+  const ref = e.distanciaReferenciaKm;
   const motivo = t === null ? 'sin_dispositivo' : motivoNoUsable(t, e.pingsEnVentana);
-  if (usable(t)) {
+  if (usable(t, ref)) {
     return {
       fuente: 'teltonika_gps',
       coberturaPct: t.coberturaPct,
@@ -147,10 +194,17 @@ function distancia(e: EntradaDecisionFuente): Distancia {
       motivo: null,
     };
   }
-  if (usable(m)) {
+  if (usable(m, ref)) {
     return { fuente: 'movil_gps', coberturaPct: m.coberturaPct, km: m.distanciaKm, motivo };
   }
-  return { fuente: 'routes_estimada', coberturaPct: 0, km: 0, motivo };
+  // Sin Teltonika, si al móvil solo lo descartó la plausibilidad, ese es el motivo que explica el cierre.
+  const soloPlausibilidad = t === null && coberturaYDistanciaValidas(m);
+  return {
+    fuente: 'routes_estimada',
+    coberturaPct: 0,
+    km: 0,
+    motivo: soloPlausibilidad ? 'distancia_no_plausible' : motivo,
+  };
 }
 
 /** null si el 83 es usable; si no, el guardrail que lo descarta. */
