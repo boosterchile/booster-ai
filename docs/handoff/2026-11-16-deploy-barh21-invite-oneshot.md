@@ -1,5 +1,7 @@
 # One-shot — deploy BARH-21 (invitaciones correo → `/crear-cuenta`)
 
+> **Release landed**: [43874760833](https://github.com/boosterchile/booster-ai/actions/runs/43874760833) SUCCESS → prod `e0f3ccf4` (api `00480-zps`, web `00426-ljx`, 100%). Queda pendiente del PO: invitaciones reales (sección 4); no enviadas por el agente.
+
 **Fecha**: 2026-11-16 · America/Santiago  
 **Pedido**: tras merge de #986, desplegar a prod y enviar invitaciones reales a
 `gerencia@boosterchile.com` y `sandoval.felipe@gmail.com`.  
