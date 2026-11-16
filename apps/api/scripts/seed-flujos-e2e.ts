@@ -196,7 +196,7 @@ async function main(): Promise<void> {
         uid: opts.uid,
         email: opts.email,
         displayName: opts.fullName,
-        password: opts.firebasePassword,
+        ...(opts.firebasePassword ? { password: opts.firebasePassword } : {}),
       });
       const datos = {
         firebaseUid: opts.uid,
