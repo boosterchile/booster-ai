@@ -86,3 +86,4 @@ export * from './domain/pago-viaje.js';
 export * from './domain/personal-booster.js';
 // ADR-093 — invitación correo + UI creación (Booster / Stakeholder).
 export * from './domain/invitar-correo-cuenta.js';
+export * from './domain/viaje-propio.js';
