@@ -1,18 +1,18 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 22:35 · `RUTAS_API_ACTIVADA=true` **aplicado en prod** por el PO (22:32) y verificado · matching sigue `sombra`. Horas en America/Santiago.
-**Anterior**: CURRENT del cableado de rutas (#971). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-15 22:50 · `RUTAS_API_ACTIVADA=true` **aplicado en prod** por el PO (22:32) y verificado; `/app/rutas` probado con sesión de transportista (22:42) · matching sigue `sombra`. Horas en America/Santiago.
+**Anterior**: CURRENT del flip de rutas aplicado (#972). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `e2af0901` | #971 cableado `RUTAS_API_ACTIVADA`; #970 staging checklist; #969 evidencia matching sombra; + chat DRAFT (#968) + ADR-092 DRAFT (#967) |
+| `main` | `de30d1bc` | #972 handoff del flip; #971 cableado `RUTAS_API_ACTIVADA`; #970 staging checklist; #969 evidencia matching sombra; + chat DRAFT (#968) + ADR-092 DRAFT (#967) |
 | Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success** (18:23). Api en revisión `booster-ai-api-00477-6tg` (misma imagen, flag de rutas encendido) |
 
 **Flags en prod:** `RUTAS_API_ACTIVADA=true` desde el 2026-11-15 22:32 (revisión `booster-ai-api-00477-6tg`, 100 % del tráfico). `MATCHING_ELEGIBILIDAD_MODO=sombra` (**sin cambio**). Staging gemelo aún no existe — checklist: `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
 
-**Apply del flip de rutas (22:31–22:32):** plan desde worktree de `origin/main` (`e2af0901`) con `-target=module.service_api`: `0 to add, 1 to change, 0 to destroy`, solo agrega `RUTAS_API_ACTIVADA="true"`; sin drift ajeno; `check-validated-secret-placeholders` OK. Lo aplicó el PO. Smoke posterior: `/health` y `/ready` 200; `/feature-flags` → `rutas_api_activada: true`; `GET /rutas` sin auth → 401. **Sin probar:** `/rutas` con sesión de transportista y una ruta con dos cargas punta a punta. Reverso: `docs/handoff/2026-11-16-rutas-api-activada-oneshot.md`.
+**Apply del flip de rutas (22:31–22:32):** plan desde worktree de `origin/main` (`e2af0901`) con `-target=module.service_api`: `0 to add, 1 to change, 0 to destroy`, solo agrega `RUTAS_API_ACTIVADA="true"`; sin drift ajeno; `check-validated-secret-placeholders` OK. Lo aplicó el PO. Smoke posterior: `/health` y `/ready` 200; `/feature-flags` → `rutas_api_activada: true`; `GET /rutas` sin auth → 401. **Con sesión de transportista (22:42, sesión del PO en Chrome, Transportes Van Oosterwyk):** `app.boosterchile.com/app/rutas` carga, el menú muestra «Rutas», lista vacía («No tienes rutas activas»); `GET /rutas` → 200 (0,4–0,5 s) desde `booster-ai-api-00477-6tg` según los registros de Cloud Run; consola sin errores. **Sin probar:** una ruta con dos cargas punta a punta (la cuenta no tiene rutas activas). Reverso: `docs/handoff/2026-11-16-rutas-api-activada-oneshot.md`.
 
 **Post-deploy verificado (18:24–18:47):** los 8 servicios sirven `27f33609`. Migración `0083` confirmada (84 filas). Cron `vehiculo-pendiente-recordatorio` ENABLED. IAM `cursor-agent` (#962) aplicado (solo Scheduler + tfstate; **no** Cloud Run update).
 
@@ -31,14 +31,14 @@
 
 ## WIP
 
-- Cupos agente: este PR de handoff. Drafts #876, #877, #748: no tocar sin pedido.
+- Cupos agente: este PR de handoff (prueba de `/rutas`). Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
 1. ~~Aprobar environment `production` del release~~ — hecho; deploy success 18:23.
 2. ~~Confirmar migración `0083`~~ — confirmada.
 3. ~~`terraform apply` del cron y del IAM de `cursor-agent`~~ — aplicados.
-4. ~~Visto y apply de `RUTAS_API_ACTIVADA`~~ — aplicado 2026-11-15 22:32; smoke básico en verde. **Falta:** probar una ruta con dos cargas punta a punta.
+4. ~~Visto y apply de `RUTAS_API_ACTIVADA`~~ — aplicado 2026-11-15 22:32; smoke básico y `/app/rutas` con sesión en verde (lista vacía). **Falta:** probar una ruta con dos cargas punta a punta.
 5. Pasar matching `sombra` → `activa` — **solo con visto explícito aparte** tras smoke de rutas. Evidencia sombra: `docs/handoff/2026-11-16-evidencia-matching-sombra.md` (0 comparaciones live).
 6. Un viaje con camión CAN → primer certificado primario.
 7. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello.
