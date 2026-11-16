@@ -59,5 +59,7 @@ strict_migration_ordering = true
 #   document_service_push                                  = true (ADR-085)
 #   resend_api_key_ready / content_sid_ready               = false / mapa default
 #     → montar solo después de cargar secretos reales (docs/runbooks/terraform-apply.md)
-#   RUTAS_API / matching "activa"                          = fuera de este tfvars;
-#     son decisión de prod del PO, no del bootstrap de staging.
+#   rutas_api_activada                                     = true (default del módulo
+#     tras visto PO 2026-11-16; staging gemelo puede heredar o fijar false local)
+#   matching "activa"                                      = fuera de este tfvars;
+#     es decisión de prod del PO, no del bootstrap de staging.

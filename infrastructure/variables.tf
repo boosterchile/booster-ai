@@ -737,6 +737,22 @@ variable "matching_elegibilidad_modo" {
   }
 }
 
+# ADR-088 / spec ruta-parada-servicio §2 — API `/rutas` + UI `/app/rutas`.
+# Apagada: `/rutas` responde 404 `not_found` y la PWA oculta la nav (lee
+# `GET /feature-flags` → `rutas_api_activada`). Encenderla es activación en
+# producción y la decide el PO. Rollback: `false` + re-aplicar (o
+# `gcloud run services update … --update-env-vars=RUTAS_API_ACTIVADA=false`
+# como interim; el siguiente apply de Terraform manda).
+#
+# FLIP A `true` 2026-11-16 — visto del PO («ok, dale») tras el paquete de
+# evidencia matching sombra. Matching permanece en `sombra` hasta un flip
+# explícito aparte (`matching_elegibilidad_modo=activa`).
+variable "rutas_api_activada" {
+  description = "Enciende la API y la UI de rutas con varias paradas (ADR-088). false = /rutas 404 y nav oculta."
+  type        = bool
+  default     = true
+}
+
 variable "matching_via_microservice" {
   description = "El ranking que decide las offers lo calcula matching-engine (timeout 3 s, fallback local). Precede a matching_shadow."
   type        = bool

@@ -163,6 +163,10 @@ module "service_api" {
     # `sombra`: el matching vigente decide y la regla nueva se compara al lado.
     MATCHING_ELEGIBILIDAD_MODO = var.matching_elegibilidad_modo
 
+    # ADR-088 — API `/rutas` (spec ruta-parada-servicio). Ver
+    # var.rutas_api_activada. Matching `activa` es un flip aparte.
+    RUTAS_API_ACTIVADA = tostring(var.rutas_api_activada)
+
     # T10-21 — enrutamiento del canal WhatsApp (notification-service). Flags
     # en `false` por default: el apply no cambia el comportamiento.
     NOTIFICATION_EVENTS_TOPIC      = google_pubsub_topic.notification_events.name
