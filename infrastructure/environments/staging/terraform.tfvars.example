@@ -53,9 +53,9 @@ strict_migration_ordering = true
 # apply de staging sin visto del PO (y nunca copies valores de prod a ciegas):
 #   notifications_shadow / notifications_via_microservice  = false
 #   matching_shadow / matching_via_microservice             = false
-#   matching_elegibilidad_modo                             = "sombra" (default del módulo;
-#     prod ya corre sombra; staging puede heredar el default o fijar "vigente"
-#     en el tfvars local si el PO quiere un entorno más quieto)
+#   matching_elegibilidad_modo                             = "activa" (default del módulo;
+#     prod corre activa desde el 2026-11-16; staging puede heredar el default o
+#     fijar "sombra" o "vigente" en el tfvars local si el PO quiere un entorno más quieto)
 #   document_service_push                                  = true (ADR-085)
 #   resend_api_key_ready / content_sid_ready               = false / mapa default
 #     → montar solo después de cargar secretos reales (docs/runbooks/terraform-apply.md)
