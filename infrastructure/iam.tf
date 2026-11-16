@@ -433,9 +433,9 @@ resource "google_project_iam_member" "claude_cloud_readonly_roles" {
 #   (c) roles/iam.serviceAccountUser SOLO sobre internal_cron_invoker → actAs
 #       para el OIDC del http_target (requerido al create/update del job).
 # Lecturas de Cloud Run URL / SA email: cubiertas por roles/viewer existente.
-# redis.instances.getAuthString va en cursorAgentCloudRunWriter (abajo): el
-# target de scheduler no lo necesita; el de service_api sí (refresh de
-# google_redis_instance.main vía env REDIS_*).
+# NO se otorga redis.instances.getAuthString a cursor-agent@ (queda en
+# terraform-drift@). Apply de service_api usa -refresh=false para no
+# refrescar auth_string; ver bloque Cloud Run abajo.
 #
 # Riesgo residual (aceptado, inherente a writer a nivel proyecto):
 #   El custom role es project-level → create/update/delete de CUALQUIER job
@@ -492,50 +492,38 @@ resource "google_service_account_iam_member" "cursor_agent_act_as_cron_invoker" 
 }
 
 # -----------------------------------------------------------------------------
-# Cursor Cloud Agent — escritura mínima para update de Cloud Run (service_api)
+# Cursor Cloud Agent — update acotado a booster-ai-api (service_api)
 # -----------------------------------------------------------------------------
 # Autorización PO (Felipe Vicencio, 2026-11-16): «amplía IAM del agent» — para
 # reconciliar drift EMAIL_FROM en module.service_api.google_cloud_run_v2_service
 # (Terraform Drift Check #173 / run 43955716887). Archivo protegido (IAM);
-# se declara en el PR. Sin roles/run.admin ni setIamPolicy.
+# se declara en el PR.
 #
-# Mínimo explícito (nada más):
-#   (d) custom role cursorAgentCloudRunWriter:
-#       - run.services.get/list/update + run.operations.get + run.locations.get
-#         → terraform update de google_cloud_run_v2_service (nueva revisión).
-#         Sin services.create/delete ni *.setIamPolicy.
-#       - redis.instances.getAuthString → refresh de auth_string al planear
-#         service_api (env REDIS_* deriva de google_redis_instance.main).
+# Mínimo explícito (nada más) — remedia Agentic Security Review HIGH/MEDIUM
+# en #996 (project-level run.services.update + getAuthString en writer):
+#   (d) roles/run.developer SOLO sobre el recurso Cloud Run `booster-ai-api`
+#       (google_cloud_run_v2_service_iam_member). No project-level custom
+#       role: no puede mutar web/matching/notificaciones/otros.
 #   (e) roles/iam.serviceAccountUser SOLO sobre cloud_run_runtime → actAs
 #       exigido por el provider al update del servicio con esa SA.
+#   Sin redis.instances.getAuthString (sigue exclusivo de terraform-drift@).
+#   Apply de EMAIL_FROM: `terraform apply -refresh=false -target=...` para
+#   no refrescar auth_string; el state ya tiene REDIS_* / secret redis-auth.
 #
 # Riesgo residual (aceptado):
-#   Project-level run.services.update → puede mutar CUALQUIER Cloud Run
-#   service del proyecto (env, imagen, recursos), no solo booster-ai-api.
-#   GCP no ofrece IAM condicional por nombre de servicio sin org policy.
-#   Mitigación: sin create/delete/setIamPolicy; sin impersonar github-deployer@;
-#   actAs limitado a cloud_run_runtime (misma SA que ya corre prod).
+#   Quien controle la llave puede publicar revisiones en booster-ai-api
+#   (imagen/env/args) ejecutándose como cloud_run_runtime. No elude el
+#   Environment production de release.yml para los OTROS servicios; sí
+#   elude el gate humano para env/config del api. Mitigación: binding a
+#   un solo servicio; sin setIamPolicy project-wide; sin getAuthString;
+#   sin impersonar github-deployer@.
 
-resource "google_project_iam_custom_role" "cursor_agent_cloudrun_writer" {
-  role_id     = "cursorAgentCloudRunWriter"
-  title       = "Cursor Agent — Cloud Run service updater"
-  description = "Mínimo para terraform update de google_cloud_run_v2_service + redis AuthString refresh. Autorizado PO 2026-11-16."
-  project     = google_project.booster_ai.project_id
-  permissions = [
-    "run.services.get",
-    "run.services.list",
-    "run.services.update",
-    "run.operations.get",
-    "run.locations.get",
-    "redis.instances.getAuthString",
-  ]
-  stage = "GA"
-}
-
-resource "google_project_iam_member" "cursor_agent_cloudrun_writer" {
-  project = google_project.booster_ai.project_id
-  role    = google_project_iam_custom_role.cursor_agent_cloudrun_writer.id
-  member  = local.cursor_agent_member
+resource "google_cloud_run_v2_service_iam_member" "cursor_agent_api_developer" {
+  project  = google_project.booster_ai.project_id
+  location = var.region
+  name     = module.service_api.name
+  role     = "roles/run.developer"
+  member   = local.cursor_agent_member
 }
 
 resource "google_service_account_iam_member" "cursor_agent_act_as_cloud_run_runtime" {
