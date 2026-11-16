@@ -70,9 +70,26 @@ nueva sugiere siempre la unidad motriz.
 
 ### Lo que no cubre
 
-- No se corrió en sombra contra tráfico real: la variable no está activada.
+- Al escribir esta parte (2026-11-11) aún no había sombra contra tráfico real.
+  El 2026-11-16 el flag ya está en `sombra` en prod, pero sigue sin matching
+  posterior al encendido (ver sección «Evidencia sombra en prod» abajo).
 - La comparación mira candidatas por flota. El puntaje y el orden entre
   candidatas no cambian en esta parte.
+
+## Evidencia sombra en prod (2026-11-16) — solo lectura
+
+`MATCHING_ELEGIBILIDAD_MODO=sombra` está en Cloud Run desde la revisión
+`booster-ai-api-00472-wrp` (2026-11-11). Paquete para el PO:
+`docs/handoff/2026-11-16-evidencia-matching-sombra.md` +
+`scripts/ops/matching-sombra-evidencia.sh` +
+`scripts/sql/matching-sombra-baseline.sql`.
+
+Hallazgo: **0** logs `matching: elegibilidad por carga` y **0** matching
+después del 2026-11-11 (último `matching complete` el 2026-10-30). La métrica
+`workload.googleapis.com/matching_elegibilidad_comparaciones_total` aún no
+tiene descriptor (nunca se exportó). SQL prod no se pudo correr con
+`cursor-agent` (IAP 403 / sin `secretmanager.versions.access`). No se tocó el
+flag ni `RUTAS_API_ACTIVADA`.
 
 ## Parte 3 — migración `expand` 0079 (2026-11-11)
 
