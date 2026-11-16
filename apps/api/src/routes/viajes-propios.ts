@@ -1,12 +1,13 @@
 import type { Logger } from '@booster-ai/logger';
 import { crearViajePropioBodySchema, puedeAsignarViaje } from '@booster-ai/shared-schemas';
-import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { ctxDeUserContext } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
+import { zValidator } from '../lib/validation.js';
 import {
   EmpresaNoTransportistaError,
   GeneradorNoEncontradoError,
+  GeneradorSinVinculoError,
   ViajePropioValidacionError,
   crearViajePropio,
 } from '../services/crear-viaje-propio.js';
@@ -81,6 +82,16 @@ export function createViajesPropiosRoutes(opts: { db: Db; logger: Logger }) {
         return c.json(
           { error: 'generador_not_found', code: 'generador_not_found', empresa_id: err.empresaId },
           404,
+        );
+      }
+      if (err instanceof GeneradorSinVinculoError) {
+        return c.json(
+          {
+            error: 'generador_sin_vinculo',
+            code: 'generador_sin_vinculo',
+            empresa_id: err.empresaId,
+          },
+          403,
         );
       }
       if (err instanceof EmpresaNoTransportistaError) {

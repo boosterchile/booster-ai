@@ -34,6 +34,40 @@ export class GeneradorNoEncontradoError extends Error {
   }
 }
 
+/** IDOR: no se puede vincular un generador sin relación comercial previa. */
+export class GeneradorSinVinculoError extends Error {
+  constructor(public readonly empresaId: string) {
+    super(`generador_sin_vinculo:${empresaId}`);
+    this.name = 'GeneradorSinVinculoError';
+  }
+}
+
+/**
+ * Vínculo comercial verificable transportista↔generador:
+ * mismo tenant, o historial de al menos una asignación marketplace previa.
+ */
+async function tieneVinculoComercial(
+  db: Db,
+  transportistaId: string,
+  generadorId: string,
+): Promise<boolean> {
+  if (transportistaId === generadorId) {
+    return true;
+  }
+  const rows = await db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .innerJoin(trips, eq(trips.id, assignments.tripId))
+    .where(
+      and(
+        eq(assignments.empresaId, transportistaId),
+        eq(trips.generadorCargaEmpresaId, generadorId),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 function generateTrackingCode(): string {
   const alphabet = 'ABCDEFGHIJKLMNPQRSTUVWXYZ23456789';
   let suffix = '';
@@ -105,6 +139,12 @@ export async function crearViajePropio(opts: {
     const gen = genRows[0];
     if (!gen || gen.status !== 'activa') {
       throw new GeneradorNoEncontradoError(body.cliente.empresa_id);
+    }
+    // Security HIGH discussion_r4589080075: no setear tenancy del generador
+    // sin vínculo comercial verificable (historial o mismo tenant).
+    const vinculado = await tieneVinculoComercial(opts.db, opts.empresaTransportistaId, gen.id);
+    if (!vinculado) {
+      throw new GeneradorSinVinculoError(gen.id);
     }
     generadorCargaEmpresaId = gen.id;
   } else {

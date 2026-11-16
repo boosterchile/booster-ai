@@ -116,8 +116,63 @@ describe('integration: crear viaje propio', () => {
     return { usuario, transportista, generador };
   }
 
+  /** Historial marketplace: vínculo comercial transportista↔generador. */
+  async function sembrarVinculo(e: {
+    usuario: { id: string };
+    transportista: { id: string };
+    generador: { id: string };
+  }) {
+    const { db } = handle;
+    const suffix = randomUUID().slice(0, 6);
+    const viaje = uno(
+      await db
+        .insert(schema.trips)
+        .values({
+          trackingCode: `BOO-V${suffix}`.slice(0, 12),
+          generadorCargaEmpresaId: e.generador.id,
+          createdByUserId: e.usuario.id,
+          originAddressRaw: 'Origen vínculo',
+          originRegionCode: '13',
+          destinationAddressRaw: 'Destino vínculo',
+          destinationRegionCode: '05',
+          cargoType: 'agricola',
+          cargoWeightKg: 100,
+          pickupDateRaw: '2026-10-01',
+          proposedPriceClp: 50_000,
+          origenAlta: 'marketplace',
+          status: 'asignado',
+        })
+        .returning(),
+      'viajeVinculo',
+    );
+    const oferta = uno(
+      await db
+        .insert(schema.offers)
+        .values({
+          tripId: viaje.id,
+          empresaId: e.transportista.id,
+          score: 1,
+          proposedPriceClp: 50_000,
+          status: 'aceptada',
+          expiresAt: new Date(Date.now() + 3_600_000),
+          respondedAt: new Date(),
+        })
+        .returning(),
+      'ofertaVinculo',
+    );
+    await db.insert(schema.assignments).values({
+      tripId: viaje.id,
+      offerId: oferta.id,
+      empresaId: e.transportista.id,
+      status: 'asignado',
+      agreedPriceClp: 50_000,
+      publicTrackingToken: randomUUID(),
+    });
+  }
+
   test('crea trip propio + assignment sin ofertas y sin matching', async () => {
     const e = await escenarioBase();
+    await sembrarVinculo(e);
     const runMatching = vi.fn();
 
     const r = await crearViajePropio({
@@ -150,6 +205,25 @@ describe('integration: crear viaje propio', () => {
       .where(eq(schema.offers.tripId, r.trip.id));
     expect(ofertas).toHaveLength(0);
     expect(runMatching).not.toHaveBeenCalled();
+  });
+
+  test('generador activo sin vínculo comercial → 403 GeneradorSinVinculoError', async () => {
+    const e = await escenarioBase();
+    await expect(
+      crearViajePropio({
+        db: handle.db,
+        logger,
+        empresaTransportistaId: e.transportista.id,
+        userId: e.usuario.id,
+        input: {
+          origen: { address_raw: 'Calle Uno 1, Santiago', region_code: '13' },
+          destino: { address_raw: 'Calle Dos 2, Valparaíso', region_code: '05' },
+          cargo_type: 'carga_seca',
+          pickup_date_raw: '2026-11-21',
+          cliente: { tipo: 'generador', empresa_id: e.generador.id },
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'GeneradorSinVinculoError' });
   });
 
   test('cliente externo con RUT válido; RUT inválido rechaza', async () => {
