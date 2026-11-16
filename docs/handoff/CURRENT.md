@@ -1,7 +1,7 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 · 20:27 America/Santiago · `main` = `a75a736f` (#964; IAM #962 en `ddc0d8e0`; código #956/#958 en `27f33609`) · prod en imagen `27f33609` (revisión `booster-ai-api-00476-lts`, 100%). Horas en America/Santiago.
-**Anterior**: CURRENT del 2026-11-15 20:04 (#964, IAM de `cursor-agent` aplicado). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-16 · evidencia matching sombra (solo lectura) · prod sin cambio de flags. Horas en America/Santiago.
+**Anterior**: CURRENT del 2026-11-15 20:27 (#964). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
@@ -33,7 +33,7 @@
 
 ## WIP
 
-- Cupos agente: **0/3** abiertos propios (#962/#964 mergeados). Este PR de handoff ocupa 1 cupo hasta el merge. Drafts viejos #876, #877, #748: no tocar sin pedido.
+- Cupos agente: **#968** (spec chat DRAFT) + este PR de evidencia matching sombra (≤3). Drafts viejos #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
@@ -41,14 +41,14 @@
 2. ~~Confirmar migración `0083`~~ — confirmada (84 aplicadas).
 3. ~~`terraform apply` del cron y del IAM de `cursor-agent`~~ — ambos aplicados; chicken-egg cerrado.
 4. Encender `RUTAS_API_ACTIVADA` (antes: ruta con dos cargas punta a punta). **Antes** de pasar matching a `activa`.
-5. Pasar matching `sombra` → `activa` con comparaciones a la vista.
+5. Pasar matching `sombra` → `activa` con comparaciones a la vista. **Paquete de evidencia (2026-11-16):** `docs/handoff/2026-11-16-evidencia-matching-sombra.md` — flag `sombra` OK desde rev `00472` (11-11); **0** comparaciones live (último matching 10-30). Script: `scripts/ops/matching-sombra-evidencia.sh`.
 6. Un viaje con camión CAN (KZXB64, LFGR63, KFKW23, PLFL57, RCPC20) → primer certificado primario.
 7. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello.
 8. Mirar Flota/Maps en prod.
 
 ## Lo que sigue del lado del agente
 
-1. **Nada de código** hasta decisión del PO sobre flags (o pedido explícito). No encender `RUTAS_API_ACTIVADA` ni matching `activa` desde el agente.
+1. No encender `RUTAS_API_ACTIVADA` ni matching `activa` sin visto del PO. Evidencia sombra lista; falta tráfico matching real para rellenar el resumen.
 2. Con el IAM de #962, `cursor-agent` puede aplicar por Terraform los próximos jobs de Scheduler; el resto de la infraestructura sigue en manos del PO.
 3. Candidatos solo tras flags / visto PO: etapa 5 (huella de flota), etapa 6 (sistema de diseño; congelado hasta Slot 1), rutas parte 8 con rutas encendidas.
 
