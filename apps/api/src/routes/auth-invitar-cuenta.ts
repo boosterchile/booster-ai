@@ -23,7 +23,15 @@ import {
  * Público por diseño: la persona todavía no tiene sesión. Defensas: token
  * opaco one-shot con hash en DB + vencimiento; Zod en boundaries; rate-limit
  * IP en el mount. Uniforme 410 `invitacion_invalida` si el token no sirve.
+ *
+ * El secreto viaja en header `x-invite-token` (mismo patrón que
+ * `x-onboarding-token` en `/empresas/onboarding-admin`). Nunca como query del
+ * API: Cloud Run registra `httpRequest.requestUrl` y filtraría el nonce.
+ * La PWA sí puede recibir `?token=` en el mail; el cliente lo reenvía en header.
  */
+
+/** Header bearer del token de invitación (GET consultar; no query). */
+export const INVITE_TOKEN_HEADER = 'x-invite-token';
 
 export function createAuthInvitarCuentaRoutes(opts: {
   db: Db;
@@ -35,7 +43,7 @@ export function createAuthInvitarCuentaRoutes(opts: {
 
   app.get('/invitar-cuenta', opts.rateLimit, async (c) => {
     return await withBusinessSpan({ name: 'invitar_correo_cuenta.consultar' }, async (span) => {
-      const raw = c.req.query('token') ?? '';
+      const raw = c.req.header(INVITE_TOKEN_HEADER) ?? '';
       const parsed = tokenInvitacionCorreoSchema.safeParse(raw);
       if (!parsed.success) {
         getBusinessCounter('invitar_correo_cuenta_consultar_total').add(1, {

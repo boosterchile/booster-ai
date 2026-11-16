@@ -35,6 +35,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `pendingDevices` | `dispositivos_pendientes` | Dispositivos Teltonika aún sin asignar a ninguna empresa (pre-asignación). |
 | `whatsAppIntakeDrafts` | `borradores_whatsapp` | Intake anónimo por WhatsApp antes del binding con una empresa. |
 | `solicitudesRegistro` | `solicitudes_registro` | Signup público gateado por admin: la empresa todavía no existe. |
+| `invitacionesCorreoCuenta` | `invitaciones_correo_cuenta` | Invitación por correo (ADR-093) antes de que exista la cuenta: se resuelve por `token_hash` one-shot, no por empresa. |
 | `matchingBacktestRuns` | `matching_backtest_runs` | Backtest de platform-admin sobre todas las empresas. |
 | `cuentasDemo` | `cuentas_demo` | Registro global de cuentas demo (ADR-053). Sale con la migración 0059 (T10-03, #748). |
 

@@ -219,7 +219,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAuthInvitarCuentaRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:
-      'GET/POST /auth/invitar-cuenta (ADR-093): pre-auth POR DISEÑO — consume token opaco one-shot de invitación por correo a la UI /crear-cuenta. Defensas: token hasheado en DB, vencimiento 7 días, un solo uso atómico, Zod en boundaries, rate-limit IP, uniform 410 invitacion_invalida. Crea Firebase email/password + fila usuarios; personal Booster queda es_admin_plataforma. Sin sesión Firebase previa.',
+      'GET/POST /auth/invitar-cuenta (ADR-093): pre-auth POR DISEÑO — consume token opaco one-shot de invitación por correo a la UI /crear-cuenta. GET lee el secreto solo del header x-invite-token (nunca query; Cloud Run logs). Defensas: token hasheado en DB, vencimiento 7 días, un solo uso atómico, Zod en boundaries, rate-limit IP, uniform 410 invitacion_invalida. Crea Firebase email/password + fila usuarios; personal Booster queda es_admin_plataforma. Sin sesión Firebase previa.',
   },
   createAuthUniversalRoutes: {
     category: 'INTENTIONAL-OPEN',

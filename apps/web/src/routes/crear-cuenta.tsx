@@ -14,7 +14,12 @@ import { logger } from '../lib/logger.js';
 /**
  * `/crear-cuenta` — UI Booster de creación tras invitación por correo
  * (ADR-093). Pública: autentica con el token de la URL, no con sesión.
+ *
+ * El mail puede traer `?token=` en la PWA; el cliente lo reenvía al API en
+ * header `x-invite-token` (nunca como query del API — Cloud Run logs).
  */
+
+const INVITE_TOKEN_HEADER = 'x-invite-token';
 
 function tokenDeLaUrl(): string {
   return new URLSearchParams(window.location.search).get('token')?.trim() ?? '';
@@ -45,9 +50,9 @@ export function CrearCuentaRoute() {
         return;
       }
       try {
-        const res = await fetch(
-          `${getApiUrl()}/auth/invitar-cuenta?token=${encodeURIComponent(token)}`,
-        );
+        const res = await fetch(`${getApiUrl()}/auth/invitar-cuenta`, {
+          headers: { [INVITE_TOKEN_HEADER]: token },
+        });
         if (!res.ok) {
           if (!cancelled) {
             setInvitacionError('Este enlace de invitación no es válido o ya expiró.');

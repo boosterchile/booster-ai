@@ -58,7 +58,10 @@ export type InvitarPersonalBoosterCorreoResponse = z.infer<
   typeof invitarPersonalBoosterCorreoResponseSchema
 >;
 
-/** Token opaco en query/body (base64url, sin secretos en logs). */
+/**
+ * Token opaco (base64url). En el API viaja en header `x-invite-token` (GET)
+ * o en el body del POST — nunca como query del API (Cloud Run logs).
+ */
 export const tokenInvitacionCorreoSchema = z
   .string({ error: MENSAJES.requerido })
   .trim()
@@ -66,8 +69,8 @@ export const tokenInvitacionCorreoSchema = z
   .max(128, MENSAJES.max(128));
 
 /**
- * `GET /auth/invitar-cuenta?token=` → 200 con el correo precargado (no
- * editable en la UI). Uniforme 410 si inválido/vencido/consumido.
+ * `GET /auth/invitar-cuenta` + header `x-invite-token` → 200 con el correo
+ * precargado (no editable en la UI). Uniforme 410 si inválido/vencido/consumido.
  */
 export const consultarInvitacionCorreoResponseSchema = z.object({
   email: z.string().email(),

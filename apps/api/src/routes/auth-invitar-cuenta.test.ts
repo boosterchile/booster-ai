@@ -2,10 +2,11 @@ import type { Logger } from '@booster-ai/logger';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInvitacionCorreoToken } from '../services/invitar-correo-cuenta-token.js';
-import { createAuthInvitarCuentaRoutes } from './auth-invitar-cuenta.js';
+import { INVITE_TOKEN_HEADER, createAuthInvitarCuentaRoutes } from './auth-invitar-cuenta.js';
 
 /**
  * ADR-093 — GET/POST /auth/invitar-cuenta (TDD auth crítico).
+ * GET lee el token solo del header `x-invite-token` (no query).
  */
 
 const observabilidad = vi.hoisted(() => ({
@@ -80,7 +81,36 @@ describe('createAuthInvitarCuentaRoutes', () => {
       }),
     );
 
-    const res = await app.request('/auth/invitar-cuenta?token=token-demasiado-corto');
+    const res = await app.request('/auth/invitar-cuenta', {
+      headers: { [INVITE_TOKEN_HEADER]: 'token-demasiado-corto' },
+    });
+    expect(res.status).toBe(410);
+    expect(await res.json()).toEqual({ error: 'gone', code: 'invitacion_invalida' });
+  });
+
+  it('GET con token solo en query (sin header) → 410', async () => {
+    const { token } = createInvitacionCorreoToken();
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [],
+          }),
+        }),
+      }),
+    };
+    const app = new Hono();
+    app.route(
+      '/auth',
+      createAuthInvitarCuentaRoutes({
+        db: db as never,
+        logger: makeLogger(),
+        firebaseAuth: {} as never,
+        rateLimit: passthrough,
+      }),
+    );
+
+    const res = await app.request(`/auth/invitar-cuenta?token=${encodeURIComponent(token)}`);
     expect(res.status).toBe(410);
     expect(await res.json()).toEqual({ error: 'gone', code: 'invitacion_invalida' });
   });
@@ -117,7 +147,9 @@ describe('createAuthInvitarCuentaRoutes', () => {
       }),
     );
 
-    const res = await app.request(`/auth/invitar-cuenta?token=${encodeURIComponent(token)}`);
+    const res = await app.request('/auth/invitar-cuenta', {
+      headers: { [INVITE_TOKEN_HEADER]: token },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { email: string; tipo: string };
     expect(body.email).toBe(EMAIL);
