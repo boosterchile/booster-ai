@@ -1,13 +1,13 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 · evidencia matching sombra (solo lectura) · prod sin cambio de flags. Horas en America/Santiago.
+**Última actualización**: 2026-11-16 · evidencia matching sombra (solo lectura) · `main` = `dd19f40b` (#968 chat DRAFT; #967 ADR-092 DRAFT) · prod sin cambio de flags. Horas en America/Santiago.
 **Anterior**: CURRENT del 2026-11-15 20:27 (#964). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `a75a736f` | Matching 4–6 (#958) + huella web (#956) + IAM de `cursor-agent` (#962) + handoffs |
+| `main` | `dd19f40b` | + chat DRAFT (#968) + ADR-092 DRAFT (#967) sobre Matching 4–6 (#958) + huella (#956) + IAM `cursor-agent` (#962) |
 | Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success** (18:23 America/Santiago) |
 
 **Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe.
@@ -27,13 +27,13 @@
 | Ruta consolidada | 1–7 en prod (API apagada). Parte 8 (migración contract): al final, con rutas estables |
 | Reemisión certificados | Partes 1–5 en main/prod. Parte 6: reemitir BOO-YWKZWR — ejecuta el PO |
 | Etapas 5–6 | Sin empezar (huella de flota; un solo sistema de diseño) |
-| Etapas 0–2 abiertos | Anexo tipos de carga chilenos; chat destinatario–conductor |
+| Etapas 0–2 abiertos | ADR-092 anexo tipos carga (#967, DRAFT en main); chat destinatario–conductor (#968, DRAFT en main) |
 
 **Siguiente es decisión del PO de flags** (`RUTAS_API_ACTIVADA`, luego matching `sombra` → `activa`). Sin ese visto no hay paso de código autorizado por `docs/frentes-vivos.md` que no sea flag, migración contract o irreversible en prod.
 
 ## WIP
 
-- Cupos agente: **#968** (spec chat DRAFT) + este PR de evidencia matching sombra (≤3). Drafts viejos #876, #877, #748: no tocar sin pedido.
+- Cupos agente: este PR de evidencia matching sombra (1/3). Specs chat (#968) y ADR-092 (#967) ya en `main` como DRAFT. Drafts viejos #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
