@@ -1,16 +1,18 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-15 23:45 · `RUTAS_API_ACTIVADA=true` **aplicado en prod** por el PO (22:32) y verificado; `/app/rutas` probado con sesión de transportista (22:42); plan completo de Terraform sin cambios (22:57); **ruta con dos cargas probada punta a punta** (23:19–23:32) · matching sigue `sombra`. Horas en America/Santiago.
-**Anterior**: CURRENT del plan completo sin cambios (#974). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-15 23:49 · re-smoke «verifica» tras #971 (`e2af0901`+): `RUTAS_API_ACTIVADA` **sigue ON** en prod; matching **sigue `sombra`**; oneshot matching activa listo (sin apply). Horas en America/Santiago.
+**Anterior**: CURRENT con la prueba de una ruta con dos cargas (#975). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `92b11c85` | #974, #973 y #972 handoff del flip; #971 cableado `RUTAS_API_ACTIVADA`; #970 staging checklist; #969 evidencia matching sombra; + chat DRAFT (#968) + ADR-092 DRAFT (#967) |
+| `main` | `bf473157` | #975 prueba ruta dos cargas; #974–#972 handoff del flip; #971 cableado `RUTAS_API_ACTIVADA`; #970 staging; #969 evidencia matching sombra; + drafts #968/#967 |
 | Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success** (18:23). Api en revisión `booster-ai-api-00477-6tg` (misma imagen, flag de rutas encendido) |
 
 **Flags en prod:** `RUTAS_API_ACTIVADA=true` desde el 2026-11-15 22:32 (revisión `booster-ai-api-00477-6tg`, 100 % del tráfico). `MATCHING_ELEGIBILIDAD_MODO=sombra` (**sin cambio**). Staging gemelo aún no existe — checklist: `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
+
+**Re-smoke «verifica» (23:48–23:49 -03):** `GET /feature-flags` → `rutas_api_activada: true`; `/health` y `/ready` 200; `GET /rutas` sin auth → 401; gcloud: `RUTAS_API_ACTIVADA=true`, `MATCHING_ELEGIBILIDAD_MODO=sombra`, revisión lista `booster-ai-api-00477-6tg` (100 %). Oneshot matching (sin flip): `docs/handoff/2026-11-16-matching-elegibilidad-activa-oneshot.md`.
 
 **Apply del flip de rutas (22:31–22:32):** plan desde worktree de `origin/main` (`e2af0901`) con `-target=module.service_api`: `0 to add, 1 to change, 0 to destroy`, solo agrega `RUTAS_API_ACTIVADA="true"`; sin drift ajeno; `check-validated-secret-placeholders` OK. Lo aplicó el PO. Smoke posterior: `/health` y `/ready` 200; `/feature-flags` → `rutas_api_activada: true`; `GET /rutas` sin auth → 401. **Con sesión de transportista (22:42, sesión del PO en Chrome, Transportes Van Oosterwyk):** `app.boosterchile.com/app/rutas` carga, el menú muestra «Rutas», lista vacía («No tienes rutas activas»); `GET /rutas` → 200 (0,4–0,5 s) desde `booster-ai-api-00477-6tg` según los registros de Cloud Run; consola sin errores. **Sin probar:** una ruta con dos cargas punta a punta (la cuenta no tiene rutas activas). Reverso: `docs/handoff/2026-11-16-rutas-api-activada-oneshot.md`.
 
@@ -33,11 +35,11 @@
 | Etapas 5–6 | Sin empezar |
 | Etapas 0–2 abiertos | ADR-092 (#967 DRAFT); chat destinatario–conductor (#968 DRAFT) |
 
-**Rutas encendidas en prod.** Matching `activa` **no** autorizado — la prueba de una ruta con dos cargas ya pasó; falta el visto explícito del PO.
+**Rutas encendidas en prod.** Matching `activa` **no** autorizado — oneshot preparado; falta el visto explícito del PO.
 
 ## WIP
 
-- Cupos agente: este PR de handoff (prueba de la ruta con dos cargas). Drafts #876, #877, #748: no tocar sin pedido.
+- Cupos agente: este PR de handoff (re-smoke rutas + oneshot matching). Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
@@ -45,7 +47,7 @@
 2. ~~Confirmar migración `0083`~~ — confirmada.
 3. ~~`terraform apply` del cron y del IAM de `cursor-agent`~~ — aplicados.
 4. ~~Visto y apply de `RUTAS_API_ACTIVADA`~~ — aplicado 2026-11-15 22:32; smoke básico y `/app/rutas` con sesión en verde (lista vacía). Ruta con dos cargas probada punta a punta el 2026-11-15 (ver arriba). **Falta:** mirar los dos PDF y la vista del generador.
-5. Pasar matching `sombra` → `activa` — **solo con visto explícito aparte** tras smoke de rutas. Evidencia sombra: `docs/handoff/2026-11-16-evidencia-matching-sombra.md` (0 comparaciones live).
+5. Pasar matching `sombra` → `activa` — **solo con visto explícito aparte**. Oneshot listo (sin apply): `docs/handoff/2026-11-16-matching-elegibilidad-activa-oneshot.md`. Evidencia sombra: `docs/handoff/2026-11-16-evidencia-matching-sombra.md` (0 comparaciones live).
 6. Un viaje con camión CAN → primer certificado primario.
 7. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello.
 8. Mirar Flota/Maps en prod.
@@ -53,10 +55,11 @@
 
 ## Lo que sigue del lado del agente
 
-1. Revisar las observaciones de la prueba de la ruta con dos cargas (dato «real» del GPS del navegador, hoja de ruta sin refrescar, huella al juntar) si el PO lo pide.
-2. **No** flip `MATCHING_ELEGIBILIDAD_MODO=activa` sin confirmación explícita nueva del PO.
-3. Staging: el agente no crea proyecto ni aplica Terraform.
-4. Candidatos solo con rutas ON / visto matching: etapa 5–6, rutas parte 8.
+1. Tras visto explícito del PO: apply del oneshot matching (`docs/handoff/2026-11-16-matching-elegibilidad-activa-oneshot.md`) por owner/Claude Code; luego smoke gcloud + health.
+2. **No** flip `MATCHING_ELEGIBILIDAD_MODO=activa` sin esa confirmación. `cursor-agent` no puede mutar Cloud Run env.
+3. Revisar observaciones de la prueba de ruta con dos cargas si el PO lo pide.
+4. Staging: el agente no crea proyecto ni aplica Terraform.
+5. Candidatos solo con visto matching: etapa 5–6, rutas parte 8.
 
 ## Riesgos abiertos
 
