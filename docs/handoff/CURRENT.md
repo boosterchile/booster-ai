@@ -1,16 +1,16 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 · evidencia matching sombra (solo lectura) · `main` = `dd19f40b` (#968 chat DRAFT; #967 ADR-092 DRAFT) · prod sin cambio de flags. Horas en America/Santiago.
-**Anterior**: CURRENT del 2026-11-15 20:27 (#964). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-16 · checklist en seco staging ADR-083 (solo docs) · `main` = `a2fd4396` (#969 evidencia matching sombra) · prod sin cambio de flags. Horas en America/Santiago.
+**Anterior**: CURRENT del 2026-11-16 (evidencia sombra #969). Contrato: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `dd19f40b` | + chat DRAFT (#968) + ADR-092 DRAFT (#967) sobre Matching 4–6 (#958) + huella (#956) + IAM `cursor-agent` (#962) |
+| `main` | `a2fd4396` | #969 evidencia matching sombra; + chat DRAFT (#968) + ADR-092 DRAFT (#967) sobre Matching 4–6 (#958) + huella (#956) + IAM `cursor-agent` (#962) |
 | Prod (Cloud Run) | `27f33609` | Release [43759089375](https://github.com/boosterchile/booster-ai/actions/runs/43759089375) **success** (18:23 America/Santiago) |
 
-**Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe.
+**Flags en prod (sin cambio):** `MATCHING_ELEGIBILIDAD_MODO=sombra`. `RUTAS_API_ACTIVADA` no definida (= falsa). Staging gemelo aún no existe — checklist en seco: `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
 
 **Post-deploy verificado (18:24–18:47):** `GET https://api.boosterchile.com/health` y `/ready` OK. Los 8 servicios de Cloud Run sirven `27f33609` con el 100 % en su última revisión lista. Migración `0083` **confirmada**: `drizzle.__drizzle_migrations` tiene 84 filas (0000–0083) y `asignaciones` tiene `recordatorio_vehiculo_24h_en` / `_2h_en` (consulta de solo lectura con ADC).
 
@@ -33,7 +33,7 @@
 
 ## WIP
 
-- Cupos agente: este PR de evidencia matching sombra (1/3). Specs chat (#968) y ADR-092 (#967) ya en `main` como DRAFT. Drafts viejos #876, #877, #748: no tocar sin pedido.
+- Cupos agente: PR checklist staging ADR-083 (docs) (1/3). #969 evidencia sombra ya en `main`. Specs chat (#968) y ADR-092 (#967) en `main` como DRAFT. Drafts viejos #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
@@ -45,12 +45,14 @@
 6. Un viaje con camión CAN (KZXB64, LFGR63, KFKW23, PLFL57, RCPC20) → primer certificado primario.
 7. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello.
 8. Mirar Flota/Maps en prod.
+9. (Opcional, ADR-083) Habilitar staging gemelo cuando quiera — checklist en seco: `docs/handoff/2026-11-16-staging-checklist-adr083.md`. Sin create project / apply / billing desde el agente.
 
 ## Lo que sigue del lado del agente
 
 1. No encender `RUTAS_API_ACTIVADA` ni matching `activa` sin visto del PO. Evidencia sombra lista; falta tráfico matching real para rellenar el resumen.
-2. Con el IAM de #962, `cursor-agent` puede aplicar por Terraform los próximos jobs de Scheduler; el resto de la infraestructura sigue en manos del PO.
-3. Candidatos solo tras flags / visto PO: etapa 5 (huella de flota), etapa 6 (sistema de diseño; congelado hasta Slot 1), rutas parte 8 con rutas encendidas.
+2. Staging: el agente no crea proyecto ni aplica Terraform. El PO usa `docs/handoff/2026-11-16-staging-checklist-adr083.md` + `docs/runbooks/staging.md` cuando decida habilitarlo.
+3. Con el IAM de #962, `cursor-agent` puede aplicar por Terraform los próximos jobs de Scheduler; el resto de la infraestructura sigue en manos del PO.
+4. Candidatos solo tras flags / visto PO: etapa 5 (huella de flota), etapa 6 (sistema de diseño; congelado hasta Slot 1), rutas parte 8 con rutas encendidas.
 
 ## Riesgos abiertos
 

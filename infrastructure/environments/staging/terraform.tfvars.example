@@ -2,15 +2,21 @@
 # Copiar a environments/staging/terraform.tfvars (gitignored) y completar.
 #   terraform -chdir=infrastructure plan -var-file=environments/staging/terraform.tfvars
 # Mismo root module que prod; solo cambian identidad, dominio y tamaños.
+#
+# Checklist en seco (quién hace qué, gaps): docs/handoff/2026-11-16-staging-checklist-adr083.md
+# Runbook: docs/runbooks/staging.md
+#
+# NO committear terraform.tfvars. NO poner secretos aquí.
 
 # --- Identidad del proyecto ---
-project_id  = "booster-ai-stg-494222" # confirmar disponibilidad del ID al crearlo
+project_id  = "booster-ai-stg-494222" # confirmar disponibilidad del ID al crearlo (PO)
 environment = "staging"
 domain      = "staging.boosterchile.com"
 region      = "southamerica-west1"
 zone        = "southamerica-west1-a"
 
 # Misma org y misma cuenta de facturación que prod (gcloud billing accounts list).
+# Completar SOLO en la copia local terraform.tfvars — lo hace el PO.
 billing_account = "XXXXXX-XXXXXX-XXXXXX"
 organization_id = "435506363892"
 
@@ -34,8 +40,24 @@ tfstate_bucket = "booster-ai-tfstate-494222"
 # apuntar al de prod deja el dashboard de costos de staging vacío.
 billing_export_table = "booster-ai-stg-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377"
 
-# Staging no delega subdominios.
+# Staging no delega subdominios. La delegación NS la hace el tfvars de PROD
+# con los nameservers del output dns_zone_name_servers tras el apply de staging.
 staging_nameservers = []
 
-# --- Flags: staging prueba con los flags que se van a activar en prod ---
+# --- Flags explícitos de higiene ---
+# strict_migration_ordering: staging debe fallar si el orden de migraciones no cuadra.
 strict_migration_ordering = true
+
+# --- Flags que NO se listan aquí a propósito ---
+# Usan el default de infrastructure/variables.tf. No los actives en el primer
+# apply de staging sin visto del PO (y nunca copies valores de prod a ciegas):
+#   notifications_shadow / notifications_via_microservice  = false
+#   matching_shadow / matching_via_microservice             = false
+#   matching_elegibilidad_modo                             = "sombra" (default del módulo;
+#     prod ya corre sombra; staging puede heredar el default o fijar "vigente"
+#     en el tfvars local si el PO quiere un entorno más quieto)
+#   document_service_push                                  = true (ADR-085)
+#   resend_api_key_ready / content_sid_ready               = false / mapa default
+#     → montar solo después de cargar secretos reales (docs/runbooks/terraform-apply.md)
+#   RUTAS_API / matching "activa"                          = fuera de este tfvars;
+#     son decisión de prod del PO, no del bootstrap de staging.
