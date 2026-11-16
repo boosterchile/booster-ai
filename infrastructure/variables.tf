@@ -725,11 +725,17 @@ variable "matching_shadow" {
 # se calcula al lado; la diferencia queda en el log `matching: elegibilidad por
 # carga` y en la métrica `matching_elegibilidad_comparaciones_total`. `activa`:
 # decide la regla nueva; es una activación en producción y la decide el PO.
-# Rollback: volver a `vigente` y re-aplicar.
+# Rollback: volver a `sombra` (o a `vigente`) y re-aplicar.
+#
+# FLIP A `activa` 2026-11-16 — pedido por el PO y aplicado por él con
+# `-var=matching_elegibilidad_modo=activa` (revisión `booster-ai-api-00478-tkx`).
+# El default pasa a `activa` para que un apply sin esa variable no devuelva
+# prod a `sombra`. Con la flota sin carrocería declarada, la regla nueva solo
+# ofrece cargas `carga_seca` y `otra`.
 variable "matching_elegibilidad_modo" {
   description = "Modo de la elegibilidad por carga en el matching del api: vigente, sombra o activa."
   type        = string
-  default     = "sombra"
+  default     = "activa"
 
   validation {
     condition     = contains(["vigente", "sombra", "activa"], var.matching_elegibilidad_modo)
@@ -745,8 +751,8 @@ variable "matching_elegibilidad_modo" {
 # como interim; el siguiente apply de Terraform manda).
 #
 # FLIP A `true` 2026-11-16 — visto del PO («ok, dale») tras el paquete de
-# evidencia matching sombra. Matching permanece en `sombra` hasta un flip
-# explícito aparte (`matching_elegibilidad_modo=activa`).
+# evidencia matching sombra. El matching pasó a `activa` en un flip aparte, el
+# mismo día (ver `matching_elegibilidad_modo`).
 variable "rutas_api_activada" {
   description = "Enciende la API y la UI de rutas con varias paradas (ADR-088). false = /rutas 404 y nav oculta."
   type        = bool
