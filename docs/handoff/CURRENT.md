@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 ~14:48 · America/Santiago.  
+**Última actualización**: 2026-11-16 ~13:25 · America/Santiago.  
 **Prod**: `e0f3ccf4` (release [43874760833](https://github.com/boosterchile/booster-ai/actions/runs/43874760833), 11:06) — api `booster-ai-api-00480-zps`, web `00426-ljx`, tráfico 100 % — #986 invitación por correo + #984 remitente `contacto@`.  
-**`main`**: `9f44887e` (#989 handoff release) + este handoff; el código en prod sigue `e0f3ccf4`.  
+**`main`**: tip post-#990; el código en prod sigue `e0f3ccf4`.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Estado de prod vs main
@@ -57,13 +57,13 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 
 ## WIP
 
-- Este PR: handoff — invitaciones BARH-21 enviadas por el PO. Drafts #876, #877, #748: no tocar sin pedido.
+- Specs borrador BARH-23/24 (enfoque 1): `.specs/reclamar-carga-sin-oferta/`, `.specs/viaje-propio-transportista/` — **pendiente visto del PO al texto** antes de implementar. Drafts #876, #877, #748: no tocar sin pedido.
 
 ## Pendientes del PO (orden)
 
-1. Invitados completan `/crear-cuenta` + login correo+clave (`gerencia@`, `sandoval.felipe@`). (Opcional) confirmar mails From `contacto@`.
-2. (Opcional) TF / env `EMAIL_FROM` en Cloud Run — sin urgencia; default de imagen ya es `contacto@`.
-3. BARH-23 / BARH-24: esperan **spec de producto** del PO (aceptar carga sin match de flota; viajes propios mezclados con Booster).
+1. **Revisar y aceptar** specs BARH-23/24 (borrador con decisiones del chat 2026-11-16).
+2. Invitados completan `/crear-cuenta` + login correo+clave (`gerencia@`, `sandoval.felipe@`). (Opcional) confirmar mails From `contacto@`.
+3. (Opcional) TF / env `EMAIL_FROM` en Cloud Run — sin urgencia; default de imagen ya es `contacto@`.
 4. Mirar el primer matching real en `activa`; transportistas declaren carrocería.
 5. Un viaje con camión CAN → primer certificado primario.
 6. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello / cifras bajas.
@@ -72,11 +72,11 @@ Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deplo
 
 ## Lo que sigue del lado del agente
 
-1. Observar / anotar el primer matching real en `activa` (logs + ofertas).
-2. Con el primer cierre post-#977: confirmar v3 / no-plausible.
-3. Cuando un invitado complete `/crear-cuenta` + login: anotar aquí (no asumir cuentas creadas solo por el envío).
-4. `cursor-agent` **no** muta Cloud Run env, no dispara release, no envía invitaciones.
-5. Candidatos: etapa 5–6, rutas parte 8 — solo con cupo y pedido. BARH-23/24 solo tras spec del PO.
+1. Tras visto PO a las specs BARH-23/24: `plan.md` + implementación (ADR nuevo solo con permiso explícito).
+2. Observar / anotar el primer matching real en `activa` (logs + ofertas).
+3. Con el primer cierre post-#977: confirmar v3 / no-plausible.
+4. Cuando un invitado complete `/crear-cuenta` + login: anotar aquí (no asumir cuentas creadas solo por el envío).
+5. `cursor-agent` **no** muta Cloud Run env, no dispara release, no envía invitaciones.
 
 ## Riesgos abiertos
 
