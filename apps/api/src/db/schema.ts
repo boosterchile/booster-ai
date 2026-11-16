@@ -1448,6 +1448,15 @@ export const trips = pgTable(
     configuracionComercialId: uuid('configuracion_comercial_id').references(
       () => configuracionComercial.id,
     ),
+    /**
+     * BARH-24 — origen del alta. `marketplace` (default) pasa por matching;
+     * `propio_transportista` lo crea el carrier fuera del matching.
+     */
+    origenAlta: text('origen_alta').notNull().default('marketplace'),
+    /** Cliente externo (solo cuando origen_alta = propio_transportista). */
+    clienteExternoNombre: text('cliente_externo_nombre'),
+    clienteExternoRut: text('cliente_externo_rut'),
+    clienteExternoContacto: text('cliente_externo_contacto'),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1463,6 +1472,29 @@ export const trips = pgTable(
     notasLargoCheck: check(
       'ck_viajes_notas_largo',
       sql`${table.notes} IS NULL OR char_length(${table.notes}) <= 1000`,
+    ),
+    origenAltaCheck: check(
+      'ck_viajes_origen_alta',
+      sql`${table.origenAlta} IN ('marketplace', 'propio_transportista')`,
+    ),
+    clientePropioCheck: check(
+      'ck_viajes_cliente_propio',
+      sql`${table.origenAlta} = 'marketplace'
+        OR (
+          ${table.origenAlta} = 'propio_transportista'
+          AND (
+            (
+              ${table.generadorCargaEmpresaId} IS NOT NULL
+              AND ${table.clienteExternoNombre} IS NULL
+              AND ${table.clienteExternoRut} IS NULL
+              AND ${table.clienteExternoContacto} IS NULL
+            )
+            OR (
+              ${table.generadorCargaEmpresaId} IS NULL
+              AND ${table.clienteExternoNombre} IS NOT NULL
+            )
+          )
+        )`,
     ),
     originRegionIdx: index('idx_viajes_origen_region').on(table.originRegionCode),
     createdIdx: index('idx_viajes_creado').on(table.createdAt),
@@ -1524,8 +1556,11 @@ export const assignments = pgTable(
       .notNull()
       .unique()
       .references(() => trips.id, { onDelete: 'restrict' }),
+    /**
+     * Nullable desde 0085 (BARH-24): viaje propio no pasa por oferta.
+     * Marketplace sigue insertando oferta_id NOT NULL a nivel de aplicación.
+     */
     offerId: uuid('oferta_id')
-      .notNull()
       .unique()
       .references(() => offers.id, { onDelete: 'restrict' }),
     empresaId: uuid('empresa_id')

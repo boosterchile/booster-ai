@@ -596,6 +596,13 @@
       "when": 1781308800420,
       "tag": "0084_invitaciones_correo_cuenta",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1781395200420,
+      "tag": "0085_viajes_propios_transportista",
+      "breakpoints": true
     }
   ]
 }
