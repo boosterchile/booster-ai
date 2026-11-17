@@ -1,6 +1,6 @@
 # Booster Fleet — rediseño de la pantalla del dueño
 
-**Estado**: borrador, espera la aceptación del PO · **Fecha**: 2026-11-17 · **Pedido**: PO
+**Estado**: aceptada por el PO el 2026-11-17, con las ampliaciones C1 y C2 · **Fecha**: 2026-11-17 · **Pedido**: PO
 
 Depende de [`.specs/booster-fleet/spec.md`](../booster-fleet/spec.md), que
 sigue fijando las reglas de combustible, documentos y mantenciones. Esta spec
@@ -26,10 +26,11 @@ Dos decisiones del PO del 2026-11-17 gobiernan los textos:
 
 ## 2. Entradas
 
-- `GET /booster-fleet` — el panel actual (`panelBoosterFleetSchema`).
+- `GET /booster-fleet` — el panel actual (`panelBoosterFleetSchema`), más
+  los campos de C1 (§3.2).
 - `GET` del listado de trayectos Teltonika, filtrado por vehículo: da, por
   trayecto, inicio, fin, distancia, litros, L/100 km, nivel inicial y final,
-  los avisos de desviación y las coordenadas del evento.
+  los avisos de desviación y las coordenadas del evento, más los campos de C2.
 - Las tres escrituras de mantenciones que ya existen (programar, realizar,
   cancelar).
 - Primitivas de `packages/ui-components` (Badge, Button, Card, Input, Modal)
@@ -37,7 +38,7 @@ Dos decisiones del PO del 2026-11-17 gobiernan los textos:
 
 ## 3. Salidas
 
-### 3.1 Con el contrato actual
+### 3.1 La pantalla
 
 **Overview, en `/app/booster-fleet`**, de arriba hacia abajo:
 
@@ -72,37 +73,51 @@ formulario actual en un `Modal`. Los campos y las validaciones no cambian.
 **Detalle de un vehículo**, en una ruta nueva bajo Booster Fleet:
 
 1. Cabecera con patente, etiqueta de la señal y «Programar inspección».
-2. Si hay desviación, un bloque con fecha, tramo horario, lugar y la acción
+2. Si hay desviación, un bloque con fecha, hora, litros, lugar y la acción
    «Analizar trayecto».
 3. **La semana sobre un eje de tiempo.** Días, nivel de estanque, trayectos y
    eventos comparten la escala horizontal.
 4. Tabla de trayectos de la ventana, con el trayecto de la desviación marcado.
 5. Combustible de la semana, documentos del vehículo y sus mantenciones.
 
-Con el contrato actual el detalle tiene tres límites, que la pantalla dice:
+El detalle tiene dos límites, que la pantalla dice:
 
 - El nivel de estanque se dibuja solo con el nivel inicial y final de cada
   trayecto. Entre esos puntos no hay lectura y no se inventa una curva.
-- La hora de la desviación es el tramo del trayecto que la contiene, no el
-  minuto exacto.
 - El lugar es el pin en el mapa (`EventoCombustibleMap`) y sus coordenadas.
-  No hay nombre de comuna ni de ruta.
+  No hay nombre de comuna ni de ruta (C3 no entra).
 
-### 3.2 Requiere ampliar el contrato (decide el PO)
+### 3.2 Ampliaciones del contrato
 
-Tres ampliaciones, todas de solo agregar campos. Cada una levanta uno de los
-límites de §3.1 y se puede aceptar por separado.
+Las dos aceptadas son de solo agregar campos: ningún campo existente cambia
+de nombre, de tipo ni de significado, y un cliente anterior sigue leyendo la
+respuesta.
 
-| # | Qué se agrega | Qué permite |
-|---|---|---|
-| C1 | En cada vehículo del panel con desviación: el trayecto que la contiene, su inicio y fin, y las coordenadas del evento | Que la fila del overview muestre fecha, hora y lugar sin otra consulta, y que «Analizar trayecto» abra ese trayecto |
-| C2 | Por trayecto, el instante de la desviación y los litros que bajaron | La hora exacta y la variación en litros en el bloque del detalle |
-| C3 | El nombre del lugar del evento (comuna y vía) | Decir el lugar en palabras en la fila y en el detalle |
+| # | Estado | Qué se agrega | Qué permite |
+|---|---|---|---|
+| C1 | Aceptada | En cada vehículo del panel con desviación: el trayecto que la contiene, su inicio y fin, y las coordenadas del evento | Que la fila del overview muestre fecha, hora y lugar sin otra consulta, y que «Analizar trayecto» abra ese trayecto |
+| C2 | Aceptada | Por trayecto, el instante de la desviación y los litros que bajaron | La hora exacta y la variación en litros en el bloque del detalle y en la fila |
+| C3 | No entra | El nombre del lugar del evento (comuna y vía) | Decir el lugar en palabras |
 
-C3 necesita geocodificación inversa: tiene costo por consulta y hay que
-decidir dónde se guarda el resultado. Sin C1, la fila del overview dice
-«desviación por analizar» y la fecha, la hora y el lugar aparecen recién en
-el detalle.
+Reglas de C1 y C2:
+
+- Los campos nuevos son opcionales o anulables. Un vehículo sin desviación no
+  los trae; una desviación sin coordenadas trae el lugar en nulo.
+- Si un vehículo tiene varias desviaciones en la ventana, el panel entrega la
+  más reciente y cuántas son.
+- El instante y los litros salen de lo que el segmentador ya calcula al
+  marcar el aviso. No se agrega una regla de detección ni se cambia un
+  umbral. Si el segmentador no conserva alguno de los dos datos, se detiene
+  el trabajo y se escala: no se estima.
+- Para la baja gradual, el instante es el de la última baja que completó el
+  umbral y los litros son la suma.
+- Los campos entran primero en `packages/shared-schemas` y pasan por Zod en
+  el API y en la pantalla.
+- C1 y C2 son dominio de combustible: el test va primero y el rojo se exhibe
+  en la Evidencia del PR.
+
+C3 queda fuera porque necesita geocodificación inversa, que tiene costo por
+consulta. Entra con una decisión posterior del PO.
 
 ## 4. Reglas
 
@@ -147,7 +162,7 @@ La frase no menciona documentos ni mantenciones: combustible manda.
 
 | Hallazgo | Acción | Destino |
 |---|---|---|
-| Desviación | Analizar trayecto | Trayectos del vehículo (con C1, el trayecto) |
+| Desviación | Analizar trayecto | El trayecto que contiene la desviación |
 | Sin telemetría, sin movimiento | Ir al vehículo | Ficha del vehículo |
 | Sin sensor | Revisar sensor | Ficha del vehículo |
 | Falta capacidad | Cargar capacidad | Ficha del vehículo |
@@ -209,7 +224,7 @@ elegibles la barra no muestra mediana.
    programar desde ahí hace la misma llamada que hoy.
 9. «Cancelar» una mantención pide confirmación en un `Modal` y no llama a
    `window.confirm`.
-10. El detalle de un vehículo con desviación muestra fecha, tramo horario y
+10. El detalle de un vehículo con desviación muestra fecha, hora, litros y
     el mapa con el pin. Si el evento no trae coordenadas, dice «lugar sin
     dato» y no muestra un mapa vacío.
 11. El eje de tiempo del detalle ubica cada trayecto en su día y no dibuja
@@ -217,10 +232,14 @@ elegibles la barra no muestra mediana.
 12. Overview y detalle pasan axe sin violaciones, y toda acción se alcanza
     con teclado.
 13. Los criterios 1 al 7 de la spec base siguen pasando.
-
-Con C1 aceptada se agrega: la fila de una desviación en el overview muestra
-fecha, hora y lugar. Con C2: el bloque del detalle muestra el instante y los
-litros. Con C3: el lugar aparece en palabras.
+14. La fila de una desviación en el overview muestra fecha, hora, litros y
+    las coordenadas del evento, sin una segunda consulta (C1 y C2).
+15. Un panel de un vehículo sin desviación no trae los campos de C1, y la
+    respuesta sigue validando contra el esquema anterior.
+16. Con dos desviaciones del mismo vehículo en la ventana, el panel entrega
+    la más reciente y el conteo dice dos.
+17. Un trayecto con desviación trae su instante y sus litros; uno sin
+    desviación no los trae (C2).
 
 ## 6. Lo que no entra
 
@@ -230,17 +249,20 @@ litros. Con C3: el lugar aparece en palabras.
 - Rediseñar el menú lateral, el login o el sitio comercial.
 - Las direcciones B (bandeja) y C (matriz), que quedan como exploración.
 - Versión para el conductor y modo oscuro.
+- El nombre del lugar en palabras (C3).
 - Notificaciones, correos y plantillas de WhatsApp: sus textos no se
   revisaron para la regla de lenguaje.
 - La tarifa y la bandera de cobro.
 
-## 7. Para decidir (PO)
+## 7. Decisiones del PO
 
-1. Aceptar esta spec, con o sin cambios.
-2. La ruta del detalle. Propuesta: `/app/booster-fleet/vehiculos/$id`.
-3. C1, C2 y C3 de §3.2: cuáles entran y en qué orden. Recomendación: C1 y C2
-   juntas, porque son las que ponen la fecha, la hora y el lugar donde el PO
-   las pidió; C3 después, cuando esté decidido el costo de la geocodificación.
-4. El color del tono «analizar primero». La propuesta usa el rojo del
-   sistema para que siga siendo lo primero que se ve. La alternativa es el
-   ámbar de atención, ahora que el texto dejó de acusar.
+Tomadas el 2026-11-17:
+
+1. La spec queda aceptada.
+2. C1 y C2 entran. C3 no entra.
+
+Quedan con la propuesta de esta spec, porque la aceptación no las cambió. Si
+el PO prefiere otra cosa, se enmienda antes de escribir el código que las usa:
+
+3. La ruta del detalle es `/app/booster-fleet/vehiculos/$id`.
+4. El tono «analizar primero» usa el rojo del sistema.
