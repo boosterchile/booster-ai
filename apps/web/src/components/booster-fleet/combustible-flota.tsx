@@ -85,7 +85,13 @@ export function FilaFlota({
   return (
     <tr className={cn('border-neutral-200 border-t', tono === 'primero' && 'bg-danger-50')}>
       <th scope="row" className="px-4 py-2.5 text-left align-top font-normal">
-        <Patente>{vehiculo.patente}</Patente>
+        <Link
+          to="/app/booster-fleet/vehiculos/$id"
+          params={{ id: vehiculo.vehiculo_id }}
+          aria-label={`Ver el detalle de ${vehiculo.patente}`}
+        >
+          <Patente>{vehiculo.patente}</Patente>
+        </Link>
       </th>
       <td className="px-3 py-2.5 align-top">
         <EtiquetaSeveridad tono={tono}>{ETIQUETA_SENAL[vehiculo.senal]}</EtiquetaSeveridad>

@@ -1,6 +1,5 @@
-import { type PanelBoosterFleet, panelBoosterFleetSchema } from '@booster-ai/shared-schemas';
+import type { PanelBoosterFleet } from '@booster-ai/shared-schemas';
 import { Button, Modal } from '@booster-ai/ui-components';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Layout } from '../components/Layout.js';
@@ -14,19 +13,11 @@ import {
 import { MantencionesFlota } from '../components/booster-fleet/mantenciones-flota.js';
 import { formatoFecha, hallazgosDocumentales } from '../components/booster-fleet/reglas.js';
 import { ResumenFlota } from '../components/booster-fleet/resumen-flota.js';
-import type { MeResponse } from '../hooks/use-me.js';
-import { api } from '../lib/api-client.js';
-import { useEmpresaScope } from '../lib/empresa-activa.js';
-
-type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
-
-function puedeVer(me: MeOnboarded): boolean {
-  const membresia = me.active_membership;
-  return (
-    membresia?.empresa?.is_transportista === true &&
-    (membresia.role === 'dueno' || membresia.role === 'admin')
-  );
-}
+import {
+  type MeOnboarded,
+  puedeVerBoosterFleet,
+  usePanelBoosterFleet,
+} from '../components/booster-fleet/use-panel.js';
 
 export function BoosterFleetRoute() {
   return (
@@ -42,7 +33,7 @@ export function BoosterFleetRoute() {
 }
 
 function BoosterFleetPage({ me }: { me: MeOnboarded }) {
-  if (!puedeVer(me)) {
+  if (!puedeVerBoosterFleet(me)) {
     return (
       <Layout me={me} title="Booster Fleet">
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Booster Fleet</h1>
@@ -65,21 +56,7 @@ function BoosterFleetPage({ me }: { me: MeOnboarded }) {
  * y por cuál partir; combustible manda y cada hallazgo trae su acción.
  */
 function Panel() {
-  const scope = useEmpresaScope();
-  const cliente = useQueryClient();
-  const q = useQuery({
-    queryKey: scope.key('booster-fleet'),
-    retry: false,
-    queryFn: async () => {
-      const crudo = await api.get<unknown>('/booster-fleet', scope.init);
-      const parsed = panelBoosterFleetSchema.safeParse(crudo);
-      if (!parsed.success) {
-        throw new Error('La respuesta de Booster Fleet no tiene la forma esperada.');
-      }
-      return parsed.data;
-    },
-  });
-  const invalidar = () => cliente.invalidateQueries({ queryKey: scope.key('booster-fleet') });
+  const { consulta: q, invalidar } = usePanelBoosterFleet();
 
   if (q.data) {
     return <Controles panel={q.data} onCambio={invalidar} />;
