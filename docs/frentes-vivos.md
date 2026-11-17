@@ -203,9 +203,11 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Por qué:** pedido del PO el 2026-11-17. La gestión de flota existía como tarifa (ADR-079) y no como control para el dueño del transportista.
 
-**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Los tres slots de la fase A siguen como están. Spec en `.specs/booster-fleet/spec.md`.
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Los tres slots de la fase A siguen como estaban. Spec en `.specs/booster-fleet/spec.md`.
 
 **Terminado cuando:** el dueño de un transportista abre Booster Fleet y ve, de su empresa, el combustible de 7 días, el estado documental de cada vehículo y cada conductor, y puede programar y cerrar una mantención. Los criterios de la spec §5 están cubiertos por tests. El cobro sigue en la bandera que prende el platform-admin.
+
+**Estado al 2026-11-17:** desplegado en prod (`b9f512d0`, api `00486-brt` / web `00428-f8j` al 100 %). Ruta API `/booster-fleet` responde 401 sin sesión; pantalla `/app/booster-fleet` sirve 200. Migración **0086** aplicada al startup (`Drizzle migrate() complete`). Queda el smoke con sesión del dueño para cerrar el criterio de término.
 
 **Fuera de alcance:** predicción de mantenciones, edición del archivo en esta pantalla, y cambiar la tarifa o el segmentador de combustible.
 
