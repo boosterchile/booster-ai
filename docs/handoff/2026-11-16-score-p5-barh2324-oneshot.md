@@ -90,7 +90,7 @@ Marcar en `docs/handoff/CURRENT.md` cuando haya evidencia. **No** cuenta interve
 
 | # | Evidencia | Dimensión P | Cómo verificar |
 |---|---|---|---|
-| E1 | Release BARH-23/24 en prod | Matching / marketplace | Revisión + 0085 + UI |
+| E1 | Release BARH-23/24 en prod | Matching / marketplace | **Hecho** 2026-11-16 23:35 -03 — run [43998394616](https://github.com/boosterchile/booster-ai/actions/runs/43998394616), api `00483-ppx` @ 100 %, web `00427-z4w`, imagen tag `30f42658…` |
 | E2 | Invitado completa `/crear-cuenta` + login | Conductor/onboarding | Cuenta real (no solo mail enviado) |
 | E3 | Conductor activado solo por WhatsApp/correo | Conductor autónomo | Sin código dictado por el PO |
 | E4 | 1 viaje: asignado → recogida → entrega → cert **sin** parche PO | Flujo core | Query Slot 3 `frentes-vivos` |
