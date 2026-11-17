@@ -213,7 +213,7 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Rediseño de la pantalla (pedido del PO, 2026-11-17):** spec aceptada el 2026-11-17 en `.specs/booster-fleet-rediseno/spec.md`, con las ampliaciones de contrato C1 y C2; C3 no entra. Terminado cuando sus criterios §5 están cubiertos por tests y la pantalla nueva está en `main`. Al 2026-11-17 el criterio se cumple: el contrato (#1011), el overview (#1012) y el detalle del vehículo (#1013) están en `main`, con los criterios de la spec cubiertos por tests. Se vio en local con una desviación sembrada y #1015 corrigió lo que apareció. Falta desplegarlo y verlo con telemetría de producción.
 
-**Ventana completa (pedido del PO, 2026-11-17):** el panel dice «7 días» y lee como máximo 20.000 puntos; en la flota más grande eso cubre unas seis horas. Spec en borrador en `.specs/booster-fleet-ventana-completa/spec.md`, a la espera de su aceptación. No hay código. Terminado cuando sus criterios §5 están cubiertos por tests y el cambio está en `main`.
+**Ventana completa (pedido del PO, 2026-11-17):** el panel dice «7 días» y lee como máximo 20.000 puntos; en la flota más grande eso cubre unas seis horas. Spec aceptada el 2026-11-17 en `.specs/booster-fleet-ventana-completa/spec.md`. No hay código. Terminado cuando sus criterios §5 están cubiertos por tests y el cambio está en `main`.
 
 ## Fuera de slot — Ruta, parada y servicio (etapa 2)
 

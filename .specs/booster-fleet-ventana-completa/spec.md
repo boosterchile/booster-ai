@@ -1,6 +1,6 @@
 # Booster Fleet — que los 7 días sean 7 días
 
-**Estado**: borrador, espera la aceptación del PO · **Fecha**: 2026-11-17 · **Pedido**: PO
+**Estado**: aceptada por el PO el 2026-11-17 · **Fecha**: 2026-11-17 · **Pedido**: PO
 
 Depende de [`.specs/booster-fleet/spec.md`](../booster-fleet/spec.md) y de
 [`.specs/booster-fleet-rediseno/spec.md`](../booster-fleet-rediseno/spec.md).
@@ -165,18 +165,20 @@ que da con el `io_data` entero.
   camiones que hoy figuran sin sensor aunque envían datos: es configuración
   de cada vehículo, no de esta spec.
 
-## 7. Para decidir (PO)
+## 7. Decisiones del PO
 
-1. Aceptar esta spec, con o sin cambios.
-2. **El camino.** Esta spec propone leer más y mejor en cada consulta, con
-   caché. Resuelve las flotas de hoy sin tocar el esquema. Su límite es
-   lineal: sobre unos 16 camiones vuelve a recortar, ahora de forma pareja y
-   declarada. La alternativa es guardar los trayectos ya segmentados en una
-   tabla que un proceso mantiene al día, y que el panel lea de ahí. Escala
-   sin límite práctico, pero pide una tabla nueva, un proceso programado y
-   reglas para recalcular cuando cambia la configuración de un camión.
-   Recomendación: este camino ahora, y la tabla cuando una flota se acerque
-   al presupuesto.
-3. Los números: presupuesto de 400.000 puntos, caché de 10 minutos y los
-   tiempos de §4.4.
-4. El campo nuevo `combustible.cobertura_desde` en la respuesta del panel.
+Tomadas el 2026-11-17, al aceptar la spec con el camino propuesto y sus
+números:
+
+1. La spec queda aceptada.
+2. **El camino:** leer por vehículo solo lo que usa el segmentador, con
+   caché. No se crea una tabla de trayectos. Esa alternativa (guardar los
+   trayectos ya segmentados y mantenerlos al día con un proceso) queda para
+   cuando una flota se acerque al presupuesto: escala sin el límite lineal de
+   este camino, pero pide tabla nueva, proceso programado y reglas para
+   recalcular cuando cambia la configuración de un camión.
+3. **Los números:** presupuesto de 400.000 puntos por consulta, caché de 10
+   minutos, y los tiempos de §4.4 como objetivo. Si la primera lectura no los
+   cumple, se escala con la medición.
+4. **El campo nuevo** `combustible.cobertura_desde` entra en la respuesta
+   del panel.
