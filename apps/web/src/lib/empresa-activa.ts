@@ -22,6 +22,7 @@ export type DominioEmpresa =
   | 'conductores-list-for-assignment'
   | 'sucursales'
   | 'cumplimiento'
+  | 'booster-fleet'
   | 'certificates'
   | 'cargas'
   | 'assignments'

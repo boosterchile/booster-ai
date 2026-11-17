@@ -52,23 +52,36 @@ export interface ListadoTrayectosTeltonika {
   resumenVehiculo: ResumenHubVehiculo | null;
 }
 
-export async function listarTrayectosTeltonika(opts: {
+export interface LecturaTrayectosFlota {
+  empresaId: string;
+  desde: string;
+  hasta: string;
+  vehiculosTeltonika: number;
+  truncado: boolean;
+  cta: 'vincular_teltonika' | null;
+  ctaSensor: boolean;
+  ctaCapacidadEstanque: boolean;
+  vehiculos: ResumenCombustibleVehiculo[];
+  /** Todos los segmentos de la ventana, con y sin combustible. Sin paginar. */
+  trayectos: TrayectoTeltonika[];
+  resumenVehiculo: ResumenHubVehiculo | null;
+}
+
+/**
+ * Lee y segmenta los trayectos Teltonika de la empresa en la ventana.
+ * Booster Fleet arma el control de combustible con esto, sin paginar:
+ * el dueño tiene que ver el robo y el sensor aunque el trayecto no traiga litros.
+ */
+export async function leerTrayectosDeLaFlota(opts: {
   db: Db;
   logger: Logger;
   empresaId: string;
   desde: Date;
   hasta: Date;
-  page: number;
-  pageSize: number;
-  combustible?: FiltroCombustible;
   maxPuntos?: number;
-  /** Si viene, solo entran los puntos de ese vehículo (tiene que ser de la empresa). */
   vehiculoId?: string | undefined;
-  /** Si el trayecto está en la ventana, se agrega a la página para el detalle. */
-  detalleId?: string | undefined;
-}): Promise<ListadoTrayectosTeltonika> {
+}): Promise<LecturaTrayectosFlota> {
   const maxPuntos = opts.maxPuntos ?? MAX_PUNTOS_TRAYECTO;
-  const combustible = opts.combustible ?? 'con_dato';
 
   // rls-allowlist: solo vehículos de la empresa de la membresía activa.
   const flota = await opts.db
@@ -87,7 +100,19 @@ export async function listarTrayectosTeltonika(opts: {
   if (vehiculos.length === 0) {
     const resumen = opts.vehiculoId ? resumirHubVehiculo([]) : null;
     const conTeltonika = opts.vehiculoId ? flota.length : 0;
-    return vacio({ ...opts, combustible }, conTeltonika, false, resumen);
+    return {
+      empresaId: opts.empresaId,
+      desde: opts.desde.toISOString(),
+      hasta: opts.hasta.toISOString(),
+      vehiculosTeltonika: conTeltonika,
+      truncado: false,
+      cta: conTeltonika === 0 ? 'vincular_teltonika' : null,
+      ctaSensor: false,
+      ctaCapacidadEstanque: false,
+      vehiculos: [],
+      trayectos: [],
+      resumenVehiculo: resumen,
+    };
   }
 
   const ids = vehiculos.map((v) => v.id);
@@ -153,18 +178,6 @@ export async function listarTrayectosTeltonika(opts: {
   }
 
   const todos = segmentarTrayectosTeltonika(puntos, config);
-  const conDato = todos.filter((t) => t.fuenteCombustible != null);
-  const sinDato = todos.filter((t) => t.fuenteCombustible == null);
-  const filtrados = combustible === 'con_dato' ? conDato : sinDato;
-  const inicio = (opts.page - 1) * opts.pageSize;
-  let pagina = filtrados.slice(inicio, inicio + opts.pageSize);
-  if (opts.detalleId) {
-    const asegurado = todos.find((t) => t.id === opts.detalleId);
-    if (asegurado && !pagina.some((t) => t.id === asegurado.id)) {
-      pagina = [asegurado, ...pagina];
-    }
-  }
-
   return {
     empresaId: opts.empresaId,
     desde: opts.desde.toISOString(),
@@ -174,15 +187,59 @@ export async function listarTrayectosTeltonika(opts: {
     cta: null,
     ctaSensor: todos.length > 0 && todos.every((t) => t.ctaSensor),
     ctaCapacidadEstanque: todos.some((t) => t.ctaCapacidadEstanque),
+    vehiculos: resumirCombustibleVehiculos(puntos),
+    trayectos: todos,
+    resumenVehiculo: opts.vehiculoId ? resumirHubVehiculo(todos) : null,
+  };
+}
+
+export async function listarTrayectosTeltonika(opts: {
+  db: Db;
+  logger: Logger;
+  empresaId: string;
+  desde: Date;
+  hasta: Date;
+  page: number;
+  pageSize: number;
+  combustible?: FiltroCombustible;
+  maxPuntos?: number;
+  /** Si viene, solo entran los puntos de ese vehículo (tiene que ser de la empresa). */
+  vehiculoId?: string | undefined;
+  /** Si el trayecto está en la ventana, se agrega a la página para el detalle. */
+  detalleId?: string | undefined;
+}): Promise<ListadoTrayectosTeltonika> {
+  const combustible = opts.combustible ?? 'con_dato';
+  const lectura = await leerTrayectosDeLaFlota(opts);
+  const conDato = lectura.trayectos.filter((t) => t.fuenteCombustible != null);
+  const sinDato = lectura.trayectos.filter((t) => t.fuenteCombustible == null);
+  const filtrados = combustible === 'con_dato' ? conDato : sinDato;
+  const inicio = (opts.page - 1) * opts.pageSize;
+  let pagina = filtrados.slice(inicio, inicio + opts.pageSize);
+  if (opts.detalleId) {
+    const asegurado = lectura.trayectos.find((t) => t.id === opts.detalleId);
+    if (asegurado && !pagina.some((t) => t.id === asegurado.id)) {
+      pagina = [asegurado, ...pagina];
+    }
+  }
+
+  return {
+    empresaId: lectura.empresaId,
+    desde: lectura.desde,
+    hasta: lectura.hasta,
+    vehiculosTeltonika: lectura.vehiculosTeltonika,
+    truncado: lectura.truncado,
+    cta: lectura.cta,
+    ctaSensor: lectura.ctaSensor,
+    ctaCapacidadEstanque: lectura.ctaCapacidadEstanque,
     combustible,
     page: opts.page,
     pageSize: opts.pageSize,
     total: filtrados.length,
     totalConCombustible: conDato.length,
     totalSinCombustible: sinDato.length,
-    vehiculos: resumirCombustibleVehiculos(puntos),
+    vehiculos: lectura.vehiculos,
     trayectos: pagina,
-    resumenVehiculo: opts.vehiculoId ? resumirHubVehiculo(todos) : null,
+    resumenVehiculo: lectura.resumenVehiculo,
   };
 }
 
@@ -200,40 +257,6 @@ async function leerUmbrales(db: Db, empresaId: string): Promise<ConfigRoboCombus
   return {
     uGolpeL: row?.umbralRoboGolpeL ?? null,
     uHormigaL: row?.umbralRoboHormigaL ?? null,
-  };
-}
-
-function vacio(
-  opts: {
-    empresaId: string;
-    desde: Date;
-    hasta: Date;
-    page: number;
-    pageSize: number;
-    combustible: FiltroCombustible;
-  },
-  vehiculosTeltonika: number,
-  ctaSensor: boolean,
-  resumenVehiculo: ResumenHubVehiculo | null,
-): ListadoTrayectosTeltonika {
-  return {
-    empresaId: opts.empresaId,
-    desde: opts.desde.toISOString(),
-    hasta: opts.hasta.toISOString(),
-    vehiculosTeltonika,
-    truncado: false,
-    cta: vehiculosTeltonika === 0 ? 'vincular_teltonika' : null,
-    ctaSensor,
-    ctaCapacidadEstanque: false,
-    combustible: opts.combustible,
-    page: opts.page,
-    pageSize: opts.pageSize,
-    total: 0,
-    totalConCombustible: 0,
-    totalSinCombustible: 0,
-    vehiculos: [],
-    trayectos: [],
-    resumenVehiculo,
   };
 }
 

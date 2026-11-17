@@ -220,7 +220,9 @@ describe('contrato programado (ADR-079 §2)', () => {
     const user = userEvent.setup();
     render(<PlatformAdminConfiguracionComercialRoute />);
     await user.click(
-      await screen.findByRole('button', { name: 'Habilitar gestión de flota de Fletes Dos SpA' }),
+      await screen.findByRole('button', {
+        name: 'Habilitar servicio Booster Fleet de Fletes Dos SpA',
+      }),
     );
     await waitFor(() =>
       expect(putSpy).toHaveBeenCalledWith(
@@ -230,7 +232,7 @@ describe('contrato programado (ADR-079 §2)', () => {
     );
     expect(
       await screen.findByRole('button', {
-        name: 'Deshabilitar gestión de flota de Fletes Dos SpA',
+        name: 'Deshabilitar servicio Booster Fleet de Fletes Dos SpA',
       }),
     ).toBeInTheDocument();
     expect(screen.getByText('No hay empresas generadoras.')).toBeInTheDocument();

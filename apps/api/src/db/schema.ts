@@ -608,8 +608,9 @@ export const empresas = pgTable(
     }),
     contratoProgramadoActivadoPor: text('contrato_programado_activado_por'),
     /**
-     * ADR-079 §4 — plan de transportista con gestión de flota (tarifa por
-     * camión mayor). Lo activa el platform-admin; null = plan base.
+     * ADR-079 §4 — Booster Fleet, el plan de transportista con gestión de
+     * flota (tarifa por camión mayor). Lo activa el platform-admin; null =
+     * plan base. La pantalla del dueño no depende de esta bandera.
      */
     gestionFlotaActivadaEn: timestamp('gestion_flota_activada_en', { withTimezone: true }),
     gestionFlotaActivadaPor: text('gestion_flota_activada_por'),
@@ -1175,6 +1176,58 @@ export const documentosConductor = pgTable(
     conductorIdx: index('idx_docs_conductor_conductor').on(table.conductorId),
     expiryIdx: index('idx_docs_conductor_vencimiento').on(table.fechaVencimiento),
     estadoIdx: index('idx_docs_conductor_estado').on(table.estado),
+  }),
+);
+
+/**
+ * Booster Fleet — mantenciones que programa el dueño del transportista.
+ * La vigencia (vencida / próxima / programada / realizada) se calcula al
+ * leer; acá solo se persiste el cierre. Expand-only, migración 0086.
+ */
+export const mantencionesVehiculo = pgTable(
+  'mantenciones_vehiculo',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    vehiculoId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    tipo: text('tipo').notNull(),
+    titulo: varchar('titulo', { length: 160 }).notNull(),
+    programadaPara: date('programada_para', { mode: 'string' }).notNull(),
+    kilometrajeObjetivo: integer('kilometraje_objetivo'),
+    realizadaEn: timestamp('realizada_en', { withTimezone: true }),
+    kilometrajeRealizado: integer('kilometraje_realizado'),
+    canceladaEn: timestamp('cancelada_en', { withTimezone: true }),
+    notas: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    empresaFechaIdx: index('idx_mantenciones_empresa_fecha').on(
+      table.empresaId,
+      table.programadaPara,
+    ),
+    vehiculoIdx: index('idx_mantenciones_vehiculo').on(table.vehiculoId),
+    tipoCheck: check(
+      'ck_mantenciones_tipo',
+      sql`${table.tipo} IN ('preventiva', 'correctiva', 'inspeccion')`,
+    ),
+    tituloCheck: check('ck_mantenciones_titulo', sql`char_length(${table.titulo}) >= 3`),
+    kmObjetivoCheck: check(
+      'ck_mantenciones_km_objetivo',
+      sql`${table.kilometrajeObjetivo} IS NULL OR ${table.kilometrajeObjetivo} >= 0`,
+    ),
+    kmRealizadoCheck: check(
+      'ck_mantenciones_km_realizado',
+      sql`${table.kilometrajeRealizado} IS NULL OR ${table.kilometrajeRealizado} >= 0`,
+    ),
+    cierreCheck: check(
+      'ck_mantenciones_cierre',
+      sql`${table.realizadaEn} IS NULL OR ${table.canceladaEn} IS NULL`,
+    ),
   }),
 );
 

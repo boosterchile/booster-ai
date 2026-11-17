@@ -359,12 +359,12 @@ function Pagina() {
       />
 
       <BanderaPorEmpresa
-        titulo="Gestión de flota"
-        descripcion="Los transportistas habilitados pagan la suscripción con la tarifa por camión de gestión de flota."
+        titulo="Booster Fleet"
+        descripcion="Servicio de gestión de flota para el dueño del transportista: combustible, documentos y mantenciones. Los habilitados pagan la tarifa por camión de Booster Fleet."
         ruta="/admin/configuracion-comercial/gestion-flota"
         claveLista="transportistas"
         claveFila="transportista"
-        nombre="gestión de flota"
+        nombre="servicio Booster Fleet"
         vacio="No hay empresas transportistas."
       />
 
