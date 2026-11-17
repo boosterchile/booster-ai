@@ -97,7 +97,7 @@ export function FilaFlota({
         <EtiquetaSeveridad tono={tono}>{ETIQUETA_SENAL[vehiculo.senal]}</EtiquetaSeveridad>
         <span className="mt-1 block text-neutral-600 text-xs">{descripcionDe(vehiculo)}</span>
       </td>
-      <td className="px-3 py-2.5 text-right align-top tabular-nums">
+      <td className="whitespace-nowrap px-3 py-2.5 text-right align-top tabular-nums">
         {vehiculo.litros != null ? (
           `${formatoNumero(vehiculo.litros)} L`
         ) : (
@@ -113,7 +113,7 @@ export function FilaFlota({
             destino={accion.destino}
             className={
               tono === 'primero'
-                ? 'inline-flex rounded-md bg-danger-600 px-2.5 py-1 font-medium text-white text-xs hover:bg-danger-700'
+                ? 'inline-flex whitespace-nowrap rounded-md bg-danger-600 px-2.5 py-1 font-medium text-white text-xs hover:bg-danger-700'
                 : 'whitespace-nowrap font-medium text-primary-700 text-sm hover:underline'
             }
           >

@@ -34,6 +34,9 @@ export interface TramoNivel {
   y1: number;
   x2: number;
   y2: number;
+  /** La lectura al inicio y al final, en la unidad del carril. */
+  inicio: number;
+  fin: number;
 }
 
 /**
@@ -69,6 +72,8 @@ export function tramosDeNivel(
       y1: 100 - (par[0] / tope) * 100,
       x2,
       y2: 100 - (par[1] / tope) * 100,
+      inicio: par[0],
+      fin: par[1],
     });
   }
   return { unidad: conPct ? '%' : 'L', tope, tramos };
@@ -157,6 +162,13 @@ export function SemanaVehiculo({
               aria-label={`Nivel de estanque en ${nivel.tramos.length} trayectos con lectura. Entre trayectos no hay lectura.`}
               className="block h-36 w-full text-neutral-900"
             >
+              {nivel.tramos.map((tramo) => (
+                <polygon
+                  key={`area-${tramo.id}`}
+                  points={`${tramo.x1},${4 + tramo.y1 * 0.92} ${tramo.x2},${4 + tramo.y2 * 0.92} ${tramo.x2},100 ${tramo.x1},100`}
+                  className="fill-neutral-200"
+                />
+              ))}
               {[0, 50, 100].map((y) => (
                 <line
                   key={y}
@@ -184,6 +196,15 @@ export function SemanaVehiculo({
               ))}
             </svg>
           )}
+          {nivel.tramos.map((tramo) => (
+            <span
+              key={`valor-${tramo.id}`}
+              className="absolute top-1 whitespace-nowrap text-neutral-700 text-xs tabular-nums"
+              style={tramo.x1 > 70 ? { right: `${100 - tramo.x2}%` } : { left: `${tramo.x1}%` }}
+            >
+              {formatoNumero(tramo.inicio)} → {formatoNumero(tramo.fin)} {nivel.unidad}
+            </span>
+          ))}
         </Carril>
 
         <Carril titulo="Trayectos">
