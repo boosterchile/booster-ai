@@ -183,6 +183,9 @@ describe('GET /trayectos-teltonika', () => {
       posible_robo_hormiga: false,
       event_lat: null,
       event_lon: null,
+      evento_desde: null,
+      evento_hasta: null,
+      evento_litros: null,
     });
     expect(body.trayectos[0]?.distancia_km).toBeGreaterThan(0);
     expect(body.trayectos[0]?.km_por_litro).toBeGreaterThan(0);
@@ -244,6 +247,9 @@ describe('GET /trayectos-teltonika', () => {
       posible_robo_combustible: true,
       event_lat: -33.4,
       event_lon: -70.6,
+      evento_desde: new Date(t0.getTime() + 10 * 60_000).toISOString(),
+      evento_hasta: new Date(t0.getTime() + 12 * 60_000).toISOString(),
+      evento_litros: 21,
     });
   });
 

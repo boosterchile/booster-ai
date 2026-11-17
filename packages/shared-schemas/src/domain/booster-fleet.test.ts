@@ -39,6 +39,14 @@ function trayecto(
   extra: Partial<TrayectoBoosterFleet> = {},
 ): TrayectoBoosterFleet {
   return {
+    id: `${vehiculoId}:2026-11-12T10:00:00.000Z`,
+    inicio: '2026-11-12T10:00:00.000Z',
+    fin: '2026-11-12T14:00:00.000Z',
+    eventoDesde: null,
+    eventoHasta: null,
+    eventoLitros: null,
+    eventLat: null,
+    eventLon: null,
     vehiculoId,
     litrosConsumidos: 30,
     kmCubiertos: 100,
@@ -462,5 +470,101 @@ describe('programarMantencionSchema', () => {
         programada_para: '2026-02-31',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('desviación en el panel', () => {
+  const golpe = trayecto(A, {
+    id: 'trayecto-golpe',
+    inicio: '2026-11-12T18:00:00.000Z',
+    fin: '2026-11-13T07:30:00.000Z',
+    posibleRoboCombustible: true,
+    eventoDesde: '2026-11-13T06:12:00.000Z',
+    eventoHasta: '2026-11-13T06:16:00.000Z',
+    eventoLitros: 62,
+    eventLat: -34.98,
+    eventLon: -71.23,
+  });
+
+  it('el vehículo con desviación trae el trayecto, la ventana, los litros y el lugar', () => {
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'DESV11')], trayectos: [golpe] }),
+    );
+    expect(panel.combustible.vehiculos[0]?.desviacion).toEqual({
+      trayecto_id: 'trayecto-golpe',
+      inicio: '2026-11-12T18:00:00.000Z',
+      fin: '2026-11-13T07:30:00.000Z',
+      tipo: 'golpe',
+      desde: '2026-11-13T06:12:00.000Z',
+      hasta: '2026-11-13T06:16:00.000Z',
+      litros: 62,
+      lat: -34.98,
+      lon: -71.23,
+      total: 1,
+    });
+    expect(panelBoosterFleetSchema.safeParse(panel).success).toBe(true);
+  });
+
+  it('un vehículo sin desviación no trae el campo', () => {
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'BIEN11')], trayectos: [trayecto(A)] }),
+    );
+    const fila = panel.combustible.vehiculos[0];
+    expect(fila).toBeDefined();
+    expect(fila && 'desviacion' in fila).toBe(false);
+  });
+
+  it('con dos desviaciones entrega la más reciente y cuenta dos', () => {
+    const anterior = trayecto(A, {
+      id: 'trayecto-anterior',
+      posibleRoboHormiga: true,
+      eventoDesde: '2026-11-11T02:00:00.000Z',
+      eventoHasta: '2026-11-11T05:00:00.000Z',
+      eventoLitros: 14,
+    });
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'DESV11')], trayectos: [golpe, anterior] }),
+    );
+    expect(panel.combustible.vehiculos[0]?.desviacion).toMatchObject({
+      trayecto_id: 'trayecto-golpe',
+      total: 2,
+    });
+  });
+
+  it('la baja gradual se informa con su tipo y sin lugar si no hubo coordenadas', () => {
+    const gradual = trayecto(A, {
+      id: 'trayecto-gradual',
+      posibleRoboHormiga: true,
+      eventoDesde: '2026-11-14T02:00:00.000Z',
+      eventoHasta: '2026-11-14T05:00:00.000Z',
+      eventoLitros: 12.5,
+    });
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'DESV11')], trayectos: [gradual] }),
+    );
+    expect(panel.combustible.vehiculos[0]?.desviacion).toMatchObject({
+      tipo: 'hormiga',
+      litros: 12.5,
+      lat: null,
+      lon: null,
+    });
+  });
+
+  it('un aviso sin ventana se ordena por el fin del trayecto', () => {
+    const sinVentana = trayecto(A, {
+      id: 'trayecto-sin-ventana',
+      fin: '2026-11-16T09:00:00.000Z',
+      posibleRoboCombustible: true,
+    });
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'DESV11')], trayectos: [golpe, sinVentana] }),
+    );
+    expect(panel.combustible.vehiculos[0]?.desviacion).toMatchObject({
+      trayecto_id: 'trayecto-sin-ventana',
+      desde: null,
+      hasta: null,
+      litros: null,
+      total: 2,
+    });
   });
 });

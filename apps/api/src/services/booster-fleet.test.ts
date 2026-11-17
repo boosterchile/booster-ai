@@ -190,13 +190,21 @@ describe('armarPanelBoosterFleet', () => {
         vehiculos: [],
         trayectos: [
           {
+            id: 'trayecto-1',
+            inicio: '2026-11-16T10:00:00.000Z',
+            fin: '2026-11-16T14:00:00.000Z',
             vehiculoId: VEHICULO,
             litrosConsumidos: 12,
             kmCubiertos: 40,
             kmPorLitro: 3,
             notaCombustible: null,
-            posibleRoboCombustible: false,
+            posibleRoboCombustible: true,
             posibleRoboHormiga: false,
+            eventoDesde: '2026-11-16T12:00:00.000Z',
+            eventoHasta: '2026-11-16T12:04:00.000Z',
+            eventoLitros: 30,
+            eventLat: -33.4,
+            eventLon: -70.6,
             ctaCapacidadEstanque: false,
             fuenteCombustible: 'nivel_litros',
           } as LecturaTrayectosFlota['trayectos'][number],
@@ -205,6 +213,18 @@ describe('armarPanelBoosterFleet', () => {
       })),
     });
     expect(panel.combustible.litros).toBe(12);
+    expect(panel.combustible.vehiculos[0]?.desviacion).toEqual({
+      trayecto_id: 'trayecto-1',
+      inicio: '2026-11-16T10:00:00.000Z',
+      fin: '2026-11-16T14:00:00.000Z',
+      tipo: 'golpe',
+      desde: '2026-11-16T12:00:00.000Z',
+      hasta: '2026-11-16T12:04:00.000Z',
+      litros: 30,
+      lat: -33.4,
+      lon: -70.6,
+      total: 1,
+    });
     expect(panel.mantenciones.en_taller).toEqual([{ vehiculo_id: VEHICULO, patente: 'AAAA11' }]);
     expect(panel.documental.conductores[0]?.rut).toBe('');
 

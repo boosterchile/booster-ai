@@ -96,6 +96,26 @@ const mantencionSchema = z.object({
   notas: z.string().nullable(),
 });
 
+/**
+ * La desviación de combustible más reciente de un vehículo en la ventana.
+ * Solo viene en los vehículos con señal `posible_robo`. `desde`, `hasta` y
+ * `litros` son la ventana de la baja; `lat` y `lon`, dónde empezó. Cualquiera
+ * puede venir en null si la telemetría no lo trae. `total` cuenta los
+ * trayectos de la ventana con aviso.
+ */
+export const desviacionCombustibleSchema = z.object({
+  trayecto_id: z.string(),
+  inicio: z.string(),
+  fin: z.string(),
+  tipo: z.enum(['golpe', 'hormiga']),
+  desde: z.string().nullable(),
+  hasta: z.string().nullable(),
+  litros: z.number().nullable(),
+  lat: z.number().nullable(),
+  lon: z.number().nullable(),
+  total: z.number().int().min(1),
+});
+
 export const panelBoosterFleetSchema = z.object({
   configuracion: z.object({
     slug: z.literal(CONFIGURACION_BOOSTER_FLEET.slug),
@@ -121,6 +141,7 @@ export const panelBoosterFleetSchema = z.object({
         km: z.number().nullable(),
         litros_por_100_km: z.number().nullable(),
         alertas: z.array(z.enum(['golpe', 'hormiga', 'falta_capacidad'])),
+        desviacion: desviacionCombustibleSchema.optional(),
       }),
     ),
   }),
@@ -168,6 +189,7 @@ export type PanelBoosterFleet = z.infer<typeof panelBoosterFleetSchema>;
 export type MantencionBoosterFleet = z.infer<typeof mantencionSchema>;
 export type ProgramarMantencionInput = z.infer<typeof programarMantencionSchema>;
 export type SenalCombustible = z.infer<typeof senalCombustibleSchema>;
+export type DesviacionCombustible = z.infer<typeof desviacionCombustibleSchema>;
 export type EstadoDocumentoControl = z.infer<typeof estadoDocumentoControlSchema>;
 export type EstadoMantencion = z.infer<typeof estadoMantencionSchema>;
 
@@ -179,6 +201,14 @@ export interface VehiculoBoosterFleet {
 }
 
 export interface TrayectoBoosterFleet {
+  id: string;
+  inicio: string;
+  fin: string;
+  eventoDesde: string | null;
+  eventoHasta: string | null;
+  eventoLitros: number | null;
+  eventLat: number | null;
+  eventLon: number | null;
   vehiculoId: string;
   litrosConsumidos: number | null;
   kmCubiertos: number | null;
@@ -332,6 +362,7 @@ interface AcumuladoCombustible {
   faltaCapacidad: boolean;
   hayFuente: boolean;
   notaNoConfiable: boolean;
+  desviaciones: TrayectoBoosterFleet[];
 }
 
 function vacioAcumulado(): AcumuladoCombustible {
@@ -346,6 +377,38 @@ function vacioAcumulado(): AcumuladoCombustible {
     faltaCapacidad: false,
     hayFuente: false,
     notaNoConfiable: false,
+    desviaciones: [],
+  };
+}
+
+/** Cuándo ocurrió: el fin de la baja si se conoce; si no, el fin del trayecto. */
+function instanteDesviacion(trayecto: TrayectoBoosterFleet): string {
+  return trayecto.eventoHasta ?? trayecto.fin;
+}
+
+function desviacionDe(
+  desviaciones: readonly TrayectoBoosterFleet[],
+): DesviacionCombustible | undefined {
+  let reciente: TrayectoBoosterFleet | undefined;
+  for (const trayecto of desviaciones) {
+    if (!reciente || instanteDesviacion(trayecto) > instanteDesviacion(reciente)) {
+      reciente = trayecto;
+    }
+  }
+  if (!reciente) {
+    return undefined;
+  }
+  return {
+    trayecto_id: reciente.id,
+    inicio: reciente.inicio,
+    fin: reciente.fin,
+    tipo: reciente.posibleRoboCombustible ? 'golpe' : 'hormiga',
+    desde: reciente.eventoDesde,
+    hasta: reciente.eventoHasta,
+    litros: reciente.eventoLitros,
+    lat: reciente.eventLat,
+    lon: reciente.eventLon,
+    total: desviaciones.length,
   };
 }
 
@@ -364,6 +427,9 @@ function acumular(trayecto: TrayectoBoosterFleet, acumulado: AcumuladoCombustibl
   if (confiable && trayecto.kmCubiertos != null && trayecto.litrosConsumidos != null) {
     acumulado.kmConfiables += trayecto.kmCubiertos;
     acumulado.litrosConfiables += trayecto.litrosConsumidos;
+  }
+  if (trayecto.posibleRoboCombustible || trayecto.posibleRoboHormiga) {
+    acumulado.desviaciones.push(trayecto);
   }
   acumulado.golpe = acumulado.golpe || trayecto.posibleRoboCombustible;
   acumulado.hormiga = acumulado.hormiga || trayecto.posibleRoboHormiga;
@@ -484,6 +550,7 @@ function armarCombustible(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet[
       if (acumulado.faltaCapacidad) {
         alertas.push('falta_capacidad');
       }
+      const desviacion = desviacionDe(acumulado.desviaciones);
       return {
         vehiculo_id: vehiculo.id,
         patente: vehiculo.patente,
@@ -492,6 +559,7 @@ function armarCombustible(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet[
         km: acumulado.kmConfiables > 0 ? redondear1(acumulado.kmConfiables) : null,
         litros_por_100_km: ratio,
         alertas,
+        ...(desviacion ? { desviacion } : {}),
       };
     })
     .sort(
