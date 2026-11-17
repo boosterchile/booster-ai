@@ -66,14 +66,25 @@ Decisiones tomadas en este PR:
 
 Criterios 10 y 11, y la parte del 12 que toca al detalle.
 
-- [ ] Ruta `/app/booster-fleet/vehiculos/$id`, con el mismo control de rol.
-- [ ] Bloque de la desviación con fecha, hora, litros y mapa; «lugar sin
+- [x] Ruta `/app/booster-fleet/vehiculos/$id`, con el mismo control de rol.
+- [x] Bloque de la desviación con fecha, hora, litros y mapa; «lugar sin
       dato» cuando no hay coordenadas.
-- [ ] La semana sobre un eje de tiempo: días, nivel de estanque en los puntos
+- [x] La semana sobre un eje de tiempo: días, nivel de estanque en los puntos
       conocidos, trayectos y eventos.
-- [ ] Tabla de trayectos, combustible de la semana, documentos y mantenciones
+- [x] Tabla de trayectos, combustible de la semana, documentos y mantenciones
       del vehículo.
-- [ ] El tipo `Trayecto` de la pantalla suma los campos del evento.
+- [x] El tipo `Trayecto` de la pantalla suma los campos del evento.
+
+Decisiones tomadas en este PR:
+
+- La patente de cada fila del overview abre el detalle, no solo la de una
+  desviación: el detalle sirve igual para un camión sin lectura.
+- Las columnas de días del eje son tramos de 24 horas desde el inicio de la
+  ventana del panel; no están alineadas a la medianoche.
+- El nivel usa el porcentaje del estanque si el trayecto lo trae; si no, los
+  litros contra el máximo de la semana. Un trayecto sin lectura no se dibuja.
+- El detalle pide los trayectos de la misma ventana del panel, hasta 50.
+- El overview y el detalle comparten la consulta del panel y su caché.
 
 ## Fuera de esta serie
 
