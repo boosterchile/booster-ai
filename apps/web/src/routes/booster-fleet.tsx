@@ -13,7 +13,7 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Panel = ReturnType<typeof panelBoosterFleetSchema.parse>;
 
 const SENAL: Record<Panel['combustible']['vehiculos'][number]['senal'], string> = {
-  posible_robo: 'Posible robo de combustible',
+  posible_robo: 'Desviación de combustible por analizar',
   sin_telemetria: 'Sin equipo Teltonika',
   sin_movimiento: 'Sin movimiento en 7 días',
   sin_sensor: 'Sin sensor de combustible',
