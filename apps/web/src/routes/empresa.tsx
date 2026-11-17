@@ -262,7 +262,7 @@ function UmbralesCombustible({
                 Umbral de golpe único
               </label>
               <p id="umbral-golpe-help" className="mt-1 text-neutral-600 text-sm">
-                Si el combustible baja de una, con el vehículo quieto, marcamos «posible robo
+                Si el combustible baja de una, con el vehículo quieto, marcamos «desviación de
                 combustible». Menos de 5 L no se ofrece: el sensor hace ruido. Si no eliges nada,
                 usamos 8 L (o el 2 % del estanque, si lo conocemos).
               </p>
@@ -284,10 +284,10 @@ function UmbralesCombustible({
             </div>
             <div>
               <label htmlFor="umbral-hormiga" className="font-medium text-neutral-900 text-sm">
-                Umbral de robo hormiga
+                Umbral de desviación gradual
               </label>
               <p id="umbral-hormiga-help" className="mt-1 text-neutral-600 text-sm">
-                Varias bajas chicas, separadas, suman este umbral y marcamos «posible robo hormiga».
+                Varias bajas chicas, separadas, suman este umbral y marcamos «desviación gradual».
                 Es otro aviso, distinto del golpe. Si no eliges nada, usamos 10 L.
               </p>
               <select

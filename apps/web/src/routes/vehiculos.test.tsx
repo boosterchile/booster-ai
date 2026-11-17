@@ -1083,8 +1083,8 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.getAllByText(/42,5 km/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/10,0 L/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Combustible').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Hormiga').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/posible robo/i)).toBeNull();
+    expect(screen.getAllByText('Gradual').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/robo/i)).toBeNull();
     expect(screen.getByText(/1 alerta en 30 días/)).toBeInTheDocument();
     expect(screen.getByTestId('hub-tarjeta-alertas').className).toContain('border-amber-200');
 

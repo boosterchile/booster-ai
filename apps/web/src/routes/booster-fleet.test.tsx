@@ -182,7 +182,7 @@ describe('BoosterFleetRoute', () => {
     vi.spyOn(api, 'get').mockResolvedValue(panel());
     providedContext = { kind: 'onboarded', me: me() };
     wrap(<BoosterFleetRoute />);
-    expect(await screen.findByText('Posible robo de combustible')).toBeInTheDocument();
+    expect(await screen.findByText('Desviación de combustible por analizar')).toBeInTheDocument();
     expect(screen.getByText('Revisión técnica: Falta el documento')).toBeInTheDocument();
     expect(screen.getByText(/Ana Soto · Sin RUT/)).toBeInTheDocument();
     expect(screen.getByText(/Cambio de aceite/)).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe('BoosterFleetRoute', () => {
     providedContext = { kind: 'onboarded', me: me() };
     const user = userEvent.setup();
     wrap(<BoosterFleetRoute />);
-    await screen.findByText('Posible robo de combustible');
+    await screen.findByText('Desviación de combustible por analizar');
     await user.type(screen.getByLabelText('Qué hay que hacer'), 'Cambio de filtro');
     await user.click(screen.getByRole('button', { name: 'Programar mantención' }));
     await waitFor(() => expect(post).toHaveBeenCalled());

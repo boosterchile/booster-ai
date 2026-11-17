@@ -830,7 +830,7 @@ function Badges({ trayecto }: { trayecto: TrayectoHub }) {
       ) : null}
       {trayecto.posible_robo_hormiga ? (
         <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-950 text-xs">
-          Hormiga
+          Gradual
         </span>
       ) : null}
     </span>
