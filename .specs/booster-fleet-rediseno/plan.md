@@ -42,15 +42,25 @@ Decisiones tomadas en este PR:
 
 Criterios 1 a 9, 12, 13 y la parte de pantalla del 14.
 
-- [ ] Reglas puras de la pantalla, con sus tests: frase de estado, tonos,
+- [x] Reglas puras de la pantalla, con sus tests: frase de estado, tonos,
       agrupación y orden, mediana de lectura, acción y destino de cada señal.
-- [ ] Componentes en `apps/web/src/components/booster-fleet/`: cifra, etiqueta
+- [x] Componentes en `apps/web/src/components/booster-fleet/`: cifra, etiqueta
       de severidad, fila de flota, alerta documental, card de mantención.
-- [ ] Variante de borde punteado para el tono «sin lectura».
-- [ ] Riel de documentos y mantenciones; estado vacío con el formulario.
-- [ ] «Programar mantención» en un `Modal`; «Cancelar» confirma en un `Modal`.
-- [ ] La fila de una desviación muestra fecha, hora, litros y coordenadas.
-- [ ] axe sin violaciones y recorrido por teclado.
+- [x] Variante de borde punteado para el tono «sin lectura».
+- [x] Riel de documentos y mantenciones; estado vacío con el formulario.
+- [x] «Programar mantención» en un `Modal`; «Cancelar» confirma en un `Modal`.
+- [x] La fila de una desviación muestra fecha, hora, litros y coordenadas.
+- [x] axe sin violaciones y recorrido por teclado.
+
+Decisiones tomadas en este PR:
+
+- La fila de una desviación todavía no abre el detalle del vehículo: esa
+  ruta llega en el PR 3. «Analizar trayecto» ya abre el trayecto.
+- El botón del formulario se llama «Guardar mantención», para que no haya
+  dos botones con el mismo nombre que «Programar mantención» de la cabecera.
+- La lista de documentos une vehículos y conductores en un solo orden.
+- Fechas y horas se muestran en hora de Santiago; el panel no entrega la
+  zona de la empresa.
 
 ## PR 3 — Detalle del vehículo
 

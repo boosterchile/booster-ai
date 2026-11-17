@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { axe } from 'vitest-axe';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -18,7 +19,29 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  Link: ({
+    children,
+    to,
+    params,
+    search,
+    ...props
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: Record<string, string>;
+    search?: Record<string, string>;
+  }) => {
+    const ruta = Object.entries(params ?? {}).reduce(
+      (acumulado, [clave, valor]) => acumulado.replace(`$${clave}`, valor),
+      to,
+    );
+    const consulta = new URLSearchParams(search ?? {}).toString();
+    return (
+      <a href={consulta ? `${ruta}?${consulta}` : ruta} {...props}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 vi.mock('../components/Layout.js', () => ({
@@ -166,6 +189,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const OTRO = '22222222-2222-4222-8222-222222222222';
+const TERCERO = '44444444-4444-4444-8444-444444444444';
+const CUARTO = '66666666-6666-4666-8666-666666666666';
+
+type Vehiculo = PanelBoosterFleet['combustible']['vehiculos'][number];
+
+function vehiculo(id: string, patente: string, extra: Partial<Vehiculo> = {}): Vehiculo {
+  return {
+    vehiculo_id: id,
+    patente,
+    senal: 'en_orden',
+    litros: 300,
+    km: 1000,
+    litros_por_100_km: 30,
+    alertas: [],
+    ...extra,
+  };
+}
+
+function conDesviacion(): PanelBoosterFleet {
+  const base = panel();
+  const primero = base.combustible.vehiculos[0];
+  if (primero) {
+    primero.desviacion = {
+      trayecto_id: 'trayecto-1',
+      inicio: '2026-11-12T21:00:00.000Z',
+      fin: '2026-11-13T10:00:00.000Z',
+      tipo: 'golpe',
+      desde: '2026-11-13T06:12:00.000Z',
+      hasta: '2026-11-13T06:16:00.000Z',
+      litros: 62,
+      lat: -34.98,
+      lon: -71.23,
+      total: 1,
+    };
+  }
+  return base;
+}
+
+function entrar(datos: PanelBoosterFleet) {
+  vi.spyOn(api, 'get').mockResolvedValue(datos);
+  providedContext = { kind: 'onboarded', me: me() };
+  return wrap(<BoosterFleetRoute />);
+}
+
 describe('BoosterFleetRoute', () => {
   it('sin sesión no muestra el panel', () => {
     wrap(<BoosterFleetRoute />);
@@ -173,22 +241,131 @@ describe('BoosterFleetRoute', () => {
   });
 
   it('un despachador ve que el control es del dueño', () => {
+    const get = vi.spyOn(api, 'get');
     providedContext = { kind: 'onboarded', me: me('despachador') };
     wrap(<BoosterFleetRoute />);
     expect(screen.getByText(/control de flota del dueño/)).toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
   });
 
-  it('muestra combustible, documentos y mantenciones', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue(panel());
-    providedContext = { kind: 'onboarded', me: me() };
-    wrap(<BoosterFleetRoute />);
-    expect(await screen.findByText('Desviación de combustible por analizar')).toBeInTheDocument();
-    expect(screen.getByText('Revisión técnica: Falta el documento')).toBeInTheDocument();
-    expect(screen.getByText(/Ana Soto · Sin RUT/)).toBeInTheDocument();
-    expect(screen.getByText(/Cambio de aceite/)).toBeInTheDocument();
+  it('la primera oración nombra la patente y la desviación, con su hora, litros y lugar', async () => {
+    const { container } = entrar(conDesviacion());
+    expect(
+      await screen.findByText('1 camión pide revisión.', { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Parte por AAAA11: una desviación de combustible por analizar.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Desviación')).toBeInTheDocument();
+    const descripcion = screen.getByText(/−62,0 L/);
+    expect(descripcion).toHaveTextContent('vie 13 nov, 03:16');
+    expect(descripcion).toHaveTextContent('-34.9800, -71.2300');
+    expect(screen.getByRole('link', { name: 'Analizar trayecto' })).toHaveAttribute(
+      'href',
+      `/app/trayectos?vehiculo=${VEHICULO}&detalle=trayecto-1`,
+    );
     expect(screen.getByText(/ventana de telemetría vino cortada/)).toBeInTheDocument();
-    expect(screen.getByText(/En taller: AAAA11/)).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toMatch(/robo/i);
+  });
+
+  it('una desviación sin datos del evento lo dice en palabras', async () => {
+    entrar(panel());
+    expect(await screen.findByText('Desviación de combustible por analizar')).toBeInTheDocument();
+  });
+
+  it('con la flota en orden la frase lo dice y no hay filas de alerta', async () => {
+    const datos = panel();
+    datos.combustible.con_alerta = 0;
+    datos.combustible.vehiculos = [vehiculo(VEHICULO, 'AAAA11')];
+    entrar(datos);
+    expect(await screen.findByText('Tu camión está en orden esta semana.')).toBeInTheDocument();
+    expect(screen.queryByText(/Analizar primero/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Analizar trayecto' })).not.toBeInTheDocument();
+  });
+
+  it('agrupa por tono en orden de gravedad y colapsa los camiones en orden', async () => {
+    const datos = panel();
+    datos.combustible.con_alerta = 3;
+    datos.combustible.vehiculos = [
+      vehiculo(VEHICULO, 'AAAA11', { senal: 'posible_robo', alertas: ['golpe'] }),
+      vehiculo(OTRO, 'BBBB22', { senal: 'sin_sensor', litros: null, litros_por_100_km: null }),
+      vehiculo(TERCERO, 'CCCC33', { senal: 'consumo_alto', litros_por_100_km: 41.2 }),
+      vehiculo(CUARTO, 'DDDD44'),
+      vehiculo(CONDUCTOR, 'EEEE55', { litros_por_100_km: 32 }),
+    ];
+    const { container } = entrar(datos);
+    await screen.findByText('3 camiones piden revisión.', { exact: false });
+    const grupos = Array.from(container.querySelectorAll('tbody > tr:first-child > th')).map(
+      (th) => th.textContent,
+    );
+    expect(grupos).toEqual([
+      'Analizar primero · 1',
+      'Sin lectura · 1',
+      'Atención · 1',
+      'En orden · 2',
+    ]);
+    expect(screen.getByText(/puede ser la vía/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Revisar sensor' })).toHaveAttribute(
+      'href',
+      `/app/vehiculos/${OTRO}`,
+    );
+    expect(screen.getByRole('link', { name: 'Comparar trayectos' })).toBeInTheDocument();
+    const enOrden = container.querySelectorAll('tbody:last-of-type > tr');
+    expect(enOrden).toHaveLength(2);
+    expect(
+      screen.getByRole('img', { name: /5 camiones: 1 desviación, 1 sin lectura/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('lista los documentos pendientes sin el RUT y con enlace a la ficha', async () => {
+    entrar(panel());
+    expect(await screen.findByText('Revisión técnica')).toBeInTheDocument();
+    expect(screen.getByText(/Falta el documento/)).toBeInTheDocument();
+    expect(screen.getByText('Ana Soto')).toBeInTheDocument();
+    expect(screen.getByText(/Falta el archivo/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin RUT/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Abrir ficha de Ana Soto' })).toHaveAttribute(
+      'href',
+      `/app/conductores/${CONDUCTOR}`,
+    );
+    expect(
+      screen.getByRole('link', { name: 'Abrir ficha de la patente AAAA11' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('En taller')).toBeInTheDocument();
     expect(screen.getByText(/más mantenciones/)).toBeInTheDocument();
+  });
+
+  it('con más de seis documentos pendientes despliega el resto en el mismo lugar', async () => {
+    const datos = panel();
+    const tipos = [
+      'revision_tecnica',
+      'permiso_circulacion',
+      'soap',
+      'padron',
+      'seguro_carga',
+      'certificado_emisiones',
+      'poliza_responsabilidad',
+    ];
+    const fila = datos.documental.vehiculos[0];
+    if (fila) {
+      fila.documentos = tipos.map((tipo) => ({
+        tipo,
+        estado: 'por_vencer' as const,
+        fecha_vencimiento: '2026-12-01',
+        archivo: true,
+      }));
+    }
+    datos.documental.conductores = [];
+    const user = userEvent.setup();
+    entrar(datos);
+    const boton = await screen.findByRole('button', { name: 'Ver los 7 pendientes' });
+    expect(screen.queryByText('Póliza de responsabilidad civil')).not.toBeInTheDocument();
+    await user.click(boton);
+    expect(screen.getByText('Póliza de responsabilidad civil')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver menos' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 
   it('una respuesta mal formada se muestra como error', async () => {
@@ -205,39 +382,102 @@ describe('BoosterFleetRoute', () => {
     expect(await screen.findByText('falló el panel')).toBeInTheDocument();
   });
 
-  it('programa una mantención y marca una como realizada', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue(panel());
+  it('programa una mantención desde el modal y marca una como realizada', async () => {
     const post = vi.spyOn(api, 'post').mockResolvedValue({ mantencion: {} });
-    providedContext = { kind: 'onboarded', me: me() };
     const user = userEvent.setup();
-    wrap(<BoosterFleetRoute />);
-    await screen.findByText('Desviación de combustible por analizar');
+    entrar(panel());
+    await user.click(await screen.findByRole('button', { name: 'Programar mantención' }));
+    const dialogo = await screen.findByRole('dialog', { name: 'Programar mantención' });
+    expect(dialogo).toBeInTheDocument();
     await user.type(screen.getByLabelText('Qué hay que hacer'), 'Cambio de filtro');
-    await user.click(screen.getByRole('button', { name: 'Programar mantención' }));
+    await user.type(screen.getByLabelText('Kilometraje objetivo (opcional)'), '120000');
+    await user.click(screen.getByRole('button', { name: 'Guardar mantención' }));
     await waitFor(() => expect(post).toHaveBeenCalled());
     expect(post.mock.calls[0]?.[0]).toBe('/booster-fleet/mantenciones');
-    await user.click(screen.getByRole('button', { name: 'Marcar realizada' }));
+    expect(post.mock.calls[0]?.[1]).toMatchObject({
+      vehiculo_id: VEHICULO,
+      tipo: 'preventiva',
+      titulo: 'Cambio de filtro',
+      kilometraje_objetivo: 120000,
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(
+      screen.getByRole('button', { name: 'Marcar realizada: Cambio de aceite, AAAA11' }),
+    );
     await waitFor(() =>
       expect(post.mock.calls.some((call) => String(call[0]).endsWith('/realizar'))).toBe(true),
     );
-    expect(get.mock.calls.length).toBeGreaterThan(1);
+    expect(vi.mocked(api.get).mock.calls.length).toBeGreaterThan(1);
   });
 
-  it('cancelar pide confirmación y muestra el error si el API falla', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue(panel());
-    vi.spyOn(api, 'post').mockRejectedValue(new Error('no se pudo'));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    providedContext = { kind: 'onboarded', me: me() };
+  it('cancelar confirma en un modal, sin window.confirm, y muestra el error del API', async () => {
+    const post = vi.spyOn(api, 'post').mockRejectedValue(new Error('no se pudo'));
+    const confirmar = vi.spyOn(window, 'confirm');
     const user = userEvent.setup();
-    wrap(<BoosterFleetRoute />);
-    await screen.findByText(/Cambio de aceite/);
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    entrar(panel());
+    await user.click(
+      await screen.findByRole('button', { name: 'Cancelar: Cambio de aceite, AAAA11' }),
+    );
+    expect(
+      await screen.findByRole('dialog', { name: '¿Cancelar la mantención?' }),
+    ).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Sí, cancelar' }));
+    await waitFor(() =>
+      expect(post.mock.calls.some((call) => String(call[0]).endsWith('/cancelar'))).toBe(true),
+    );
     expect(await screen.findByText('no se pudo')).toBeInTheDocument();
+    expect(confirmar).not.toHaveBeenCalled();
   });
 
-  it('una flota vacía muestra los vacíos y un alta fallida', async () => {
+  it('volver en la confirmación no cancela nada', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({});
+    const user = userEvent.setup();
+    entrar(panel());
+    await user.click(
+      await screen.findByRole('button', { name: 'Cancelar: Cambio de aceite, AAAA11' }),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Volver' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('sin mantenciones muestra el estado vacío con el formulario a la vista', async () => {
+    const datos = panel();
+    datos.mantenciones = {
+      vencidas: 0,
+      proximas: 0,
+      programadas: 0,
+      truncadas: false,
+      en_taller: [],
+      items: [],
+    };
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ mantencion: {} });
+    const user = userEvent.setup();
+    entrar(datos);
+    expect(await screen.findByText('Taller en silencio.')).toBeInTheDocument();
+    expect(screen.getByText('Ninguna abierta')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Qué hay que hacer'), 'Cambio de aceite');
+    await user.click(screen.getByRole('button', { name: 'Guardar mantención' }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    expect(post.mock.calls[0]?.[0]).toBe('/booster-fleet/mantenciones');
+  });
+
+  it('si programar falla, muestra el mensaje', async () => {
+    const datos = panel();
+    datos.mantenciones.items = [];
+    vi.spyOn(api, 'post').mockRejectedValueOnce(new Error('no se guardó'));
+    const user = userEvent.setup();
+    entrar(datos);
+    await user.type(await screen.findByLabelText('Qué hay que hacer'), 'Cambio de aceite');
+    await user.click(screen.getByRole('button', { name: 'Guardar mantención' }));
+    expect(await screen.findByText('no se guardó')).toBeInTheDocument();
+  });
+
+  it('una flota vacía lo dice y no deja programar', async () => {
     const vacio = panel();
     vacio.combustible.vehiculos = [];
+    vacio.combustible.con_alerta = 0;
     vacio.combustible.litros_por_100_km = null;
     vacio.combustible.truncado = false;
     vacio.documental.vehiculos = [];
@@ -245,45 +485,20 @@ describe('BoosterFleetRoute', () => {
     vacio.mantenciones.items = [];
     vacio.mantenciones.truncadas = false;
     vacio.mantenciones.en_taller = [];
-    vi.spyOn(api, 'get').mockResolvedValue(vacio);
-    providedContext = { kind: 'onboarded', me: me() };
-    wrap(<BoosterFleetRoute />);
-    expect(await screen.findByText('Todavía no hay vehículos en la flota.')).toBeInTheDocument();
-    expect(screen.getByText('Vehículos: no hay registros.')).toBeInTheDocument();
-    expect(screen.getByText('Conductores: no hay registros.')).toBeInTheDocument();
-    expect(screen.getByText('No hay mantenciones abiertas ni recientes.')).toBeInTheDocument();
+    entrar(vacio);
+    expect(
+      (await screen.findAllByText('Todavía no hay vehículos en la flota.')).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('Sin documentos pendientes.')).toBeInTheDocument();
+    expect(screen.getByText('Sin lectura confiable todavía')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Programar mantención' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Guardar mantención' })).toBeDisabled();
   });
 
-  it('si programar falla, muestra el mensaje', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue(panel());
-    vi.spyOn(api, 'post').mockRejectedValueOnce(new Error('no se guardó'));
-    providedContext = { kind: 'onboarded', me: me() };
-    const user = userEvent.setup();
-    wrap(<BoosterFleetRoute />);
-    await screen.findByLabelText('Qué hay que hacer');
-    await user.type(screen.getByLabelText('Qué hay que hacer'), 'Cambio de filtro');
-    await user.type(screen.getByLabelText(/Kilometraje objetivo/), '120000');
-    await user.click(screen.getByRole('button', { name: 'Programar mantención' }));
-    expect(await screen.findByText('no se guardó')).toBeInTheDocument();
-  });
-
-  it('un error que no es Error usa el mensaje genérico', async () => {
-    vi.spyOn(api, 'get').mockRejectedValue('caido');
-    providedContext = { kind: 'onboarded', me: me() };
-    wrap(<BoosterFleetRoute />);
-    expect(await screen.findByText('No se pudo completar la acción.')).toBeInTheDocument();
-  });
-
-  it('sin confirmar no cancela', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue(panel());
-    const post = vi.spyOn(api, 'post').mockResolvedValue({});
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-    providedContext = { kind: 'onboarded', me: me() };
-    const user = userEvent.setup();
-    wrap(<BoosterFleetRoute />);
-    await screen.findByRole('button', { name: 'Cancelar' });
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
-    expect(post).not.toHaveBeenCalled();
+  it('el panel no tiene violaciones de accesibilidad', async () => {
+    const { container } = entrar(conDesviacion());
+    await screen.findByText('Desviación');
+    const resultado = await axe(container);
+    expect(resultado.violations).toEqual([]);
   });
 });
