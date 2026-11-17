@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod).  
+**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod; lenguaje «desviación» en `main`, sin desplegar).  
 **Prod**: `b9f512d0` (Release on request [44088137366](https://github.com/boosterchile/booster-ai/actions/runs/44088137366) SUCCESS; Cloud Build `7897c23a`) — api `booster-ai-api-00486-brt` @ **100 %**, web `00428-f8j` @ 100 %. Incluye Booster Fleet (#1002) + disparador release-on-request (#1003).  
-**`main`**: tip `b876af16` (#1004 guardas CI del release-on-request); sin código de producto pendiente de deploy respecto de Fleet.  
+**`main`**: tip `4ac02297` (#1008). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos) y #1008 (web, textos de combustible). #1004, #1005 y #1007 no cambian producto.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,7 +15,7 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `b876af16` | #1002 Fleet + #1003 release-on-request + #1004 guardas |
+| `main` | `4ac02297` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos de combustible |
 | Prod | `b9f512d0` | Imagen de #1003; api/web al 100 %; canary 30 min OK |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -63,6 +63,10 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 ## Booster Fleet
 
 **En prod** (2026-11-17). Spec `.specs/booster-fleet/spec.md`. PRs [#1002](https://github.com/boosterchile/booster-ai/pull/1002) (feature) + [#1003](https://github.com/boosterchile/booster-ai/pull/1003) (release-on-request). Panel `/app/booster-fleet`, API `/booster-fleet`, migración **0086** `mantenciones_vehiculo` (expand-only; `migrate()` OK en el arranque de `00486-brt`). El cobro sigue en la bandera de gestión de flota. Oneshot: [`2026-11-17-booster-fleet-release-oneshot.md`](./2026-11-17-booster-fleet-release-oneshot.md). Queda smoke con sesión dueño/admin transportista (criterio de término en `frentes-vivos.md`).
+
+**Lenguaje del aviso de combustible** (decisión del PO, 2026-11-17): la interfaz no dice «robo». [#1008](https://github.com/boosterchile/booster-ai/pull/1008), en `main` y sin desplegar, cambia los textos en Booster Fleet, trayectos Teltonika, el mapa del evento, los umbrales de la empresa y la ficha del vehículo: «desviación de combustible» (por analizar) para la baja de golpe y «desviación gradual» para las bajas chicas repetidas. Los nombres del contrato (`posible_robo`, `posible_robo_combustible`, `umbral_robo_hormiga_l`) no cambian. La regla quedó en la spec. No se revisaron notificaciones ni plantillas de WhatsApp.
+
+**Rediseño** (propuesta, sin spec ni código): tres direcciones exploradas; el PO eligió la A (triage por severidad) con el detalle de vehículo sobre un eje de tiempo. Agrega fecha, hora y lugar a cada desviación y el aviso de que un consumo alto puede venir de la vía. Brief en [#1007](https://github.com/boosterchile/booster-ai/pull/1007); la propuesta vive en un artifact privado del PO.
 
 ## Agente
 
