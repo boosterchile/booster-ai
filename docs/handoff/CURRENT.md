@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en rama; prod sin cambios de código).  
-**Prod**: `30f42658` (release [43998394616](https://github.com/boosterchile/booster-ai/actions/runs/43998394616) SUCCESS) — api `booster-ai-api-00483-ppx` @ **100 %**, web `00427-z4w` @ 100 %. Incluye BARH-23 reclamar + BARH-24 viaje propio (+ oneshot Score P docs).  
-**`main`**: por delante de prod solo en commits de documentación de handoff (desde #999); sin código por desplegar.  
+**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod).  
+**Prod**: `b9f512d0` (Release on request [44088137366](https://github.com/boosterchile/booster-ai/actions/runs/44088137366) SUCCESS; Cloud Build `7897c23a`) — api `booster-ai-api-00486-brt` @ **100 %**, web `00428-f8j` @ 100 %. Incluye Booster Fleet (#1002) + disparador release-on-request (#1003).  
+**`main`**: tip `b876af16` (#1004 guardas CI del release-on-request); sin código de producto pendiente de deploy respecto de Fleet.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,13 +15,13 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `30f42658` + docs de handoff | #998 oneshot + CURRENT; #995/#993 en la imagen; #999 y posteriores no cambian código |
-| Prod | `30f42658` | Release 43998394616; los 8 servicios de Cloud Run al 100 % en su última revisión con esa imagen |
+| `main` | `b876af16` | #1002 Fleet + #1003 release-on-request + #1004 guardas |
+| Prod | `b9f512d0` | Imagen de #1003; api/web al 100 %; canary 30 min OK |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
-**Smoke:** `/health` 200, `/ready` 200. La ruta web `/app/viajes-propios/nuevo` responde 200, pero no sirve de prueba: la web responde 200 a cualquier ruta. La pantalla queda por ejercitar con sesión (E6).  
-**Registros:** un solo error desde el despliegue, el ya conocido de `sms-fallback-gateway` al arrancar (falta configuración de Twilio).  
-**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release, terminó sin diferencias entre GCP y `main`.
+**Smoke (2026-11-17):** `/health` 200, `/ready` 200, `/booster-fleet` **401** (`{"error":"Unauthorized"}`, ruta montada), web `/app/booster-fleet` 200.  
+**Registros:** `Drizzle migrate() complete` en `00486-brt` @ 13:15:11Z (America/Santiago 10:15).  
+**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`.
 
 ## Evidencia Score P
 
@@ -36,7 +36,7 @@
 | E7 | Pendiente | Viaje sin FMC150 + DQ |
 | E8 | Pendiente | Ciclo cobro técnico |
 
-Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura). 86 migraciones registradas; `viajes` tiene las 4 columnas nuevas y las 2 restricciones (`ck_viajes_origen_alta`, `ck_viajes_cliente_propio`); 0 viajes con origen `propio_transportista`.
+Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura). Migración **0086** (`mantenciones_vehiculo`): aplicada al startup de `00486-brt` el 2026-11-17 (`migrate()` complete; sin acceso SELECT del agente a Secret Manager para contar filas en `__drizzle_migrations`).
 
 ## Staging
 
@@ -62,11 +62,11 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 
 ## Booster Fleet
 
-Pedido del PO el 2026-11-17. Configuración de gestión de flota para el dueño del transportista: combustible (misma lectura de 7 días que los trayectos), documentos obligatorios de cada vehículo y conductor, y mantenciones. Spec `.specs/booster-fleet/spec.md`. PR [#1002](https://github.com/boosterchile/booster-ai/pull/1002). **No está en prod.** Oneshot de release: [`2026-11-17-booster-fleet-release-oneshot.md`](./2026-11-17-booster-fleet-release-oneshot.md). Migración **0086** expand-only (`mantenciones_vehiculo`). El cobro sigue en la bandera de gestión de flota. Cursor mergea el PR; el PO dispara `release.yml` y aprueba `production`.
+**En prod** (2026-11-17). Spec `.specs/booster-fleet/spec.md`. PRs [#1002](https://github.com/boosterchile/booster-ai/pull/1002) (feature) + [#1003](https://github.com/boosterchile/booster-ai/pull/1003) (release-on-request). Panel `/app/booster-fleet`, API `/booster-fleet`, migración **0086** `mantenciones_vehiculo` (expand-only; `migrate()` OK en el arranque de `00486-brt`). El cobro sigue en la bandera de gestión de flota. Oneshot: [`2026-11-17-booster-fleet-release-oneshot.md`](./2026-11-17-booster-fleet-release-oneshot.md). Queda smoke con sesión dueño/admin transportista (criterio de término en `frentes-vivos.md`).
 
 ## Agente
 
-Observar/anotar E2–E8; **no** dispara release ni opera el viaje. `cursor-agent` puede mutar env del api (`run.developer`); no tiene `actions:write`.
+Observar/anotar E2–E8; **no** aprueba Environment `production` (ADR-076). `cursor-agent` tiene `run.developer`; no tiene `actions:write`. Release a prod vía `release.yml` (dispatch) o `release-on-request.yml` (archivo en `.github/release-requests/`) + Approve humano.
 
 ## Riesgos
 
