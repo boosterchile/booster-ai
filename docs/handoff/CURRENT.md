@@ -38,6 +38,16 @@
 
 Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura). 86 migraciones registradas; `viajes` tiene las 4 columnas nuevas y las 2 restricciones (`ck_viajes_origen_alta`, `ck_viajes_cliente_propio`); 0 viajes con origen `propio_transportista`.
 
+## Staging
+
+**No existe** (revisado el 2026-11-17, solo lectura). Lo que pide [ADR-083](../adr/083-staging-gemelo-y-extraccion-con-shadow.md) está sin crear:
+
+- El proyecto `booster-ai-stg-494222` no aparece entre los proyectos visibles para la cuenta del PO; no se descarta uno creado bajo otra cuenta.
+- `staging.boosterchile.com` no tiene delegación NS y `api.staging.boosterchile.com` no resuelve.
+- El repo no tiene entorno `staging` en GitHub ni ninguna variable `STAGING_*`.
+- «Deploy staging» corre en cada push a `main` y se omite siempre (sus últimos 100 runs): el job exige la variable `STAGING_PROJECT_ID`. BARH-23/24 llegaron a prod sin pasar por staging.
+- Solo existe la preparación en `infrastructure/environments/staging/`. Crear el proyecto, vincular la facturación, el `terraform apply` y el registro NS en prod son pasos del PO.
+
 ## BARH-21
 
 Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
@@ -56,4 +66,4 @@ Observar/anotar E2–E8; **no** dispara release ni opera el viaje. `cursor-agent
 
 ## Riesgos
 
-Matching `activa` aún sin observación real. Demo domain vivo. SMS Twilio faltante. Certs solo secundarios / cifras bajas sin reemitir.
+Staging no existe: lo que entra a `main` se prueba por primera vez en prod. Matching `activa` aún sin observación real. Demo domain vivo. SMS Twilio faltante. Certs solo secundarios / cifras bajas sin reemitir.
