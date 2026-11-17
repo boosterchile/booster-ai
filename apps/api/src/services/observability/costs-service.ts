@@ -158,6 +158,8 @@ export class CostsService {
       //   - prevMonthFull: 1° del mes anterior → último día del mes anterior
       // El "mismo día del mes anterior" se computa con DATE_SUB(...,
       // INTERVAL 1 MONTH) que maneja casos límite (31→28/29 feb, 30→ene 30, etc).
+      // La subconsulta se llama `filas`: `rows` es palabra reservada en BigQuery
+      // y la consulta entera falla con error de sintaxis si se usa como nombre.
       const sql = `
         WITH dates AS (
           SELECT
@@ -167,7 +169,7 @@ export class CostsService {
             DATE_SUB(DATE_TRUNC(CURRENT_DATE('America/Santiago'), MONTH), INTERVAL 1 DAY) AS prev_month_end,
             DATE_SUB(CURRENT_DATE('America/Santiago'), INTERVAL 1 MONTH) AS prev_month_same_day
         ),
-        rows AS (
+        filas AS (
           SELECT
             cost + IFNULL((SELECT SUM(amount) FROM UNNEST(credits)), 0) AS net_cost,
             currency,
@@ -185,7 +187,7 @@ export class CostsService {
           SUM(IF(d >= (SELECT prev_month_start FROM dates) AND d <= (SELECT prev_month_end FROM dates), net_cost, 0)) AS prev_month_full,
           ANY_VALUE(currency) AS currency,
           MAX(export_time) AS last_export
-        FROM rows
+        FROM filas
       `;
       const { rows, currency } = await this.runQuery(sql);
       const thisMonthMtd = Number.parseFloat(rows[0]?.[0] ?? '0');
