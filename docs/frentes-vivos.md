@@ -211,7 +211,7 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Fuera de alcance:** predicción de mantenciones, edición del archivo en esta pantalla, y cambiar la tarifa o el segmentador de combustible.
 
-**Rediseño de la pantalla (pedido del PO, 2026-11-17):** spec aceptada el 2026-11-17 en `.specs/booster-fleet-rediseno/spec.md`, con las ampliaciones de contrato C1 y C2; C3 no entra. No hay código. Terminado cuando sus criterios §5 están cubiertos por tests y la pantalla nueva está en `main`.
+**Rediseño de la pantalla (pedido del PO, 2026-11-17):** spec aceptada el 2026-11-17 en `.specs/booster-fleet-rediseno/spec.md`, con las ampliaciones de contrato C1 y C2; C3 no entra. Terminado cuando sus criterios §5 están cubiertos por tests y la pantalla nueva está en `main`. Al 2026-11-17: el contrato (#1011) y el overview (#1012) están en `main`; el detalle del vehículo (#1013) está abierto con merge automático. El criterio se cumple cuando #1013 entre.
 
 ## Fuera de slot — Ruta, parada y servicio (etapa 2)
 

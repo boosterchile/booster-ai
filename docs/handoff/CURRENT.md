@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod; lenguaje «desviación» en `main`, sin desplegar).  
+**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod; rediseño del overview y contrato de la desviación en `main`, sin desplegar).  
 **Prod**: `b9f512d0` (Release on request [44088137366](https://github.com/boosterchile/booster-ai/actions/runs/44088137366) SUCCESS; Cloud Build `7897c23a`) — api `booster-ai-api-00486-brt` @ **100 %**, web `00428-f8j` @ 100 %. Incluye Booster Fleet (#1002) + disparador release-on-request (#1003).  
-**`main`**: tip `4ac02297` (#1008). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos) y #1008 (web, textos de combustible). #1004, #1005 y #1007 no cambian producto.  
+**`main`**: tip `dd7b6e7d` (#1012). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos), #1008 (web, textos de combustible), #1011 (api, hora, litros y lugar de la desviación) y #1012 (web, overview nuevo de Booster Fleet). #1004, #1005, #1007, #1009 y #1010 no cambian producto.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,7 +15,7 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `4ac02297` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos de combustible |
+| `main` | `dd7b6e7d` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos + #1011 contrato de la desviación + #1012 overview |
 | Prod | `b9f512d0` | Imagen de #1003; api/web al 100 %; canary 30 min OK |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -66,7 +66,13 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 
 **Lenguaje del aviso de combustible** (decisión del PO, 2026-11-17): la interfaz no dice «robo». [#1008](https://github.com/boosterchile/booster-ai/pull/1008), en `main` y sin desplegar, cambia los textos en Booster Fleet, trayectos Teltonika, el mapa del evento, los umbrales de la empresa y la ficha del vehículo: «desviación de combustible» (por analizar) para la baja de golpe y «desviación gradual» para las bajas chicas repetidas. Los nombres del contrato (`posible_robo`, `posible_robo_combustible`, `umbral_robo_hormiga_l`) no cambian. La regla quedó en la spec. No se revisaron notificaciones ni plantillas de WhatsApp.
 
-**Rediseño** (propuesta, sin spec ni código): tres direcciones exploradas; el PO eligió la A (triage por severidad) con el detalle de vehículo sobre un eje de tiempo. Agrega fecha, hora y lugar a cada desviación y el aviso de que un consumo alto puede venir de la vía. Brief en [#1007](https://github.com/boosterchile/booster-ai/pull/1007); la propuesta vive en un artifact privado del PO.
+**Rediseño** (spec aceptada el 2026-11-17, `.specs/booster-fleet-rediseno/`; plan en `plan.md`): dirección A, triage por severidad, con el detalle de vehículo sobre un eje de tiempo. Tres PRs:
+
+- [#1011](https://github.com/boosterchile/booster-ai/pull/1011), en `main`: el API entrega por trayecto el inicio, el fin y los litros de la baja, y el panel trae la desviación más reciente de cada camión con su trayecto y sus coordenadas. Solo agrega campos.
+- [#1012](https://github.com/boosterchile/booster-ai/pull/1012), en `main`: `/app/booster-fleet` pasa a ser el panel de triage (frase de estado, barra de severidad, combustible agrupado por tono, riel de documentos y mantenciones, modales para programar y cancelar).
+- [#1013](https://github.com/boosterchile/booster-ai/pull/1013), abierto con merge automático al 2026-11-17: detalle del vehículo en `/app/booster-fleet/vehiculos/$id`.
+
+Nada del rediseño está en prod. **Falta verlo con una desviación real:** la prueba en navegador fue contra el API local con la flota del seed E2E, que tiene un camión sin telemetría ni trayectos; la fila y el bloque de la desviación, el nivel de estanque y los trayectos sobre el eje de tiempo solo están cubiertos por tests. El nombre del lugar en palabras (C3 de la spec) no entra: se muestran coordenadas y el mapa.
 
 ## Agente
 
