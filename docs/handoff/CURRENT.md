@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 23:35 · America/Santiago.  
+**Última actualización**: 2026-11-17 · America/Santiago (verificación del release en solo lectura).  
 **Prod**: `30f42658` (release [43998394616](https://github.com/boosterchile/booster-ai/actions/runs/43998394616) SUCCESS) — api `booster-ai-api-00483-ppx` @ **100 %**, web `00427-z4w` @ 100 %. Incluye BARH-23 reclamar + BARH-24 viaje propio (+ oneshot Score P docs).  
-**`main`**: `30f42658` — alineado con prod tras este release.  
+**`main`**: por delante de prod solo en commits de documentación de handoff (desde #999); sin código por desplegar.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,11 +15,13 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `30f42658` | #998 oneshot + CURRENT; #995/#993 en la imagen |
-| Prod | `30f42658` | Release 43998394616; canary 1 % × 30 min → 100 % |
+| `main` | `30f42658` + docs de handoff | #998 oneshot + CURRENT; #995/#993 en la imagen; #999 y posteriores no cambian código |
+| Prod | `30f42658` | Release 43998394616; los 8 servicios de Cloud Run al 100 % en su última revisión con esa imagen |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
-**Smoke:** `/health` 200, `/ready` 200 (db ok), `/app/viajes-propios/nuevo` 200.
+**Smoke:** `/health` 200, `/ready` 200. La ruta web `/app/viajes-propios/nuevo` responde 200, pero no sirve de prueba: la web responde 200 a cualquier ruta. La pantalla queda por ejercitar con sesión (E6).  
+**Registros:** un solo error desde el despliegue, el ya conocido de `sms-fallback-gateway` al arrancar (falta configuración de Twilio).  
+**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release, terminó sin diferencias entre GCP y `main`.
 
 ## Evidencia Score P
 
@@ -34,7 +36,7 @@
 | E7 | Pendiente | Viaje sin FMC150 + DQ |
 | E8 | Pendiente | Ciclo cobro técnico |
 
-Migración **0085**: va con el migrate del release; confirmar con SQL del oneshot §3.2 si hace falta evidencia DB explícita.
+Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura). 86 migraciones registradas; `viajes` tiene las 4 columnas nuevas y las 2 restricciones (`ck_viajes_origen_alta`, `ck_viajes_cliente_propio`); 0 viajes con origen `propio_transportista`.
 
 ## BARH-21
 
