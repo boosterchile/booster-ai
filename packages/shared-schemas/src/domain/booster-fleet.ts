@@ -540,12 +540,9 @@ function mejorVigencia(
   return { estado: vigenciaDe(elegido.fechaVencimiento, hoy), fecha: elegido.fechaVencimiento };
 }
 
-function fechaMasCercana(a: string | null, b: string | null): string | null {
+function fechaMasCercana(a: string | null, b: string): string {
   if (a == null) {
     return b;
-  }
-  if (b == null) {
-    return a;
   }
   return a < b ? a : b;
 }
