@@ -1,90 +1,64 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-16 20:30 · America/Santiago.  
-**Prod**: `e0f3ccf4` (release [43874760833](https://github.com/boosterchile/booster-ai/actions/runs/43874760833), 11:06) — api `booster-ai-api-00481-4wf` (misma imagen; revisión nueva por el apply de las 20:22), web `00426-ljx`, tráfico 100 % — #986 invitación por correo + #984 remitente `contacto@`.  
-**`main`**: `96bb7155` (#996); por delante de prod con #993 y #995 sin desplegar.  
+**Última actualización**: 2026-11-16 22:30 · America/Santiago.  
+**Prod**: imagen `e0f3ccf4` (release [43874760833](https://github.com/boosterchile/booster-ai/actions/runs/43874760833)) — api `booster-ai-api-00482-pch` (env `EMAIL_FROM` vía reconcile), web `00426-ljx`, 100 %.  
+**`main`**: `22f7f8fb` — por delante de prod con **#993 BARH-23** y **#995 BARH-24** sin desplegar.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+
+## Score producto (P) vs comercial (C)
+
+- **P (funciona)** ≈ **2.8/5** — meta **5** sin mezclar abogados. Camino: oneshot abajo.
+- **C (vender/compliance)** ≈ 1.5/5 — aparte (legales, RFPs, contrato). No bloquea declarar “funciona”.
+- Detalle: store `internal/gtm-score-producto-vs-legal.md`.
 
 ## Estado de prod vs main
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `96bb7155` | #996 IAM de `cursor-agent` (aplicado); #995 BARH-24 viaje propio y #993 BARH-23 reclamar carga, **sin desplegar**; #992 plan |
-| Prod (Cloud Run) | `e0f3ccf4` | Release 43874760833 success (disparo y aprobación del PO). Los 8 servicios al 100 % en su última revisión. Api `booster-ai-api-00481-4wf` tras el apply de Terraform |
+| `main` | `22f7f8fb` | #997 handoff; #996 IAM (aplicado); **#995 viaje propio + #993 reclamar** sin release |
+| Prod | `e0f3ccf4` | BARH-21 + remitente; **sin** 0085 / claim / viaje propio |
 
-**Flags en prod:** rutas API encendida y matching en modo `activa`, conservados tras el release. Staging gemelo aún no existe — `docs/handoff/2026-11-16-staging-checklist-adr083.md`.
+**Flags:** matching `activa`, rutas API ON, `EMAIL_FROM=Booster <contacto@boosterchile.com>`. Staging gemelo: no existe.
 
-## Release BARH-21 — desplegado 2026-11-16 11:06
+## Siguiente paso — Score P (PO)
 
-Verificado tras el deploy:
+Oneshot: [`2026-11-16-score-p5-barh2324-oneshot.md`](./2026-11-16-score-p5-barh2324-oneshot.md).
 
-- Los 8 servicios sirven la imagen `e0f3ccf4`.
-- Migración **0084** aplicada: 85 migraciones en prod; la tabla `invitaciones_correo_cuenta` existe.
-- `/health` y `/ready` del api en 200; `/crear-cuenta` en la web en 200.
-- Errores desde el deploy: solo el aviso de arranque de `sms-fallback-gateway` (deuda previa).
+```bash
+gh workflow run release.yml --ref main
+# Aprobar Environment production. Cursor NO dispara el release.
+```
 
-**Invitaciones BARH-21 (PO, ~2026-11-16 America/Santiago):**
+Post-release: migración **0085**, smoke viaje propio + reclamar, tachar evidencia E1…E8 del oneshot.
 
-- PO confirmó envío desde `/app/platform-admin/personal` → «Invitar por correo» a `gerencia@boosterchile.com` y `sandoval.felipe@gmail.com`.
-- **No** se afirma creación de cuentas: faltan `/crear-cuenta` + login correo+clave por cada invitado.
-- (Opcional) Smoke: confirmar llegada From `contacto@boosterchile.com` (Resend).
+## BARH-21 (ya en prod)
 
-**Sin verificar / opcional:**
+- Invites enviados a `gerencia@` y `sandoval.felipe@`. **Cuentas no confirmadas** (falta `/crear-cuenta` + login).
+- Oneshot histórico: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deploy-barh21-invite-oneshot.md).
 
-- Que Resend acepte el remitente `contacto@` en el correo real (lo dirá el smoke o el invitado).
+## Resumen operativo
 
-Guía oneshot: [`2026-11-16-deploy-barh21-invite-oneshot.md`](./2026-11-16-deploy-barh21-invite-oneshot.md).  
-**Cursor no** dispara release ni `terraform apply` ni envía invitaciones.
+- Matching `activa` **sin** matching real observado.
+- Rutas API ON (prueba dos cargas OK).
+- Certificados secundarios; sin primario CAN; cifras bajas sin reemitir.
+- `sms-fallback-gateway`: Twilio faltante (deuda).
 
-## Terraform — IAM de `cursor-agent` y remitente (PO, 2026-11-16 20:22)
+## Pendientes del PO (orden Score P)
 
-El PO aplicó un plan guardado, preparado desde `origin/main` (`96bb7155`, #996): 2 recursos nuevos, 1 cambio, 0 destrucciones.
+1. **Release** BARH-23/24 (`release.yml` + gate) — oneshot §2.
+2. Invitados: `/crear-cuenta` + login.
+3. 1 activación conductor por canal (sin código manual).
+4. 1 viaje E2E sin intervención → cert.
+5. 1 matching real o reclamo documentado; 1 viaje propio.
+6. Viaje sin FMC150 con DQ explícita.
+7. (Luego) ciclo cobro técnico; CAN primario; staging (opc.).
 
-- `cursor-agent@` recibe `roles/run.developer` solo sobre el servicio `booster-ai-api`, y `roles/iam.serviceAccountUser` sobre la cuenta de ejecución de Cloud Run.
-- El servicio del api declara ahora el remitente `contacto@` como variable. Revisión `booster-ai-api-00481-4wf`, misma imagen `e0f3ccf4`; matching `activa` y rutas encendidas conservados.
-- Verificado: los dos permisos en las políticas, `/health` y `/ready` en 200, sin errores del api desde el apply, y un `terraform plan` completo posterior con «No changes».
-- Consecuencia: `cursor-agent` puede publicar revisiones del api (imagen, variables) sin pasar por el Environment `production`. El gate humano del release sigue para los otros servicios. Riesgo declarado en `infrastructure/iam.tf`.
+## Lo que sigue del agente
 
-## Resumen operativo (prod actual)
+1. Tras release: verificar revisiones/0085/flags y anotar en este archivo.
+2. Ayudar con queries/logs de evidencia E2–E8; **no** operar el viaje.
+3. **No** `gh workflow run release.yml`, no invitaciones, no `terraform apply` global.
 
-- Matching `activa` desde 01:15 (PO apply). **Sin observar** matching real aún → al primer matching: log `matching: elegibilidad por carga` + ofertas; registrar aquí.
-- Rutas API ON; prueba dos cargas OK (datos de prueba en prod).
-- #977 en prod: regla 50 % distancia medida. **Sin observar** cierre real post-deploy. Certificados con cifra baja (BOO-BKAXIK, BOO-KY7G69, BOO-4FF3XA, BOO-VZYIN2) sin reemitir.
-- Remitente de los correos: `contacto@`, declarado en el servicio del api desde el apply de las 20:22.
-- `sms-fallback-gateway`: aviso Twilio faltante (deuda previa).
+## Riesgos
 
-## Plan post-deploy 2026-11-15 — **cerrado**
-
-| Frente | Estado |
-|---|---|
-| Huella consolidada | **En prod** (#956) |
-| Matching desde la carga | **En prod** (#958) + cron; modo **activa** |
-| Ruta consolidada | API encendida; parte 8 (contract) al final |
-| Reemisión certificados | Partes 1–5 en prod. BOO-YWKZWR — PO |
-| Etapas 5–6 / 0–2 | Sin empezar / drafts |
-
-## WIP
-
-- Specs BARH-23/24 **aceptadas** (2026-11-16). `plan.md` en curso → impl TDD (23 claim primero, luego 24). Drafts #876, #877, #748: no tocar sin pedido.
-
-## Pendientes del PO (orden)
-
-1. Invitados completan `/crear-cuenta` + login correo+clave (`gerencia@`, `sandoval.felipe@`). (Opcional) confirmar mails From `contacto@`.
-2. Decidir el release de #993 (BARH-23) y #995 (BARH-24), en `main` sin desplegar.
-3. Mirar el primer matching real en `activa`; transportistas declaren carrocería.
-4. Un viaje con camión CAN → primer certificado primario.
-5. Reemitir BOO-YWKZWR; decidir los 3 Teltonika sin sello / cifras bajas.
-6. Mirar Flota/Maps en prod.
-7. (Opcional) Staging gemelo ADR-083. Visto ADR nuevo BARH-23/24 cuando el plan lo pida (archivo protegido).
-
-## Lo que sigue del lado del agente
-
-1. BARH-23/24: merge `plan.md` → impl TDD claim → viaje propio (ADR solo con permiso PO).
-2. Observar / anotar el primer matching real en `activa` (logs + ofertas).
-3. Con el primer cierre post-#977: confirmar v3 / no-plausible.
-4. Cuando un invitado complete `/crear-cuenta` + login: anotar aquí (no asumir cuentas creadas solo por el envío).
-5. `cursor-agent` puede actualizar el servicio del api (permiso del 2026-11-16); **no** dispara release, no corre `terraform apply`, no envía invitaciones.
-
-## Riesgos abiertos
-
-Matching `activa` sin matching real observado; sin carrocería, solo `carga_seca`/`otra`. Recogida exige conductor. Certificados no reproducibles / cifras bajas sin reemitir. `cursor-agent` con `run.developer` sobre el api: puede cambiar su configuración sin gate humano; sigue sin `actions:write` para release. #993 y #995 en `main` sin desplegar. Cuentas BARH-21 aún no confirmadas (invites enviados; falta `/crear-cuenta`).
+`main` ≠ prod en claim/viaje propio. Matching sin observación. Cuentas invite abiertas. `cursor-agent` con `run.developer` solo sobre el api (riesgo declarado). Demo domain aún vivo (T10-03).
