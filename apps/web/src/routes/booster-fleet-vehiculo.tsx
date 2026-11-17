@@ -143,11 +143,21 @@ function Contenido({
       const url =
         `/trayectos-teltonika?page=1&page_size=50&vehiculo_id=${encodeURIComponent(vehiculo.vehiculo_id)}` +
         `&desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`;
-      const parsed = listadoSchema.safeParse(await api.get<unknown>(url, scope.init));
-      if (!parsed.success) {
-        throw new Error('La respuesta de trayectos no tiene la forma esperada.');
+      // El listado filtra por defecto los trayectos con dato de combustible.
+      // El detalle muestra todo lo que el camión hizo, así que pide los dos.
+      const respuestas = await Promise.all([
+        api.get<unknown>(url, scope.init),
+        api.get<unknown>(`${url}&combustible=sin_dato`, scope.init),
+      ]);
+      const todos: Trayecto[] = [];
+      for (const respuesta of respuestas) {
+        const parsed = listadoSchema.safeParse(respuesta);
+        if (!parsed.success) {
+          throw new Error('La respuesta de trayectos no tiene la forma esperada.');
+        }
+        todos.push(...parsed.data.trayectos);
       }
-      return [...parsed.data.trayectos].sort((a, b) => a.inicio.localeCompare(b.inicio));
+      return todos.sort((a, b) => a.inicio.localeCompare(b.inicio));
     },
   });
   const trayectos = q.data ?? [];

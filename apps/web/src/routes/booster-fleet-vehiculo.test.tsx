@@ -210,10 +210,14 @@ function trayectos() {
   };
 }
 
-function entrar(datos: PanelBoosterFleet = panel(), lista: unknown = trayectos()) {
+function entrar(
+  datos: PanelBoosterFleet = panel(),
+  lista: unknown = trayectos(),
+  sinDato: unknown = { trayectos: [] },
+) {
   const get = vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
     if (url.startsWith('/trayectos-teltonika')) {
-      return lista as never;
+      return (url.includes('combustible=sin_dato') ? sinDato : lista) as never;
     }
     return datos as never;
   });
@@ -335,6 +339,35 @@ describe('BoosterFleetVehiculoRoute', () => {
     expect(screen.getByText('Taller en silencio.')).toBeInTheDocument();
   });
 
+  it('un camión sin dato de combustible igual muestra los trayectos que hizo', async () => {
+    idDeRuta = OTRO;
+    const { get } = entrar(
+      panel(),
+      { trayectos: [] },
+      {
+        trayectos: [
+          {
+            id: 'trayecto-sin-dato',
+            inicio: '2026-11-11T16:00:00.000Z',
+            fin: '2026-11-11T18:00:00.000Z',
+            distancia_km: 178,
+            litros_iniciales: null,
+            litros_finales: null,
+            posible_robo_combustible: false,
+          },
+        ],
+      },
+    );
+    expect(await screen.findByText('1 trayecto')).toBeInTheDocument();
+    expect(screen.queryByText('Sin trayectos en la semana.')).not.toBeInTheDocument();
+    const fila = screen.getAllByRole('row')[1];
+    expect(fila).toHaveTextContent('mié 11 nov, 13:00');
+    expect(fila).toHaveTextContent('178,0');
+    const pedidas = get.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/trayectos'));
+    expect(pedidas).toHaveLength(2);
+    expect(pedidas.filter((u) => u.includes('combustible=sin_dato'))).toHaveLength(1);
+  });
+
   it('muestra los documentos pendientes del vehículo y deja programar una inspección', async () => {
     const post = vi.spyOn(api, 'post').mockResolvedValue({ mantencion: {} });
     const user = userEvent.setup();
@@ -420,7 +453,7 @@ describe('eje de tiempo', () => {
     );
     expect(nivel.unidad).toBe('%');
     expect(nivel.tramos).toHaveLength(1);
-    expect(nivel.tramos[0]).toMatchObject({ id: 'a', x1: 0, y1: 20, y2: 40 });
+    expect(nivel.tramos[0]).toMatchObject({ id: 'a', x1: 0, y1: 20, y2: 40, inicio: 80, fin: 60 });
   });
 
   it('sin porcentaje usa los litros contra el máximo de la semana', () => {
