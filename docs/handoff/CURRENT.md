@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-17 · America/Santiago (verificación del release en solo lectura).  
+**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en rama; prod sin cambios de código).  
 **Prod**: `30f42658` (release [43998394616](https://github.com/boosterchile/booster-ai/actions/runs/43998394616) SUCCESS) — api `booster-ai-api-00483-ppx` @ **100 %**, web `00427-z4w` @ 100 %. Incluye BARH-23 reclamar + BARH-24 viaje propio (+ oneshot Score P docs).  
 **`main`**: por delante de prod solo en commits de documentación de handoff (desde #999); sin código por desplegar.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
@@ -59,6 +59,10 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 3. 1 viaje E2E sin parche → cert (E4).
 4. 1 reclamo o matching real + 1 viaje propio (E5–E6).
 5. Viaje sin FMC150 + DQ (E7); luego cobro técnico (E8).
+
+## Booster Fleet
+
+Pedido del PO el 2026-11-17. Configuración de gestión de flota para el dueño del transportista: combustible (misma lectura de 7 días que los trayectos), documentos obligatorios de cada vehículo y conductor, y mantenciones. Spec `.specs/booster-fleet/spec.md`. PR [#1002](https://github.com/boosterchile/booster-ai/pull/1002). **No está en prod.** Oneshot de release: [`2026-11-17-booster-fleet-release-oneshot.md`](./2026-11-17-booster-fleet-release-oneshot.md). Migración **0086** expand-only (`mantenciones_vehiculo`). El cobro sigue en la bandera de gestión de flota. Cursor mergea el PR; el PO dispara `release.yml` y aprueba `production`.
 
 ## Agente
 

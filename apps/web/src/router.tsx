@@ -181,6 +181,12 @@ const flotaRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/flota.js'), 'FlotaRoute'),
 });
 
+const boosterFleetRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/booster-fleet',
+  component: lazyRouteComponent(() => import('./routes/booster-fleet.js'), 'BoosterFleetRoute'),
+});
+
 const trayectosTeltonikaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/trayectos',
@@ -703,6 +709,7 @@ const routeTree = rootRoute.addChildren([
   vehiculoLiveRoute,
   vehiculoHistorialRoute,
   flotaRoute,
+  boosterFleetRoute,
   trayectosTeltonikaRoute,
   equipoRoute,
   zonasMatchingRoute,

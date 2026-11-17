@@ -48,6 +48,7 @@ import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createAuthImpersonateRoutes } from './routes/auth-impersonate.js';
 import { createAuthInvitarCuentaRoutes } from './routes/auth-invitar-cuenta.js';
 import { createAuthUniversalRoutes } from './routes/auth-universal.js';
+import { createBoosterFleetRoutes } from './routes/booster-fleet.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
@@ -1125,6 +1126,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/trayectos-teltonika', firebaseAuthMiddleware);
     app.use('/trayectos-teltonika', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/trayectos-teltonika', createTrayectosTeltonikaRoutes({ db: opts.db, logger }));
+
+    // Booster Fleet — control del dueño. firebaseAuth + userContext preceden el mount.
+    app.use('/booster-fleet/*', firebaseAuthMiddleware);
+    app.use('/booster-fleet/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/booster-fleet', firebaseAuthMiddleware);
+    app.use('/booster-fleet', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/booster-fleet', createBoosterFleetRoutes({ db: opts.db, logger }));
 
     // BARH-24 — alta de viaje propio (fuera del matching).
     app.use('/viajes-propios/*', guardiaVisibilidadTransportista);

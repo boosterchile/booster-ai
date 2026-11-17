@@ -4,6 +4,7 @@ import {
   Bus,
   ClipboardList,
   Fuel,
+  Gauge,
   Home,
   Leaf,
   type LucideIcon,
@@ -83,6 +84,11 @@ export function navSectionsForMe(
   if (empresa?.is_transportista) {
     const transporte: NavItem[] = [
       { label: 'Seguimiento de flota', to: '/app/flota', icon: MapPinned },
+    ];
+    if (isAdmin) {
+      transporte.unshift({ label: 'Booster Fleet', to: '/app/booster-fleet', icon: Gauge });
+    }
+    transporte.push(
       { label: 'Ofertas', to: '/app/ofertas', icon: Truck },
       // Servicios va inmediatamente después de Ofertas porque ese es el flujo
       // real: llega la oferta, se acepta, y la carga hay que despacharla —
@@ -93,11 +99,16 @@ export function navSectionsForMe(
       { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
       { label: 'Conductores', to: '/app/conductores', icon: Users },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
-    ];
+    );
     // Rutas va después de Servicios: primero se acepta la carga y se le pone
     // conductor; después se junta con otras. Solo con la API encendida.
     if (opciones.rutas) {
-      transporte.splice(3, 0, { label: 'Rutas', to: '/app/rutas', icon: Waypoints });
+      const despuesDeServicios = transporte.findIndex((item) => item.label === 'Servicios');
+      transporte.splice(despuesDeServicios + 1, 0, {
+        label: 'Rutas',
+        to: '/app/rutas',
+        icon: Waypoints,
+      });
     }
     // CHEQUEOS_REEMPLAZADOS nav-gestion / inicio-plata: la plata es dueño y admin.
     if (flags.verFinanzas) {
@@ -107,7 +118,8 @@ export function navSectionsForMe(
       );
     }
     if (isAdmin) {
-      transporte.splice(1, 0, {
+      const despuesDelMapa = transporte.findIndex((item) => item.label === 'Seguimiento de flota');
+      transporte.splice(despuesDelMapa + 1, 0, {
         label: 'Trayectos',
         to: '/app/trayectos',
         icon: Fuel,

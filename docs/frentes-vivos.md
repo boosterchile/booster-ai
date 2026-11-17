@@ -199,6 +199,16 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Fuera de alcance:** RLS en Postgres (decidido en `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md`), columna de sector, `teltonika_imei_espejo` (Slot 2), miembros de organizaciones stakeholder.
 
+## Fuera de slot — Booster Fleet
+
+**Por qué:** pedido del PO el 2026-11-17. La gestión de flota existía como tarifa (ADR-079) y no como control para el dueño del transportista.
+
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Los tres slots de la fase A siguen como están. Spec en `.specs/booster-fleet/spec.md`.
+
+**Terminado cuando:** el dueño de un transportista abre Booster Fleet y ve, de su empresa, el combustible de 7 días, el estado documental de cada vehículo y cada conductor, y puede programar y cerrar una mantención. Los criterios de la spec §5 están cubiertos por tests. El cobro sigue en la bandera que prende el platform-admin.
+
+**Fuera de alcance:** predicción de mantenciones, edición del archivo en esta pantalla, y cambiar la tarifa o el segmentador de combustible.
+
 ## Fuera de slot — Ruta, parada y servicio (etapa 2)
 
 **Por qué:** pedido explícito del PO. El 2026-11-10 aceptó las doce decisiones de ADR-088, ADR-089 y ADR-090 y las de la spec, y el mismo día decidió que este frente entra fuera de slot. El modelo actual, un viaje igual a un camión, no representa un camión con cargas de varios generadores.

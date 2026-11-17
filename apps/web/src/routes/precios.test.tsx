@@ -40,6 +40,7 @@ describe('/precios (T10-29, ADR-079 §4)', () => {
     expect(screen.getByTestId('precio-generador')).toHaveTextContent('1 UF');
     expect(screen.getByTestId('precio-transportista')).toHaveTextContent('1 UF');
     expect(screen.getByTestId('precio-gestion-flota')).toHaveTextContent('1,5 UF');
+    expect(screen.getByText(/Booster Fleet, la gestión de flota/)).toBeInTheDocument();
     expect(screen.getByText('Tu primer camión no paga suscripción.')).toBeInTheDocument();
     expect(screen.getByText(/Huella de carbono/)).toBeInTheDocument();
     expect(screen.getByText(/Se cotiza por proyecto/)).toBeInTheDocument();

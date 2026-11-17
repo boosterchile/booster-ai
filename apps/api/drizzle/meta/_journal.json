@@ -603,6 +603,13 @@
       "when": 1781395200420,
       "tag": "0085_viajes_propios_transportista",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1781481600420,
+      "tag": "0086_booster_fleet_mantenciones",
+      "breakpoints": true
     }
   ]
 }

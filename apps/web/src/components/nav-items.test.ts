@@ -93,6 +93,8 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Zonas de matching');
     expect(l).toContain('Dispositivos'); // admin
     expect(l).toContain('Trayectos');
+    expect(l).toContain('Booster Fleet');
+    expect(l.indexOf('Booster Fleet')).toBeLessThan(l.indexOf('Seguimiento de flota'));
     expect(l).not.toContain('Mis cargas'); // no es generador
   });
 
@@ -127,6 +129,7 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Ofertas');
     expect(l).not.toContain('Dispositivos');
     expect(l).not.toContain('Trayectos');
+    expect(l).not.toContain('Booster Fleet');
     expect(l).not.toContain('Zonas de matching');
   });
 
