@@ -62,7 +62,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 
 ## Booster Fleet
 
-Pedido del PO el 2026-11-17. Configuración de gestión de flota para el dueño del transportista: combustible (misma lectura de 7 días que los trayectos), documentos obligatorios de cada vehículo y conductor, y mantenciones. Spec `.specs/booster-fleet/spec.md`. No está en prod. El cobro sigue en la bandera de gestión de flota.
+Pedido del PO el 2026-11-17. Configuración de gestión de flota para el dueño del transportista: combustible (misma lectura de 7 días que los trayectos), documentos obligatorios de cada vehículo y conductor, y mantenciones. Spec `.specs/booster-fleet/spec.md`. PR [#1002](https://github.com/boosterchile/booster-ai/pull/1002). **No está en prod.** Oneshot de release: [`2026-11-17-booster-fleet-release-oneshot.md`](./2026-11-17-booster-fleet-release-oneshot.md). Migración **0086** expand-only (`mantenciones_vehiculo`). El cobro sigue en la bandera de gestión de flota. Cursor mergea el PR; el PO dispara `release.yml` y aprueba `production`.
 
 ## Agente
 
