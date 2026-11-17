@@ -68,7 +68,10 @@ Por vehículo, la señal más grave gana:
 En pantalla, `posible_robo` no se nombra como robo: se muestra como
 «Desviación de combustible por analizar» (decisión del PO, 2026-11-17). Es una
 variación medida que alguien tiene que revisar, no una conclusión. El nombre
-de la señal en el contrato no cambia.
+de la señal en el contrato no cambia. La misma regla vale para las demás
+pantallas que muestran el aviso (trayectos, mapa del evento, ficha del
+vehículo y umbrales de la empresa): «desviación de combustible» para la baja
+de golpe y «desviación gradual» para las bajas chicas repetidas.
 
 Los litros que se muestran pueden incluir tramos no confiables. El L/100 km
 solo sale de los tramos que el segmentador ya aceptó en el Σkm/ΣL. Un km/L
