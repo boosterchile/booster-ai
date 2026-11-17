@@ -1832,3 +1832,46 @@ describe('guardrail de km/L', () => {
     expect(trayectos[0]?.notaCombustible).toBe(NOTA_SIN_BAJA);
   }, 30_000);
 });
+
+describe('ventana y litros del evento', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it('la baja de golpe trae cuándo empezó, cuándo terminó y cuántos litros', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 800),
+      ...caida(T0 + 10 * 60_000, 800, 590, -33.41, -70.61),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventoDesde: iso(T0 + 10 * 60_000),
+      eventoHasta: iso(T0 + 12 * 60_000),
+      eventoLitros: 21,
+    });
+  });
+
+  it('la baja gradual va desde la primera baja hasta la última y suma los litros', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 24 * 60_000, 940, 900, -33.49, -70.69),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: true,
+      eventoDesde: iso(T0 + 10 * 60_000),
+      eventoHasta: iso(T0 + 26 * 60_000),
+      eventoLitros: 10,
+    });
+  });
+
+  it('sin aviso no trae ventana ni litros', () => {
+    const trayectos = segmentarTrayectosTeltonika([...movimiento(T0, 800)]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventoDesde: null,
+      eventoHasta: null,
+      eventoLitros: null,
+    });
+  });
+});
