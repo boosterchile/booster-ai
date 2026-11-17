@@ -6,6 +6,22 @@ name: Release on request
 #
 # Concurrency propia: no retiene la lane `release-deploy-main` si el gate
 # queda en waiting (footgun documentado en release.yml).
+#
+# Como no comparte lane con `release.yml`, la exclusión entre deploys a prod
+# la hacen tres guardas explícitas:
+#   1. `validar-solicitud`: solo sigue si el push AGREGÓ o MODIFICÓ un archivo
+#      de solicitud. Borrar uno (el rollback de este mecanismo) no despliega.
+#   2. Tras la aprobación, el commit del run tiene que seguir siendo la punta
+#      de `main`. Una solicitud aprobada tarde no devuelve prod a un commit
+#      anterior: hay que pedir el release de nuevo.
+#   3. Justo antes de Cloud Build, no puede haber otro run de `release.yml`
+#      ni de este workflow en curso. Es una comprobación, no un lock: dos
+#      aprobaciones en el mismo instante pueden pasarla las dos.
+#
+# Diferencia declarada con `release.yml`: acá no corre `version-or-publish`
+# (Changesets). Ese job necesita `contents: write` y `pull-requests: write`,
+# y este workflow se queda en solo lectura. El versionado ocurre en el
+# siguiente `release.yml`.
 
 on:
   push:
@@ -36,8 +52,48 @@ env:
   GCP_REGION: southamerica-west1
 
 jobs:
+  validar-solicitud:
+    name: Validar solicitud de release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      hay_solicitud: ${{ steps.solicitud.outputs.hay_solicitud }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Buscar solicitud agregada o modificada
+        id: solicitud
+        env:
+          EVENTO: ${{ github.event_name }}
+          ANTES: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENTO" = "workflow_dispatch" ]; then
+            echo "Disparo manual: no exige archivo de solicitud."
+            echo "hay_solicitud=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="$ANTES"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base="${SHA}^"
+          fi
+          solicitudes=$(git diff --name-only --diff-filter=AM "$base" "$SHA" -- .github/release-requests/)
+          if [ -n "$solicitudes" ]; then
+            echo "Solicitudes agregadas o modificadas:"
+            echo "$solicitudes"
+            echo "hay_solicitud=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::El push solo borró o renombró archivos de solicitud — no se despliega."
+            echo "hay_solicitud=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy-production:
     name: Deploy to production (on request)
+    needs: validar-solicitud
+    if: needs.validar-solicitud.outputs.hay_solicitud == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 130
     environment:
@@ -45,6 +101,19 @@ jobs:
       url: ${{ vars.PRODUCTION_URL }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verificar que el commit sigue siendo la punta de main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          punta=$(gh api "repos/${REPO}/commits/main" --jq '.sha')
+          if [ "$punta" != "$SHA" ]; then
+            echo "::error::main avanzó a ${punta} y este run despliega ${SHA}. Solicitud vencida: pedir el release de nuevo."
+            exit 1
+          fi
+          echo "✓ ${SHA} es la punta de main"
       - name: Esperar CI Success del mismo SHA
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,6 +141,27 @@ jobs:
           service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEPLOY }}
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
+      - name: Verificar que no hay otro deploy a prod en curso
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ESTE_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          otros=""
+          for wf in release.yml release-on-request.yml; do
+            ids=$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?status=in_progress&per_page=20" \
+              --jq ".workflow_runs[] | select(.id != ${ESTE_RUN}) | \"${wf} \(.id) \(.head_sha)\"")
+            if [ -n "$ids" ]; then
+              otros="${otros}${ids}"$'\n'
+            fi
+          done
+          if [ -n "$otros" ]; then
+            echo "::error::Hay otro deploy a prod en curso — este run se detiene antes de Cloud Build:"
+            printf '%s' "$otros"
+            exit 1
+          fi
+          echo "✓ Sin otros deploys a prod en curso"
       - name: Trigger Cloud Build (production)
         run: |
           gcloud builds submit --config=cloudbuild.production.yaml \
