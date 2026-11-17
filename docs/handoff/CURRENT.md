@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod; rediseño completo en `main`, sin desplegar).  
 **Prod**: `b9f512d0` (Release on request [44088137366](https://github.com/boosterchile/booster-ai/actions/runs/44088137366) SUCCESS; Cloud Build `7897c23a`) — api `booster-ai-api-00486-brt` @ **100 %**, web `00428-f8j` @ 100 %. Incluye Booster Fleet (#1002) + disparador release-on-request (#1003).  
-**`main`**: tip `16ccd57f` (#1013). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos), #1008 (web, textos de combustible), #1011 (api, hora, litros y lugar de la desviación), #1012 (web, overview nuevo de Booster Fleet) y #1013 (web, detalle del vehículo). #1004, #1005, #1007, #1009 y #1010 no cambian producto.  
+**`main`**: tip `bb70fd70` (#1015). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos), #1008 (web, textos de combustible), #1011 (api, hora, litros y lugar de la desviación), #1012 (web, overview nuevo de Booster Fleet), #1013 (web, detalle del vehículo) y #1015 (web, correcciones del detalle y del overview). #1004, #1005, #1007, #1009 y #1010 no cambian producto.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,7 +15,7 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `16ccd57f` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos + #1011 contrato de la desviación + #1012 overview + #1013 detalle |
+| `main` | `bb70fd70` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos + #1011 contrato de la desviación + #1012 overview + #1013 detalle + #1015 correcciones |
 | Prod | `b9f512d0` | Imagen de #1003; api/web al 100 %; canary 30 min OK |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -72,7 +72,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 - [#1012](https://github.com/boosterchile/booster-ai/pull/1012), en `main`: `/app/booster-fleet` pasa a ser el panel de triage (frase de estado, barra de severidad, combustible agrupado por tono, riel de documentos y mantenciones, modales para programar y cancelar).
 - [#1013](https://github.com/boosterchile/booster-ai/pull/1013), en `main`: detalle del vehículo en `/app/booster-fleet/vehiculos/$id`.
 
-Nada del rediseño está en prod. **Falta verlo con una desviación real:** la prueba en navegador fue contra el API local con la flota del seed E2E, que tiene un camión sin telemetría ni trayectos; la fila y el bloque de la desviación, el nivel de estanque y los trayectos sobre el eje de tiempo solo están cubiertos por tests. El nombre del lugar en palabras (C3 de la spec) no entra: se muestran coordenadas y el mapa.
+Nada del rediseño está en prod. **Visto en local con una desviación sembrada** (2026-11-17): se cargaron en la base de desarrollo puntos de telemetría del camión del seed E2E con una baja de nivel con el camión detenido, y la desviación pasó por el segmentador del API hasta el overview y el detalle, con su hora, sus litros y sus coordenadas. Al verla aparecieron tres fallas que corrigió [#1015](https://github.com/boosterchile/booster-ai/pull/1015), en `main`: el detalle no mostraba los trayectos sin dato de combustible, la fila de la desviación se partía en dos líneas y el nivel de estanque se leía mal. **Falta ver:** el mapa del evento (el entorno local no tiene clave de Google Maps), un camión sin lectura y con trayectos en el detalle (solo cubierto por test) y todo el rediseño con telemetría de producción. El nombre del lugar en palabras (C3 de la spec) no entra: se muestran coordenadas y el mapa.
 
 ## Agente
 
