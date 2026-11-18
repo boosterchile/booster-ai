@@ -203,6 +203,30 @@ export interface ResumenCombustibleVehiculo {
   combustible: CombustibleVehiculo;
 }
 
+/**
+ * Los AVL de `io_data` que lee este módulo, y solo esos. La lectura de
+ * telemetría proyecta estas claves para no traer el `io_data` entero. Si el
+ * segmentador empieza a leer otro AVL hay que agregarlo acá: un test falla
+ * si lee uno que no está en la lista.
+ *
+ * 1 y 239: ignición · 24 y 81: velocidad · 240: movimiento · 250: viaje ·
+ * 83: consumo acumulado · 84: nivel en litros · 89: nivel en % · 85: rpm ·
+ * 87: odómetro CAN.
+ */
+export const AVL_LEIDOS_POR_SEGMENTADOR = [
+  '1',
+  '24',
+  '81',
+  '83',
+  '84',
+  '85',
+  '87',
+  '89',
+  '239',
+  '240',
+  '250',
+] as const;
+
 export interface PuntoSegmentacion {
   vehiculoId: string;
   empresaId: string;

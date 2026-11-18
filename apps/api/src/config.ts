@@ -607,6 +607,14 @@ export const apiEnvSchema = commonEnvSchema
     RUTAS_API_ACTIVADA: booleanFlag(false),
 
     /**
+     * Puntos de telemetría que el panel de Booster Fleet puede leer en una
+     * consulta (`.specs/booster-fleet-ventana-completa` §4.2). Un camión
+     * genera unos 25.000 por semana: 400.000 cubren 16 camiones con sus 7
+     * días. Sobre eso el panel recorta parejo por vehículo y lo declara.
+     */
+    BOOSTER_FLEET_PRESUPUESTO_PUNTOS: z.coerce.number().int().positive().default(400_000),
+
+    /**
      * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
      * rollback) — gating del flow signup-request → admin-approval.
      *

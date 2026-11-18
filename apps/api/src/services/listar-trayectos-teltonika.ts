@@ -1,10 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { empresas, telemetryPoints, vehicles } from '../db/schema.js';
 import { type ResumenHubVehiculo, resumirHubVehiculo } from '../domain/resumir-hub-vehiculo.js';
 import {
+  AVL_LEIDOS_POR_SEGMENTADOR,
   type ConfigRoboCombustible,
   type FuenteCombustibleCan,
   type PuntoSegmentacion,
@@ -14,8 +15,63 @@ import {
   segmentarTrayectosTeltonika,
 } from '../domain/segmentar-trayectos-teltonika.js';
 
-/** Tope de pings por consulta. Si se supera, se quedan los más recientes. */
+/** Tope de pings del listado de la flota. Si se supera, se quedan los más recientes. */
 export const MAX_PUNTOS_TRAYECTO = 20_000;
+
+/**
+ * Presupuesto de puntos por consulta del panel de Booster Fleet y de la
+ * lectura de un solo vehículo. Un camión genera unos 25.000 puntos por
+ * semana: cubre 16 camiones con sus 7 días completos
+ * (`.specs/booster-fleet-ventana-completa`).
+ */
+export const PRESUPUESTO_PUNTOS_PANEL = 400_000;
+
+/**
+ * `global`: los puntos más recientes de toda la flota, hasta el tope.
+ * `por_vehiculo`: cada vehículo trae su ventana; si no cabe, el presupuesto
+ * se reparte parejo y cada uno conserva sus puntos más recientes.
+ */
+export type RepartoPuntos = 'global' | 'por_vehiculo';
+
+/**
+ * Cuántos puntos lee cada vehículo. Si todo cabe, todos. Si no, partes
+ * iguales; lo que un vehículo con pocos puntos no usa pasa a los demás.
+ */
+export function repartirPresupuesto(
+  conteos: ReadonlyMap<string, number>,
+  presupuesto: number,
+): Map<string, number> {
+  const cuotas = new Map<string, number>();
+  let total = 0;
+  for (const puntos of conteos.values()) {
+    total += puntos;
+  }
+  if (total <= presupuesto) {
+    for (const [id, puntos] of conteos) {
+      cuotas.set(id, puntos);
+    }
+    return cuotas;
+  }
+  const orden = [...conteos.entries()].sort((a, b) => a[1] - b[1]);
+  let resto = Math.max(0, presupuesto);
+  orden.forEach(([id, puntos], i) => {
+    const cuota = Math.min(puntos, Math.floor(resto / (orden.length - i)));
+    cuotas.set(id, cuota);
+    resto -= cuota;
+  });
+  return cuotas;
+}
+
+/**
+ * `io_data` con solo las claves que lee el segmentador. El resto del
+ * registro se queda en la base. Una clave ausente no viaja como null.
+ */
+const ioProyectado = sql<unknown>`jsonb_strip_nulls(jsonb_build_object(${sql.join(
+  AVL_LEIDOS_POR_SEGMENTADOR.map(
+    (clave) => sql`${sql.raw(`'${clave}'`)}, ${telemetryPoints.ioData} -> ${sql.raw(`'${clave}'`)}`,
+  ),
+  sql`, `,
+)}))`;
 
 const ioDataSchema = z.record(z.string(), z.union([z.number(), z.string()]));
 
@@ -58,6 +114,11 @@ export interface LecturaTrayectosFlota {
   hasta: string;
   vehiculosTeltonika: number;
   truncado: boolean;
+  /** Con recorte, el instante del punto más antiguo que se leyó. Null si no hubo recorte. */
+  coberturaDesde: string | null;
+  puntosLeidos: number;
+  /** Puntos que había en la ventana. Solo se cuenta en el reparto por vehículo. */
+  puntosEnVentana: number | null;
   cta: 'vincular_teltonika' | null;
   ctaSensor: boolean;
   ctaCapacidadEstanque: boolean;
@@ -80,8 +141,15 @@ export async function leerTrayectosDeLaFlota(opts: {
   hasta: Date;
   maxPuntos?: number;
   vehiculoId?: string | undefined;
+  reparto?: RepartoPuntos;
 }): Promise<LecturaTrayectosFlota> {
-  const maxPuntos = opts.maxPuntos ?? MAX_PUNTOS_TRAYECTO;
+  const reparto = opts.reparto ?? 'global';
+  // Un solo vehículo no compite con nadie: lee su ventana hasta el presupuesto.
+  const maxPuntos =
+    opts.maxPuntos ??
+    (reparto === 'por_vehiculo' || opts.vehiculoId
+      ? PRESUPUESTO_PUNTOS_PANEL
+      : MAX_PUNTOS_TRAYECTO);
 
   // rls-allowlist: solo vehículos de la empresa de la membresía activa.
   const flota = await opts.db
@@ -106,6 +174,9 @@ export async function leerTrayectosDeLaFlota(opts: {
       hasta: opts.hasta.toISOString(),
       vehiculosTeltonika: conTeltonika,
       truncado: false,
+      coberturaDesde: null,
+      puntosLeidos: 0,
+      puntosEnVentana: null,
       cta: conTeltonika === 0 ? 'vincular_teltonika' : null,
       ctaSensor: false,
       ctaCapacidadEstanque: false,
@@ -119,29 +190,83 @@ export async function leerTrayectosDeLaFlota(opts: {
   const porId = new Map(vehiculos.map((v) => [v.id, v]));
   const config = await leerUmbrales(opts.db, opts.empresaId);
 
-  // rls-allowlist: puntos de esos vehículos, ventana acotada, índice vehiculo+ts.
-  const filas = await opts.db
-    .select({
-      vehicleId: telemetryPoints.vehicleId,
-      timestampDevice: telemetryPoints.timestampDevice,
-      latitude: telemetryPoints.latitude,
-      longitude: telemetryPoints.longitude,
-      speedKmh: telemetryPoints.speedKmh,
-      ioData: telemetryPoints.ioData,
-    })
-    .from(telemetryPoints)
-    .where(
-      and(
-        inArray(telemetryPoints.vehicleId, ids),
-        gte(telemetryPoints.timestampDevice, opts.desde),
-        lte(telemetryPoints.timestampDevice, opts.hasta),
-      ),
-    )
-    .orderBy(desc(telemetryPoints.timestampDevice))
-    .limit(maxPuntos + 1);
+  const seleccion = {
+    vehicleId: telemetryPoints.vehicleId,
+    timestampDevice: telemetryPoints.timestampDevice,
+    latitude: telemetryPoints.latitude,
+    longitude: telemetryPoints.longitude,
+    speedKmh: telemetryPoints.speedKmh,
+    ioData: ioProyectado,
+  };
+  const enVentana = and(
+    gte(telemetryPoints.timestampDevice, opts.desde),
+    lte(telemetryPoints.timestampDevice, opts.hasta),
+  );
 
-  const truncado = filas.length > maxPuntos;
-  const usados = truncado ? filas.slice(0, maxPuntos) : filas;
+  let usados: Array<{
+    vehicleId: string;
+    timestampDevice: Date;
+    latitude: string | null;
+    longitude: string | null;
+    speedKmh: number | null;
+    ioData: unknown;
+  }> = [];
+  let truncado = false;
+  let puntosEnVentana: number | null = null;
+
+  if (reparto === 'por_vehiculo') {
+    // rls-allowlist: conteo por vehículo de la empresa, ventana acotada.
+    const conteos = await opts.db
+      .select({
+        vehicleId: telemetryPoints.vehicleId,
+        puntos: sql<number>`count(*)::int`,
+      })
+      .from(telemetryPoints)
+      .where(and(inArray(telemetryPoints.vehicleId, ids), enVentana))
+      .groupBy(telemetryPoints.vehicleId);
+    const porVehiculo = new Map(conteos.map((fila) => [fila.vehicleId, Number(fila.puntos)]));
+    puntosEnVentana = 0;
+    for (const puntosDelVehiculo of porVehiculo.values()) {
+      puntosEnVentana += puntosDelVehiculo;
+    }
+    const cuotas = repartirPresupuesto(porVehiculo, maxPuntos);
+    // En el orden de la flota, para que la lectura sea siempre la misma.
+    for (const vehicleId of ids) {
+      const cuota = cuotas.get(vehicleId) ?? 0;
+      if (cuota < (porVehiculo.get(vehicleId) ?? 0)) {
+        truncado = true;
+      }
+      if (cuota <= 0) {
+        continue;
+      }
+      // rls-allowlist: puntos de un vehículo de la empresa, ventana acotada, índice vehiculo+ts.
+      const delVehiculo = await opts.db
+        .select(seleccion)
+        .from(telemetryPoints)
+        .where(and(eq(telemetryPoints.vehicleId, vehicleId), enVentana))
+        .orderBy(desc(telemetryPoints.timestampDevice))
+        .limit(cuota);
+      for (const fila of delVehiculo) {
+        usados.push(fila);
+      }
+    }
+    if (truncado) {
+      opts.logger.warn(
+        { empresaId: opts.empresaId, puntosEnVentana, presupuesto: maxPuntos },
+        'trayectos-teltonika: la ventana supera el presupuesto de puntos, se recorta por vehículo',
+      );
+    }
+  } else {
+    // rls-allowlist: puntos de esos vehículos, ventana acotada, índice vehiculo+ts.
+    const filas = await opts.db
+      .select(seleccion)
+      .from(telemetryPoints)
+      .where(and(inArray(telemetryPoints.vehicleId, ids), enVentana))
+      .orderBy(desc(telemetryPoints.timestampDevice))
+      .limit(maxPuntos + 1);
+    truncado = filas.length > maxPuntos;
+    usados = truncado ? filas.slice(0, maxPuntos) : filas;
+  }
 
   let ioInvalidos = 0;
   const puntos: PuntoSegmentacion[] = [];
@@ -177,6 +302,15 @@ export async function leerTrayectosDeLaFlota(opts: {
     );
   }
 
+  let masAntiguo: number | null = null;
+  if (truncado) {
+    for (const punto of puntos) {
+      if (masAntiguo == null || punto.tMs < masAntiguo) {
+        masAntiguo = punto.tMs;
+      }
+    }
+  }
+
   const todos = segmentarTrayectosTeltonika(puntos, config);
   return {
     empresaId: opts.empresaId,
@@ -184,6 +318,9 @@ export async function leerTrayectosDeLaFlota(opts: {
     hasta: opts.hasta.toISOString(),
     vehiculosTeltonika: vehiculos.length,
     truncado,
+    coberturaDesde: masAntiguo == null ? null : new Date(masAntiguo).toISOString(),
+    puntosLeidos: puntos.length,
+    puntosEnVentana,
     cta: null,
     ctaSensor: todos.length > 0 && todos.every((t) => t.ctaSensor),
     ctaCapacidadEstanque: todos.some((t) => t.ctaCapacidadEstanque),

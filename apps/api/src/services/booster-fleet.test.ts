@@ -83,6 +83,9 @@ describe('armarPanelBoosterFleet', () => {
       vehiculos: [],
       trayectos: [],
       resumenVehiculo: null,
+      coberturaDesde: '2026-11-15T12:00:00.000Z',
+      puntosLeidos: 0,
+      puntosEnVentana: null,
     }));
     const panel = await armarPanelBoosterFleet({
       db: db as never,
@@ -98,6 +101,11 @@ describe('armarPanelBoosterFleet', () => {
     });
     expect(panel.documental.vehiculos[0]?.al_dia).toBe(false);
     expect(leer).toHaveBeenCalledOnce();
+    expect(leer).toHaveBeenCalledWith(
+      expect.objectContaining({ reparto: 'por_vehiculo', maxPuntos: 400_000 }),
+    );
+    // Sin recorte, el panel no dice desde cuándo aunque la lectura lo traiga.
+    expect('cobertura_desde' in panel.combustible).toBe(false);
   });
 
   it('sin zona guardada usa America/Santiago y marca el tope de mantenciones', async () => {
@@ -126,11 +134,15 @@ describe('armarPanelBoosterFleet', () => {
         vehiculos: [],
         trayectos: [],
         resumenVehiculo: null,
+        coberturaDesde: '2026-11-16T03:00:00.000Z',
+        puntosLeidos: 0,
+        puntosEnVentana: null,
       })),
     });
     expect(panel.mantenciones.truncadas).toBe(true);
     expect(panel.mantenciones.items).toHaveLength(500);
     expect(panel.combustible.truncado).toBe(true);
+    expect(panel.combustible.cobertura_desde).toBe('2026-11-16T03:00:00.000Z');
   });
 
   it('traduce fechas de documentos y trayectos, y lee el combustible por defecto', async () => {
@@ -210,6 +222,9 @@ describe('armarPanelBoosterFleet', () => {
           } as LecturaTrayectosFlota['trayectos'][number],
         ],
         resumenVehiculo: null,
+        coberturaDesde: null,
+        puntosLeidos: 0,
+        puntosEnVentana: null,
       })),
     });
     expect(panel.combustible.litros).toBe(12);

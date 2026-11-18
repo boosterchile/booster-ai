@@ -1132,7 +1132,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/booster-fleet/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use('/booster-fleet', firebaseAuthMiddleware);
     app.use('/booster-fleet', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/booster-fleet', createBoosterFleetRoutes({ db: opts.db, logger }));
+    app.route(
+      '/booster-fleet',
+      createBoosterFleetRoutes({
+        db: opts.db,
+        logger,
+        presupuestoPuntos: config.BOOSTER_FLEET_PRESUPUESTO_PUNTOS,
+      }),
+    );
 
     // BARH-24 — alta de viaje propio (fuera del matching).
     app.use('/viajes-propios/*', guardiaVisibilidadTransportista);

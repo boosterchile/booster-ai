@@ -41,6 +41,8 @@ export function createBoosterFleetRoutes(opts: {
   db: Db;
   logger: Logger;
   ahora?: () => Date;
+  /** Puntos de telemetría por consulta del panel. Sale de la configuración. */
+  presupuestoPuntos?: number | undefined;
 }): Hono {
   const app = new Hono();
   const ahora = opts.ahora ?? (() => new Date());
@@ -87,12 +89,14 @@ export function createBoosterFleetRoutes(opts: {
             logger: opts.logger,
             empresaId: auth.empresaId,
             ahora: ahora(),
+            presupuestoPuntos: opts.presupuestoPuntos,
           }),
         );
         consultas.add(1, { resultado: panel.combustible.truncado ? 'truncado' : 'ok' });
         setResultAttributes(span, {
           'booster.fleet.vehiculos': panel.combustible.vehiculos.length,
           'booster.fleet.alertas_combustible': panel.combustible.con_alerta,
+          'booster.fleet.combustible_truncado': panel.combustible.truncado,
           'booster.fleet.documentos_vehiculo': panel.documental.vehiculos_con_hallazgo,
           'booster.fleet.documentos_conductor': panel.documental.conductores_con_hallazgo,
           'booster.fleet.mantenciones_vencidas': panel.mantenciones.vencidas,
