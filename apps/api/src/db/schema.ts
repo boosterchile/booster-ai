@@ -3577,7 +3577,7 @@ export const certificadosViaje = pgTable(
     ),
     motivoValido: check(
       'ck_certificados_viaje_motivo',
-      sql`(version = 1 AND motivo_reemision IS NULL) OR (version > 1 AND motivo_reemision IS NOT NULL AND motivo_reemision IN ('factor_impreso_no_corresponde'))`,
+      sql`(version = 1 AND motivo_reemision IS NULL) OR (version > 1 AND motivo_reemision IS NOT NULL AND motivo_reemision IN ('factor_impreso_no_corresponde', 'distancia_medida_no_plausible'))`,
     ),
   }),
 );

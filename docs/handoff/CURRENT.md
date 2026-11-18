@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-18 · America/Santiago (Booster Fleet en prod con el rediseño, la lectura completa de 7 días y la lectura sin espera; falta verlo con sesión).  
+**Última actualización**: 2026-11-18 · America/Santiago (Booster Fleet en prod con el rediseño, la lectura completa de 7 días y la lectura sin espera; falta verlo con sesión. Reemisión por distancia no plausible en PR, pendiente del visto del PO).  
 **Prod**: `21532312` (Release [44387563129](https://github.com/boosterchile/booster-ai/actions/runs/44387563129) SUCCESS, terminó el 2026-11-18 a las 17:50) — api `booster-ai-api-00490-g94` @ **100 %**, web `00432-tj2` @ 100 %; los 8 servicios en esa imagen. Cuarto release del día: 09:53 (`cbe37242`, rediseño y lectura completa), 12:13 (`5eaf4d38`, corrección de memoria #1023), 15:12 (`43df7972`, registro por fases #1025) y este, con la lectura sin espera (#1027 y #1028). Sin migraciones.  
 **`main`**: tip `21532312` (#1028), igual a prod. Nada pendiente de deploy.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
@@ -59,6 +59,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 3. 1 viaje E2E sin parche → cert (E4).
 4. 1 reclamo o matching real + 1 viaje propio (E5–E6).
 5. Viaje sin FMC150 + DQ (E7); luego cobro técnico (E8).
+6. Visto al PR de reemisión por distancia no plausible; luego correr los dos jobs (en seco y real) sobre BOO-BKAXIK, BOO-KY7G69 y la ruta de prueba, y reemitir BOO-YWKZWR por el factor.
 
 ## Booster Fleet
 
@@ -81,6 +82,10 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 **Lectura sin espera** (spec aceptada el 2026-11-18, `.specs/booster-fleet-lectura-sin-espera/`; plan en `plan.md`; en prod). La lectura completa de la flota más grande toma 8 a 10 s en prod, contra el objetivo de 4 s de la spec anterior: el registro por fases de [#1025](https://github.com/boosterchile/booster-ai/pull/1025) mostró el tiempo repartido (unos 4 s leyendo de la base, 2,4 s convirtiendo y 1,4 s segmentando, para unos 204.000 puntos), sin una fase culpable; la base responde cada tanda en 27 ms y el resto es CPU del API. En vez de perseguir ese tiempo, el PO aceptó que el dueño no lo espere: [#1027](https://github.com/boosterchile/booster-ai/pull/1027) guarda cada lectura con su hora por 24 horas y la entrega con `?combustible=guardada` (campos nuevos `combustible.leido_en` y `combustible.al_dia`; sin el parámetro el API responde al día, como antes), y [#1028](https://github.com/boosterchile/booster-ai/pull/1028) hace que la pantalla muestre la guardada con «Combustible leído a las HH:MM», pida la nueva y reemplace las cifras. **Medido en prod el 2026-11-18:** con una lectura guardada de 57 minutos, el panel respondió en 0,75 s (criterio 9 de la spec: menos de 1 s) y la lectura nueva llegó 8,8 s después; la primera apertura, sin lectura guardada, tardó 9,2 s. **Queda:** la primera apertura del día sigue esperando la lectura completa; una tarea programada que lea por adelantado es decisión del PO con datos de uso (spec §7.3). El objetivo de 4 s quedó reemplazado por el criterio 9.
 
 **Configuración de la flota más grande** (prod, solo lectura, 2026-11-17): de sus 12 vehículos activos, 4 no tienen Teltonika y 6 están configurados sin sensor de combustible, aunque 3 de esos envían nivel o consumo. Solo 2 tienen fuente y capacidad de estanque, y usan consumo acumulado, que no sirve para detectar una baja con el camión detenido. Con esa configuración el panel no puede mostrarle una desviación a esa flota. Se corrige configurando la fuente y la capacidad de cada camión, no con código.
+
+## Reemisión por distancia no plausible
+
+**En PR** (rama `feat/reemision-distancia-no-plausible`, spec `.specs/reemision-distancia-no-plausible/`), pendiente del visto del PO: esquema (migración 0087 amplía `ck_certificados_viaje_motivo`), certificado (motivo nuevo, la cifra pasa a la estimación) y escritura en prod. Cuatro certificados emitidos antes de la regla de distancia plausible publican cifras «reales» sobre distancias que no cubren el recorrido: BOO-BKAXIK (2,51 km de 500), BOO-KY7G69 (195,95 de 471,60) y la ruta de prueba BOO-4FF3XA + BOO-VZYIN2 (0,03 de 37,75; imprimen 0,02 y 0,01 kg). Dos pasos, los dos jobs en seco por defecto y los corre el PO: `corregir-distancia-no-plausible.ts` deja la huella guardada como la dejaría hoy el cierre (unidad = ruta compartida o viaje solo), y `reemitir-certificado.ts` con `MOTIVO=distancia_medida_no_plausible` emite la versión siguiente con la línea de reemplazo, un viaje por corrida. Muestras generadas en local el 2026-11-18 con el generador de `main`: BOO-YWKZWR v2 (Teltonika, sin sello) y BOO-4FF3XA como saldría corregido, en `.tmp-data-ops/` del checkout principal (sin versionar).
 
 ## Agente
 
