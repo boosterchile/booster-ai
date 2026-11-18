@@ -59,7 +59,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 3. 1 viaje E2E sin parche → cert (E4).
 4. 1 reclamo o matching real + 1 viaje propio (E5–E6).
 5. Viaje sin FMC150 + DQ (E7); luego cobro técnico (E8).
-6. Visto al PR de reemisión por distancia no plausible; luego correr los dos jobs (en seco y real) sobre BOO-BKAXIK, BOO-KY7G69 y la ruta de prueba, y reemitir BOO-YWKZWR por el factor.
+6. Visto al PR de reemisión por distancia no plausible y deploy; luego el paso 2 para BOO-4FF3XA y BOO-VZYIN2, el paso 1 y 2 para BOO-BKAXIK y BOO-KY7G69, y reemitir BOO-YWKZWR por el factor.
 
 ## Booster Fleet
 
@@ -85,7 +85,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 
 ## Reemisión por distancia no plausible
 
-**En PR** (rama `feat/reemision-distancia-no-plausible`, spec `.specs/reemision-distancia-no-plausible/`), pendiente del visto del PO: esquema (migración 0087 amplía `ck_certificados_viaje_motivo`), certificado (motivo nuevo, la cifra pasa a la estimación) y escritura en prod. Cuatro certificados emitidos antes de la regla de distancia plausible publican cifras «reales» sobre distancias que no cubren el recorrido: BOO-BKAXIK (2,51 km de 500), BOO-KY7G69 (195,95 de 471,60) y la ruta de prueba BOO-4FF3XA + BOO-VZYIN2 (0,03 de 37,75; imprimen 0,02 y 0,01 kg). Dos pasos, los dos jobs en seco por defecto y los corre el PO: `corregir-distancia-no-plausible.ts` deja la huella guardada como la dejaría hoy el cierre (unidad = ruta compartida o viaje solo), y `reemitir-certificado.ts` con `MOTIVO=distancia_medida_no_plausible` emite la versión siguiente con la línea de reemplazo, un viaje por corrida. Muestras generadas en local el 2026-11-18 con el generador de `main`: BOO-YWKZWR v2 (Teltonika, sin sello) y BOO-4FF3XA como saldría corregido, en `.tmp-data-ops/` del checkout principal (sin versionar).
+**En PR** (rama `feat/reemision-distancia-no-plausible`, spec `.specs/reemision-distancia-no-plausible/`), pendiente del visto del PO: esquema (migración 0087 amplía `ck_certificados_viaje_motivo`), certificado (motivo nuevo, la cifra pasa a la estimación) y escritura en prod. Cuatro certificados emitidos antes de la regla de distancia plausible publican cifras «reales» sobre distancias que no cubren el recorrido: BOO-BKAXIK (2,51 km de 500), BOO-KY7G69 (195,95 de 471,60) y la ruta de prueba BOO-4FF3XA + BOO-VZYIN2 (0,03 de 37,75; imprimen 0,02 y 0,01 kg). Dos pasos, los dos jobs en seco por defecto y los corre el PO: `corregir-distancia-no-plausible.ts` deja la huella guardada como la dejaría hoy el cierre (unidad = ruta compartida o viaje solo), y `reemitir-certificado.ts` con `MOTIVO=distancia_medida_no_plausible` emite la versión siguiente con la línea de reemplazo, un viaje por corrida. **Paso 1 ya corrido en prod por el PO (2026-11-18 23:28Z) sobre la ruta de prueba**, verificado en solo lectura: `metricas_ruta` y las dos `metricas_viaje` sin cifras reales, `maps_directions`, cobertura 0, `distancia_no_plausible`, un evento por carga; las dos v1 siguen vigentes y publican 0,02 y 0,01 kg hasta el paso 2, que necesita la migración 0087 en prod (merge + deploy). BOO-BKAXIK y BOO-KY7G69 sin corregir. Muestras generadas en local el 2026-11-18 con el generador de `main`: BOO-YWKZWR v2 (Teltonika, sin sello) y BOO-4FF3XA como saldría corregido, en `.tmp-data-ops/` del checkout principal (sin versionar).
 
 ## Agente
 
