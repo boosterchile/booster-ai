@@ -132,6 +132,29 @@ Decisiones tomadas en este PR:
 - La medición de memoria no queda como test automático: depende del heap
   del proceso. Queda la regla de medir con `--max-old-space-size=512`.
 
+## PR 5 — Saber dónde se va el tiempo de la lectura
+
+Después del segundo despliegue (2026-11-18), la primera lectura real de la
+flota más grande tomó unos 10 s en producción, contra el objetivo de 4 s de
+la spec §4.4 y 1 s en local. La base respondió todo en cerca de 1,3 s
+(medido en solo lectura); el resto fue CPU del API, y la traza de esa
+petición no quedó guardada. No se sabe qué fase lo gasta.
+
+- [x] La lectura registra cuánto tomó cada fase: conteo, lectura de la
+      base, conversión y segmentación, más el total, los puntos y las
+      tandas. Un registro por lectura, sin datos de la flota.
+- [x] El `io_data` de cada punto se revisa a mano en vez de con Zod, con la
+      misma regla: objeto de números finitos o textos, o se descarta entero.
+- [x] Tests primero, con el rojo en la Evidencia del PR.
+
+Medición del 2026-11-18, 120.000 puntos sintéticos leídos, heap de 512 MB,
+cinco corridas: de 946–1.058 ms a 837–979 ms, cerca de un 11 % menos.
+
+Este PR no cumple el objetivo de 4 s; sirve para decidir el siguiente paso
+con datos. Queda planteado al PO que el dueño no espere la lectura: servir
+la última guardada y refrescarla en segundo plano, o calentarla con una
+tarea programada.
+
 ## Fuera de esta serie
 
 - La tabla de trayectos ya segmentados (spec §7).

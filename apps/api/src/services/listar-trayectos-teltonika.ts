@@ -1,6 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from 'drizzle-orm';
-import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { empresas, telemetryPoints, vehicles } from '../db/schema.js';
 import { type ResumenHubVehiculo, resumirHubVehiculo } from '../domain/resumir-hub-vehiculo.js';
@@ -98,8 +97,6 @@ interface FilaPunto {
   speedKmh: number | null;
   ioData: unknown;
 }
-
-const ioDataSchema = z.record(z.string(), z.union([z.number(), z.string()]));
 
 /**
  * `con_dato`: trayectos con alguna fuente de combustible (84, 83 o 89).
@@ -238,7 +235,12 @@ export async function leerTrayectosDeLaFlota(opts: {
   let ioInvalidos = 0;
   let puntosLeidos = 0;
   let masAntiguo: number | null = null;
+  // Cuánto toma cada fase, para saber dónde se va el tiempo en producción.
+  const inicio = performance.now();
+  const fases = { conteoMs: 0, baseMs: 0, conversionMs: 0, segmentacionMs: 0 };
+  let tandas = 0;
   const convertir = (filas: readonly FilaPunto[], puntos: PuntoSegmentacion[]) => {
+    const t0 = performance.now();
     for (const fila of filas) {
       const vehiculo = porId.get(fila.vehicleId);
       if (!vehiculo) {
@@ -267,8 +269,10 @@ export async function leerTrayectosDeLaFlota(opts: {
         io: io ?? {},
       });
     }
+    fases.conversionMs += performance.now() - t0;
   };
   const segmentar = (puntos: readonly PuntoSegmentacion[]) => {
+    const t0 = performance.now();
     puntosLeidos += puntos.length;
     for (const trayecto of segmentarTrayectosTeltonika(puntos, config)) {
       trayectos.push(trayecto);
@@ -276,12 +280,14 @@ export async function leerTrayectosDeLaFlota(opts: {
     for (const resumen of resumirCombustibleVehiculos(puntos)) {
       combustibleVehiculos.push(resumen);
     }
+    fases.segmentacionMs += performance.now() - t0;
   };
 
   let truncado = false;
   let puntosEnVentana: number | null = null;
 
   if (reparto === 'por_vehiculo') {
+    const antesDelConteo = performance.now();
     // rls-allowlist: conteo por vehículo de la empresa, ventana acotada.
     const conteos = await opts.db
       .select({
@@ -291,6 +297,7 @@ export async function leerTrayectosDeLaFlota(opts: {
       .from(telemetryPoints)
       .where(and(inArray(telemetryPoints.vehicleId, ids), enVentana))
       .groupBy(telemetryPoints.vehicleId);
+    fases.conteoMs = performance.now() - antesDelConteo;
     const porVehiculo = new Map(conteos.map((fila) => [fila.vehicleId, Number(fila.puntos)]));
     puntosEnVentana = 0;
     for (const puntosDelVehiculo of porVehiculo.values()) {
@@ -314,6 +321,7 @@ export async function leerTrayectosDeLaFlota(opts: {
       let antesDe: Date | null = null;
       while (restante > 0) {
         const pedir = Math.min(restante, FILAS_POR_TANDA);
+        const antesDeLaTanda = performance.now();
         // rls-allowlist: puntos de un vehículo de la empresa, ventana acotada, índice vehiculo+ts.
         const filas: FilaPunto[] = await opts.db
           .select(seleccion)
@@ -327,6 +335,8 @@ export async function leerTrayectosDeLaFlota(opts: {
           )
           .orderBy(desc(telemetryPoints.timestampDevice))
           .limit(pedir);
+        fases.baseMs += performance.now() - antesDeLaTanda;
+        tandas += 1;
         convertir(filas, delVehiculo);
         restante -= filas.length;
         const ultima = filas[filas.length - 1];
@@ -347,6 +357,7 @@ export async function leerTrayectosDeLaFlota(opts: {
     // Un vehículo solo tampoco pasa de su tope; el listado de la flota ya
     // viene acotado por `MAX_PUNTOS_TRAYECTO`.
     const tope = opts.vehiculoId ? Math.min(maxPuntos, MAX_PUNTOS_POR_VEHICULO) : maxPuntos;
+    const antesDeLeer = performance.now();
     // rls-allowlist: puntos de esos vehículos, ventana acotada, índice vehiculo+ts.
     const filas = await opts.db
       .select(seleccion)
@@ -354,6 +365,8 @@ export async function leerTrayectosDeLaFlota(opts: {
       .where(and(inArray(telemetryPoints.vehicleId, ids), enVentana))
       .orderBy(desc(telemetryPoints.timestampDevice))
       .limit(tope + 1);
+    fases.baseMs = performance.now() - antesDeLeer;
+    tandas = 1;
     truncado = filas.length > tope;
     const puntos: PuntoSegmentacion[] = [];
     convertir(truncado ? filas.slice(0, tope) : filas, puntos);
@@ -368,6 +381,21 @@ export async function leerTrayectosDeLaFlota(opts: {
   }
 
   const todos = trayectos.sort(compararTrayectos);
+  opts.logger.info(
+    {
+      empresaId: opts.empresaId,
+      reparto,
+      vehiculos: vehiculos.length,
+      puntosLeidos,
+      tandas,
+      conteoMs: Math.round(fases.conteoMs),
+      baseMs: Math.round(fases.baseMs),
+      conversionMs: Math.round(fases.conversionMs),
+      segmentacionMs: Math.round(fases.segmentacionMs),
+      totalMs: Math.round(performance.now() - inicio),
+    },
+    'trayectos-teltonika: lectura por fases',
+  );
   const coberturaDesde = truncado && masAntiguo != null ? new Date(masAntiguo).toISOString() : null;
   return {
     empresaId: opts.empresaId,
@@ -454,15 +482,25 @@ async function leerUmbrales(db: Db, empresaId: string): Promise<ConfigRoboCombus
   };
 }
 
-function ioNumerico(ioData: unknown): Record<string, number> | null {
-  const parsed = ioDataSchema.safeParse(ioData);
-  if (!parsed.success) {
+/**
+ * Los valores numéricos de un `io_data`. Vale un objeto cuyos valores son
+ * números finitos o textos; cualquier otra forma lo invalida entero y
+ * devuelve null. Se revisa a mano porque corre una vez por punto, cientos
+ * de miles de veces por lectura.
+ */
+export function ioNumerico(ioData: unknown): Record<string, number> | null {
+  if (typeof ioData !== 'object' || ioData === null || Array.isArray(ioData)) {
     return null;
   }
   const io: Record<string, number> = {};
-  for (const [clave, valor] of Object.entries(parsed.data)) {
-    if (typeof valor === 'number' && Number.isFinite(valor)) {
+  for (const [clave, valor] of Object.entries(ioData)) {
+    if (typeof valor === 'number') {
+      if (!Number.isFinite(valor)) {
+        return null;
+      }
       io[clave] = valor;
+    } else if (typeof valor !== 'string') {
+      return null;
     }
   }
   return io;
