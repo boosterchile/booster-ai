@@ -610,6 +610,13 @@
       "when": 1781481600420,
       "tag": "0086_booster_fleet_mantenciones",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1781568000420,
+      "tag": "0087_reemision_distancia_no_plausible",
+      "breakpoints": true
     }
   ]
 }

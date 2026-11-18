@@ -357,6 +357,7 @@ describe('simularReemision — en seco', () => {
       versionNueva: 2,
       sha256Vigente: sha('a'),
       rutaPdf: 'certificates/e/BOO-X.v2.pdf',
+      motivo: 'factor_impreso_no_corresponde',
       factorAnterior: 3.25,
       factorNuevo: 3.24,
       litros: 182.33,
@@ -399,5 +400,137 @@ describe('simularReemision — en seco', () => {
       code: 'correccion_no_corresponde',
     });
     expect(m.generarPdfBase).not.toHaveBeenCalled();
+  });
+});
+
+describe('reemitirCertificado — motivo distancia_medida_no_plausible (spec reemision-distancia-no-plausible)', () => {
+  const DISTANCIA = { motivo: 'distancia_medida_no_plausible' } as const;
+  const DECIDIDO = new Date('2026-11-19T15:00:00Z');
+  /** La huella guardada tras el paso 1: solo la estimación, con la decisión registrada. */
+  const CORREGIDA = {
+    ...METRICAS,
+    distanceKmActual: null,
+    carbonEmissionsKgco2eActual: null,
+    fuelConsumedLActual: null,
+    routeDataSource: 'maps_directions',
+    coveragePct: '0.00',
+    fuenteDistancia: 'routes_estimada',
+    motivoFallback: 'distancia_no_plausible',
+    decisionVersion: 3,
+    decididoEn: DECIDIDO,
+  };
+  const conMotivo = (db: never) => reemitir(db, { correccion: DISTANCIA });
+
+  it.each([
+    ['huella sin corregir', METRICAS],
+    ['corregida por otro motivo', { ...CORREGIDA, motivoFallback: 'cobertura_bajo_umbral' }],
+    ['todavía con fuente medida', { ...CORREGIDA, routeDataSource: 'movil_gps' }],
+    ['todavía con cifras reales', { ...CORREGIDA, carbonEmissionsKgco2eActual: '0.015' }],
+    [
+      'certificado vigente posterior a la corrección',
+      { ...CORREGIDA, decididoEn: new Date('2026-11-01T00:00:00Z') },
+    ],
+    ['sin fecha de decisión', { ...CORREGIDA, decididoEn: null }],
+  ])('corrección que no corresponde: %s', async (_n, metricas) => {
+    const { db } = baseFalsa([VIAJE], [metricas]);
+    expect(await conMotivo(db)).toMatchObject({ code: 'correccion_no_corresponde' });
+    expect(m.emitirCertificado).not.toHaveBeenCalled();
+  });
+
+  it('sin estimación no hay cifra que publicar', async () => {
+    const { db } = baseFalsa([VIAJE], [{ ...CORREGIDA, carbonEmissionsKgco2eEstimated: null }]);
+    expect(await conMotivo(db)).toMatchObject({ code: 'datos_insuficientes' });
+    expect(m.emitirCertificado).not.toHaveBeenCalled();
+  });
+
+  it('reemite con la huella guardada tal cual, con el motivo en la versión y en el evento', async () => {
+    const { db, insertados } = baseFalsa([VIAJE], [CORREGIDA]);
+    const r = await conMotivo(db);
+
+    expect(r).toMatchObject({ ok: true, version: 2, sha256Nuevo: sha('b') });
+    // Las métricas van al PDF sin tocar: ni el factor ni las cifras cambian en memoria.
+    expect(m.armarDatosEmision.mock.calls[0]?.[0].metrics).toMatchObject({
+      emissionFactorUsed: '3.25000',
+      carbonEmissionsKgco2eActual: null,
+      routeDataSource: 'maps_directions',
+      motivoFallback: 'distancia_no_plausible',
+    });
+    expect(m.emitirCertificado).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 2,
+        viaje: {
+          trackingCode: 'X',
+          version: {
+            numero: 2,
+            reemplazaA: 1,
+            reemplazaEmitidoEn: EMITIDO_V1,
+            motivo: 'distancia_medida_no_plausible',
+          },
+        },
+      }),
+    );
+    expect(m.crearVersionEnTx).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        sha256: sha('b'),
+        fuenteDistancia: 'routes_estimada',
+        motivoFallback: 'distancia_no_plausible',
+        decisionVersion: 3,
+      }),
+      'distancia_medida_no_plausible',
+      'c1',
+    );
+    expect(insertados[0]).toMatchObject({
+      eventType: 'certificado_reemitido',
+      recordedByUserId: 'po',
+      payload: {
+        motivo: 'distancia_medida_no_plausible',
+        version_anterior: 1,
+        version_nueva: 2,
+        correccion: {
+          distancia_medida: 'no_plausible',
+          fuente_distancia_anterior: null,
+          emisiones_kgco2e_publicadas: 545.764,
+        },
+      },
+    });
+  });
+
+  it('si la huella cambió antes de la transacción, falla como concurrente', async () => {
+    const { db } = baseFalsa([VIAJE], [CORREGIDA], []);
+    await expect(conMotivo(db)).rejects.toBeInstanceOf(ReemisionConcurrenteError);
+    expect(m.crearVersionEnTx).not.toHaveBeenCalled();
+  });
+
+  it('la corrida en seco informa el motivo y la cifra que publicaría, sin factor', async () => {
+    m.armarDatosEmision.mockResolvedValueOnce({
+      ok: true,
+      datos: {
+        viaje: { trackingCode: 'BOO-X' },
+        metricas: {},
+        empresaShipper: { id: 'e', legalName: 'E', rut: null },
+      },
+    });
+    m.generarPdfBase.mockResolvedValueOnce(new Uint8Array(900));
+    const { db } = baseFalsa([{ ...VIAJE, trackingCode: 'BOO-X' }], [CORREGIDA]);
+    const r = await simularReemision({
+      db,
+      logger,
+      tripId: 'v',
+      correccion: DISTANCIA,
+      solicitadoPorUserId: null,
+      verifyBaseUrl: 'https://api',
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      motivo: 'distancia_medida_no_plausible',
+      versionNueva: 2,
+      litros: 167.93,
+      emisionesKg: 545.764,
+      fuenteDistanciaAnterior: null,
+      pdfBytes: 900,
+    });
+    expect(r).not.toHaveProperty('factorNuevo');
+    expect(m.emitirCertificado).not.toHaveBeenCalled();
   });
 });

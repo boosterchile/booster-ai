@@ -7,12 +7,22 @@
  * Lista cerrada de motivos (spec §3.4). La restricción
  * `ck_certificados_viaje_motivo` de la base repite esta lista.
  */
-export const MOTIVOS_REEMISION = ['factor_impreso_no_corresponde'] as const;
+export const MOTIVOS_REEMISION = [
+  'factor_impreso_no_corresponde',
+  // La distancia medida no cubría el recorrido (`.specs/reemision-distancia-no-plausible/`
+  // §3.3): la versión nueva publica la estimación guardada.
+  'distancia_medida_no_plausible',
+] as const;
 export type MotivoReemision = (typeof MOTIVOS_REEMISION)[number];
 
-/** Cómo se lee cada motivo en el certificado. */
+/**
+ * Cómo se lee cada motivo en el certificado. Cada texto tiene que caber, con el
+ * resto de la línea de reemplazo, en una línea de la plantilla (test de la
+ * lista cerrada en `test/reemision-plantilla.test.ts`).
+ */
 export const TEXTO_MOTIVO_REEMISION: Readonly<Record<MotivoReemision, string>> = {
   factor_impreso_no_corresponde: 'el factor de emisión impreso no era el usado en el cálculo',
+  distancia_medida_no_plausible: 'la distancia medida no era plausible para el recorrido',
 };
 
 /** La versión 1 no reemplaza a nadie; una posterior dice a cuál, de cuándo y por qué. */

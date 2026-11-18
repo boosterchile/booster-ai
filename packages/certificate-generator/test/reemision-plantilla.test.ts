@@ -156,3 +156,52 @@ describe('certificado reemitido — criterio 5: la cifra se explica con lo impre
     expect(Math.abs(182.33 * factor - 590.75)).toBeGreaterThan(0.005 * factor + 0.005);
   });
 });
+
+describe('motivo distancia_medida_no_plausible (spec reemision-distancia-no-plausible §3.3)', () => {
+  /** La huella guardada tras la corrección del paso 1: solo la estimación. */
+  const estimadoTrasCorreccion: DatosMetricasCertificado = {
+    distanciaKmEstimated: 11.69,
+    distanciaKmActual: null,
+    kgco2eWtwEstimated: 20.864,
+    kgco2eWtwActual: null,
+    kgco2eTtw: null,
+    kgco2eWtt: null,
+    combustibleConsumido: 6.44,
+    combustibleUnidad: 'L',
+    intensidadGco2ePorTonKm: null,
+    precisionMethod: 'por_defecto',
+    glecVersion: 'v3.0',
+    emissionFactorUsado: 3.24,
+    fuenteFactores: 'GLEC Framework v2.0 (2019)',
+    calculatedAt: new Date('2026-11-16T02:26:08Z'),
+    routeDataSource: 'maps_directions',
+    coveragePct: 0,
+    certificationLevel: 'secundario_modeled',
+    uncertaintyFactor: 0.35,
+  };
+  const porDistancia = {
+    numero: 2,
+    reemplazaA: 1,
+    reemplazaEmitidoEn: new Date('2026-11-16T15:00:00Z'),
+    motivo: 'distancia_medida_no_plausible',
+  } as const;
+
+  it('está en la lista cerrada, con su texto', () => {
+    expect(MOTIVOS_REEMISION).toContain('distancia_medida_no_plausible');
+    expect(TEXTO_MOTIVO_REEMISION[porDistancia.motivo]).toBe(
+      'la distancia medida no era plausible para el recorrido',
+    );
+  });
+
+  it('el certificado reemitido publica la estimación con sello Estimado y dice por qué', async () => {
+    const todo = await texto({ ...viaje, version: porDistancia }, estimadoTrasCorreccion);
+    expect(todo).toContain(
+      'Reemplaza a la versión 1, emitida el 16-11-2026. Motivo: la distancia medida no era plausible para el recorrido.',
+    );
+    expect(todo).toContain('Versión 2 · reemplaza a v1');
+    expect(todo).toContain('20,86 kg CO₂e (± 7,30 kg)');
+    expect(todo).toContain('Estimado · datos secundarios modelados · 0% telemetría');
+    expect(todo).toContain('Distancia: 11,7 km (estimada)');
+    expect(todo).not.toContain('0,02 kg');
+  });
+});

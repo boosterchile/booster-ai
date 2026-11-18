@@ -13,9 +13,11 @@
 // Variables:
 //   DATABASE_URL            conexión (la ejecuta el PO; el agente no escribe en prod)
 //   CODIGO_SEGUIMIENTO      viaje a reemitir (p. ej. BOO-YWKZWR)
-//   MOTIVO                  de la lista cerrada (hoy: factor_impreso_no_corresponde)
-//   FACTOR_ANTERIOR         factor guardado hoy, kg CO2e/L (p. ej. 3.25)
-//   FACTOR_NUEVO            factor que explica la cifra publicada (p. ej. 3.24)
+//   MOTIVO                  de la lista cerrada: factor_impreso_no_corresponde o
+//                           distancia_medida_no_plausible (este exige haber corrido antes
+//                           corregir-distancia-no-plausible.ts sobre el viaje o su ruta)
+//   FACTOR_ANTERIOR         solo con el factor: factor guardado hoy, kg CO2e/L (p. ej. 3.25)
+//   FACTOR_NUEVO            solo con el factor: el que explica la cifra publicada (p. ej. 3.24)
 //   SOLICITADO_POR_USER_ID  opcional: usuario que queda en el evento del viaje
 //   DRY_RUN                 "false" para escribir; cualquier otro valor = en seco (default)
 //   CONFIRMAR_DESTINO       <host>:<port>/<db> que imprime la corrida en seco;
@@ -37,6 +39,7 @@ import { z } from 'zod';
 import { createDb } from '../db/client.js';
 import { trips } from '../db/schema.js';
 import {
+  type Correccion,
   type ResultadoReemision,
   type ResultadoSimulacion,
   reemitirCertificado,
@@ -53,24 +56,50 @@ const factor = z
   .transform(Number)
   .refine((n) => n > 0 && n < 100, 'factor fuera de rango');
 
-const envSchema = z.object({
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL es requerida'),
-  // Los códigos se generan en mayúsculas (BOO-XXXXXX).
-  CODIGO_SEGUIMIENTO: z
-    .string()
-    .trim()
-    .min(1, 'CODIGO_SEGUIMIENTO es requerido')
-    .transform((c) => c.toUpperCase()),
-  MOTIVO: z.enum(MOTIVOS_REEMISION),
-  FACTOR_ANTERIOR: factor,
-  FACTOR_NUEVO: factor,
-  SOLICITADO_POR_USER_ID: z.string().uuid().optional(),
-  DRY_RUN: z.string().optional(),
-  CONFIRMAR_DESTINO: z.string().optional(),
-  CERTIFICATE_SIGNING_KEY_ID: z.string().min(1).optional(),
-  CERTIFICATES_BUCKET: z.string().min(1).optional(),
-  VERIFY_BASE_URL: z.string().url().optional(),
-});
+const envSchema = z
+  .object({
+    DATABASE_URL: z.string().min(1, 'DATABASE_URL es requerida'),
+    // Los códigos se generan en mayúsculas (BOO-XXXXXX).
+    CODIGO_SEGUIMIENTO: z
+      .string()
+      .trim()
+      .min(1, 'CODIGO_SEGUIMIENTO es requerido')
+      .transform((c) => c.toUpperCase()),
+    MOTIVO: z.enum(MOTIVOS_REEMISION),
+    FACTOR_ANTERIOR: factor.optional(),
+    FACTOR_NUEVO: factor.optional(),
+    SOLICITADO_POR_USER_ID: z.string().uuid().optional(),
+    DRY_RUN: z.string().optional(),
+    CONFIRMAR_DESTINO: z.string().optional(),
+    CERTIFICATE_SIGNING_KEY_ID: z.string().min(1).optional(),
+    CERTIFICATES_BUCKET: z.string().min(1).optional(),
+    VERIFY_BASE_URL: z.string().url().optional(),
+  })
+  .superRefine((e, ctx) => {
+    // Solo la corrección del factor lleva los dos factores; la de distancia no corrige ningún dato.
+    if (e.MOTIVO === 'factor_impreso_no_corresponde') {
+      for (const k of ['FACTOR_ANTERIOR', 'FACTOR_NUEVO'] as const) {
+        if (e[k] === undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [k],
+            message: `${k} es requerido con MOTIVO=${e.MOTIVO}`,
+          });
+        }
+      }
+    }
+  });
+
+/** La corrección que pide el entorno, ya validada. */
+function correccionDe(p: z.infer<typeof envSchema>): Correccion {
+  if (p.MOTIVO === 'factor_impreso_no_corresponde') {
+    if (p.FACTOR_ANTERIOR === undefined || p.FACTOR_NUEVO === undefined) {
+      throw new Error('FACTOR_ANTERIOR y FACTOR_NUEVO son requeridos con el motivo del factor');
+    }
+    return { motivo: p.MOTIVO, factorAnterior: p.FACTOR_ANTERIOR, factorNuevo: p.FACTOR_NUEVO };
+  }
+  return { motivo: p.MOTIVO };
+}
 
 export type ResultadoJobReemision =
   | ({ readonly dryRun: true; readonly codigoSeguimiento: string } & ResultadoSimulacion)
@@ -136,11 +165,7 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<Result
         db,
         logger,
         tripId: trip.id,
-        correccion: {
-          motivo: p.MOTIVO,
-          factorAnterior: p.FACTOR_ANTERIOR,
-          factorNuevo: p.FACTOR_NUEVO,
-        },
+        correccion: correccionDe(p),
         solicitadoPorUserId: p.SOLICITADO_POR_USER_ID ?? null,
       };
       r = dryRun
