@@ -11,6 +11,7 @@ import {
   fraseEstado,
   hallazgosDocumentales,
   medianaLectura,
+  momentoDeLectura,
 } from './reglas.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -287,5 +288,26 @@ describe('hallazgosDocumentales', () => {
       ['AAAA11', 'SOAP', 'Por vencer · 1 dic'],
     ]);
     expect(JSON.stringify(hallazgos)).not.toContain('11.111.111-1');
+  });
+});
+
+describe('momentoDeLectura', () => {
+  const ahora = new Date('2026-11-18T18:00:00.000Z');
+
+  it('del mismo día en Santiago, solo la hora', () => {
+    expect(momentoDeLectura('2026-11-18T15:30:00.000Z', ahora)).toBe('a las 12:30');
+    // 03:10 UTC del 18 es 00:10 del 18 en Santiago.
+    expect(momentoDeLectura('2026-11-18T03:10:00.000Z', ahora)).toBe('a las 00:10');
+  });
+
+  it('de otro día, con la fecha', () => {
+    expect(momentoDeLectura('2026-11-17T21:02:00.000Z', ahora)).toBe('el mar 17 nov, 18:02');
+    // 02:50 UTC del 18 todavía es 17 en Santiago.
+    expect(momentoDeLectura('2026-11-18T02:50:00.000Z', ahora)).toBe('el mar 17 nov, 23:50');
+  });
+
+  it('sin instante válido no dice nada', () => {
+    expect(momentoDeLectura(null, ahora)).toBeNull();
+    expect(momentoDeLectura('no-es-fecha', ahora)).toBeNull();
   });
 });
