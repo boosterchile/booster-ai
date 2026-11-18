@@ -80,14 +80,15 @@ curl -fsS -D - -o /dev/null https://app.boosterchile.com/sw.js | grep -i cache-c
 
 ## "Versión vieja" / UI stale (service worker)
 
-La PWA usa `autoUpdate` (vite-plugin-pwa). El mecanismo que garantiza que el usuario reciba la versión nueva es que **`/sw.js` e `index.html` se sirvan con `no-cache`** (los assets hasheados sí son immutables 1y).
+La PWA usa `autoUpdate` (vite-plugin-pwa). El mecanismo que garantiza que el usuario reciba la versión nueva es que **`/sw.js`, `/registerSW.js` e `index.html` se sirvan con `no-cache`** (los assets hasheados sí son immutables 1y). `registerSW.js` no tiene hash: si cae en el `location` de `*.js` queda `max-age=31536000, immutable` y el registro viejo no recarga la página. Al volver a primer plano la app llama `registration.update()`. Cuando un SW nuevo toma el control, la página se recarga una sola vez.
 
 1. **Verificar headers de nginx**:
    ```bash
-   curl -fsS -D - -o /dev/null https://app.boosterchile.com/sw.js     | grep -i cache-control  # debe decir no-cache
-   curl -fsS -D - -o /dev/null https://app.boosterchile.com/index.html | grep -i cache-control  # debe decir no-cache
+   curl -fsS -D - -o /dev/null https://app.boosterchile.com/sw.js         | grep -i cache-control  # debe decir no-cache
+   curl -fsS -D - -o /dev/null https://app.boosterchile.com/registerSW.js | grep -i cache-control  # debe decir no-cache
+   curl -fsS -D - -o /dev/null https://app.boosterchile.com/index.html    | grep -i cache-control  # debe decir no-cache
    ```
-   Si `/sw.js` NO viene `no-cache` → el `nginx.conf.template` no aplicó bien en la revisión desplegada. Re-deploy con la config correcta; mientras tanto los usuarios pueden quedar con bundle viejo.
+   Si `/sw.js` o `/registerSW.js` NO vienen `no-cache` → el `nginx.conf.template` no aplicó bien en la revisión desplegada. Re-deploy con la config correcta; mientras tanto los usuarios pueden quedar con bundle viejo.
 2. **Lado usuario** (soporte): forzar update es recargar con el SW desregistrado (hard reload / "Update on reload" en devtools → Application → Service Workers). No es acción de servidor.
 3. Confirmar que el deploy efectivamente publicó assets nuevos (los nombres `assets/*.js` cambian con cada build; paso 3 de diagnóstico).
 

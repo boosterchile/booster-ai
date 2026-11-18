@@ -21,8 +21,8 @@ Layout «Hoy / pendientes» (opción A) con los indicadores de flota y cumplimie
 
 En `/app`, solo si `activeEmpresa.is_transportista`:
 
-1. Saludo según la hora de America/Santiago y fecha larga en español. Chip de la empresa activa.
-2. «Requiere tu atención»: ofertas por responder, servicios sin conductor, documentos vencidos, vehículos sin señal. Conteo 0 no se muestra. Todo en 0 → estado calmo.
+1. Saludo según la hora de America/Santiago y fecha larga en español. El nombre es la primera palabra de `me.user.full_name`. Si no hay nombre, el saludo queda solo («Buenas tardes»), sin tomar la empresa. El chip sigue mostrando la razón social.
+2. «Requiere tu atención»: ofertas por responder, servicios sin conductor, documentos vencidos, vehículos sin señal. Conteo 0 no se muestra. Todo en 0 → estado calmo. El número del encabezado cuenta las filas visibles, no los vehículos, ofertas o documentos que cada fila agrupa.
 3. «Tu operación hoy»: dos KPIs (en ruta, conectados). Sin tercera columna.
 4. «Accesos»: todos los destinos de `TRANSPORTISTA_CARDS`, más servicios, más trayectos y dispositivos para dueño/admin. Solo en mobile (`md:hidden`): desde `md` la barra lateral ya muestra esos destinos y la grilla no se duplica. El espacio lo ocupan «Requiere tu atención» y los KPIs, en dos columnas desde `md`. Los `data-testid` `dashboard-link-flota`, `dashboard-link-conductores` y `dashboard-link-cumplimiento` siguen en la grilla mobile. Los badges de ofertas, servicios y cumplimiento se repiten en la barra lateral con las mismas consultas.
 5. Empresa nueva (sin vehículos, sin conductores y sin documentos observados): bienvenida, checklist de 4 pasos y estado calmo.
@@ -33,7 +33,7 @@ Conductor, platform-admin y stakeholder siguen redirigiendo. La sección «Como 
 ## Fuera de alcance
 
 - Endpoints, migraciones, `apps/api`, `infra/**` y archivos protegidos.
-- El indicador «Por cobrar». El acceso «Cobra hoy» se mantiene: es navegación.
+- El indicador «Por cobrar». El acceso «Cobra hoy» se mantiene: es navegación. Si `GET /me/cobra-hoy/historial` falla, responde 503 o 200 `{enabled:false}`, el Inicio sigue y muestra un estado local, sin montos.
 - Campana de notificaciones del mockup.
 - Inventar un dato que la API no entrega. Si falta la fuente, se omite esa fila, KPI o línea de subtítulo.
 
@@ -41,5 +41,6 @@ Conductor, platform-admin y stakeholder siguen redirigiendo. La sección «Como 
 
 - Dueño, admin y despachador (operador) transportistas ven el layout nuevo.
 - Mobile 390 px y desktop ≥1280 px sin overflow horizontal.
-- Tests: render por rol, filas con conteo 0 ocultas, empresa nueva, error aislado, links, ausencia de «Por cobrar».
+- Sentarse en el Inicio no vuelve a pedir `/me`, `/vehiculos/flota`, `/assignments` ni `/cumplimiento`. Esas lecturas no llevan `refetchInterval` (ni el Inicio ni los badges). La pantalla dueña sigue actualizando cuando está abierta.
+- Tests: render por rol, filas con conteo 0 ocultas, empresa nueva, error aislado, links, ausencia de «Por cobrar», tope de requests al montar, saludo con y sin nombre, pendientes = filas, Cobra hoy apagado (503 y `{enabled:false}`) y caído.
 - Los tests previos de `app.tsx` siguen pasando, con el saludo nuevo donde la empresa es transportista.

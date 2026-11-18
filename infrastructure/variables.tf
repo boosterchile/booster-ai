@@ -720,6 +720,45 @@ variable "matching_shadow" {
   default     = false
 }
 
+# ADR-090 — elegibilidad por carga (spec matching-desde-la-carga).
+# `vigente`: solo la regla de hoy. `sombra`: decide la regla de hoy y la nueva
+# se calcula al lado; la diferencia queda en el log `matching: elegibilidad por
+# carga` y en la métrica `matching_elegibilidad_comparaciones_total`. `activa`:
+# decide la regla nueva; es una activación en producción y la decide el PO.
+# Rollback: volver a `sombra` (o a `vigente`) y re-aplicar.
+#
+# FLIP A `activa` 2026-11-16 — pedido por el PO y aplicado por él con
+# `-var=matching_elegibilidad_modo=activa` (revisión `booster-ai-api-00478-tkx`).
+# El default pasa a `activa` para que un apply sin esa variable no devuelva
+# prod a `sombra`. Con la flota sin carrocería declarada, la regla nueva solo
+# ofrece cargas `carga_seca` y `otra`.
+variable "matching_elegibilidad_modo" {
+  description = "Modo de la elegibilidad por carga en el matching del api: vigente, sombra o activa."
+  type        = string
+  default     = "activa"
+
+  validation {
+    condition     = contains(["vigente", "sombra", "activa"], var.matching_elegibilidad_modo)
+    error_message = "matching_elegibilidad_modo debe ser vigente, sombra o activa."
+  }
+}
+
+# ADR-088 / spec ruta-parada-servicio §2 — API `/rutas` + UI `/app/rutas`.
+# Apagada: `/rutas` responde 404 `not_found` y la PWA oculta la nav (lee
+# `GET /feature-flags` → `rutas_api_activada`). Encenderla es activación en
+# producción y la decide el PO. Rollback: `false` + re-aplicar (o
+# `gcloud run services update … --update-env-vars=RUTAS_API_ACTIVADA=false`
+# como interim; el siguiente apply de Terraform manda).
+#
+# FLIP A `true` 2026-11-16 — visto del PO («ok, dale») tras el paquete de
+# evidencia matching sombra. El matching pasó a `activa` en un flip aparte, el
+# mismo día (ver `matching_elegibilidad_modo`).
+variable "rutas_api_activada" {
+  description = "Enciende la API y la UI de rutas con varias paradas (ADR-088). false = /rutas 404 y nav oculta."
+  type        = bool
+  default     = true
+}
+
 variable "matching_via_microservice" {
   description = "El ranking que decide las offers lo calcula matching-engine (timeout 3 s, fallback local). Precede a matching_shadow."
   type        = bool

@@ -268,10 +268,16 @@ describe('pago y disputa — permisos por rol', () => {
 });
 
 describe('confirmar recepción — permisos por rol', () => {
-  it.each(['visualizador', 'conductor'])('%s → 403 forbidden_role', async (role) => {
+  it.each([
+    ['visualizador', { error: 'forbidden', code: 'read_only' }],
+    [
+      'conductor',
+      { error: 'forbidden', code: 'capability_denied', capability: 'puedePublicarCarga' },
+    ],
+  ] as const)('%s → 403', async (role, cuerpo) => {
     const res = await confirmar(setup(role));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'forbidden_role', code: 'forbidden_role', role });
+    expect(await res.json()).toEqual(cuerpo);
     expect(confirmarEntregaViaje).not.toHaveBeenCalled();
   });
 

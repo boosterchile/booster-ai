@@ -71,6 +71,109 @@ SENTIDO=up DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --filter @
 SENTIDO=reversa DRY_RUN=false CONFIRMAR_DESTINO=<destino del dry-run> pnpm --filter @booster-ai/api exec tsx src/jobs/hc001-fuente-combustible-can.ts
 ```
 
+### `rellenar-rutas.ts`
+
+Relleno de rutas (ADR-088, `.specs/ruta-parada-servicio/` parte 3). Deja cada
+asignación con su ruta de dos paradas en el estado que le corresponde: crea la
+que falta y pone al día la que quedó atrás. Desde la parte 4, asignar conductor,
+confirmar recogida o entrega y cancelar sincronizan la ruta en la misma
+transacción; el job cubre lo anterior y lo que esa sincronización omitió. La
+regla vive en `src/services/sincronizar-ruta-de-asignacion.ts`.
+
+Requiere la migración 0078 aplicada. Dry-run por defecto. Una transacción: si
+la verificación final falla (alguna asignación sin ruta, o una ruta distinta de
+su asignación), no escribe nada. Idempotente: la segunda corrida informa 0
+creadas y 0 conciliadas. Lo ejecuta el PO.
+
+Una asignación con datos que no cuadran (por ejemplo, recogida sin fecha de
+recogida) no se rellena: sale en `omitidas` con su motivo y el job termina con
+código 1.
+
+```bash
+# 1. En seco (default): imprime el destino y lo que haría.
+pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-rutas.ts
+# 2. Real (solo con el visto del PO), con el destino copiado de la salida anterior:
+DRY_RUN=false CONFIRMAR_DESTINO=<destino de la corrida en seco> pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-rutas.ts
+```
+
+No tiene reversa automática. Para deshacerlo: `UPDATE asignaciones SET ruta_id =
+NULL` y borrar `eventos_ruta`, `paradas_ruta` y `rutas`, en ese orden. Mientras
+la ruta no tenga lectores (antes de la parte 4) eso no cambia nada visible.
+
+### `rellenar-versiones-certificado.ts`
+
+Relleno de la versión 1 de los certificados emitidos antes de que la emisión
+versionara (`.specs/reemision-certificado/` parte 2). Por cada certificado
+emitido sin versión, crea su versión 1 en `certificados_viaje` copiando las
+columnas `certificado_*` de `metricas_viaje`, y deja las métricas apuntando a
+ella. La lógica vive en `src/services/rellenar-versiones-certificado.ts`.
+
+No toca PDFs ni las columnas `certificado_*`. Dry-run por defecto. Una
+transacción: si al final queda algún certificado emitido sin versión, no
+escribe nada. Idempotente. Lo ejecuta el PO.
+
+Un certificado que no se puede versionar (sin huella del PDF, o con una versión
+vigente que no coincide con sus métricas) sale en `omitidas` con su motivo y el
+job termina con código 1.
+
+```bash
+# 1. En seco (default): imprime el destino y lo que haría.
+pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-versiones-certificado.ts
+# 2. Real (solo con el visto del PO), con el destino copiado de la salida anterior:
+DRY_RUN=false CONFIRMAR_DESTINO=<destino de la corrida en seco> pnpm --filter @booster-ai/api exec tsx src/jobs/rellenar-versiones-certificado.ts
+```
+
+Reverso: `UPDATE metricas_viaje SET certificado_vigente_id = NULL` y borrar las
+versiones 1 que creó, salvo la que ya existía antes. Mientras ninguna se haya
+reemplazado, no cambia nada visible.
+
+### `reemitir-certificado.ts`
+
+Reemite **un** certificado (`.specs/reemision-certificado/` parte 5): corrige el
+dato que estaba mal en `metricas_viaje`, genera la versión siguiente del PDF con
+la línea «Reemplaza a la versión N, emitida el …», la firma, la sube a su propia
+ruta (`{tracking}.v{n}.pdf`, sin pisar la anterior) y la registra con su evento.
+La lógica vive en `src/services/reemitir-certificado.ts`. No reemite en lote.
+
+En seco por defecto: hace todas las comprobaciones y genera el PDF en memoria,
+sin firmar, sin subir y sin escribir. Para escribir exige `CONFIRMAR_DESTINO` y
+la llave y el bucket. Sale con código 1 si el certificado no se reemitiría, con
+el motivo en la salida. Lo ejecuta el PO.
+
+Requiere que el certificado tenga su versión 1: correr antes
+`rellenar-versiones-certificado.ts`.
+
+```bash
+# 1. En seco (default): imprime el destino y la reemisión que haría.
+CODIGO_SEGUIMIENTO=BOO-YWKZWR MOTIVO=factor_impreso_no_corresponde \
+FACTOR_ANTERIOR=3.25 FACTOR_NUEVO=3.24 \
+pnpm --filter @booster-ai/api exec tsx src/jobs/reemitir-certificado.ts
+# 2. Real (solo con el visto del PO), con el destino copiado de la salida anterior:
+DRY_RUN=false CONFIRMAR_DESTINO=<destino de la corrida en seco> \
+CERTIFICATE_SIGNING_KEY_ID=<llave> CERTIFICATES_BUCKET=<bucket> \
+SOLICITADO_POR_USER_ID=<uuid del PO> \
+CODIGO_SEGUIMIENTO=BOO-YWKZWR MOTIVO=factor_impreso_no_corresponde \
+FACTOR_ANTERIOR=3.25 FACTOR_NUEVO=3.24 \
+pnpm --filter @booster-ai/api exec tsx src/jobs/reemitir-certificado.ts
+```
+
+Para escribir rechaza la llave `local:` y el bucket `file:` del E2E. Los
+valores reales son las variables `CERTIFICATE_SIGNING_KEY_ID` y
+`CERTIFICATES_BUCKET` del servicio api en Cloud Run.
+
+Desde el Mac, la firma con KMS puede fallar al pedir el token («Premature
+close»), como en el backfill de 2026-09. Falla antes de subir y de escribir, así
+que no deja nada a medias; se resuelve sirviendo el token con un metadata server
+local.
+
+No hay job ni CLI de reverso. `revertirVersion`
+(`src/services/certificados-versionados.ts`) vuelve vigente la versión anterior
+y espeja las columnas `certificado_*`, pero **no repone `factor_emision_usado`**.
+Un reverso exige además, en la misma transacción y con el visto del PO,
+`UPDATE metricas_viaje SET factor_emision_usado = <anterior> WHERE viaje_id = …
+AND factor_emision_usado = <nuevo>`; sin él, el certificado vigente y el factor
+guardado quedan desalineados. El PDF de la versión revertida queda en el bucket.
+
 ### `reap-orphan-onboarding-firebase.ts`
 
 Borra el usuario Firebase **huérfano** del onboarding admin-provisioned

@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { REGIONS_CHILE } from '../lib/regions-chile.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -47,8 +48,8 @@ export function ZonasRoute() {
 
 function ZonasPage({ me }: { me: MeOnboarded }) {
   const empresa = me.active_membership?.empresa;
-  const role = me.active_membership?.role;
-  const canManage = empresa?.is_transportista === true && (role === 'dueno' || role === 'admin');
+  // CHEQUEOS_REEMPLAZADOS zonas: antes is_transportista && (dueno|admin).
+  const canManage = empresa?.is_transportista === true && flagsDe(me).administrar;
 
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [loading, setLoading] = useState(canManage);

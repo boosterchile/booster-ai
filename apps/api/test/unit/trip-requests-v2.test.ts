@@ -105,27 +105,30 @@ interface UserContextOpts {
   userId?: string;
   empresaId?: string;
   isGeneradorCarga?: boolean;
+  isTransportista?: boolean;
   empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
+  role?: 'dueno' | 'admin' | 'despachador' | 'visualizador';
 }
 
 function buildUserContext(opts: UserContextOpts = {}): {
   user: Pick<UserRow, 'id'>;
   memberships: Array<{
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'isTransportista' | 'status'>;
   }>;
   activeMembership: {
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'isTransportista' | 'status'>;
   } | null;
 } {
   const empresa = {
     id: opts.empresaId ?? 'emp-1',
     isGeneradorCarga: opts.isGeneradorCarga ?? true,
+    isTransportista: opts.isTransportista ?? false,
     status: opts.empresaStatus ?? 'activa',
   };
-  const membership = { role: 'dueno' as const };
+  const membership = { role: opts.role ?? ('dueno' as const) };
   return {
     user: { id: opts.userId ?? 'user-1' },
     memberships: [{ membership, empresa }],
@@ -323,6 +326,50 @@ describe('POST /trip-requests-v2', () => {
     });
   });
 
+  it('empresa con ambos roles publica la carga con su generador_carga_empresa_id', async () => {
+    const matching = await import('../../src/services/matching.js');
+    vi.mocked(matching.runMatching).mockResolvedValueOnce({
+      tripId: 'trip-dual',
+      candidatesEvaluated: 0,
+      offersCreated: 0,
+      offers: [],
+    });
+    const inserted: Record<string, unknown>[] = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((vals: Record<string, unknown>) => {
+          inserted.push(vals);
+          return {
+            returning: vi.fn(async () => [
+              {
+                id: 'trip-dual',
+                trackingCode: 'BOO-DUAL1',
+                generadorCargaEmpresaId: 'emp-dual',
+                cargoType: 'carga_seca',
+                originRegionCode: 'XIII',
+              },
+            ]),
+          };
+        }),
+      })),
+    } as unknown as Db;
+    const app = await buildAppWith({
+      db,
+      userContext: buildUserContext({
+        empresaId: 'emp-dual',
+        isGeneradorCarga: true,
+        isTransportista: true,
+      }),
+    });
+    const res = await app.request('/trip-requests-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(validBody),
+    });
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ generadorCargaEmpresaId: 'emp-dual' });
+  });
+
   it('happy path: crea trip, dispara matching, devuelve 201', async () => {
     const matching = await import('../../src/services/matching.js');
     vi.mocked(matching.runMatching).mockResolvedValueOnce({
@@ -366,6 +413,42 @@ describe('POST /trip-requests-v2', () => {
     expect(body.matching.offer_ids).toEqual(['offer-1', 'offer-2']);
   });
 
+  // seguimiento-por-correo SC5: el correo del destinatario se guarda al crear.
+  it('guarda el correo del destinatario normalizado', async () => {
+    const matching = await import('../../src/services/matching.js');
+    vi.mocked(matching.runMatching).mockResolvedValueOnce({
+      tripId: 'trip-mail',
+      candidatesEvaluated: 0,
+      offersCreated: 0,
+      offers: [],
+    });
+    const values = vi.fn(() => ({
+      returning: vi.fn(async () => [{ id: 'trip-mail', trackingCode: 'BOO-MAIL01' }]),
+    }));
+    const db = { insert: vi.fn(() => ({ values })) } as unknown as Db;
+    const app = await buildAppWith({ db, userContext: buildUserContext() });
+    const res = await app.request('/trip-requests-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...validBody,
+        consignee: { name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        consigneeName: 'Bodega La Serena',
+        consigneeEmail: 'recepcion@cliente.cl',
+        // editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
+        notes: 'Andén 4',
+        reference: 'PO-1',
+      }),
+    );
+  });
+
   describe('wire de geocodificación del origen (Task 4 medicion-huella-segmento)', () => {
     async function postTripWith(routesProjectId?: string) {
       const matching = await import('../../src/services/matching.js');
@@ -401,6 +484,7 @@ describe('POST /trip-requests-v2', () => {
           originAddress: validBody.origin.address_raw,
           destinationAddress: validBody.destination.address_raw,
           routesProjectId: 'booster-ai-494222',
+          soloSiOrigenVigente: true,
         }),
       );
     });
@@ -605,7 +689,7 @@ function makeQueryDb(opts: {
   updateRowsSeq?: Array<Record<string, unknown>[]>;
   // Spy del .insert
   insertSpy?: ReturnType<typeof vi.fn>;
-}): Db {
+}): Db & { whereCalls: unknown[]; selectShapes: unknown[] } {
   let orderByCallCount = 0;
   let limitCallCount = 0;
 
@@ -629,21 +713,32 @@ function makeQueryDb(opts: {
       limit: limitFn,
     };
   });
+  const whereCalls: unknown[] = [];
+  const selectShapes: unknown[] = [];
+  const whereFn = vi.fn((pred?: unknown) => {
+    whereCalls.push(pred);
+    return {
+      limit: limitFn,
+      orderBy: orderByFn,
+      for: vi.fn(() => ({ limit: limitFn })),
+    };
+  });
   const leftJoinFn = vi.fn(() => ({
     leftJoin: leftJoinFn,
-    where: vi.fn(() => ({ limit: limitFn, orderBy: orderByFn })),
+    where: whereFn,
   }));
-  // `.for('update')` (row lock en PATCH cancelar) es chainable a limit.
-  const whereFn = vi.fn(() => ({
-    limit: limitFn,
-    orderBy: orderByFn,
-    for: vi.fn(() => ({ limit: limitFn })),
-  }));
+  const innerJoinFn = vi.fn(() => ({ where: whereFn }));
   const fromFn = vi.fn(() => ({
     where: whereFn,
     leftJoin: leftJoinFn,
+    innerJoin: innerJoinFn,
   }));
-  const selectFn = vi.fn(() => ({ from: fromFn }));
+  const selectFn = vi.fn((shape?: unknown) => {
+    if (shape !== undefined) {
+      selectShapes.push(shape);
+    }
+    return { from: fromFn };
+  });
 
   const updateQueue = opts.updateRowsSeq ? [...opts.updateRowsSeq] : null;
   const updateReturning = vi.fn(() =>
@@ -659,6 +754,8 @@ function makeQueryDb(opts: {
     select: selectFn,
     update: updateFn,
     insert: insertFn,
+    whereCalls,
+    selectShapes,
     // PATCH cancelar corre dentro de db.transaction(tx => ...): el tx
     // comparte los mismos stubs que el db plano.
     transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) =>
@@ -666,7 +763,7 @@ function makeQueryDb(opts: {
     ),
   };
 
-  return dbLike as unknown as Db;
+  return dbLike as unknown as Db & { whereCalls: unknown[]; selectShapes: unknown[] };
 }
 
 describe('GET /trip-requests-v2', () => {
@@ -727,7 +824,98 @@ describe('GET /trip-requests-v2', () => {
     expect(body.trip_requests[0]?.id).toBe('trip-1');
     expect(body.trip_requests[0]?.status).toBe('esperando_match');
   });
+
+  it('filtra por generadorCargaEmpresaId, deja ofertas_pendientes y no duplica viajes', async () => {
+    const db = makeQueryDb({
+      orderByRows: [
+        [
+          {
+            id: 'trip-1',
+            tracking_code: 'BST-4821',
+            status: 'ofertas_enviadas',
+            ofertas_pendientes: 4,
+          },
+          {
+            id: 'trip-1',
+            tracking_code: 'BST-4821',
+            status: 'ofertas_enviadas',
+            ofertas_pendientes: 4,
+          },
+          {
+            id: 'trip-2',
+            tracking_code: 'BST-4802',
+            status: 'esperando_match',
+            ofertas_pendientes: 0,
+          },
+        ],
+      ],
+    });
+    const app = await buildAppWith({
+      db,
+      userContext: buildUserContext({ empresaId: 'emp-1' }),
+    });
+    const res = await app.request('/trip-requests-v2');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      trip_requests: Array<{ id: string; ofertas_pendientes: number | null }>;
+    };
+    expect(body.trip_requests.map((fila) => fila.id)).toEqual(['trip-1', 'trip-2']);
+    expect(body.trip_requests[0]?.ofertas_pendientes).toBe(4);
+    expect(body.trip_requests[1]?.ofertas_pendientes).toBe(0);
+
+    const listado = db.selectShapes.find(
+      (shape) =>
+        typeof shape === 'object' &&
+        shape !== null &&
+        'ofertas_pendientes' in shape &&
+        'transportista_nombre' in shape,
+    );
+    expect(listado).toBeTruthy();
+
+    const filtro = db.whereCalls
+      .map((pred) => sqlDe(pred))
+      .find((sql) => sql.params.includes('emp-1'));
+    expect(filtro?.texto).toContain('generador_carga_empresa_id');
+    // Excluye las anuladas: cancelado sin asignación (editar-anular-cargas §8.7).
+    expect(filtro?.texto).toContain('not (estado =  and id is null)');
+    expect(filtro?.params).toEqual(['emp-1', 'cancelado']);
+  });
 });
+
+function sqlDe(
+  node: unknown,
+  texto: string[] = [],
+  params: unknown[] = [],
+): {
+  texto: string;
+  params: unknown[];
+} {
+  if (!node || typeof node !== 'object') {
+    return { texto: texto.join(''), params };
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      sqlDe(item, texto, params);
+    }
+    return { texto: texto.join(''), params };
+  }
+  const rec = node as Record<string, unknown>;
+  if (typeof rec.name === 'string' && 'columnType' in rec) {
+    texto.push(rec.name);
+    return { texto: texto.join(''), params };
+  }
+  if ('encoder' in rec && 'value' in rec) {
+    params.push(rec.value);
+    return { texto: texto.join(''), params };
+  }
+  if (Array.isArray(rec.value) && rec.value.every((parte) => typeof parte === 'string')) {
+    texto.push(rec.value.join(''));
+  }
+  if (Array.isArray(rec.queryChunks)) {
+    sqlDe(rec.queryChunks, texto, params);
+  }
+  return { texto: texto.join(''), params };
+}
 
 // =============================================================================
 // GET /trip-requests-v2/:id (detail)
@@ -752,7 +940,7 @@ describe('GET /trip-requests-v2/:id', () => {
   it('200 con trip + events + assignment + metrics', async () => {
     const app = await buildAppWith({
       db: makeQueryDb({
-        // limitRows orden: trip lookup, assignment, metrics
+        // limitRows orden: trip lookup, solicitud pendiente, assignment, metrics
         limitRows: [
           [
             {
@@ -772,10 +960,16 @@ describe('GET /trip-requests-v2/:id', () => {
               pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
               pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
               proposedPriceClp: 250_000,
+              consigneeName: 'Bodega',
+              consigneeWhatsappE164: '+56911111111',
+              consigneeEmail: null,
+              notes: 'Andén 4',
+              reference: 'PO-1',
               createdAt: new Date('2026-05-02T15:00:00Z'),
               updatedAt: new Date('2026-05-02T15:00:00Z'),
             },
           ],
+          [],
           [
             {
               id: 'asg-1',
@@ -791,7 +985,9 @@ describe('GET /trip-requests-v2/:id', () => {
             },
           ],
           [], // no metrics
-          // 4to limit: telemetry last point (where + orderBy + limit). Vacío
+          // asignado: ¿el vehículo sirve otro viaje en proceso? (ninguno).
+          [],
+          // telemetry last point (where + orderBy + limit). Vacío
           // → ubicacion_actual será null en la respuesta.
           [],
         ],
@@ -802,15 +998,71 @@ describe('GET /trip-requests-v2/:id', () => {
     const res = await app.request('/trip-requests-v2/trip-1');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      trip_request: { id: string; status: string };
+      trip_request: { id: string; status: string; [k: string]: unknown };
       events: unknown[];
       assignment: { vehicle_plate: string; empresa_legal_name: string } | null;
       metrics: unknown | null;
     };
     expect(body.trip_request.id).toBe('trip-1');
+    // editar-anular-cargas: datos libres y acciones permitidas en el detalle.
+    expect(body.trip_request).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111', email: null },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+      acciones_permitidas: {
+        editar: false,
+        editar_datos_libres: true,
+        solicitar_cambio: true,
+        retirar_cambio: false,
+        anular: false,
+        cancelar: true,
+      },
+    });
     expect(body.assignment?.vehicle_plate).toBe('AB-CD-12');
     expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
     expect(body.metrics).toBeNull();
+  });
+
+  // editar-anular-cargas §6-8: las acciones combinan el estado con las
+  // capacidades del rol, para que la web no ofrezca lo que el API rechaza.
+  it.each([
+    ['dueno', true],
+    ['visualizador', false],
+  ] as const)('%s en esperando_match → editar y anular = %s', async (role, puede) => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [
+          [
+            {
+              id: 'trip-1',
+              trackingCode: 'BOO-AAA111',
+              status: 'esperando_match',
+              originAddressRaw: 'origen',
+              destinationAddressRaw: 'destino',
+              cargoType: 'carga_seca',
+              cargoWeightKg: 1500,
+              createdAt: new Date('2026-05-02T15:00:00Z'),
+              updatedAt: new Date('2026-05-02T15:00:00Z'),
+            },
+          ],
+          [],
+          [],
+        ],
+        orderByRows: [[]],
+      }),
+      userContext: buildUserContext({ role }),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { acciones_permitidas: unknown } };
+    expect(body.trip_request.acciones_permitidas).toEqual({
+      editar: puede,
+      editar_datos_libres: puede,
+      solicitar_cambio: false,
+      retirar_cambio: false,
+      anular: puede,
+      cancelar: false,
+    });
   });
 
   // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
@@ -876,8 +1128,12 @@ describe('GET /trip-requests-v2/:id', () => {
       db: makeQueryDb({
         limitRows: [
           [liveTripRow(opts.status)],
+          // asignado: la lectura de la solicitud de cambio pendiente (ninguna).
+          ...(opts.status === 'asignado' ? [[]] : []),
           [LIVE_ASSIGNMENT],
           [],
+          // asignado: ¿el vehículo sirve otro viaje en proceso? (ninguno).
+          ...(opts.status === 'asignado' ? [[]] : []),
           opts.teltonika ?? [],
           opts.mobile ?? [],
         ],
@@ -1011,108 +1267,5 @@ describe('GET /trip-requests-v2/:id', () => {
     expect(body.assignment?.ubicacion_actual).toBeNull();
     expect(body.assignment?.position_source).toBeNull();
     expect(body.assignment?.eta_minutes).toBeNull();
-  });
-});
-
-// =============================================================================
-// PATCH /trip-requests-v2/:id/cancelar
-// =============================================================================
-
-describe('PATCH /trip-requests-v2/:id/cancelar', () => {
-  it('sin userContext → 401', async () => {
-    const app = await buildAppWith({ db: makeQueryDb({}), userContext: null });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it('trip no encontrado → 404', async () => {
-    const app = await buildAppWith({
-      db: makeQueryDb({ limitRows: [[]] }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('trip ya asignado → 409 trip_not_cancellable', async () => {
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'asignado', trackingCode: 'BOO-XXX' }]],
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string; current_status: string };
-    expect(body.code).toBe('trip_not_cancellable');
-    expect(body.current_status).toBe('asignado');
-  });
-
-  it('200 cancela en estado esperando_match + registra evento', async () => {
-    const insertValues = vi.fn().mockResolvedValue([]);
-    const insertSpy = vi.fn(() => ({ values: insertValues }));
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'esperando_match', trackingCode: 'BOO-YYY' }]],
-        updateRows: [{ id: 'trip-1', trackingCode: 'BOO-YYY', status: 'cancelado' }],
-        insertSpy,
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ reason: 'cambio de planes' }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { trip_request: { status: string } };
-    expect(body.trip_request.status).toBe('cancelado');
-    expect(insertSpy).toHaveBeenCalled();
-  });
-
-  it('200 cancela con ofertas pendientes → las invalida y registra invalidated_offers', async () => {
-    const insertValues = vi.fn().mockResolvedValue([]);
-    const insertSpy = vi.fn(() => ({ values: insertValues }));
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'ofertas_enviadas', trackingCode: 'BOO-ZZZ' }]],
-        updateRowsSeq: [
-          // 1º update: trips → cancelado
-          [{ id: 'trip-1', trackingCode: 'BOO-ZZZ', status: 'cancelado' }],
-          // 2º update: offers pendiente → expirada (2 invalidadas)
-          [{ id: 'offer-1' }, { id: 'offer-2' }],
-        ],
-        insertSpy,
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { trip_request: { status: string } };
-    expect(body.trip_request.status).toBe('cancelado');
-
-    // El evento de auditoría registra cuántas ofertas se invalidaron.
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'cancelado',
-        payload: expect.objectContaining({ invalidated_offers: 2 }),
-      }),
-    );
   });
 });

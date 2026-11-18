@@ -93,7 +93,7 @@ describe('ResendEmailSender', () => {
 
     const r = await new ResendEmailSender({
       apiKey: 're_test_key',
-      from: 'Booster <no-reply@boosterchile.com>',
+      from: 'Booster <contacto@boosterchile.com>',
       logger: makeLogger() as never,
     }).send(MENSAJE);
 
@@ -109,14 +109,30 @@ describe('ResendEmailSender', () => {
     expect(url).toBe('https://api.resend.com/emails');
     expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer re_test_key');
+    // Un Resend lento no puede retener la respuesta de quien llama (p. ej. el
+    // accept de una oferta): el fetch lleva un timeout.
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     const body = JSON.parse(init.body as string);
     expect(body).toEqual(
       expect.objectContaining({
-        from: 'Booster <no-reply@boosterchile.com>',
+        from: 'Booster <contacto@boosterchile.com>',
         to: ['fvp@live.cl'],
         subject: MENSAJE.subject,
       }),
     );
+  });
+
+  it('un timeout del fetch NO lanza: devuelve error_red', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError')),
+    );
+    const r = await new ResendEmailSender({
+      apiKey: 're_test_key',
+      from: 'Booster <contacto@boosterchile.com>',
+      logger: makeLogger() as never,
+    }).send(MENSAJE);
+    expect(r).toEqual({ enviado: false, motivo: 'error_red' });
   });
 
   it('un 4xx de Resend NO lanza: devuelve enviado=false', async () => {

@@ -3,7 +3,7 @@ import { MapPin } from 'lucide-react';
 import { env } from '../../lib/env.js';
 
 /**
- * Mapa del aviso de posible robo de combustible.
+ * Mapa del aviso de desviación de combustible.
  * El caller solo lo monta cuando hay `event_lat` y `event_lon` reales:
  * el centro y el pin son ese punto, sin fallback a otra coordenada.
  */
@@ -46,7 +46,7 @@ export function EventoCombustibleMap({
           fullscreenControl={false}
           mapId="booster-evento-combustible"
         >
-          <AdvancedMarker position={center} title="Posible robo de combustible">
+          <AdvancedMarker position={center} title="Desviación de combustible por analizar">
             <Pin background="#D97706" borderColor="#92400E" glyphColor="#FFFFFF" />
           </AdvancedMarker>
         </GoogleMap>

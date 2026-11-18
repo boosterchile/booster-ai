@@ -1,5 +1,7 @@
 import {
+  type BodyType,
   MENSAJE_CAPACIDAD_ESTANQUE,
+  bodyTypeSchema,
   chileanPlateSchema,
   normalizePlate,
   teltonikaImeiSchema,
@@ -19,6 +21,7 @@ import { VehiculosLista } from '../components/vehiculos-lista.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import {
   type NumericFieldRule,
   numericFieldError,
@@ -62,6 +65,8 @@ interface Vehicle {
   id: string;
   plate: string;
   type: VehicleType;
+  /** matching-desde-la-carga §11-1: obligatoria en alta/edición. */
+  body_type: BodyType | null;
   capacity_kg: number;
   capacity_m3: number | null;
   year: number | null;
@@ -73,6 +78,8 @@ interface Vehicle {
   capacidad_estanque_l?: number | null;
   fuente_combustible_can?: FuenteCombustibleCan | null;
   teltonika_imei: string | null;
+  /** Unidad de un tercero (ADR-090 / matching-desde-la-carga §3.10). */
+  es_de_tercero: boolean;
   status: VehicleStatus;
   created_at: string;
   updated_at: string;
@@ -101,6 +108,19 @@ const FUEL_TYPE_LABELS: Record<FuelType, string> = {
   hidrogeno: 'Hidrógeno',
 };
 
+const BODY_TYPE_LABELS: Record<BodyType, string> = {
+  plano: 'Plano',
+  cortina: 'Cortina',
+  furgon_cerrado: 'Furgón cerrado',
+  refrigerado: 'Refrigerado',
+  tolva: 'Tolva',
+  cisterna: 'Cisterna',
+  portacontenedor: 'Portacontenedor',
+  cama_baja: 'Cama baja',
+  jaula: 'Jaula',
+  forestal: 'Forestal',
+};
+
 const STATUS_LABELS: Record<VehicleStatus, string> = {
   activo: 'Activo',
   mantenimiento: 'Mantenimiento',
@@ -125,8 +145,8 @@ export function VehiculosListRoute() {
 }
 
 function VehiculosListPage({ me }: { me: MeOnboarded }) {
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
+  // CHEQUEOS_REEMPLAZADOS vehiculos-ui: antes dueno|admin|despachador.
+  const canWrite = flagsDe(me).gestionarFlota;
 
   return (
     <Layout me={me} title="Vehículos">
@@ -171,8 +191,7 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const role = me.active_membership?.role;
-  const canEditEstanque = role === 'dueno' || role === 'admin';
+  const canEditEstanque = flagsDe(me).borrarFlota;
 
   const createM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
@@ -254,17 +273,15 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const configRef = useRef<HTMLDetailsElement>(null);
   const menuRetiroRef = useRef<HTMLDivElement>(null);
 
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
-  const canDelete = role === 'dueno' || role === 'admin';
+  const flags = flagsDe(me);
+  const canWrite = flags.gestionarFlota;
+  const canDelete = flags.borrarFlota;
   // PATCH /:id/dispositivo exige dueno|admin en el backend
   // (requireOwnerOrAdminRole, vehiculos.ts) — misma frontera que canDelete,
   // separado en su propia constante para no acoplar semánticas distintas.
-  const canManageDispositivo = role === 'dueno' || role === 'admin';
+  const canManageDispositivo = flags.borrarFlota;
   const empresa = me.active_membership?.empresa;
-  const puedeVerTrayectos = Boolean(
-    empresa?.is_transportista && (role === 'dueno' || role === 'admin'),
-  );
+  const puedeVerTrayectos = Boolean(empresa?.is_transportista && flags.administrar);
 
   function abrirConfig() {
     setConfigAbierta(true);
@@ -797,6 +814,7 @@ function DispositivoSection({
 interface VehicleFormValues {
   plate: string;
   vehicle_type: VehicleType;
+  body_type: '' | BodyType;
   capacity_kg: string;
   capacity_m3: string;
   year: string;
@@ -807,12 +825,14 @@ interface VehicleFormValues {
   consumption_l_per_100km_baseline: string;
   capacidad_estanque_l: string;
   fuente_combustible_can: FuenteCombustibleCan;
+  es_de_tercero: boolean;
   vehicle_status?: VehicleStatus;
 }
 
 const EMPTY_FORM: VehicleFormValues = {
   plate: '',
   vehicle_type: 'camion_pequeno',
+  body_type: '',
   capacity_kg: '',
   capacity_m3: '',
   year: '',
@@ -823,12 +843,14 @@ const EMPTY_FORM: VehicleFormValues = {
   consumption_l_per_100km_baseline: '',
   capacidad_estanque_l: '',
   fuente_combustible_can: 'sin_sensor',
+  es_de_tercero: false,
 };
 
 function vehicleToFormValues(v: Vehicle): VehicleFormValues {
   return {
     plate: v.plate,
     vehicle_type: v.type,
+    body_type: v.body_type ?? '',
     capacity_kg: String(v.capacity_kg),
     capacity_m3: v.capacity_m3 != null ? String(v.capacity_m3) : '',
     year: v.year != null ? String(v.year) : '',
@@ -839,6 +861,7 @@ function vehicleToFormValues(v: Vehicle): VehicleFormValues {
     consumption_l_per_100km_baseline: v.consumption_l_per_100km_baseline ?? '',
     capacidad_estanque_l: v.capacidad_estanque_l != null ? String(v.capacidad_estanque_l) : '',
     fuente_combustible_can: v.fuente_combustible_can ?? 'sin_sensor',
+    es_de_tercero: v.es_de_tercero ?? false,
     vehicle_status: v.status,
   };
 }
@@ -882,7 +905,7 @@ const API_FIELD_LABELS: Record<string, string> = {
   vehicle_type: 'Tipo de vehículo',
   unit_category: 'Categoría de unidad',
   unit_type: 'Tipo de unidad',
-  body_type: 'Tipo de carrocería',
+  body_type: 'Carrocería',
   capacity_kg: 'Capacidad (kg)',
   capacity_m3: 'Capacidad (m³)',
   year: 'Año',
@@ -893,6 +916,7 @@ const API_FIELD_LABELS: Record<string, string> = {
   consumption_l_per_100km_baseline: 'Consumo base (L / 100 km)',
   capacidad_estanque_l: 'Capacidad del estanque (L)',
   fuente_combustible_can: 'Fuente CAN de combustible',
+  es_de_tercero: 'Unidad de un tercero',
   vehicle_status: 'Estado',
 };
 
@@ -923,7 +947,9 @@ function vehicleFormToBody(
   const body: Record<string, unknown> = {
     plate: normalizePlate(v.plate),
     vehicle_type: v.vehicle_type,
+    body_type: v.body_type,
     capacity_kg: Number.parseInt(v.capacity_kg, 10),
+    es_de_tercero: v.es_de_tercero,
   };
   if (v.capacity_m3.trim()) {
     body.capacity_m3 = Number.parseInt(v.capacity_m3, 10);
@@ -1009,6 +1035,14 @@ function VehicleForm({
       setError('plate', { type: 'manual', message });
       hasError = true;
     }
+    const bodyTypeResult = bodyTypeSchema.safeParse(values.body_type);
+    if (!bodyTypeResult.success) {
+      setError('body_type', {
+        type: 'manual',
+        message: 'Elige la carrocería del vehículo',
+      });
+      hasError = true;
+    }
     for (const field of Object.keys(NUMERIC_FIELD_RULES) as NumericFieldName[]) {
       const message = numericFieldError(NUMERIC_FIELD_RULES[field], values[field]);
       if (message) {
@@ -1073,6 +1107,27 @@ function VehicleForm({
                 {(Object.keys(VEHICLE_TYPE_LABELS) as VehicleType[]).map((t) => (
                   <option key={t} value={t}>
                     {VEHICLE_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
+
+          <FormField
+            label="Carrocería"
+            required
+            error={errors.body_type?.message}
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('body_type')}
+                className={fieldInputClass(!!errors.body_type)}
+              >
+                <option value="">Elegir carrocería</option>
+                {(Object.keys(BODY_TYPE_LABELS) as BodyType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {BODY_TYPE_LABELS[t]}
                   </option>
                 ))}
               </select>
@@ -1175,6 +1230,21 @@ function VehicleForm({
             )}
           />
         </div>
+
+        <label className="flex items-start gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+            {...register('es_de_tercero')}
+          />
+          <span>
+            <span className="font-medium text-neutral-900">Unidad de un tercero</span>
+            <span className="mt-0.5 block text-neutral-600 text-xs">
+              Camión o arrastre que no es de tu empresa, pero declaras en la ruta. El generador no
+              ve esta marca: responde tu empresa.
+            </span>
+          </span>
+        </label>
 
         <fieldset
           disabled={disabled || !canEditEstanque}

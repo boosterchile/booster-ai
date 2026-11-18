@@ -199,7 +199,8 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     }
     await db.insert(schema.tripMetrics).values({
       tripId: trip.id,
-      distanceKmEstimated: '120.00',
+      // Cerca de lo que miden las trazas (≈3 km): pasa el mínimo de plausibilidad (50 %).
+      distanceKmEstimated: '5.00',
       precisionMethod: 'modelado',
       routeDataSource: 'maps_directions',
       coveragePct: '0.00',
@@ -340,7 +341,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(m).toMatchObject({
       fuenteDistancia: 'movil_gps',
       motivoFallback: 'sin_dispositivo',
-      decisionVersion: 2,
+      decisionVersion: 3,
       pesoDeclarado: true,
     });
     expect(m?.decididoEn).not.toBeNull();
@@ -365,7 +366,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(m).toMatchObject({
       fuenteDistancia: 'teltonika_gps',
       motivoFallback: 'can_sin_lecturas',
-      decisionVersion: 2,
+      decisionVersion: 3,
     });
     expect(m?.fuenteEnergia).not.toBe('can_83');
   });
@@ -390,7 +391,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     expect(m).toMatchObject({
       fuenteDistancia: 'routes_estimada',
       motivoFallback: 'sin_dispositivo',
-      decisionVersion: 2,
+      decisionVersion: 3,
       alertasDecision: [],
     });
     expect(m?.decididoEn).not.toBeNull();

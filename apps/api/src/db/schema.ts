@@ -304,6 +304,16 @@ export const assignmentStatusEnum = pgEnum('estado_asignacion', [
   'cancelado',
 ]);
 
+/** Estados de la ruta (ADR-088; transiciones en @booster-ai/route-planner). */
+export const estadoRutaEnum = pgEnum('estado_ruta', [
+  'planificada',
+  'en_curso',
+  'cerrada',
+  'cancelada',
+]);
+
+export const tipoParadaEnum = pgEnum('tipo_parada', ['recogida', 'entrega']);
+
 export const cancellationActorEnum = pgEnum('actor_cancelacion', [
   'transportista',
   'generador_carga',
@@ -343,6 +353,16 @@ export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
    * (legal); este es informativo + notifica al shipper.
    */
   'incidente_reportado',
+  /**
+   * editar-anular-cargas (0075). Payloads validados con Zod en
+   * shared-schemas (cambio-carga): edición de datos de la carga, solicitud
+   * de cambio después del match y su respuesta.
+   */
+  'carga_editada',
+  'cambio_solicitado',
+  'cambio_respondido',
+  /** reemision-certificado (0082): una versión nueva del certificado reemplaza a la vigente. */
+  'certificado_reemitido',
 ]);
 
 export const tripEventSourceEnum = pgEnum('origen_evento_viaje', [
@@ -569,6 +589,16 @@ export const empresas = pgTable(
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
     /**
+     * Historia 0 — quién y cuándo prendió `es_generador_carga` sobre un
+     * transportista que ya existía. NULL si el flag vino del alta o si
+     * todavía no es generador. Una segunda activación no reescribe estos
+     * campos.
+     */
+    generadorCargaActivadoEn: timestamp('generador_carga_activado_en', {
+      withTimezone: true,
+    }),
+    generadorCargaActivadoPor: text('generador_carga_activado_por'),
+    /**
      * ADR-079 §2 — contrato programado habilitado por el platform-admin (con
      * quién y cuándo). Solo estos generadores pueden publicar
      * `modalidad_carga = 'programada'` (tasa menor). NULL = no habilitado.
@@ -578,8 +608,9 @@ export const empresas = pgTable(
     }),
     contratoProgramadoActivadoPor: text('contrato_programado_activado_por'),
     /**
-     * ADR-079 §4 — plan de transportista con gestión de flota (tarifa por
-     * camión mayor). Lo activa el platform-admin; null = plan base.
+     * ADR-079 §4 — Booster Fleet, el plan de transportista con gestión de
+     * flota (tarifa por camión mayor). Lo activa el platform-admin; null =
+     * plan base. La pantalla del dueño no depende de esta bandera.
      */
     gestionFlotaActivadaEn: timestamp('gestion_flota_activada_en', { withTimezone: true }),
     gestionFlotaActivadaPor: text('gestion_flota_activada_por'),
@@ -697,6 +728,14 @@ export const users = pgTable(
      * y puede rotarse desde `/perfil/seguridad`.
      */
     claveNumericaHash: text('clave_numerica_hash'),
+    /**
+     * Hasta cuándo vale el código de activación de una cuenta del personal de
+     * Booster (`.specs/alta-personal-booster`, migración 0074). Ese código no
+     * viene de una invitación a empresa, así que `/auth/activar` no tiene un
+     * `invitado_en` del que sacar el plazo de 7 días. Se borra al activar.
+     * NULL para el resto de las cuentas.
+     */
+    activacionVenceEn: timestamp('activacion_vence_en', { withTimezone: true }),
     /**
      * ADR-035 — Hash scrypt del OTP de recovery enviado por WhatsApp
      * cuando el usuario olvidó su clave numérica. Single-use; expira en
@@ -852,6 +891,12 @@ export const memberships = pgTable(
       { onDelete: 'restrict' },
     ),
     role: membershipRoleEnum('rol').notNull(),
+    /**
+     * El despachador puede aceptar o rechazar ofertas solo con este flag.
+     * Dueño y admin no lo consultan: aceptan por rol. Default false para
+     * no abrir el contrato a membresías que ya existían (migración 0071).
+     */
+    puedeAceptarOfertas: boolean('puede_aceptar_ofertas').notNull().default(false),
     status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),
     invitedByUserId: uuid('invitado_por_id').references(() => users.id),
     invitedAt: timestamp('invitado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -964,6 +1009,12 @@ export const vehicles = pgTable(
     unitType: tipoUnidadEnum('tipo_unidad'),
     /** Carrocería, ortogonal a categoría/tipo. NULL = no declarada. */
     bodyType: tipoCarroceriaEnum('carroceria'),
+    /**
+     * Unidad de un tercero (migración 0079, ADR-090 decisión 2): un vehículo
+     * que la transportista registra y opera sin ser suyo. Se declara en la
+     * ruta igual que uno propio; responde la empresa que aceptó la carga.
+     */
+    esDeTercero: boolean('es_de_tercero').notNull().default(false),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1125,6 +1176,58 @@ export const documentosConductor = pgTable(
     conductorIdx: index('idx_docs_conductor_conductor').on(table.conductorId),
     expiryIdx: index('idx_docs_conductor_vencimiento').on(table.fechaVencimiento),
     estadoIdx: index('idx_docs_conductor_estado').on(table.estado),
+  }),
+);
+
+/**
+ * Booster Fleet — mantenciones que programa el dueño del transportista.
+ * La vigencia (vencida / próxima / programada / realizada) se calcula al
+ * leer; acá solo se persiste el cierre. Expand-only, migración 0086.
+ */
+export const mantencionesVehiculo = pgTable(
+  'mantenciones_vehiculo',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    vehiculoId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    tipo: text('tipo').notNull(),
+    titulo: varchar('titulo', { length: 160 }).notNull(),
+    programadaPara: date('programada_para', { mode: 'string' }).notNull(),
+    kilometrajeObjetivo: integer('kilometraje_objetivo'),
+    realizadaEn: timestamp('realizada_en', { withTimezone: true }),
+    kilometrajeRealizado: integer('kilometraje_realizado'),
+    canceladaEn: timestamp('cancelada_en', { withTimezone: true }),
+    notas: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    empresaFechaIdx: index('idx_mantenciones_empresa_fecha').on(
+      table.empresaId,
+      table.programadaPara,
+    ),
+    vehiculoIdx: index('idx_mantenciones_vehiculo').on(table.vehiculoId),
+    tipoCheck: check(
+      'ck_mantenciones_tipo',
+      sql`${table.tipo} IN ('preventiva', 'correctiva', 'inspeccion')`,
+    ),
+    tituloCheck: check('ck_mantenciones_titulo', sql`char_length(${table.titulo}) >= 3`),
+    kmObjetivoCheck: check(
+      'ck_mantenciones_km_objetivo',
+      sql`${table.kilometrajeObjetivo} IS NULL OR ${table.kilometrajeObjetivo} >= 0`,
+    ),
+    kmRealizadoCheck: check(
+      'ck_mantenciones_km_realizado',
+      sql`${table.kilometrajeRealizado} IS NULL OR ${table.kilometrajeRealizado} >= 0`,
+    ),
+    cierreCheck: check(
+      'ck_mantenciones_cierre',
+      sql`${table.realizadaEn} IS NULL OR ${table.canceladaEn} IS NULL`,
+    ),
   }),
 );
 
@@ -1375,6 +1478,11 @@ export const trips = pgTable(
      */
     consigneeName: varchar('destinatario_nombre', { length: 100 }),
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
+    // seguimiento-por-correo (0073): correo opcional del destinatario.
+    consigneeEmail: varchar('destinatario_email', { length: 254 }),
+    // editar-anular-cargas (0075): datos libres de la carga (§12-P4).
+    notes: text('notas'),
+    reference: varchar('referencia', { length: 100 }),
     /**
      * Override por viaje del opt-in de medición de huella. NULL = heredar el
      * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
@@ -1393,6 +1501,15 @@ export const trips = pgTable(
     configuracionComercialId: uuid('configuracion_comercial_id').references(
       () => configuracionComercial.id,
     ),
+    /**
+     * BARH-24 — origen del alta. `marketplace` (default) pasa por matching;
+     * `propio_transportista` lo crea el carrier fuera del matching.
+     */
+    origenAlta: text('origen_alta').notNull().default('marketplace'),
+    /** Cliente externo (solo cuando origen_alta = propio_transportista). */
+    clienteExternoNombre: text('cliente_externo_nombre'),
+    clienteExternoRut: text('cliente_externo_rut'),
+    clienteExternoContacto: text('cliente_externo_contacto'),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1405,6 +1522,33 @@ export const trips = pgTable(
       table.generadorCargaWhatsapp,
     ),
     statusIdx: index('idx_viajes_estado').on(table.status),
+    notasLargoCheck: check(
+      'ck_viajes_notas_largo',
+      sql`${table.notes} IS NULL OR char_length(${table.notes}) <= 1000`,
+    ),
+    origenAltaCheck: check(
+      'ck_viajes_origen_alta',
+      sql`${table.origenAlta} IN ('marketplace', 'propio_transportista')`,
+    ),
+    clientePropioCheck: check(
+      'ck_viajes_cliente_propio',
+      sql`${table.origenAlta} = 'marketplace'
+        OR (
+          ${table.origenAlta} = 'propio_transportista'
+          AND (
+            (
+              ${table.generadorCargaEmpresaId} IS NOT NULL
+              AND ${table.clienteExternoNombre} IS NULL
+              AND ${table.clienteExternoRut} IS NULL
+              AND ${table.clienteExternoContacto} IS NULL
+            )
+            OR (
+              ${table.generadorCargaEmpresaId} IS NULL
+              AND ${table.clienteExternoNombre} IS NOT NULL
+            )
+          )
+        )`,
+    ),
     originRegionIdx: index('idx_viajes_origen_region').on(table.originRegionCode),
     createdIdx: index('idx_viajes_creado').on(table.createdAt),
   }),
@@ -1442,7 +1586,11 @@ export const offers = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    tripEmpresaUnique: unique('uq_ofertas_viaje_empresa').on(table.tripId, table.empresaId),
+    // Solo una oferta pendiente por transportista y viaje: tras una edición el
+    // re-matching vuelve a ofertar a la misma empresa (migración 0076, M2).
+    tripEmpresaPendienteUnique: uniqueIndex('uq_ofertas_viaje_empresa_pendiente')
+      .on(table.tripId, table.empresaId)
+      .where(sql`estado = 'pendiente'`),
     tripIdx: index('idx_ofertas_viaje').on(table.tripId),
     empresaIdx: index('idx_ofertas_empresa').on(table.empresaId),
     statusIdx: index('idx_ofertas_estado').on(table.status),
@@ -1461,16 +1609,23 @@ export const assignments = pgTable(
       .notNull()
       .unique()
       .references(() => trips.id, { onDelete: 'restrict' }),
+    /**
+     * Nullable desde 0085 (BARH-24): viaje propio no pasa por oferta.
+     * Marketplace sigue insertando oferta_id NOT NULL a nivel de aplicación.
+     */
     offerId: uuid('oferta_id')
-      .notNull()
       .unique()
       .references(() => offers.id, { onDelete: 'restrict' }),
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    vehicleId: uuid('vehiculo_id')
-      .notNull()
-      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    /**
+     * Opcional desde la migración 0079 (ADR-090): la empresa acepta la carga y
+     * declara el vehículo al despachar. Hasta la parte 4 de la spec
+     * matching-desde-la-carga, aceptar sigue fijándolo y ninguna fila lo tiene
+     * nulo.
+     */
+    vehicleId: uuid('vehiculo_id').references(() => vehicles.id, { onDelete: 'restrict' }),
     driverUserId: uuid('conductor_id').references(() => users.id),
     status: assignmentStatusEnum('estado').notNull().default('asignado'),
     agreedPriceClp: integer('precio_acordado_clp').notNull(),
@@ -1491,6 +1646,20 @@ export const assignments = pgTable(
      * lo tienen.
      */
     publicTrackingToken: uuid('tracking_token_publico'),
+    // seguimiento-por-correo (0073): idempotencia del envío del enlace, una
+    // marca por canal para que la caída de uno no frene al otro.
+    trackingLinkSentAt: timestamp('tracking_link_enviado_en', { withTimezone: true }),
+    trackingLinkEmailSentAt: timestamp('tracking_link_email_enviado_en', { withTimezone: true }),
+    /**
+     * matching-desde-la-carga §3.9 / §11-3 (migración 0083): marcas de
+     * idempotencia del job de recordatorios cuando la asignación sigue sin
+     * vehículo. Una por etapa (24 h, 2 h, ventana iniciada → generador).
+     */
+    vehicleReminder24hAt: timestamp('recordatorio_vehiculo_24h_en', { withTimezone: true }),
+    vehicleReminder2hAt: timestamp('recordatorio_vehiculo_2h_en', { withTimezone: true }),
+    vehicleMissingGeneratorNotifiedAt: timestamp('aviso_generador_sin_vehiculo_en', {
+      withTimezone: true,
+    }),
     /**
      * Fix privacidad tracking público (migración 0052). Override explícito de
      * expiración del `publicTrackingToken`: NULL = derivar en el servicio
@@ -1523,10 +1692,19 @@ export const assignments = pgTable(
     unidadArrastreId: uuid('unidad_arrastre_id').references(() => vehicles.id, {
       onDelete: 'restrict',
     }),
+    /**
+     * ADR-088 (migración 0078) — la ruta a la que pertenece el servicio. Toda
+     * asignación nueva nace con una ruta de dos paradas. NULL solo en las
+     * asignaciones anteriores a la 0078, hasta el relleno (spec
+     * ruta-parada-servicio §7, parte 3). Vehículo, arrastre y conductor siguen
+     * leyéndose de esta tabla hasta la parte 4.
+     */
+    rutaId: uuid('ruta_id').references((): AnyPgColumn => rutas.id, { onDelete: 'restrict' }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    rutaIdx: index('idx_asignaciones_ruta').on(table.rutaId),
     // Índice compuesto del histórico 7d de matching v2 (lookupCarriersForV2 →
     // agregación por empresa, matching-v2-lookups.ts): WHERE empresa_id IN (...)
     // AND entregado_en >= now() - interval '7 days' GROUP BY empresa_id.
@@ -1562,6 +1740,96 @@ export const assignments = pgTable(
 );
 
 /**
+ * ADR-088 (migración 0078) — el recorrido de una configuración de vehículo
+ * con un conductor, de una empresa transportista. Un servicio que viaja solo
+ * es una ruta de dos paradas. Vehículo y conductor son opcionales mientras
+ * está `planificada`; la regla «en curso exige los dos» la valida
+ * @booster-ai/route-planner, no un CHECK (el relleno de la parte 3 trae
+ * asignaciones históricas sin conductor).
+ */
+export const rutas = pgTable(
+  'rutas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    vehicleId: uuid('vehiculo_id').references(() => vehicles.id, { onDelete: 'restrict' }),
+    unidadArrastreId: uuid('unidad_arrastre_id').references(() => vehicles.id, {
+      onDelete: 'restrict',
+    }),
+    driverUserId: uuid('conductor_id').references(() => users.id),
+    status: estadoRutaEnum('estado').notNull().default('planificada'),
+    plannedPolylineEncoded: text('polilinea_planificada'),
+    startedAt: timestamp('iniciada_en', { withTimezone: true }),
+    closedAt: timestamp('cerrada_en', { withTimezone: true }),
+    cancelledAt: timestamp('cancelada_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    empresaEstadoIdx: index('idx_rutas_empresa_estado').on(table.empresaId, table.status),
+    vehiculoIdx: index('idx_rutas_vehiculo').on(table.vehicleId),
+    conductorIdx: index('idx_rutas_conductor').on(table.driverUserId),
+  }),
+);
+
+/**
+ * ADR-088 — punto ordenado de una ruta. Dirección, ventana y contacto se leen
+ * del servicio (`viajes`); no se copian. `uq_paradas_ruta_orden` es DEFERRABLE
+ * INITIALLY DEFERRED en la base (0078) para reordenar dentro de una
+ * transacción; Drizzle no expresa esa cláusula.
+ */
+export const paradasRuta = pgTable(
+  'paradas_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    rutaId: uuid('ruta_id')
+      .notNull()
+      .references(() => rutas.id, { onDelete: 'restrict' }),
+    orden: integer('orden').notNull(),
+    tipo: tipoParadaEnum('tipo').notNull(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    resolvedAt: timestamp('resuelta_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    ordenUnico: unique('uq_paradas_ruta_orden').on(table.rutaId, table.orden),
+    servicioTipoUnico: unique('uq_paradas_ruta_servicio_tipo').on(
+      table.rutaId,
+      table.tripId,
+      table.tipo,
+    ),
+    viajeIdx: index('idx_paradas_ruta_viaje').on(table.tripId),
+    ordenNoNegativo: check('ck_paradas_ruta_orden', sql`orden >= 0`),
+  }),
+);
+
+/** ADR-088 — quién cambió qué en una ruta y cuándo. */
+export const eventosRuta = pgTable(
+  'eventos_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    rutaId: uuid('ruta_id')
+      .notNull()
+      .references(() => rutas.id, { onDelete: 'restrict' }),
+    tipo: varchar('tipo_evento', { length: 40 }).notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    recordedByUserId: uuid('registrado_por_id').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    rutaIdx: index('idx_eventos_ruta_ruta').on(table.rutaId, table.createdAt),
+    tipoValido: check(
+      'ck_eventos_ruta_tipo',
+      sql`tipo_evento IN ('ruta_creada', 'servicio_agregado', 'servicio_quitado', 'paradas_reordenadas', 'configuracion_declarada', 'estado_cambiado')`,
+    ),
+  }),
+);
+
+/**
  * TripEvent = log inmutable del lifecycle. Append-only.
  */
 export const tripEvents = pgTable(
@@ -1583,6 +1851,70 @@ export const tripEvents = pgTable(
     assignmentIdx: index('idx_eventos_viaje_asignacion').on(table.assignmentId),
     typeIdx: index('idx_eventos_viaje_tipo').on(table.eventType),
     recordedIdx: index('idx_eventos_viaje_registrado').on(table.recordedAt),
+  }),
+);
+
+/** editar-anular-cargas M3 — ciclo de vida de una solicitud de cambio. */
+export const tripChangeRequestStatusEnum = pgEnum('estado_solicitud_cambio', [
+  'pendiente',
+  'aceptada',
+  'rechazada',
+  'retirada',
+  'invalidada',
+]);
+
+/**
+ * Solicitudes de cambio de una carga ya asignada (editar-anular-cargas M3).
+ * El generador propone; el transportista acepta o rechaza. Mientras está
+ * `pendiente` el viaje conserva los datos originales y la recogida queda
+ * bloqueada. `cambios` y `valores_anteriores` se validan con Zod
+ * (`cambioPropuestoSchema`) al escribir y al leer.
+ */
+export const tripChangeRequests = pgTable(
+  'solicitudes_cambio_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id),
+    assignmentId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id),
+    requestedByUserId: uuid('solicitado_por_id')
+      .notNull()
+      .references(() => users.id),
+    status: tripChangeRequestStatusEnum('estado').notNull().default('pendiente'),
+    changes: jsonb('cambios').notNull(),
+    previousValues: jsonb('valores_anteriores').notNull(),
+    respondedByUserId: uuid('respondido_por_id').references(() => users.id),
+    respondedAt: timestamp('respondido_en', { withTimezone: true }),
+    responseReason: text('razon_respuesta'),
+    invalidationReason: varchar('motivo_invalidacion', { length: 40 }),
+    lastReminderAt: timestamp('ultimo_recordatorio_en', { withTimezone: true }),
+    remindersSent: integer('recordatorios_enviados').notNull().default(0),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('cerrado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    pendienteUnica: uniqueIndex('uq_solicitud_cambio_pendiente')
+      .on(table.tripId)
+      .where(sql`estado = 'pendiente'`),
+    asignacionIdx: index('idx_solicitudes_cambio_asignacion').on(table.assignmentId, table.status),
+    pendientesIdx: index('idx_solicitudes_cambio_pendientes')
+      .on(table.createdAt)
+      .where(sql`estado = 'pendiente'`),
+    cerrada: check(
+      'ck_solicitud_cambio_cerrada',
+      sql`(estado = 'pendiente') = (cerrado_en IS NULL)`,
+    ),
+    respondida: check(
+      'ck_solicitud_cambio_respondida',
+      sql`estado NOT IN ('aceptada', 'rechazada') OR (respondido_por_id IS NOT NULL AND respondido_en IS NOT NULL)`,
+    ),
+    motivoInvalidacion: check(
+      'ck_solicitud_cambio_motivo_invalidacion',
+      sql`motivo_invalidacion IS NULL OR motivo_invalidacion IN ('viaje_cancelado', 'datos_cambiaron', 'viaje_no_asignado')`,
+    ),
   }),
 );
 
@@ -1725,6 +2057,18 @@ export const tripMetrics = pgTable(
     pesoDeclarado: boolean('peso_declarado'),
     /** HC-001 parte 2: ALERTAS_DECISION (p. ej. discrepancia_can); '{}' = sin alertas. */
     alertasDecision: varchar('alertas_decision', { length: 40 }).array(),
+    /**
+     * Reparto de la huella de la ruta (migración 0080, ADR-089). La ruta de la
+     * que sale la parte de este servicio; NULL mientras el cálculo sea por
+     * viaje (hasta la parte 3 de la spec huella-consolidada).
+     */
+    rutaId: uuid('ruta_id').references((): AnyPgColumn => rutas.id, { onDelete: 'restrict' }),
+    /** Actividad del servicio: toneladas × km de distancia directa. */
+    actividadTkm: numeric('actividad_tkm', { precision: 14, scale: 3 }),
+    /** Participación del servicio en la huella de su ruta, en porcentaje [0, 100]. */
+    participacion: numeric('participacion', { precision: 5, scale: 2 }),
+    /** `VERSION_METODO_REPARTO` de carbon-calculator con que se repartió. */
+    versionMetodoReparto: varchar('version_metodo_reparto', { length: 40 }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1732,8 +2076,84 @@ export const tripMetrics = pgTable(
     precisionIdx: index('idx_metricas_viaje_metodo_precision').on(table.precisionMethod),
     calculatedIdx: index('idx_metricas_viaje_calculado').on(table.calculatedAt),
     behaviorScoreIdx: index('idx_metricas_viaje_puntaje_conduccion').on(table.behaviorScore),
+    rutaIdx: index('idx_metricas_viaje_ruta').on(table.rutaId),
+    actividadCheck: check(
+      'ck_metricas_viaje_actividad',
+      sql`${table.actividadTkm} IS NULL OR ${table.actividadTkm} >= 0`,
+    ),
+    participacionCheck: check(
+      'ck_metricas_viaje_participacion',
+      sql`${table.participacion} IS NULL OR (${table.participacion} >= 0 AND ${table.participacion} <= 100)`,
+    ),
   }),
 );
+
+/**
+ * Huella de una ruta completa (migración 0080, ADR-089, spec
+ * huella-consolidada §3.1 y §4). Se calcula una vez por ruta y se reparte
+ * entre sus servicios; la parte de cada uno queda en `metricas_viaje`.
+ *
+ * Los tipos numéricos repiten los de `metricas_viaje`: una ruta de un solo
+ * servicio guarda las mismas cifras en los dos lados.
+ *
+ * No tiene `empresa_id`: se lee siempre por `ruta_id`, de una ruta ya validada
+ * contra la empresa.
+ */
+export const metricasRuta = pgTable(
+  'metricas_ruta',
+  {
+    rutaId: uuid('ruta_id')
+      .primaryKey()
+      .references(() => rutas.id, { onDelete: 'restrict' }),
+    distanceKmEstimated: numeric('distancia_km_estimada', { precision: 10, scale: 2 }),
+    distanceKmActual: numeric('distancia_km_real', { precision: 10, scale: 2 }),
+    /** Actividad de transporte de la ruta: Σ toneladas a bordo × km de cada tramo. */
+    actividadTkm: numeric('actividad_tkm', { precision: 14, scale: 3 }),
+    carbonEmissionsKgco2eEstimated: numeric('emisiones_kgco2e_estimadas', {
+      precision: 10,
+      scale: 3,
+    }),
+    carbonEmissionsKgco2eActual: numeric('emisiones_kgco2e_reales', { precision: 10, scale: 3 }),
+    /** Desglose del cálculo vigente (real si existe, si no estimado). */
+    emisionesKgco2eTtw: numeric('emisiones_kgco2e_ttw', { precision: 10, scale: 3 }),
+    emisionesKgco2eWtt: numeric('emisiones_kgco2e_wtt', { precision: 10, scale: 3 }),
+    intensidadGco2ePorTkm: numeric('intensidad_gco2e_por_tkm', { precision: 12, scale: 3 }),
+    fuelConsumedLEstimated: numeric('combustible_consumido_l_estimado', {
+      precision: 10,
+      scale: 2,
+    }),
+    fuelConsumedLActual: numeric('combustible_consumido_l_real', { precision: 10, scale: 2 }),
+    precisionMethod: precisionMethodEnum('metodo_precision'),
+    glecVersion: varchar('version_glec', { length: 10 }),
+    emissionFactorUsed: numeric('factor_emision_usado', { precision: 8, scale: 5 }),
+    factoresFuente: text('factores_fuente'),
+    /** La fuente más débil entre los tramos de la ruta (spec §3.8). */
+    routeDataSource: routeDataSourceEnum('fuente_dato_ruta'),
+    /** Cobertura de los tramos ponderada por distancia, en porcentaje [0, 100]. */
+    coveragePct: numeric('cobertura_pct', { precision: 5, scale: 2 }),
+    /** Derivado por `derivarNivelRuta`; lo heredan todos los servicios de la ruta. */
+    certificationLevel: certificationLevelEnum('nivel_certificacion'),
+    uncertaintyFactor: numeric('factor_incertidumbre', { precision: 4, scale: 3 }),
+    versionMetodoReparto: varchar('version_metodo_reparto', { length: 40 }),
+    calculatedAt: timestamp('calculado_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    calculatedIdx: index('idx_metricas_ruta_calculado').on(table.calculatedAt),
+    actividadCheck: check(
+      'ck_metricas_ruta_actividad',
+      sql`${table.actividadTkm} IS NULL OR ${table.actividadTkm} >= 0`,
+    ),
+    coberturaCheck: check(
+      'ck_metricas_ruta_cobertura',
+      sql`${table.coveragePct} IS NULL OR (${table.coveragePct} >= 0 AND ${table.coveragePct} <= 100)`,
+    ),
+  }),
+);
+
+export type MetricasRutaRow = typeof metricasRuta.$inferSelect;
+export type NewMetricasRutaRow = typeof metricasRuta.$inferInsert;
 
 // =============================================================================
 // SOSTENIBILIDAD (Stakeholders + consentimientos)
@@ -1958,7 +2378,20 @@ export const telemetryPoints = pgTable(
     vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
     // idx_telemetria_imei_ts e idx_telemetria_vehiculo_recibido dropeados
     // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
-    // proyecciones). telemetria_puntos paga 3 estructuras por INSERT, no 5.
+    // proyecciones).
+    // 0070: solo filas con fix. La última posición no camina los 0,0.
+    // Un insert sin fix no agrega hoja en estos dos. DESC igual que el SQL:
+    // el LIMIT 1 lee la hoja más nueva.
+    gpsValidoVehiculoIdx: index('idx_telemetria_vehiculo_gps_valido')
+      .on(table.vehicleId, table.timestampDevice.desc())
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
+    gpsValidoImeiIdx: index('idx_telemetria_imei_gps_valido')
+      .on(table.imei, table.timestampDevice.desc())
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
   }),
 );
@@ -2864,6 +3297,45 @@ export const transportDocuments = pgTable(
 );
 
 /**
+ * Instrucciones de retiro (spec `instrucciones-retiro`, migración 0072). El
+ * generador sube el QR o comprobante que le entrega el lugar de retiro, con
+ * el lugar y una nota, para que el conductor lo muestre al retirar. Una fila
+ * por viaje (la vigente); reemplazar actualiza la fila.
+ *
+ * Va aparte de `documentos_transporte` por decisión del PO (2026-11-09): no
+ * pasa por el TED, no tiene retención de 6 años y no cuenta para el cierre.
+ */
+export const pickupInstructions = pgTable(
+  'instrucciones_retiro',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    viajeId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    // Objeto GCS `instrucciones-retiro/{viajeId}/{uuid}.{ext}` en el bucket
+    // INSTRUCCIONES_RETIRO_BUCKET. Va junto con `fileMime`.
+    filePath: text('archivo_path'),
+    fileMime: text('archivo_mime'),
+    place: text('lugar'),
+    note: text('nota'),
+    uploadedBy: uuid('subido_por').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    viajeUnico: unique('uq_instrucciones_retiro_viaje').on(table.viajeId),
+    contenidoCheck: check(
+      'ck_instrucciones_retiro_contenido',
+      sql`${table.filePath} IS NOT NULL OR ${table.note} IS NOT NULL`,
+    ),
+    archivoCheck: check(
+      'ck_instrucciones_retiro_archivo',
+      sql`(${table.filePath} IS NULL) = (${table.fileMime} IS NULL)`,
+    ),
+  }),
+);
+
+/**
  * Auditoría de impersonación (impersonación auditada). Cada inicio de una
  * sesión impersonada (POST /auth/impersonate) inserta una fila: quién
  * (`admin_id`), a quién (`usuario_impersonado_id`), sobre qué empresa
@@ -3021,6 +3493,10 @@ export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;
 export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
 
 // Repositorio documental de transporte — documentos_transporte (migration 0044)
+export type RutaRow = typeof rutas.$inferSelect;
+export type NewRutaRow = typeof rutas.$inferInsert;
+export type ParadaRutaRow = typeof paradasRuta.$inferSelect;
+export type EventoRutaRow = typeof eventosRuta.$inferSelect;
 export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
 export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;
 
@@ -3081,6 +3557,11 @@ export const certificadosViaje = pgTable(
     fuenteDistancia: varchar('fuente_distancia', { length: 20 }),
     motivoFallback: varchar('motivo_fallback', { length: 40 }),
     decisionVersion: smallint('decision_version'),
+    /**
+     * reemision-certificado (0082): por qué se reemitió. Nulo en la versión
+     * 1; obligatorio y de la lista cerrada desde la 2.
+     */
+    motivoReemision: varchar('motivo_reemision', { length: 40 }),
     creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -3094,5 +3575,86 @@ export const certificadosViaje = pgTable(
       'chk_certificados_viaje_estado',
       sql`estado IN ('vigente', 'reemplazado', 'revertido')`,
     ),
+    motivoValido: check(
+      'ck_certificados_viaje_motivo',
+      sql`(version = 1 AND motivo_reemision IS NULL) OR (version > 1 AND motivo_reemision IS NOT NULL AND motivo_reemision IN ('factor_impreso_no_corresponde'))`,
+    ),
   }),
 );
+
+/**
+ * Confirmaciones del acceso al panel de Booster (`.specs/confirmar-acceso-booster`,
+ * migración `0081_confirmaciones_acceso_booster`). Cuando el panel del
+ * personal da de alta una cuenta que ya tiene clave y vínculos con una
+ * empresa, el acceso lo confirma la persona desde su sesión con un código de
+ * 6 dígitos que el admin le entrega en persona. El código se guarda solo como
+ * hash, vence a las 24 horas y deja de servir al quinto intento fallido. Una
+ * sola confirmación pendiente (`consumido_en` NULL) por persona: emitir una
+ * nueva borra la anterior.
+ */
+export const confirmacionesAccesoBooster = pgTable(
+  'confirmaciones_acceso_booster',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    usuarioId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    codigoHash: text('codigo_hash').notNull(),
+    venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
+    intentosFallidos: integer('intentos_fallidos').notNull().default(0),
+    emitidoPorUsuarioId: uuid('emitido_por_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    consumidoEn: timestamp('consumido_en', { withTimezone: true }),
+  },
+  (table) => ({
+    pendienteUnica: uniqueIndex('uq_confirmaciones_acceso_booster_pendiente')
+      .on(table.usuarioId)
+      .where(sql`consumido_en IS NULL`),
+    intentosNoNegativos: check(
+      'chk_confirmaciones_acceso_booster_intentos',
+      sql`intentos_fallidos >= 0`,
+    ),
+  }),
+);
+export type ConfirmacionAccesoBoosterRow = typeof confirmacionesAccesoBooster.$inferSelect;
+
+/**
+ * Invitaciones por correo a la UI `/crear-cuenta` (ADR-093, migración 0084).
+ * El admin invita con el correo; la persona consigna datos y clave Firebase.
+ * Token solo como hash; una pendiente por email (`consumido_en` NULL).
+ */
+export const invitacionesCorreoCuenta = pgTable(
+  'invitaciones_correo_cuenta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: varchar('email', { length: 255 }).notNull(),
+    tipo: text('tipo').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiraEn: timestamp('expira_en', { withTimezone: true }).notNull(),
+    consumidoEn: timestamp('consumido_en', { withTimezone: true }),
+    emitidoPorUsuarioId: uuid('emitido_por_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    organizacionStakeholderId: uuid('organizacion_stakeholder_id').references(
+      () => organizacionesStakeholder.id,
+      { onDelete: 'restrict' },
+    ),
+    creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenHashUq: uniqueIndex('uq_invitaciones_correo_cuenta_token_hash').on(table.tokenHash),
+    emailPendienteUq: uniqueIndex('uq_invitaciones_correo_cuenta_email_pendiente')
+      .on(table.email)
+      .where(sql`consumido_en IS NULL`),
+    expiraIdx: index('idx_invitaciones_correo_cuenta_expira')
+      .on(table.expiraEn)
+      .where(sql`consumido_en IS NULL`),
+    tipoCheck: check(
+      'chk_invitaciones_correo_cuenta_tipo',
+      sql`${table.tipo} IN ('personal_booster', 'stakeholder')`,
+    ),
+  }),
+);
+export type InvitacionCorreoCuentaRow = typeof invitacionesCorreoCuenta.$inferSelect;

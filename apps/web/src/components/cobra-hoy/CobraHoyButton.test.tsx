@@ -98,8 +98,8 @@ describe('CobraHoyButton — modal con cotización OK', () => {
 });
 
 describe('CobraHoyButton — modal con errores backend', () => {
-  it('503 feature_disabled → muestra mensaje y oculta confirm', async () => {
-    vi.spyOn(api, 'get').mockRejectedValue(new ApiError(503, 'feature_disabled', null));
+  it('flag apagado → muestra mensaje y oculta confirm', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ enabled: false, items: [] });
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /Cobra hoy/i }));
     expect(await screen.findByText(/La opción de pronto pago no está activa/i)).toBeInTheDocument();

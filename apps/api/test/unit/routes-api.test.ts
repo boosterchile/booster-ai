@@ -220,6 +220,7 @@ describe('computeRoutes — response parsing', () => {
         fuelL: null,
         polylineEncoded: 'abc123',
         startLocation: null,
+        endLocation: null,
       },
     ]);
   });
@@ -297,6 +298,7 @@ describe('computeRoutes — response parsing', () => {
       fuelL: null,
       polylineEncoded: '',
       startLocation: null,
+      endLocation: null,
     });
   });
 });

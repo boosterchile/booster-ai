@@ -73,6 +73,7 @@ describe('computeRoutes', () => {
         fuelL: null,
         polylineEncoded: 'abc123',
         startLocation: null,
+        endLocation: null,
       },
     ]);
   });
@@ -118,6 +119,41 @@ describe('computeRoutes', () => {
       durationS: 1800,
       polylineEncoded: 'abc123',
     });
+  });
+
+  // editar-anular-cargas §6.3: el destino geocodificado sale del último leg.
+  it('pide routes.legs.endLocation y expone endLocation del último leg', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          routes: [
+            {
+              distanceMeters: 12_500,
+              duration: '1800s',
+              legs: [
+                {
+                  startLocation: { latLng: { latitude: -33.41, longitude: -70.6 } },
+                  endLocation: { latLng: { latitude: -33.02, longitude: -71.55 } },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const result = await computeRoutes({
+      projectId: 'p',
+      origin: 'A',
+      destination: 'B',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+    const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['X-Goog-FieldMask']).toContain(
+      'routes.legs.endLocation',
+    );
+    expect(result[0]?.endLocation).toEqual({ lat: -33.02, lng: -71.55 });
   });
 
   it('sin legs/startLocation en la respuesta → startLocation null (no lanza)', async () => {

@@ -27,13 +27,14 @@ function fillForm() {
 }
 
 describe('CrearEmpresa', () => {
-  it('crea un generador de carga y avisa que quedó en verificación', async () => {
+  // acceso-usuarios-empresa-panel SC6: la empresa nace activa y el panel lo dice.
+  it('crea un generador de carga y avisa que quedó activa', async () => {
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       ok: true,
       empresa_id: 'empresa-nueva-uuid',
       razon_social: 'Retail Norte SpA',
       rut: '12345678-5',
-      estado: 'pendiente_verificacion',
+      estado: 'activa',
       es_generador_carga: true,
       es_transportista: false,
       plan_slug: 'gratis',
@@ -58,8 +59,37 @@ describe('CrearEmpresa', () => {
       }),
     );
 
-    expect(await screen.findByTestId('empresa-creada')).toHaveTextContent('generador de carga');
+    const aviso = await screen.findByTestId('empresa-creada');
+    expect(aviso).toHaveTextContent('generador de carga');
+    expect(aviso).toHaveTextContent('quedó activa');
+    expect(aviso).not.toHaveTextContent(/verificación/);
     expect(onCreated).toHaveBeenCalledWith('empresa-nueva-uuid');
+  });
+
+  it('si la API devuelve otro estado, el aviso dice el estado real', async () => {
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      empresa_id: 'empresa-nueva-uuid',
+      razon_social: 'Retail Norte SpA',
+      rut: '12345678-5',
+      estado: 'pendiente_verificacion',
+      es_generador_carga: true,
+      es_transportista: true,
+      plan_slug: 'gratis',
+    });
+
+    render(<CrearEmpresa onCreated={vi.fn()} />);
+    fillForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Crear empresa' }));
+
+    const aviso = await screen.findByTestId('empresa-creada');
+    expect(aviso).toHaveTextContent('quedó en verificación');
+    expect(aviso).toHaveTextContent('generador de carga y transportista');
+  });
+
+  it('explica que la empresa queda activa al crearla', () => {
+    render(<CrearEmpresa onCreated={vi.fn()} />);
+    expect(screen.getByText(/La empresa queda activa/)).toBeInTheDocument();
   });
 
   it('explica el RUT duplicado y no deja el botón trabado', async () => {
@@ -85,7 +115,7 @@ describe('CrearEmpresa', () => {
       empresa_id: 'empresa-nueva-uuid',
       razon_social: 'Retail Norte SpA',
       rut: '76274900-9',
-      estado: 'pendiente_verificacion',
+      estado: 'activa',
       es_generador_carga: true,
       es_transportista: false,
       plan_slug: 'gratis',

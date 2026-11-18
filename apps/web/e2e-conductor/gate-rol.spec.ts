@@ -10,6 +10,7 @@ test.describe('gate de rol /app/conductor', () => {
     await page.goto('/app/conductor');
     await expect(page).toHaveURL(/\/app\/?$/, { timeout: 15_000 });
     await expect(page.getByTestId('confirmar-recogida')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: /Bienvenido a Booster/i })).toBeVisible();
+    // Un generador puro ve su inicio, no el saludo genérico.
+    await expect(page.getByTestId('inicio-generador')).toBeVisible();
   });
 });

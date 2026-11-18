@@ -15,6 +15,7 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@booster-ai/shared-schemas": "workspace:*",
     "@types/node": "^22.14.0",
     "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.8.2",

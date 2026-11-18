@@ -14,7 +14,7 @@ import type { WorkspaceService } from '../services/observability/workspace-servi
  * Router /admin/observability/* — dashboard de observabilidad para
  * platform-admin Booster (spec 2026-05-13).
  *
- * Auth: BOOSTER_PLATFORM_ADMIN_EMAILS allowlist (via requirePlatformAdmin).
+ * Auth: `requirePlatformAdmin` (regla única de acceso al panel).
  * Feature flag: OBSERVABILITY_DASHBOARD_ACTIVATED. Si false → 503 antes
  * de tocar BigQuery o cualquier API externa (kill-switch).
  *

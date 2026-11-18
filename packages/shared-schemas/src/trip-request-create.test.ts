@@ -128,3 +128,53 @@ describe('tripRequestCreateInputSchema — mensajes del peso (TRK-003)', () => {
     expect(primerMensaje('1000')).toBe('Ingresa el peso en kg');
   });
 });
+
+// seguimiento-por-correo SC5: correo opcional del destinatario.
+describe('tripRequestCreateInputSchema — correo del destinatario', () => {
+  it('guarda el correo sin espacios y en minúsculas', () => {
+    const r = tripRequestCreateInputSchema.parse({
+      ...base(),
+      consignee: { name: 'Bodega', email: '  Recepcion@Cliente.CL ' },
+    });
+    expect(r.consignee?.email).toBe('recepcion@cliente.cl');
+  });
+
+  it('rechaza un correo con formato inválido, con mensaje en español', () => {
+    const r = tripRequestCreateInputSchema.safeParse({
+      ...base(),
+      consignee: { email: 'no-es-correo' },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const issue = r.error.issues.find((i) => i.path.join('.') === 'consignee.email');
+      expect(issue?.message).toBe('Ingresa un correo válido, como nombre@empresa.cl');
+    }
+  });
+
+  it('el correo es opcional', () => {
+    const r = tripRequestCreateInputSchema.parse({ ...base(), consignee: { name: 'Bodega' } });
+    expect(r.consignee?.email).toBeUndefined();
+  });
+});
+
+// editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
+describe('tripRequestCreateInputSchema — notas y referencia', () => {
+  it('las acepta opcionales y sin espacios', () => {
+    const r = tripRequestCreateInputSchema.parse({
+      ...base(),
+      notes: ' Andén 4 ',
+      reference: 'PO-1',
+    });
+    expect(r.notes).toBe('Andén 4');
+    expect(r.reference).toBe('PO-1');
+  });
+
+  it('respeta los topes de 1000 y 100 caracteres', () => {
+    expect(
+      tripRequestCreateInputSchema.safeParse({ ...base(), notes: 'x'.repeat(1001) }).success,
+    ).toBe(false);
+    expect(
+      tripRequestCreateInputSchema.safeParse({ ...base(), reference: 'x'.repeat(101) }).success,
+    ).toBe(false);
+  });
+});

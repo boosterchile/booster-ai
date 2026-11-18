@@ -143,7 +143,7 @@ function Precios({ datos }: { datos: PreciosPublicos }) {
             unidad="por camión al mes"
           />
           <p>
-            Con gestión de flota:{' '}
+            Booster Fleet, la gestión de flota:{' '}
             <span data-testid="precio-gestion-flota" className="font-semibold">
               {uf(s.suscripcion_transportista_gestion_flota_uf_camion_mes)}
             </span>{' '}

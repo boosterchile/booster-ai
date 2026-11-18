@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { calcularCoberturaPura } from './calcular-cobertura-telemetria.js';
 import { cargarTrazaPoints, construirResumen, downsampleTraza } from './obtener-traza-vehiculo.js';
@@ -60,7 +61,7 @@ export async function obtenerTrazaCarga(opts: {
 
   const [row] = await db
     .select({
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       plate: vehicles.plate,
       tripId: assignments.tripId,
       pickup: trips.pickupWindowStart,
@@ -70,24 +71,24 @@ export async function obtenerTrazaCarga(opts: {
     })
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .leftJoin(tripMetrics, eq(tripMetrics.tripId, assignments.tripId))
     .where(and(eq(assignments.id, assignmentId), eq(assignments.empresaId, empresaId)))
     .limit(1);
 
-  if (!row) {
+  if (!row || row.vehicleId == null) {
+    // Sin vehículo no hay traza GPS; el INNER JOIN ya la excluye en la práctica.
     return { kind: 'not_found' };
   }
 
+  const vehicleId = row.vehicleId;
   const desde = row.pickup;
   const hasta = row.delivered ?? now;
   const distanciaEsperadaKm = row.distanciaEstimada !== null ? Number(row.distanciaEstimada) : null;
 
   // Sin ventana (pickup null) → traza vacía, pero seguimos exponiendo la ruta
   // esperada + la distancia estimada.
-  const puntos = desde
-    ? await cargarTrazaPoints({ db, vehicleId: row.vehicleId, desde, hasta })
-    : [];
+  const puntos = desde ? await cargarTrazaPoints({ db, vehicleId, desde, hasta }) : [];
 
   const base = construirResumen(puntos);
   const coberturaPct =
@@ -99,7 +100,7 @@ export async function obtenerTrazaCarga(opts: {
   logger.info(
     {
       assignmentId,
-      vehicleId: row.vehicleId,
+      vehicleId,
       puntosTotal: puntos.length,
       delivered: row.delivered !== null,
       conRutaEsperada: row.polyline !== null,

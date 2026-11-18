@@ -1,16 +1,14 @@
 import type { Logger } from '@booster-ai/logger';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import {
   BacktestRunNotFoundError,
   getBacktestRun,
   listBacktestRuns,
   runBacktest,
 } from '../services/matching-backtest.js';
-import type { UserContext } from '../services/user-context.js';
 
 /**
  * Endpoints platform-admin para gestionar corridas de backtest del
@@ -28,8 +26,8 @@ import type { UserContext } from '../services/user-context.js';
  *   GET /admin/matching/backtest/:id
  *     → Detalle completo (incluye resultados por trip).
  *
- * Audiencia: emails en `BOOSTER_PLATFORM_ADMIN_EMAILS`. Misma gate que
- * los otros admin routes (seed, jobs, liquidaciones).
+ * Audiencia: platform-admin (`requirePlatformAdmin`), el mismo guard que
+ * las demás rutas admin.
  */
 
 const runRequestSchema = z.object({
@@ -58,22 +56,6 @@ const runRequestSchema = z.object({
 
 export function createAdminMatchingBacktestRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, adminEmail: email };
-  }
 
   // POST /admin/matching/backtest — dispara corrida.
   app.post('/backtest', async (c) => {

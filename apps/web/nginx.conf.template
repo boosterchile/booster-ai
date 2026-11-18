@@ -34,9 +34,29 @@ server {
         expires 0;
     }
 
+    # registerSW.js no tiene hash. Sin este location exacto cae en el
+    # regex de *.js (expires 1y + immutable, max-age=31536000) y la PWA
+    # instalada se queda con el script de registro viejo.
+    location = /registerSW.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        expires 0;
+    }
+
     location = /manifest.webmanifest {
         add_header Cache-Control "no-cache";
         expires 0;
+    }
+
+    # Seguimiento público (enlace personal, sin sesión): los buscadores no lo
+    # indexan y el navegador no lo manda como referente. `index.html` se sirve
+    # DENTRO de este location (no como fallback de try_files, que haría un
+    # redirect interno a `location /` y perdería estas cabeceras).
+    location /tracking/ {
+        add_header Cache-Control "no-cache";
+        add_header X-Robots-Tag "noindex, nofollow";
+        add_header Referrer-Policy "no-referrer";
+        try_files /index.html =404;
     }
 
     # SPA fallback — index.html nunca se cachea (debe verse en cada deploy).

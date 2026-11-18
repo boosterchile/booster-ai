@@ -44,6 +44,7 @@ const TENANT_FREE_TABLES = new Set([
   'tripEvents', // siempre se inserta dentro de transacción de un trip ya validado
   'tripMetrics', // alias inglés de metricasViaje
   'certificadosViaje', // versiones del cert; por trip_id validado, como tripMetrics (HC-001 p3a)
+  'tripChangeRequests', // solicitudes de cambio; bajo lock de un viaje o asignación ya validados (editar-anular-cargas M3)
   'chatMessages', // se filtra por assignment_id (que ya validó tenant en resolveChatAccess)
   'pushSubscriptions', // se filtra por userId
   'telemetryPoints', // se filtra por vehicleId (que ya validó tenant)
@@ -51,6 +52,7 @@ const TENANT_FREE_TABLES = new Set([
   'cuentasDemo', // T1 SEC-001 Sprint 2a: 4-row global registry de cuentas demo (no per-tenant). Ver ADR-053 + docs/qa/demo-accounts.md.
   // +4 (spec lint-rls-services-jobs §3.4, censo §1/§6): sin discriminador ni FK indirecto a tabla tenant-scoped.
   'solicitudesRegistro', // pre-tenant: signup público gated por admin, la empresa aún no existe (censo §5)
+  'invitacionesCorreoCuenta', // pre-tenant ADR-093: invite por correo antes de que exista la cuenta; se resuelve por token_hash
   'matchingBacktestRuns', // admin/global: backtest platform-admin sobre todas las empresas (rls-viabilidad §3)
   'empresas', // raíz del tenant: es la tabla `empresas` misma, no se auto-filtra por empresa_id (censo §1)
   'membershipTiers', // catálogo global de tiers de membresía (censo §1)

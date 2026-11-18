@@ -35,7 +35,9 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
+import { ctxDeUserContext, esSoloLectura, veSoloSuViaje } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, chatMessages, trips, users as usersTable } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { createEphemeralChatSubscription, publishChatMessage } from '../services/chat-pubsub.js';
@@ -146,6 +148,7 @@ export function createChatRoutes(opts: {
         empresaId: string;
         userId: string;
         assignmentStatus: string;
+        soloLectura: boolean;
       }
     | { ok: false; response: Response }
   > {
@@ -170,6 +173,7 @@ export function createChatRoutes(opts: {
         assignmentStatus: assignments.status,
         carrierEmpresaId: assignments.empresaId,
         shipperEmpresaId: trips.generadorCargaEmpresaId,
+        driverUserId: conductorDeAsignacion,
       })
       // rls-allowlist: chat valida AMBAS partes (carrier+shipper) explícitamente abajo
       .from(assignments)
@@ -199,12 +203,29 @@ export function createChatRoutes(opts: {
       };
     }
 
+    const ctx = ctxDeUserContext(userContext);
+    // Sin contexto no se salta el filtro del conductor: se niega.
+    if (!ctx) {
+      return {
+        ok: false,
+        response: c.json({ error: 'forbidden', code: 'capability_denied' }, 403),
+      };
+    }
+    // El conductor empleado solo entra al chat del viaje que tiene asignado.
+    if (veSoloSuViaje(ctx) && row.driverUserId !== userContext.user.id) {
+      return {
+        ok: false,
+        response: c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403),
+      };
+    }
+
     return {
       ok: true,
       role,
       empresaId: empresaActivaId,
       userId: userContext.user.id,
       assignmentStatus: row.assignmentStatus,
+      soloLectura: ctx !== null && esSoloLectura(ctx),
     };
   }
 
@@ -216,6 +237,10 @@ export function createChatRoutes(opts: {
     const access = await resolveChatAccess(c, assignmentId);
     if (!access.ok) {
       return access.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS: el visualizador lee el chat y no lo escribe.
+    if (access.soloLectura) {
+      return c.json({ error: 'forbidden', code: 'read_only' }, 403);
     }
 
     // Solo se puede escribir mientras el assignment esté activo. Una vez
@@ -571,6 +596,10 @@ export function createChatRoutes(opts: {
       const access = await resolveChatAccess(c, assignmentId);
       if (!access.ok) {
         return access.response;
+      }
+      // CHEQUEOS_REEMPLAZADOS: subir foto es escritura.
+      if (access.soloLectura) {
+        return c.json({ error: 'forbidden', code: 'read_only' }, 403);
       }
 
       if (!opts.attachmentsBucket) {

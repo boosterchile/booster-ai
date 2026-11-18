@@ -1,8 +1,34 @@
 # Runbook — Provisionar un platform admin (`bootstrap-platform-admin`)
 
+## 0. Camino normal: el panel otorga y quita el acceso
+
+Desde `.specs/acceso-panel-plataforma/spec.md` (2026-11-09), el acceso al panel lo otorga y lo quita el propio panel en `/app/platform-admin/personal`. No hace falta túnel a la base, script ni `terraform apply` por persona. El admin carga los datos y la persona elige su propia clave.
+
+Tiene acceso al panel la cuenta marcada como personal de Booster y activa, o un correo de la lista de respaldo de Terraform (`booster_platform_admin_emails`). **La lista queda solo para el primer admin**, cuando todavía no hay nadie que pueda usar el panel.
+
+El orden normal para sumar a una persona es:
+
+1. **Alta en el panel.** Un platform-admin abre `/app/platform-admin/personal`, ingresa correo, nombre completo y RUT, y confirma. La cuenta queda marcada como personal de Booster.
+   - Si la persona no tenía cuenta, se crea provisoria con un código de activación de 7 días. El panel lo muestra **una sola vez** y también se lo enviamos por correo con el enlace a `/activar`.
+   - Si ya tenía una cuenta activa, queda con acceso desde ese momento, con su clave de siempre. Confírmalo con la persona: quien entra con ese RUT y esa clave tiene acceso al panel.
+2. **La persona activa en `/activar`** con su RUT, el código y la clave de 6 dígitos que elige. Para una cuenta marcada, `/auth/activar` exige un código emitido desde el panel que siga vigente. Un código que le haya dejado otro flujo no sirve: genera uno nuevo con **«Generar código nuevo»** en su fila (el anterior deja de servir y el plazo de 7 días corre desde ahí). Si falta una condición, la pantalla responde que no pudo activar la cuenta, sin decir cuál faltó: revisa la fila de la persona (vencimiento del código) antes de pedirle que reintente.
+3. **Entra por `/login`** eligiendo la tarjeta **«Booster»**, con su RUT y su clave.
+
+Para **quitar** a alguien, usa **«Quitar acceso»** en su fila. Deja de entrar al panel desde su próxima acción; su cuenta y su clave no cambian, y si todavía no activó su código deja de servir. No deja el panel sin nadie con acceso.
+
+Un correo de la lista de respaldo se quita en dos pasos, porque esas cuentas también quedan marcadas: (1) el PO lo saca de `booster_platform_admin_emails` en su `terraform.tfvars` local y aplica; (2) un platform-admin usa «Quitar acceso» en su fila, que recién entonces aparece. Con solo el paso 1 la persona sigue entrando por la marca.
+
+Cada alta que otorga el acceso y cada baja dejan un evento de auditoría (`personal_booster.acceso_otorgado`, `personal_booster.acceso_quitado`) y mandan un correo de aviso a los correos de la lista de respaldo.
+
+> **Aviso:** `/auth/activar` tiene un límite de intentos. Si la persona prueba varias veces con un código equivocado, espera unos minutos antes de reintentar. Si el código que tiene no sirve, genera uno nuevo; igual hay que esperar esos minutos.
+
+**El script de este runbook queda para el primer admin** (cuando nadie puede usar el panel), **para reparar cuentas** (RUT faltante, marca faltante, fila inconsistente) y **para rotar la clave** (`--rotate-clave`). No es el camino para sumar personal nuevo.
+
+---
+
 **Para**: operador Booster (humano; hoy el owner `dev@boosterchile.com`). **Nunca CI.**
 **Qué hace**: crea/reconcilia de forma idempotente y no destructiva la cuenta Firebase y la fila `usuarios` de un platform admin, dejándolo operable por LoginUniversal (RUT + clave de 6 dígitos) y aceptado por la allowlist del backend. Es el mecanismo reproducible del Gap A (diagnóstico `docs/corfo/hito-2/diagnostico-alta-usuarios.md` §7; spec `.specs/bootstrap-platform-admin/spec.md`).
-**Cuándo usarlo**: primer admin desde cero · reparar la fila del admin actual (RUT/clave/flag faltantes) · alta de un segundo admin (después de agregarlo a la allowlist en Terraform) · rotación de clave (`--rotate-clave`).
+**Cuándo usarlo**: primer admin desde cero (no hay nadie que pueda usar el panel) · reparar la fila de un admin (RUT/clave/flag faltantes) · rotación de clave (`--rotate-clave`). Para sumar o quitar personal, usa el panel (§0).
 
 **Lo que este script NO hace** (a propósito): no edita la allowlist (`BOOSTER_PLATFORM_ADMIN_EMAILS` vive en Terraform y la cambia solo el PO) · no toca passwords de Firebase · no modifica un RUT ya declarado · no borra nada.
 
@@ -46,7 +72,7 @@ export BOOSTER_PLATFORM_ADMIN_EMAILS="dev@boosterchile.com"
  export BOOTSTRAP_ADMIN_CLAVE="<6 dígitos>"
 ```
 
-> El email debe estar en la allowlist **antes** de correr el script. Si estás dando de alta un segundo admin, primero va el cambio en Terraform (PO) y después este runbook.
+> El script exige que el email esté en la lista de respaldo: es el camino del primer admin. Para sumar a una persona nueva no uses el script: sigue el camino del panel (§0).
 
 ## 2. Dry-run PRIMERO (obligatorio)
 
@@ -106,16 +132,17 @@ Salida esperada: mismo reporte del dry-run pero sin el prefijo `dry-run:`, con `
 ## 6. Rotación de clave / segundo admin
 
 - **Rotar clave**: mismo comando + `--rotate-clave` (sin él, una clave existente jamás se toca).
-- **Segundo admin**: (1) PO agrega el email a `BOOSTER_PLATFORM_ADMIN_EMAILS` en Terraform y aplica; (2) exporta la allowlist actualizada; (3) corre este runbook con los datos del nuevo admin.
+- **Segundo admin (y siguientes)**: no pasa por este script ni por Terraform. Sigue §0: (1) alta en `/app/platform-admin/personal`; (2) la persona activa en `/activar` con el código; (3) entra por `/login` con la tarjeta «Booster». El script solo entra si después hay que reparar esa cuenta.
 
 ## 7. Troubleshooting (aborts por diseño — ninguno deja escrituras parciales)
 
 | Error | Significado | Acción |
 |---|---|---|
-| `NotInAllowlistError` | El email no está en la allowlist que exportaste | Verifica el valor vigente en Terraform; si es un admin nuevo, primero el cambio de allowlist (PO) |
+| `NotInAllowlistError` | El email no está en la allowlist que exportaste | Verifica el valor vigente en Terraform. Si es una persona nueva, no uses el script: dala de alta en el panel (§0) |
 | `RutConflictError` | El RUT pertenece a OTRO usuario | Ese RUT no es del admin — verifica el dato; jamás se reasigna un RUT ajeno |
 | `RutImmutableError` | La fila del admin ya declara otro RUT | Cambiar un RUT declarado no es alcance del bootstrap; escala al PO |
 | `FirebaseUidConflictError` | El uid Firebase vive en la fila de otro email | Estado inconsistente (cuenta compartida) — diagnóstico manual antes de re-correr |
+| `CuentaDeSolicitudError` | La cuenta Firebase de ese correo es de una solicitud de registro aprobada (por su uid o por su correo) | No se reutiliza (`.specs/correos-solicitudes-panel` SC5) — resolver desde soporte antes de re-correr |
 | `InvalidBootstrapInputError` | RUT o clave con formato inválido | Corrige el input (RUT con DV correcto; clave = exactamente 6 dígitos) |
 | `role "..." does not exist` (psql/script) con credenciales válidas | **Okupa en el puerto del túnel**: hay OTRO Postgres local escuchando en 5433 y estás hablando con él, no con prod | `lsof -nP -i :5433` e identificá el proceso; detenelo por su data-dir (`pg_ctl -D <dir> stop -m fast`) o usá otro puerto (`LOCAL_PORT`/`--local-host-port`). Causa raíz del incidente 2026-07-07 |
 

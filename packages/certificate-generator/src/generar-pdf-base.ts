@@ -18,9 +18,16 @@
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, type PDFFont, rgb, setCharacterSpacing } from 'pdf-lib';
+import {
+  FRASE_CONSOLIDACION,
+  TEXTO_METODO_REPARTO,
+  validarConsolidacion,
+} from './consolidacion.js';
 import { type FuentesCert, embeberFuentes } from './fuentes.js';
+import { lineaReemplazo, validarVersion } from './reemision.js';
 import {
   FRASE_ISO,
+  type Presentacion,
   TAMANO_LINEA_METODO,
   TITULO_CERT,
   TITULO_DISCLAIMER,
@@ -32,6 +39,7 @@ import {
   presentacionNivel,
   subtituloMetodologia,
   textoDisclaimer,
+  textoNotaMetodo,
 } from './render-helpers.js';
 import type {
   DatosEmpresaCertificado,
@@ -86,7 +94,7 @@ export async function generarPdfConCajas(
   const c = new Cursor(pdfDoc, registro);
 
   // 1. Fila superior: marca a la izquierda; código y versión a la derecha.
-  const ver = params.viaje.version ?? { numero: 1 };
+  const ver = validarVersion(params.viaje.version);
   c.texto('Booster', MX, c.y - 16, 16, f.bold, AZUL);
   c.derecha('Código de viaje', c.y - 10, 9, f.regular, GRIS);
   c.derecha(params.viaje.trackingCode, c.y - 24, 11, f.bold, TEXTO);
@@ -127,20 +135,14 @@ export async function generarPdfConCajas(
   c.y -= 12;
 
   // 6. Badge de calidad de datos.
+  const colores = COLORES_BADGE[pres.presentacion];
   const ancho = f.semibold.widthOfTextAtSize(pres.badge, 9.5) + 20;
   rectRedondeado(c.page, MX, c.y - 12 - 18, ancho, 18, 9, {
-    color: pres.estimado ? hex('#FEF3E2') : hex('#E6F4EA'),
-    borderColor: pres.estimado ? hex('#F0B46B') : hex('#86C79B'),
+    color: colores.fondo,
+    borderColor: colores.borde,
     borderWidth: 0.75,
   });
-  c.texto(
-    pres.badge,
-    MX + 10,
-    c.y - 12 - 12.5,
-    9.5,
-    f.semibold,
-    pres.estimado ? hex('#7C3A0A') : hex('#14532D'),
-  );
+  c.texto(pres.badge, MX + 10, c.y - 12 - 12.5, 9.5, f.semibold, colores.texto);
   c.y -= 12 + 18 + 22;
 
   // 7. Fechas (3 columnas). Null → «—», sin caer a otro dato (T3 trae las reales).
@@ -156,8 +158,20 @@ export async function generarPdfConCajas(
   });
   c.y -= 40;
 
+  // 7b. Certificado reemitido: a qué versión reemplaza, de cuándo y por qué.
+  const reemplazo = lineaReemplazo(ver, formatDate);
+  if (reemplazo) {
+    // Una sola línea (spec §8-2): si no cabe, falla en vez de cortarla.
+    if (partir(reemplazo, f.regular, 9, MX2 - MX).length > 1) {
+      throw new Error(`la línea de reemplazo no cabe en una línea: «${reemplazo}»`);
+    }
+    c.texto(reemplazo, MX, c.y, 9, f.regular, TEXTO);
+    c.y -= 24;
+  }
+
   // 8. Resultados.
   const kgWtw = m.kgco2eWtwActual ?? m.kgco2eWtwEstimated ?? 0;
+  const consolidacion = validarConsolidacion(m.consolidacion, kgWtw);
   const num = formatearNumeroPrincipal(kgWtw, m.uncertaintyFactor);
   const topCaja = c.y;
   c.y -= 22;
@@ -183,8 +197,13 @@ export async function generarPdfConCajas(
   }
   const distanciaKm = m.distanciaKmActual ?? m.distanciaKmEstimated ?? 0;
   // Invariante F0-0 §7: la distancia va cualificada por la cobertura medida.
+  // Una carga consolidada publica su distancia directa: la que entró al
+  // reparto, no lo que el camión recorrió. No lleva cobertura: no es medida.
+  const distancia = consolidacion
+    ? `Distancia directa: ${numeroEsCl(distanciaKm, 1)} km`
+    : `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)})`;
   detalles.push(
-    `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)}) · Combustible: ${
+    `${distancia} · Combustible: ${
       m.combustibleConsumido !== null
         ? `${numeroEsCl(m.combustibleConsumido)} ${m.combustibleUnidad ?? ''}`
         : '—'
@@ -229,6 +248,18 @@ export async function generarPdfConCajas(
     lineas.forEach((l, i) => c.texto(l, MX + 14, c.y - 34 - i * 13, 9, f.regular, TEXTO));
     c.y -= alto + 20;
   }
+  // ADR-091 §2: nota de método en párrafo normal, en el lugar del disclaimer.
+  if (pres.presentacion === 'medido_teltonika') {
+    const lineas = partir(
+      textoNotaMetodo(m.fuenteFactores, m.glecVersion, m.consolidacion !== undefined),
+      f.regular,
+      9,
+      MX2 - MX,
+    );
+    c.asegurar(lineas.length * 13 + 8);
+    lineas.forEach((l, i) => c.texto(l, MX, c.y - 10 - i * 13, 9, f.regular, GRIS));
+    c.y -= lineas.length * 13 + 20;
+  }
 
   // Metodología (auditoría).
   c.seccion('Metodología', f);
@@ -265,6 +296,34 @@ export async function generarPdfConCajas(
     if (lineaMetodo !== null) {
       c.par('Método', lineaMetodo, null, null, f, TAMANO_LINEA_METODO);
     }
+  }
+
+  // Carga consolidada (ADR-089): con qué método se repartió la huella de la
+  // ruta, qué parte es de esta carga y cuánto fue el total.
+  if (consolidacion) {
+    c.seccion('Carga consolidada', f);
+    const lineas = partir(FRASE_CONSOLIDACION, f.regular, 9.5, MX2 - MX);
+    // La frase y sus dos filas van juntas: no se parten entre dos páginas.
+    c.asegurar(lineas.length * 13 + 17 + 60);
+    for (const l of lineas) {
+      c.texto(l, MX, c.y, 9.5, f.regular, TEXTO);
+      c.y -= 13;
+    }
+    c.y -= 17;
+    c.par(
+      'Método de reparto',
+      TEXTO_METODO_REPARTO,
+      'Versión del método',
+      consolidacion.versionMetodo,
+      f,
+    );
+    c.par(
+      'Participación de esta carga',
+      `${numeroEsCl(consolidacion.participacionPct)} %`,
+      'Huella total de la ruta',
+      `${numeroEsCl(consolidacion.kgco2eWtwRuta)} kg CO\u2082e`,
+      f,
+    );
   }
 
   // Trayecto.
@@ -518,6 +577,12 @@ const AZUL = hex('#0B3D5C');
 const TEXTO = hex('#1F2933');
 const GRIS = hex('#52606D');
 const AMBAR = hex('#B45309');
+/** Colores del badge por presentación (ADR-091): ámbar solo en Estimado. */
+const COLORES_BADGE: Record<Presentacion, { fondo: RGB; borde: RGB; texto: RGB }> = {
+  primario: { fondo: hex('#E6F4EA'), borde: hex('#86C79B'), texto: hex('#14532D') },
+  medido_teltonika: { fondo: hex('#E8F1F8'), borde: hex('#8FB4D1'), texto: hex('#0B3D5C') },
+  estimado: { fondo: hex('#FEF3E2'), borde: hex('#F0B46B'), texto: hex('#7C3A0A') },
+};
 
 /** Cursor vertical con salto de página cuando un bloque no cabe. */
 class Cursor {

@@ -14,17 +14,26 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
+import { DocumentosViajeConductor } from '../components/conductor/DocumentosViajeConductor.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
 import { WakeWordBanner } from '../components/conductor/WakeWordBanner.js';
 import { SugerenciaRutaCard } from '../components/eco-routing/SugerenciaRutaCard.js';
+import { comunaDesdeDireccion } from '../components/inicio-transportista/modelo.js';
+import { partesCuando } from '../components/inicio/cuando.js';
+import { INICIO_LICENCIA_CONDUCTOR_ACTIVA } from '../components/inicio/flags.js';
+import { IncidentePanel } from '../components/inicio/incidente-panel.js';
+import { TripHeroCard } from '../components/inicio/trip-hero-card.js';
+import { InstruccionesRetiroConductor } from '../components/instrucciones-retiro/InstruccionesRetiroConductor.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
+import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { respuestaDesdeUrl } from '../lib/eco-routing.js';
 import { type LatLng, decodePolyline } from '../lib/polyline.js';
 import {
@@ -49,8 +58,8 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  *
  *   2. **Próximo servicio asignado** — el viaje que tienes que ejecutar
  *      ahora (origen → destino, carga, ventana de recogida, vehículo), con
- *      UNA acción principal según la fase: «Confirmar recogida» → «Confirmar
- *      entrega». La posición no es un botón: si el vehículo no tiene
+ *      UNA acción principal según la fase: «Iniciar viaje» confirma la
+ *      recogida y después sigue «Confirmar entrega». La posición no es un botón: si el vehículo no tiene
  *      Teltonika, el teléfono reporta solo desde la recogida hasta la
  *      entrega; si lo tiene, el camión reporta y la tarjeta lo dice.
  *
@@ -70,8 +79,61 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * latinoamericano: "tu/tienes/aquí" (no "vos/tenés/acá").
  */
 
+/** Una parada de la hoja de ruta (ruta-parada-servicio §4.8). */
+export interface ParadaDeHoja {
+  orden: number;
+  tipo: 'recogida' | 'entrega';
+  resuelta_en: string | null;
+  asignacion_id: string;
+  cancelado: boolean;
+  codigo_seguimiento: string;
+  direccion: string;
+  contacto: { nombre: string | null; telefono_e164: string | null } | null;
+}
+
+export interface HojaDeRutaConductor {
+  id: string;
+  estado: string;
+  paradas: ParadaDeHoja[];
+}
+
+/** La parada que sigue: la primera sin resolver de una carga vigente. */
+function paradaQueSigue(hoja: HojaDeRutaConductor): ParadaDeHoja | null {
+  return hoja.paradas.find((p) => !p.resuelta_en && !p.cancelado) ?? null;
+}
+
+/** Una hoja solo aporta cuando la ruta lleva más de una carga. */
+function esRutaCompartida(hoja: HojaDeRutaConductor): boolean {
+  return new Set(hoja.paradas.map((p) => p.asignacion_id)).size > 1;
+}
+
+/**
+ * Ordena las cargas como las pide la ruta: primero la de la parada que sigue.
+ * Las que no están en una ruta compartida conservan su lugar, después.
+ */
+function ordenarPorRuta(
+  assignments: DriverAssignment[],
+  hojas: HojaDeRutaConductor[],
+): DriverAssignment[] {
+  const turno = new Map<string, number>();
+  for (const hoja of hojas) {
+    for (const p of hoja.paradas) {
+      if (!p.resuelta_en && !p.cancelado && !turno.has(p.asignacion_id)) {
+        turno.set(p.asignacion_id, p.orden);
+      }
+    }
+  }
+  const lugar = (a: DriverAssignment) => turno.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+  return assignments
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => lugar(x.a) - lugar(y.a) || x.i - y.i)
+    .map(({ a }) => a);
+}
+
 export interface DriverAssignment {
   id: string;
+  /** Ruta a la que pertenece la carga; ausente en respuestas anteriores a las rutas. */
+  ruta_id?: string | null;
   status: string;
   trip: {
     id: string;
@@ -83,6 +145,12 @@ export interface DriverAssignment {
     cargo_weight_kg: number | null;
     pickup_window_start: string | null;
     pickup_window_end: string | null;
+    /** editar-anular-cargas §12-P4 — datos libres que fija el generador. */
+    consignee?: { name: string | null; phone_e164: string | null } | null;
+    notes?: string | null;
+    reference?: string | null;
+    /** editar-anular-cargas §12-P7: el conductor solo sabe que existe, no qué propone. */
+    cambio_pendiente?: { existe: true; creado_en: string | null } | null;
   };
   carrier_empresa: { id: string; legal_name: string | null };
   vehicle: { id: string; plate: string | null; has_teltonika: boolean } | null;
@@ -98,7 +166,8 @@ export function ConductorDashboardRoute() {
         // Gate por rol: la pantalla es del conductor. Un dueño o despachador
         // que llegue acá (link viejo, URL a mano) vuelve a su shell; el API
         // igual respondería vacío, pero no tiene por qué ver el panel.
-        if (ctx.me.active_membership?.role !== 'conductor') {
+        // CHEQUEOS_REEMPLAZADOS panel-conductor: antes role !== 'conductor'.
+        if (!flagsDe(ctx.me).panelConductor) {
           return <Navigate to="/app" />;
         }
         return <ConductorDashboardPage me={ctx.me} />;
@@ -114,6 +183,7 @@ function ConductorDashboardPage({ me }: { me: MeOnboarded }) {
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-4 sm:px-6 sm:py-6">
         <WhatsAppSafetyBanner />
         <WakeWordActiveBanner />
+        <OyeBoosterCard />
         <AssignmentsSection />
       </main>
     </div>
@@ -167,6 +237,33 @@ function ConductorHeader({ fullName }: { fullName: string }) {
 // Banner sticky de seguridad — preventivo, no oculto en configuración.
 // ---------------------------------------------------------------------------
 
+function OyeBoosterCard() {
+  return (
+    <section
+      data-testid="oye-booster"
+      className="mt-4 rounded-lg border border-neutral-200 bg-white p-3"
+    >
+      <p className="font-semibold text-neutral-900 text-sm">Di «Oye Booster»</p>
+      <p className="mt-0.5 text-neutral-600 text-sm">Maneja con la voz, sin mirar el teléfono.</p>
+    </section>
+  );
+}
+
+function ChipGps({ permiso }: { permiso: PermissionStatus }) {
+  if (permiso !== 'granted') {
+    return null;
+  }
+  return (
+    <p
+      data-testid="gps-activo"
+      className="mt-4 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-neutral-800 text-sm"
+    >
+      <span className="h-2 w-2 rounded-full bg-success-500" aria-hidden />
+      GPS activo
+    </p>
+  );
+}
+
 function WhatsAppSafetyBanner() {
   return (
     // `role="note"`, no `role="alert"`: esto es una advertencia permanente, no
@@ -197,10 +294,14 @@ function WhatsAppSafetyBanner() {
 
 function AssignmentsSection() {
   const [assignments, setAssignments] = useState<DriverAssignment[]>([]);
+  const [hojas, setHojas] = useState<HojaDeRutaConductor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [geoPermission, setGeoPermission] = useState<PermissionStatus>('unknown');
   const [refrescando, setRefrescando] = useState(false);
+  // Sube con cada respuesta de `/me/assignments`: libera el bloqueo por un
+  // 409 `cambio_pendiente` cuando la lista nueva ya no trae el cambio.
+  const [versionCarga, setVersionCarga] = useState(0);
 
   // El fetch vive en un callback para poder repetirlo: el conductor recibe
   // servicios mientras tiene la pantalla abierta, y antes no había forma de
@@ -209,8 +310,14 @@ function AssignmentsSection() {
     setError(null);
     setRefrescando(true);
     try {
-      const res = await api.get<{ assignments: DriverAssignment[] }>('/me/assignments');
-      setAssignments(res.assignments);
+      const res = await api.get<{
+        assignments: DriverAssignment[];
+        rutas?: HojaDeRutaConductor[];
+      }>('/me/assignments');
+      const compartidas = (res.rutas ?? []).filter(esRutaCompartida);
+      setHojas(compartidas);
+      setAssignments(ordenarPorRuta(res.assignments, compartidas));
+      setVersionCarga((v) => v + 1);
     } catch (err) {
       // Mensajes en lenguaje del conductor: `Error 500: boom` no le sirve a
       // alguien que está en ruta.
@@ -312,18 +419,45 @@ function AssignmentsSection() {
           <RefreshCw className="h-4 w-4" aria-hidden />
           {refrescando ? 'Actualizando…' : 'Actualizar'}
         </button>
+        <ChipGps permiso={geoPermission} />
       </section>
     );
   }
 
+  const [primero, ...resto] = assignments;
+  if (!primero) {
+    return null;
+  }
+
   return (
     <section className="mt-6 space-y-4">
-      <h2 className="font-semibold text-base text-neutral-900">
-        {assignments.length === 1 ? 'Tu próximo servicio' : 'Tus servicios asignados'}
-      </h2>
-      {assignments.map((a) => (
-        <AssignmentCard key={a.id} assignment={a} geoPermission={geoPermission} />
+      {hojas.map((hoja) => (
+        <HojaDeRuta key={hoja.id} hoja={hoja} />
       ))}
+      <AssignmentCard
+        destacado
+        assignment={primero}
+        geoPermission={geoPermission}
+        versionCarga={versionCarga}
+      />
+      {resto.length > 0 ? (
+        <div>
+          <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
+            Después
+          </h2>
+          <ul className="mt-2 space-y-2">
+            {resto.map((item) => (
+              <li key={item.id}>
+                <AssignmentCard
+                  assignment={item}
+                  geoPermission={geoPermission}
+                  versionCarga={versionCarga}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => void cargarServicios()}
@@ -333,6 +467,94 @@ function AssignmentsSection() {
         <RefreshCw className="h-4 w-4" aria-hidden />
         {refrescando ? 'Actualizando…' : 'Actualizar'}
       </button>
+      <ChipGps permiso={geoPermission} />
+      {INICIO_LICENCIA_CONDUCTOR_ACTIVA ? (
+        <p data-testid="licencia-conductor" className="mt-2 text-neutral-600 text-sm">
+          Licencia por vencer
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Hoja de ruta: las paradas de una ruta con varias cargas, en el orden en que
+ * la oficina la armó (el conductor no reordena, spec §11-3). Dice cuál sigue;
+ * cada parada se confirma en la tarjeta de su carga, más abajo.
+ */
+function HojaDeRuta({ hoja }: { hoja: HojaDeRutaConductor }) {
+  const vigentes = hoja.paradas.filter((p) => !p.cancelado);
+  const hechas = vigentes.filter((p) => p.resuelta_en).length;
+  const sigue = paradaQueSigue(hoja);
+  return (
+    <section
+      aria-label="Hoja de ruta"
+      className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-semibold text-base text-neutral-900">Hoja de ruta</h2>
+        <p className="text-neutral-600 text-sm">
+          {vigentes.length} paradas · {hechas} {hechas === 1 ? 'hecha' : 'hechas'}
+        </p>
+      </div>
+      <ol className="mt-3 space-y-2">
+        {hoja.paradas.map((p, i) => {
+          const esLaQueSigue = p === sigue;
+          const estado = p.cancelado
+            ? 'Cancelada'
+            : p.resuelta_en
+              ? 'Hecha'
+              : esLaQueSigue
+                ? 'Sigue'
+                : null;
+          return (
+            <li
+              key={`${p.asignacion_id}-${p.tipo}`}
+              aria-current={esLaQueSigue ? 'step' : undefined}
+              className={`flex items-start gap-3 rounded-md border px-3 py-2 ${
+                esLaQueSigue
+                  ? 'border-primary-300 bg-primary-50'
+                  : 'border-neutral-200 bg-neutral-50'
+              }`}
+            >
+              <span
+                className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-semibold text-xs ${
+                  esLaQueSigue ? 'bg-primary-600 text-white' : 'bg-neutral-200 text-neutral-700'
+                }`}
+              >
+                {i + 1}
+              </span>
+              <div
+                className={`min-w-0 flex-1 text-sm ${
+                  p.cancelado ? 'text-neutral-400 line-through' : 'text-neutral-800'
+                }`}
+              >
+                <p className="font-medium">
+                  {p.tipo === 'recogida' ? 'Recoger' : 'Entregar'}{' '}
+                  <span className="font-mono text-neutral-600 text-xs">{p.codigo_seguimiento}</span>
+                </p>
+                <p className="break-words">{p.direccion}</p>
+                {p.contacto?.nombre ? (
+                  <p className="text-neutral-600 text-xs">{p.contacto.nombre}</p>
+                ) : null}
+              </div>
+              {estado ? (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 font-medium text-xs ${
+                    estado === 'Sigue'
+                      ? 'bg-primary-600 text-white'
+                      : estado === 'Hecha'
+                        ? 'bg-success-50 text-success-700'
+                        : 'bg-neutral-200 text-neutral-600'
+                  }`}
+                >
+                  {estado}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
@@ -358,6 +580,8 @@ function mensajeDeCierre(err: unknown): string {
         return 'El documento del viaje se está procesando. Intenta de nuevo en unos minutos.';
       case 'invalid_status':
         return 'Este viaje ya está entregado o cerrado. No hay nada más que confirmar.';
+      case 'not_assigned_driver':
+        return 'Solo el conductor asignado puede confirmar esta entrega.';
       case 'forbidden_owner_mismatch':
       case 'no_active_empresa':
         return 'Tu cuenta no tiene permiso para cerrar este viaje. Avísale a tu empresa.';
@@ -408,6 +632,7 @@ function NavegacionEnPantalla({
   cargandoRuta,
   pausaGps,
   className,
+  abrirSignal = 0,
 }: {
   etiqueta: string;
   testId: string;
@@ -418,9 +643,18 @@ function NavegacionEnPantalla({
   cargandoRuta: boolean;
   pausaGps: boolean;
   className: string;
+  abrirSignal?: number;
 }) {
   const [abierta, setAbierta] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
+  const vista = useRef(0);
+
+  useEffect(() => {
+    if (abrirSignal > vista.current) {
+      vista.current = abrirSignal;
+      setAbierta(true);
+    }
+  }, [abrirSignal]);
 
   useEffect(() => {
     if (!abierta) {
@@ -574,11 +808,19 @@ export function AssignmentCard({
   assignment,
   geoPermission,
   sugerenciasRuta = true,
+  instruccionesRetiro = true,
+  destacado = false,
+  versionCarga,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
+  /** Contador de cargas de `/me/assignments` (ver `useConfirmarRecogida`). */
+  versionCarga?: number;
   /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
   sugerenciasRuta?: boolean;
+  /** instrucciones-retiro: false en la preview pública, que no tiene sesión ni viaje real. */
+  instruccionesRetiro?: boolean;
+  destacado?: boolean;
 }) {
   const reporter = useDriverPositionReporter();
   const a = assignment;
@@ -588,12 +830,16 @@ export function AssignmentCard({
   const [entregando, setEntregando] = useState(false);
   const [entregada, setEntregada] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
+  const [soloConductorAsignado, setSoloConductorAsignado] = useState(false);
   // Acción pendiente de confirmar. Recogida y entrega son irreversibles en
   // la operación: se confirman antes, para que no las dispare un toque
   // accidental con el celular en el bolsillo. La confirmación es una franja
   // dentro de la tarjeta, no un diálogo del navegador: en la PWA de iOS ese
   // diálogo sale como alerta del sistema, sin estilo y sin devolver el foco.
   const [confirmando, setConfirmando] = useState<'recogida' | 'entrega' | null>(null);
+  const [senalRuta, setSenalRuta] = useState(0);
+  const [documentosAbiertos, setDocumentosAbiertos] = useState(false);
+  const [incidenteAbierto, setIncidenteAbierto] = useState(false);
 
   // Recogida híbrida (T9, medicion-huella-segmento): el geofence del origen
   // —que el API evalúa con cada posición reportada— SUGIERE; el conductor
@@ -603,6 +849,8 @@ export function AssignmentCard({
     assignmentId: a.id,
     initialRecogida: a.status === 'recogido',
     geofence: reporter.lastGeofence,
+    cambioPendiente: a.trip.cambio_pendiente?.existe === true,
+    ...(versionCarga !== undefined ? { versionCarga } : {}),
   });
 
   const fase: FaseServicio = entregada
@@ -663,6 +911,7 @@ export function AssignmentCard({
 
   async function entregar() {
     setEntregaError(null);
+    setSoloConductorAsignado(false);
     setEntregando(true);
     try {
       if (!hasTeltonika) {
@@ -680,6 +929,7 @@ export function AssignmentCard({
       }
     } catch (err) {
       setEntregaError(mensajeDeCierre(err));
+      setSoloConductorAsignado(err instanceof ApiError && err.code === 'not_assigned_driver');
     } finally {
       setEntregando(false);
     }
@@ -695,6 +945,7 @@ export function AssignmentCard({
       className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
       data-testid={`assignment-card-${a.id}`}
     >
+      {destacado ? <HeroViaje assignment={a} /> : null}
       <div className="flex items-center justify-between gap-3">
         <div className="font-mono text-neutral-600 text-sm">{a.trip.tracking_code}</div>
         {a.vehicle?.plate && (
@@ -826,10 +1077,27 @@ export function AssignmentCard({
           transportista) y terminaba viendo herramientas de su jefe — "asignar
           conductor" y el factoring de Cobra hoy—, cuyas acciones después le
           respondían 403. */}
+      {/* editar-anular-cargas §12-P4: contacto del destinatario, notas y referencia,
+          antes y durante el viaje (al entregar es cuando más sirve el contacto). */}
+      <DatosLibresViaje
+        className="mt-4"
+        consignee={a.trip.consignee ?? null}
+        notes={a.trip.notes ?? null}
+        reference={a.trip.reference ?? null}
+      />
       <div className="mt-4 space-y-2 border-neutral-100 border-t pt-4">
         {fase === 'por_recoger' && (
           <>
-            {recogida.sugerida && (
+            {instruccionesRetiro && <InstruccionesRetiroConductor tripId={a.trip.id} />}
+            {recogida.bloqueadaPorCambio && (
+              <output
+                data-testid="cambio-pendiente-conductor"
+                className="block rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900 text-sm"
+              >
+                Hay un cambio pendiente. Espera la respuesta de tu transportista antes de recoger.
+              </output>
+            )}
+            {recogida.sugerida && !recogida.bloqueadaPorCambio && (
               // El geofence solo sugiere: <output> anuncia la llegada al punto
               // de recogida sin disparar nada. El tap sigue siendo del conductor.
               <output
@@ -842,7 +1110,7 @@ export function AssignmentCard({
             {/* Confirmarla mueve el viaje a `en_proceso`, que es lo que destraba la
                 posición en el link de tracking del destinatario y lo que hace que
                 su empresa deje de ver «Por recoger» en Servicios. */}
-            {confirmando === 'recogida' ? (
+            {confirmando === 'recogida' && !recogida.bloqueadaPorCambio ? (
               <ConfirmacionInline
                 pregunta="¿Confirmas que ya cargaste esta carga en el camión?"
                 onConfirmar={() => void ejecutarConfirmacion()}
@@ -852,14 +1120,25 @@ export function AssignmentCard({
               <button
                 type="button"
                 onClick={() => setConfirmando('recogida')}
-                disabled={recogida.recogiendo}
+                disabled={recogida.recogiendo || recogida.bloqueadaPorCambio}
                 data-testid="confirmar-recogida"
                 className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
               >
                 <PackageCheck className="h-4 w-4" aria-hidden />
-                {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
+                {recogida.recogiendo ? 'Registrando…' : 'Iniciar viaje'}
               </button>
             )}
+            {destacado ? (
+              <AccionesViaje
+                onRuta={() => setSenalRuta((valor) => valor + 1)}
+                documentosAbiertos={documentosAbiertos}
+                onDocumentos={() => setDocumentosAbiertos((valor) => !valor)}
+                incidenteAbierto={incidenteAbierto}
+                onIncidente={() => setIncidenteAbierto((valor) => !valor)}
+                assignmentId={a.id}
+                tripId={a.trip.id}
+              />
+            ) : null}
             <NavegacionEnPantalla
               etiqueta="Ir al origen"
               testId="navegar-origen"
@@ -870,6 +1149,7 @@ export function AssignmentCard({
               cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
               pausaGps={!hasTeltonika}
               className={botonSecundario}
+              abrirSignal={senalRuta}
             />
             {recogida.error && (
               <div
@@ -883,25 +1163,27 @@ export function AssignmentCard({
             {/* La entrega NO exige recogida previa: la tabla de transiciones
                 permite `asignado → entregado` y bloquearla castigaría al conductor
                 que olvidó apretar el botón anterior. Pero va como enlace discreto,
-                no como botón grande al lado de la recogida. */}
-            {confirmando === 'entrega' ? (
-              <ConfirmacionInline
-                pregunta="¿Confirmas que entregaste esta carga?"
-                onConfirmar={() => void ejecutarConfirmacion()}
-                onCancelar={() => setConfirmando(null)}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmando('entrega')}
-                disabled={entregando}
-                aria-label="Confirmar entrega sin haber confirmado la recogida"
-                data-testid="entrega-sin-recogida"
-                className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
-              </button>
-            )}
+                no como botón grande al lado de la recogida. Si el API dice que
+                no es el conductor asignado, no se vuelve a ofrecer. */}
+            {!soloConductorAsignado &&
+              (confirmando === 'entrega' ? (
+                <ConfirmacionInline
+                  pregunta="¿Confirmas que entregaste esta carga?"
+                  onConfirmar={() => void ejecutarConfirmacion()}
+                  onCancelar={() => setConfirmando(null)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmando('entrega')}
+                  disabled={entregando}
+                  aria-label="Confirmar entrega sin haber confirmado la recogida"
+                  data-testid="entrega-sin-recogida"
+                  className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
+                </button>
+              ))}
           </>
         )}
 
@@ -919,24 +1201,25 @@ export function AssignmentCard({
                 respuestaDesdeNotificacion={respuestaNotificacion}
               />
             )}
-            {confirmando === 'entrega' ? (
-              <ConfirmacionInline
-                pregunta="¿Confirmas que entregaste esta carga?"
-                onConfirmar={() => void ejecutarConfirmacion()}
-                onCancelar={() => setConfirmando(null)}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmando('entrega')}
-                disabled={entregando}
-                data-testid="confirmar-entrega"
-                className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
-              >
-                <CheckCircle2 className="h-4 w-4" aria-hidden />
-                {entregando ? 'Confirmando…' : 'Confirmar entrega'}
-              </button>
-            )}
+            {!soloConductorAsignado &&
+              (confirmando === 'entrega' ? (
+                <ConfirmacionInline
+                  pregunta="¿Confirmas que entregaste esta carga?"
+                  onConfirmar={() => void ejecutarConfirmacion()}
+                  onCancelar={() => setConfirmando(null)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmando('entrega')}
+                  disabled={entregando}
+                  data-testid="confirmar-entrega"
+                  className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
+                >
+                  <CheckCircle2 className="h-4 w-4" aria-hidden />
+                  {entregando ? 'Confirmando…' : 'Confirmar entrega'}
+                </button>
+              ))}
             <NavegacionEnPantalla
               etiqueta="Ir al destino"
               testId="navegar-destino"
@@ -947,6 +1230,7 @@ export function AssignmentCard({
               cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
               pausaGps={!hasTeltonika}
               className={botonSecundario}
+              abrirSignal={senalRuta}
             />
           </>
         )}
@@ -983,6 +1267,81 @@ export function AssignmentCard({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function HeroViaje({ assignment }: { assignment: DriverAssignment }) {
+  const origen =
+    comunaDesdeDireccion(assignment.trip.origin.address_raw) ?? assignment.trip.origin.address_raw;
+  const destino =
+    comunaDesdeDireccion(assignment.trip.destination.address_raw) ??
+    assignment.trip.destination.address_raw;
+  const inicio = assignment.trip.pickup_window_start;
+  const cuando = inicio ? partesCuando(inicio, new Date()) : null;
+  return (
+    <div className="mb-4">
+      <TripHeroCard
+        cuando="Tu próximo viaje"
+        ruta={`${origen} → ${destino}`}
+        retiro={{
+          lugar: origen,
+          detalle: inicio
+            ? `Ventana ${formatPickupWindow(inicio, assignment.trip.pickup_window_end)}${cuando ? ` · ${cuando.dia} ${cuando.hora}` : ''}`
+            : null,
+        }}
+        entrega={{ lugar: destino, detalle: null }}
+      />
+    </div>
+  );
+}
+
+function AccionesViaje({
+  onRuta,
+  documentosAbiertos,
+  onDocumentos,
+  incidenteAbierto,
+  onIncidente,
+  assignmentId,
+  tripId,
+}: {
+  onRuta: () => void;
+  documentosAbiertos: boolean;
+  onDocumentos: () => void;
+  incidenteAbierto: boolean;
+  onIncidente: () => void;
+  assignmentId: string;
+  tripId: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          onClick={onRuta}
+          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
+        >
+          Cómo llegar
+        </button>
+        <button
+          type="button"
+          onClick={onDocumentos}
+          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
+        >
+          Documentos
+        </button>
+        <button
+          type="button"
+          onClick={onIncidente}
+          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
+        >
+          Incidente
+        </button>
+      </div>
+      {documentosAbiertos ? <DocumentosViajeConductor tripId={tripId} /> : null}
+      {incidenteAbierto ? (
+        <IncidentePanel assignmentId={assignmentId} onClose={onIncidente} />
+      ) : null}
+    </div>
+  );
+}
 
 function formatPickupWindow(startIso: string, endIso: string | null): string {
   try {

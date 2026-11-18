@@ -10,7 +10,10 @@ import { type EstadoViaje, esTerminal } from './estados.js';
  *     inicial, no es transición).
  *   - matching: esperando_match → emparejando → ofertas_enviadas|expirado.
  *   - accept oferta: ofertas_enviadas → asignado.
- *   - cancel shipper: cualquier estado pre-asignación → cancelado.
+ *   - cancel shipper: cualquier estado pre-asignación → cancelado (anular).
+ *   - editar-anular-cargas: asignado → cancelado (cancelar después del
+ *     match) y ofertas_enviadas → esperando_match (volver a ofertar tras una
+ *     edición material). en_proceso → cancelado NO existe (§12-P2).
  *   - pickup (PoD-geofence, MODELADO pero aún sin flujo que lo dispare):
  *     asignado → en_proceso.
  *   - entrega: asignado|en_proceso → entregado.
@@ -22,8 +25,8 @@ export const TRANSICIONES: Readonly<Record<EstadoViaje, readonly EstadoViaje[]>>
   borrador: ['esperando_match', 'cancelado'],
   esperando_match: ['emparejando', 'cancelado'],
   emparejando: ['ofertas_enviadas', 'expirado', 'cancelado'],
-  ofertas_enviadas: ['asignado', 'cancelado', 'expirado'],
-  asignado: ['en_proceso', 'entregado'],
+  ofertas_enviadas: ['asignado', 'cancelado', 'expirado', 'esperando_match'],
+  asignado: ['en_proceso', 'entregado', 'cancelado'],
   en_proceso: ['entregado'],
   entregado: [],
   cancelado: [],
@@ -59,9 +62,51 @@ export function assertTransicion(desde: EstadoViaje, hacia: EstadoViaje): void {
 // check del accept). Derivados de la tabla — no listas paralelas.
 // ---------------------------------------------------------------------------
 
-/** Cancel del shipper pre-asignación (PATCH /:id/cancelar). */
-export function esCancelablePorShipper(estado: EstadoViaje): boolean {
-  return puedeTransicionar(estado, 'cancelado');
+/**
+ * Estados antes del match: todavía no hay asignación. `emparejando` nunca se
+ * ve commiteado (el matching corre en una sola transacción), pero cuenta.
+ */
+export const ESTADOS_PRE_MATCH = [
+  'borrador',
+  'esperando_match',
+  'emparejando',
+  'ofertas_enviadas',
+] as const satisfies readonly EstadoViaje[];
+
+export function esPreMatch(estado: EstadoViaje): boolean {
+  return (ESTADOS_PRE_MATCH as readonly EstadoViaje[]).includes(estado);
+}
+
+/**
+ * Anular (el generador elimina la carga antes del match). Reemplaza a
+ * `esCancelablePorShipper`: con `asignado → cancelado` en la tabla, «puede
+ * pasar a cancelado» ya no significa «sin asignación».
+ */
+export function esAnulablePorGenerador(estado: EstadoViaje): boolean {
+  return esPreMatch(estado) && puedeTransicionar(estado, 'cancelado');
+}
+
+/** Cancelar después del match, con aviso al transportista (solo asignado). */
+export function esCancelablePostMatch(estado: EstadoViaje): boolean {
+  return !esPreMatch(estado) && puedeTransicionar(estado, 'cancelado');
+}
+
+/**
+ * Editar todo antes del match (con re-matching si el cambio es material).
+ * Sin `emparejando`: mientras el matching corre no se edita.
+ */
+export function esEditablePreMatch(estado: EstadoViaje): boolean {
+  return esPreMatch(estado) && estado !== 'emparejando';
+}
+
+/** Datos libres (contacto, notas, referencia): todo estado no terminal. */
+export function aceptaDatosLibres(estado: EstadoViaje): boolean {
+  return !esTerminal(estado);
+}
+
+/** Solicitud de cambio que el transportista debe aceptar: solo asignado. */
+export function aceptaSolicitudCambio(estado: EstadoViaje): boolean {
+  return estado === 'asignado';
 }
 
 /** Una oferta solo es aceptable cuando el trip está ofertas_enviadas. */

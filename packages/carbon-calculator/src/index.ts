@@ -94,3 +94,18 @@ export {
   THRESHOLD_PRIMARIO_PCT,
   THRESHOLD_SECUNDARIO_MODELED_PCT,
 } from './certificacion/index.js';
+// Huella por ruta y su reparto entre servicios (ADR-089). Todavía no la usa
+// el cálculo que corre en producción.
+export {
+  calcularEmisionesRuta,
+  derivarNivelRuta,
+  repartirPorActividad,
+  VERSION_METODO_REPARTO,
+  type NivelDeRuta,
+  type ParametrosRuta,
+  type ParteDeServicio,
+  type ResultadoEmisionesRuta,
+  type ServicioParaReparto,
+  type TramoDeRuta,
+  type TramoMedido,
+} from './ruta/index.js';

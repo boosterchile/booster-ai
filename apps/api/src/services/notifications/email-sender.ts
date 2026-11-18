@@ -59,6 +59,9 @@ export class LoggingEmailSender implements EmailSender {
   }
 }
 
+/** Tope de espera de una llamada a Resend. */
+const RESEND_TIMEOUT_MS = 10_000;
+
 /** Cliente HTTP contra la API de Resend. Sin SDK: es un POST con bearer. */
 export class ResendEmailSender implements EmailSender {
   private readonly apiKey: string;
@@ -76,6 +79,9 @@ export class ResendEmailSender implements EmailSender {
     try {
       res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
+        // Tope de espera: un proveedor lento no puede retener la respuesta de
+        // quien llama. El aborto cae en el catch de abajo (`error_red`).
+        signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'content-type': 'application/json',

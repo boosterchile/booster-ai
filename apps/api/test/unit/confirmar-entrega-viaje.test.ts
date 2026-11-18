@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirmarEntregaViaje } from '../../src/services/confirmar-entrega-viaje.js';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('../../src/services/sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 const { viajesEntregadosAdd } = vi.hoisted(() => ({
   viajesEntregadosAdd: vi.fn(),
 }));
@@ -214,6 +222,24 @@ describe('confirmarEntregaViaje', () => {
     expect(result.deliveredAt).toBeInstanceOf(Date);
   });
 
+  // editar-anular-cargas §6.13: entrega directa bloqueada con un cambio pendiente.
+  it('asignado con una solicitud de cambio pendiente → cambio_pendiente, sin escribir', async () => {
+    const db = makeDb({
+      selects: [[TRIP_BASE], [ASSIGNMENT_BASE], [{ id: 'sol-1' }]],
+    });
+    const result = await confirmarEntregaViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      source: 'carrier',
+      actor: { empresaId: CARRIER_EMP_ID, userId: USER_ID },
+      config: {},
+    });
+    expect(result).toEqual({ ok: false, code: 'cambio_pendiente', solicitudId: 'sol-1' });
+    expect(db.update).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it('status del trip no confirmable (cancelado) → invalid_status', async () => {
     const db = makeDb({
       selects: [[{ ...TRIP_BASE, status: 'cancelado' }], [ASSIGNMENT_BASE]],
@@ -289,6 +315,10 @@ describe('confirmarEntregaViaje', () => {
       throw new Error('expected ok=true');
     }
     expect(result.alreadyDelivered).toBe(false);
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'entrega_confirmada' }),
+    );
   });
 
   it('métrica norte: primera entrega del shipper desde asignado suma 1', async () => {

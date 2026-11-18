@@ -1,9 +1,28 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createImpersonationWriteGuardMiddleware } from '../middleware/impersonation-write-guard.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
+
+/**
+ * BD mínima para el guard de impersonación: quien impersona sigue con acceso
+ * al panel (`.specs/bordes-autenticacion` SC4).
+ */
+const IMPERSONADOR_ID = '0b5f6e2a-4c1d-4e8f-9a3b-7c6d5e4f3a2b';
+const dbDelImpersonador = {
+  select: () => ({
+    from: () => ({
+      where: () => ({
+        limit: async () => [
+          { email: 'dev@boosterchile.com', isPlatformAdmin: true, status: 'activo' },
+        ],
+      }),
+    }),
+  }),
+} as never;
 
 /**
  * Fase 3.5 (onboarding-flow-redesign) — `POST /admin/empresas/:id/miembros`.
@@ -52,6 +71,8 @@ interface DbOpts {
   lookupQueue?: unknown[][];
   /** Filas del `select` que hizo `innerJoin` (pendientes y reemisión). */
   joinedMembershipRows?: unknown[];
+  /** Error que lanza el INSERT de la persona (p. ej. el UNIQUE del correo). */
+  insertUserError?: unknown;
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -108,7 +129,8 @@ function makeDb(opts: DbOpts = {}) {
               id: 'empresa-nueva-uuid',
               legalName: vals.legalName,
               rut: vals.rut,
-              status: 'pendiente_verificacion',
+              // El `returning` devuelve el estado que se insertó.
+              status: vals.status,
               isGeneradorCarga: vals.isGeneradorCarga,
               isTransportista: vals.isTransportista,
             },
@@ -122,6 +144,9 @@ function makeDb(opts: DbOpts = {}) {
         if ('empresaId' in vals) {
           insertedMemberships.push(vals);
           return [{ id: 'membership-uuid' }];
+        }
+        if (opts.insertUserError) {
+          throw opts.insertUserError;
         }
         insertedUsers.push(vals);
         return [{ id: 'user-uuid' }];
@@ -154,6 +179,7 @@ function makeDb(opts: DbOpts = {}) {
     insertedEmpresas,
     insertedCarrierMemberships,
     updates,
+    select,
   };
 }
 
@@ -163,6 +189,7 @@ function buildApp(
   auth: Auth,
   adminEmail: string = ADMIN_EMAIL,
   emailSender?: EmailSender,
+  membershipRole: 'dueno' | 'admin' | 'despachador' | 'conductor' = 'dueno',
 ) {
   const routes = mod.createAdminEmpresaMiembrosRoutes({
     db,
@@ -174,6 +201,10 @@ function buildApp(
   app.use('*', async (c, next) => {
     (c as unknown as { set: (k: string, v: unknown) => void }).set('userContext', {
       user: { id: 'admin-id', email: adminEmail },
+      activeMembership: {
+        role: membershipRole,
+        empresa: { id: EMPRESA_ID },
+      },
     });
     await next();
   });
@@ -384,6 +415,24 @@ describe('GET /admin/empresas', () => {
 });
 
 describe('POST /admin/empresas/:id/miembros', () => {
+  // `.specs/bordes-autenticacion` SC5.
+  it('persona nueva con un correo de la lista de respaldo → 409 email_already_registered, sin escribir', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...BODY, email: 'Dev@BoosterChile.com' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(d.insertedUsers).toHaveLength(0);
+  });
+
   it('crea la persona pendiente y devuelve un código de activación, no un reset', async () => {
     const mod = await loadMod();
     const d = makeDb();
@@ -574,6 +623,72 @@ describe('POST /admin/empresas/:id/miembros', () => {
   });
 });
 
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo de la persona nueva se
+ * compara con las cuentas existentes sin distinguir mayúsculas, y una alta
+ * simultánea con el mismo correo responde el mismo 409.
+ */
+describe('POST /admin/empresas/:id/miembros — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  const YA_REGISTRADO = { error: 'conflict', code: 'email_already_registered' };
+
+  function post(app: Hono, email: string) {
+    return app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...BODY, email }),
+    });
+  }
+
+  it('persona nueva: la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+
+    const res = await post(buildApp(mod, d.db, a.auth), 'FVicencio@Me.com');
+
+    expect(res.status).toBe(201);
+    // 0 = empresa, 1 = persona por RUT, 2 = cuenta por correo.
+    const chain = d.select.mock.results[2]?.value as { where: ReturnType<typeof vi.fn> };
+    const predicado = chain.where.mock.calls[0]?.[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['fvicencio@me.com']);
+  });
+
+  it('el UNIQUE del correo en el INSERT (alta simultánea) → el mismo 409, sin membresía', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      insertUserError: Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'usuarios_email_key',
+      }),
+    });
+    const a = makeAuthStub();
+
+    const res = await post(buildApp(mod, d.db, a.auth), BODY.email);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
+
+  it('otro error del INSERT de la persona no se traduce a 409: sube', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      insertUserError: Object.assign(new Error('otra restricción'), { code: '23514' }),
+    });
+    const a = makeAuthStub();
+
+    const res = await post(buildApp(mod, d.db, a.auth), BODY.email);
+
+    expect(res.status).toBe(500);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
+});
+
 describe('PATCH /admin/empresas/:id — activar sin SQL', () => {
   it('pasa pendiente_verificacion → activa y audita quién', async () => {
     const mod = await loadMod();
@@ -732,7 +847,10 @@ const EMPRESA_BODY = {
 };
 
 describe('POST /admin/empresas', () => {
-  it('crea un generador de carga pendiente, sin usuario ni clave', async () => {
+  // acceso-usuarios-empresa-panel SC5: el admin de Booster es el gate. La
+  // empresa que crea nace activa, para que su gente pueda crear cargas y
+  // recibir ofertas sin un segundo paso manual.
+  it('crea un generador de carga activo, sin usuario ni clave', async () => {
     const mod = await loadMod();
     const d = makeDb({
       lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
@@ -757,7 +875,7 @@ describe('POST /admin/empresas', () => {
     };
     expect(json.ok).toBe(true);
     expect(json.empresa_id).toBe('empresa-nueva-uuid');
-    expect(json.estado).toBe('pendiente_verificacion');
+    expect(json.estado).toBe('activa');
     expect(json.es_generador_carga).toBe(true);
     expect(json.es_transportista).toBe(false);
     expect(json.codigo_activacion).toBeUndefined();
@@ -768,10 +886,53 @@ describe('POST /admin/empresas', () => {
       isGeneradorCarga: true,
       isTransportista: false,
       planId: 'plan-gratis',
-      status: 'pendiente_verificacion',
+      status: 'activa',
     });
     expect(d.insertedCarrierMemberships).toHaveLength(0);
     expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('el evento de log del alta registra el estado inicial', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(EMPRESA_BODY),
+    });
+
+    expect(res.status).toBe(201);
+    expect(noopLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: 'empresa-nueva-uuid', estado: 'activa' }),
+      'admin-empresas: ficha creada',
+    );
+  });
+
+  it('la transportista también nace activa y con carrier_memberships free', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...EMPRESA_BODY, is_transportista: true }),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { estado: string; es_transportista: boolean };
+    expect(json.estado).toBe('activa');
+    expect(json.es_transportista).toBe(true);
+    expect(d.insertedEmpresas[0]).toMatchObject({ status: 'activa', isTransportista: true });
+    expect(d.insertedCarrierMemberships[0]).toMatchObject({ tierSlug: 'free', status: 'activa' });
   });
 
   it('abre carrier_memberships free cuando la empresa es transportista', async () => {
@@ -929,6 +1090,10 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
     const inviteUpdate = d.updates.find((u) => 'invitedAt' in u);
     expect(pinUpdate?.activationPinHash).toEqual(expect.any(String));
     expect(pinUpdate?.activationPinHash).not.toBe(json.codigo_activacion);
+    // `.specs/acceso-panel-plataforma` SC9: la re-emisión es solo de
+    // platform-admin y cuenta como código del panel: deja su vencimiento.
+    expect(pinUpdate?.activacionVenceEn).toBeInstanceOf(Date);
+    expect((pinUpdate?.activacionVenceEn as Date).getTime()).toBe(expira);
     expect(inviteUpdate?.invitedAt).toBeInstanceOf(Date);
     expect(d.updates.some((u) => u.status === 'activa')).toBe(false);
     expect(d.updates.some((u) => 'claveNumericaHash' in u)).toBe(false);
@@ -961,6 +1126,23 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
       expect(((await res.json()) as { code: string }).code).toBe('already_activated');
       expect(d.updates).toHaveLength(0);
     }
+  });
+
+  // `.specs/acceso-panel-plataforma` SC9: el código de una cuenta del personal
+  // sale solo del panel del personal, no de la re-emisión de una empresa.
+  it('409 cuenta_personal_booster si la cuenta es del personal de Booster, sin escribir', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ joinedMembershipRows: [filaPendienteReemision({ isPlatformAdmin: true })] });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros/${MEMBERSHIP_ID}/codigo`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'cuenta_personal_booster' });
+    expect(d.updates).toHaveLength(0);
   });
 
   it('404 membership_not_found si el join no trae la membresía', async () => {
@@ -1012,11 +1194,18 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
         emailVerified: false,
         name: undefined,
         picture: undefined,
-        custom: { impersonated_by: 'admin-uuid-1' },
+        custom: { impersonated_by: IMPERSONADOR_ID },
       });
       await next();
     });
-    app.use('*', createImpersonationWriteGuardMiddleware({ logger: noopLogger }));
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger: noopLogger,
+        db: dbDelImpersonador,
+        platformAdminEmails: [],
+      }),
+    );
     app.route('/', routes);
 
     const updateSpy = (d.db as unknown as { update: ReturnType<typeof vi.fn> }).update;
@@ -1180,5 +1369,268 @@ describe('correo de activación del alta desde el panel', () => {
       vi.mocked(noopLogger.error).mock.calls,
     ]);
     expect(logs).not.toContain(json.codigo_activacion);
+  });
+});
+
+describe('POST /admin/empresas/:id/activar-generador-carga', () => {
+  const activadoEn = new Date('2026-10-19T12:00:00.000Z');
+
+  function filaTransportista(overrides: Record<string, unknown> = {}) {
+    return {
+      id: EMPRESA_ID,
+      isTransportista: true,
+      isGeneradorCarga: false,
+      generadorCargaActivadoEn: null,
+      generadorCargaActivadoPor: null,
+      ...overrides,
+    };
+  }
+
+  it('prende es_generador_carga y deja es_transportista en true', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[filaTransportista()]],
+      updatedRows: [
+        {
+          id: EMPRESA_ID,
+          isTransportista: true,
+          isGeneradorCarga: true,
+          generadorCargaActivadoEn: activadoEn,
+          generadorCargaActivadoPor: ADMIN_EMAIL,
+        },
+      ],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      id: EMPRESA_ID,
+      es_generador_carga: true,
+      es_transportista: true,
+      unchanged: false,
+      activado_en: activadoEn.toISOString(),
+      activado_por: ADMIN_EMAIL,
+    });
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0]).toMatchObject({
+      isGeneradorCarga: true,
+      generadorCargaActivadoPor: ADMIN_EMAIL,
+    });
+    expect(d.updates[0]).not.toHaveProperty('isTransportista');
+    expect(vi.mocked(noopLogger.info)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        empresaId: EMPRESA_ID,
+        adminEmail: ADMIN_EMAIL,
+        esGeneradorCargaAntes: false,
+        esGeneradorCargaDespues: true,
+        unchanged: false,
+      }),
+      expect.stringContaining('generador de carga'),
+    );
+  });
+
+  it('activar dos veces no reescribe la auditoría', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [
+        [
+          filaTransportista({
+            isGeneradorCarga: true,
+            generadorCargaActivadoEn: activadoEn,
+            generadorCargaActivadoPor: ADMIN_EMAIL,
+          }),
+        ],
+      ],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      es_generador_carga: true,
+      es_transportista: true,
+      unchanged: true,
+      activado_en: activadoEn.toISOString(),
+      activado_por: ADMIN_EMAIL,
+    });
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it.each(['conductor', 'despachador'] as const)(
+    'el rol %s sin allowlist de platform-admin recibe 403',
+    async (rol) => {
+      const mod = await loadMod();
+      const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+      const app = buildApp(mod, d.db, makeAuthStub().auth, `${rol}@flota.cl`, undefined, rol);
+
+      const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'forbidden_platform_admin' });
+      expect(d.updates).toHaveLength(0);
+    },
+  );
+
+  it('404 si la empresa no existe', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ lookupQueue: [[]] });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('empresa_not_found');
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('409 si la empresa no es transportista', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[filaTransportista({ isTransportista: false })]],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('not_a_transportista');
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('una segunda activación concurrente relee la fila y responde unchanged', async () => {
+    const mod = await loadMod();
+    const ganadorEn = new Date('2026-10-19T12:00:01.000Z');
+    const d = makeDb({
+      lookupQueue: [
+        [filaTransportista()],
+        [
+          filaTransportista({
+            isGeneradorCarga: true,
+            generadorCargaActivadoEn: ganadorEn,
+            generadorCargaActivadoPor: 'otro@boosterchile.com',
+          }),
+        ],
+      ],
+      updatedRows: [],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      id: EMPRESA_ID,
+      es_generador_carga: true,
+      es_transportista: true,
+      unchanged: true,
+      activado_en: ganadorEn.toISOString(),
+      activado_por: 'otro@boosterchile.com',
+    });
+    expect(vi.mocked(noopLogger.error)).not.toHaveBeenCalled();
+  });
+
+  it('si el update no escribe y la relectura sigue sin el rol, responde 500', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[filaTransportista()], [filaTransportista()]],
+      updatedRows: [],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe('generador_update_failed');
+    expect(vi.mocked(noopLogger.error)).toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin'] as const)(
+    'el %s de la empresa target, fuera de la allowlist, recibe 403',
+    async (rol) => {
+      const mod = await loadMod();
+      const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+      const app = buildApp(
+        mod,
+        d.db,
+        makeAuthStub().auth,
+        `${rol}@vanoosterwyk.cl`,
+        undefined,
+        rol,
+      );
+
+      const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'forbidden_platform_admin' });
+      expect(d.updates).toHaveLength(0);
+    },
+  );
+
+  it('sin sesión responde 401 y no escribe', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+    const routes = mod.createAdminEmpresaMiembrosRoutes({
+      db: d.db,
+      logger: noopLogger,
+      auth: makeAuthStub().auth,
+    });
+    const app = new Hono();
+    app.route('/', routes);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthorized' });
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('la impersonación sobre una empresa real responde 403 y no escribe', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+    const routes = mod.createAdminEmpresaMiembrosRoutes({
+      db: d.db,
+      logger: noopLogger,
+      auth: makeAuthStub().auth,
+    });
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      (c as unknown as { set: (k: string, v: unknown) => void }).set('userContext', {
+        user: { id: 'admin-id', email: ADMIN_EMAIL },
+        activeMembership: {
+          role: 'dueno',
+          empresa: { id: EMPRESA_ID, isTestUser: false },
+        },
+      });
+      (c as unknown as { set: (k: string, v: unknown) => void }).set('firebaseClaims', {
+        uid: 'target-firebase-uid',
+        email: undefined,
+        emailVerified: false,
+        name: undefined,
+        picture: undefined,
+        custom: { impersonated_by: IMPERSONADOR_ID },
+      });
+      await next();
+    });
+    app.use(
+      '*',
+      createImpersonationWriteGuardMiddleware({
+        logger: noopLogger,
+        db: dbDelImpersonador,
+        platformAdminEmails: [],
+      }),
+    );
+    app.route('/', routes);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('forbidden_impersonation_write');
+    expect(d.updates).toHaveLength(0);
   });
 });

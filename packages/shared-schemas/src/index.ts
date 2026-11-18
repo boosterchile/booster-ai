@@ -22,11 +22,13 @@ export * from './domain/organizacion-stakeholder.js';
 export * from './domain/empresa.js';
 export * from './domain/plan.js';
 export * from './domain/membership.js';
+export * from './domain/capacidades.js';
 export * from './domain/zone.js';
 export * from './domain/zona-stakeholder.js';
 export * from './domain/offer.js';
 export * from './domain/assignment.js';
 export * from './domain/trip-event.js';
+export * from './domain/cambio-carga.js';
 export * from './domain/trip-metrics.js';
 
 // Dominio — entidades del MVP shared (algunas precedentes a multi-tenant,
@@ -80,3 +82,9 @@ export * from './domain/safety-event.js';
 export * from './domain/transport-document.js';
 // ADR-080 — pago del viaje bajo mandato de cobro.
 export * from './domain/pago-viaje.js';
+// Alta del personal de Booster desde el panel (.specs/alta-personal-booster).
+export * from './domain/personal-booster.js';
+// ADR-093 — invitación correo + UI creación (Booster / Stakeholder).
+export * from './domain/invitar-correo-cuenta.js';
+export * from './domain/viaje-propio.js';
+export * from './domain/booster-fleet.js';

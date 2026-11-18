@@ -1,3 +1,5 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   EmailAlreadyInUseError,
@@ -135,6 +137,7 @@ describe('onboardEmpresa', () => {
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'self_service',
       selfServiceEnabled: true,
+      platformAdminEmails: [],
       input: VALID_INPUT,
     });
 
@@ -156,9 +159,39 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: true,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(UserAlreadyExistsError);
+  });
+
+  // `.specs/bordes-autenticacion` SC5: el onboarding no crea una cuenta con un
+  // correo de la lista de respaldo; responde como un correo ya usado.
+  it('correo de la lista de respaldo, con mayúsculas y espacios → EmailAlreadyInUseError sin insertar', async () => {
+    const db = makeDb({
+      selects: [
+        [], // por firebase_uid → no existe
+        [], // por email (exacto) → no existe
+        [], // por rut → libre
+        [], // empresa por rut → no existe
+        [{ id: 'plan-uuid', slug: 'gratis', isActive: true }],
+      ],
+      inserts: [[{ id: 'user-uuid' }], [{ id: 'empresa-uuid' }], [{ id: 'membership-uuid' }]],
+    });
+
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: ' Dev@BoosterChile.com ',
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
+        platformAdminEmails: ['dev@boosterchile.com'],
+        input: VALID_INPUT,
+      }),
+    ).rejects.toThrow(EmailAlreadyInUseError);
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it('throw EmailAlreadyInUseError si el email ya está usado por otro user', async () => {
@@ -177,6 +210,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: true,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(EmailAlreadyInUseError);
@@ -200,6 +234,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: true,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(EmpresaRutDuplicateError);
@@ -224,6 +259,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: true,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(PlanNotFoundError);
@@ -248,6 +284,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: true,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(PlanNotFoundError);
@@ -269,6 +306,7 @@ describe('onboardEmpresa', () => {
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'self_service',
       selfServiceEnabled: true,
+      platformAdminEmails: [],
       input: VALID_INPUT,
     });
 
@@ -292,6 +330,7 @@ describe('onboardEmpresa', () => {
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'self_service',
       selfServiceEnabled: true,
+      platformAdminEmails: [],
       input: {
         ...VALID_INPUT,
         empresa: {
@@ -316,6 +355,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: true,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(/Insert user returned no row/);
@@ -333,6 +373,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'self_service',
         selfServiceEnabled: false,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(SelfOnboardingDisabledError);
@@ -359,6 +400,7 @@ describe('onboardEmpresa', () => {
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'admin_provisioned',
       selfServiceEnabled: false,
+      platformAdminEmails: [],
       input: VALID_INPUT,
       onboardingTokenConsumption: CONSUMPTION,
     });
@@ -378,6 +420,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'admin_provisioned',
         selfServiceEnabled: false,
+        platformAdminEmails: [],
         input: VALID_INPUT,
         onboardingTokenConsumption: CONSUMPTION,
       }),
@@ -395,6 +438,7 @@ describe('onboardEmpresa', () => {
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'admin_provisioned',
         selfServiceEnabled: false,
+        platformAdminEmails: [],
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(OnboardingTokenRequiredError);
@@ -434,6 +478,7 @@ describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', ()
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'admin_provisioned',
       selfServiceEnabled: false,
+      platformAdminEmails: [],
       input: VALID_INPUT,
       onboardingTokenConsumption: CONSUMPTION,
     });
@@ -467,6 +512,7 @@ describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', ()
         firebaseEmail: FB_EMAIL,
         authorizedBy: 'admin_provisioned',
         selfServiceEnabled: false,
+        platformAdminEmails: [],
         input: VALID_INPUT,
         onboardingTokenConsumption: CONSUMPTION,
       }),
@@ -493,6 +539,7 @@ describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', ()
       logger: noopLogger,
       authorizedBy: 'admin_provisioned',
       selfServiceEnabled: false,
+      platformAdminEmails: [],
       input: VALID_INPUT,
       onboardingTokenConsumption: CONSUMPTION,
     });
@@ -525,6 +572,7 @@ describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', ()
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'admin_provisioned',
       selfServiceEnabled: false,
+      platformAdminEmails: [],
       input: VALID_INPUT,
       onboardingTokenConsumption: CONSUMPTION,
     });
@@ -537,5 +585,39 @@ describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', ()
     // Firebase; el canal de comunicación con la persona es su email real.
     expect(values.email).toBe(FB_EMAIL);
     expect(String(values.email)).not.toContain('invalid');
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo del dueño se compara con
+ * las cuentas existentes sin distinguir mayúsculas.
+ */
+describe('onboardEmpresa — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  it('la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const db = makeDb({ selects: [[], [{ id: 'cuenta-mayus' }]] });
+
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: 'Felipe@BoosterChile.com',
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
+        platformAdminEmails: ['respaldo@boosterchile.com'],
+        input: VALID_INPUT,
+      }),
+    ).rejects.toThrow(EmailAlreadyInUseError);
+
+    // 0 = cuenta por firebase_uid, 1 = cuenta por correo.
+    const chain = db.select.mock.results[1]?.value as { where: ReturnType<typeof vi.fn> };
+    const predicado = chain.where.mock.calls[0]?.[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['felipe@boosterchile.com']);
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });

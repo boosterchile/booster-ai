@@ -1,10 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { denegarFinanzas } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { adelantosCarrier } from '../db/schema.js';
-import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { cobraHoy, cotizarCobraHoy } from '../services/cobra-hoy.js';
 import type { UserContext } from '../services/user-context.js';
 
@@ -18,25 +18,34 @@ import type { UserContext } from '../services/user-context.js';
  *
  * Los 3 endpoints requieren `userContext` (firebaseAuth + userContextMiddleware).
  *
- * Feature flag: si `FACTORING_V1_ACTIVATED=false`, los endpoints
- * responden 503 con `feature_disabled`. La UI lee esto para esconder
- * el botón.
+ * Feature flag: si `FACTORING_V1_ACTIVATED=false`, los GET responden
+ * 200 `{enabled:false, items:[]}` (no es una caída) y el POST responde
+ * 403 `{error:'feature_disabled'}`. El flag no se enciende acá.
  */
+
+/**
+ * Lectura con el flag apagado: la UI muestra el aviso, no un error de servicio.
+ * La cotización no es una lista. `items` queda vacío a propósito, el mismo
+ * sobre que el historial, para que el cliente mire `enabled` y no lea tarifas
+ * de este objeto. Con el flag encendido la cotización no trae `enabled` ni `items`.
+ */
+export const COBRA_HOY_APAGADO = { enabled: false, items: [] } as const;
 
 export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
   app.get('/:id/cobra-hoy/cotizacion', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return c.json({ error: 'feature_disabled' }, 503);
+      return c.json(COBRA_HOY_APAGADO, 200);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS cobra-hoy-api: la cotización muestra montos y no tenía rol.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const asignacionId = c.req.param('id');
@@ -76,15 +85,16 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
 
   app.post('/:id/cobra-hoy', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return c.json({ error: 'feature_disabled' }, 503);
+      return c.json({ error: 'feature_disabled' }, 403);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS cobra-hoy-api: el POST (cobra-hoy.ts) no tenía rol.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const asignacionId = c.req.param('id');
@@ -99,7 +109,7 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
 
     switch (result.status) {
       case 'skipped_flag_disabled':
-        return c.json({ error: 'feature_disabled' }, 503);
+        return c.json({ error: 'feature_disabled' }, 403);
       case 'assignment_not_found':
         return c.json({ error: 'assignment_not_found' }, 404);
       case 'assignment_not_delivered':
@@ -188,15 +198,16 @@ export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
 
   app.get('/cobra-hoy/historial', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return c.json({ error: 'feature_disabled' }, 503);
+      return c.json(COBRA_HOY_APAGADO, 200);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
       return c.json({ error: 'no_active_empresa' }, 400);
     }
-    const sinRol = exigirRol(c, userContext.activeMembership.membership.role, ROLES_COMERCIALES);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS cobra-hoy-api: el historial no tenía rol.
+    const sinPlata = denegarFinanzas(c, userContext);
+    if (sinPlata) {
+      return sinPlata;
     }
     const empresaCarrierId = userContext.activeMembership.empresa.id;
     const rows = await opts.db

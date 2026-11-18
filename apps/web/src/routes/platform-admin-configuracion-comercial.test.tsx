@@ -16,6 +16,8 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 vi.mock('../hooks/use-auth.js', () => ({ signOutUser: vi.fn(async () => undefined) }));
+// El marco del panel lee /me para «Ir a mi empresa»; acá no se prueba eso.
+vi.mock('../hooks/use-me.js', () => ({ useMe: () => ({ data: undefined }) }));
 
 const { PlatformAdminConfiguracionComercialRoute } = await import(
   './platform-admin-configuracion-comercial.js'
@@ -218,7 +220,9 @@ describe('contrato programado (ADR-079 §2)', () => {
     const user = userEvent.setup();
     render(<PlatformAdminConfiguracionComercialRoute />);
     await user.click(
-      await screen.findByRole('button', { name: 'Habilitar gestión de flota de Fletes Dos SpA' }),
+      await screen.findByRole('button', {
+        name: 'Habilitar servicio Booster Fleet de Fletes Dos SpA',
+      }),
     );
     await waitFor(() =>
       expect(putSpy).toHaveBeenCalledWith(
@@ -228,7 +232,7 @@ describe('contrato programado (ADR-079 §2)', () => {
     );
     expect(
       await screen.findByRole('button', {
-        name: 'Deshabilitar gestión de flota de Fletes Dos SpA',
+        name: 'Deshabilitar servicio Booster Fleet de Fletes Dos SpA',
       }),
     ).toBeInTheDocument();
     expect(screen.getByText('No hay empresas generadoras.')).toBeInTheDocument();

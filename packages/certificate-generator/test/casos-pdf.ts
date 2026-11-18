@@ -9,7 +9,12 @@ const viaje = {
   cargoPesoKg: 12000,
   pickupAt: null,
   deliveredAt: new Date('2026-10-30T18:00:00Z'),
-  version: { numero: 2, reemplazaA: 1 },
+  version: {
+    numero: 2,
+    reemplazaA: 1,
+    reemplazaEmitidoEn: new Date('2026-11-03T06:18:23Z'),
+    motivo: 'factor_impreso_no_corresponde',
+  },
 };
 const metricas = {
   distanciaKmEstimated: 468.76,
@@ -64,6 +69,8 @@ export const CARGA_MULTILINEA = 'carga\nseca\r\nrefrigerada\npaletizada';
 const A_LARGO = 'A'.repeat(300);
 export const CASOS: Record<string, ParametrosGenerarPdf> = {
   normal: base,
+  // ADR-091: distancia medida por Teltonika, sin sello y con nota de método.
+  medidoTeltonika: { ...base, metricas: { ...metricas, coveragePct: 92.9 } },
   largo: {
     ...base,
     viaje: { ...viaje, origenDireccion: DIRECCION_112, destinoDireccion: DIRECCION_112 },

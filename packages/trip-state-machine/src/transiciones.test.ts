@@ -3,13 +3,19 @@ import { ESTADOS_VIAJE, type EstadoViaje, esEstadoViaje, esTerminal } from './es
 // Vía index a propósito: cubre el barrel y fija la API pública del package.
 import { PACKAGE_NAME } from './index.js';
 import {
+  ESTADOS_PRE_MATCH,
   TRANSICIONES,
   TransicionViajeInvalidaError,
+  aceptaDatosLibres,
+  aceptaSolicitudCambio,
   assertTransicion,
   esAceptableOferta,
-  esCancelablePorShipper,
+  esAnulablePorGenerador,
+  esCancelablePostMatch,
   esConfirmableEntrega,
   esConfirmableRecogida,
+  esEditablePreMatch,
+  esPreMatch,
   puedeTransicionar,
 } from './transiciones.js';
 
@@ -29,8 +35,13 @@ const VALIDAS: ReadonlyArray<readonly [EstadoViaje, EstadoViaje]> = [
   ['ofertas_enviadas', 'asignado'],
   ['ofertas_enviadas', 'cancelado'],
   ['ofertas_enviadas', 'expirado'],
+  // editar-anular-cargas: volver a ofertar tras una edición material antes
+  // del match. Única transición hacia atrás; no sale de ningún terminal.
+  ['ofertas_enviadas', 'esperando_match'],
   ['asignado', 'en_proceso'],
   ['asignado', 'entregado'],
+  // editar-anular-cargas: cancelación después del match (no desde en_proceso, §12-P2).
+  ['asignado', 'cancelado'],
   ['en_proceso', 'entregado'],
 ];
 
@@ -113,9 +124,51 @@ describe('terminales (T3)', () => {
 });
 
 describe('guards semánticos ≡ sets históricos de los services (T4)', () => {
-  it('cancelable por shipper: exactamente los 4 estados pre-asignación (ex CANCELLABLE_STATUSES)', () => {
-    const cancelables = ESTADOS_VIAJE.filter(esCancelablePorShipper);
-    expect(cancelables).toEqual(['borrador', 'esperando_match', 'emparejando', 'ofertas_enviadas']);
+  it('anulable por el generador: exactamente los 4 estados pre-match (ex CANCELLABLE_STATUSES)', () => {
+    expect(ESTADOS_VIAJE.filter(esAnulablePorGenerador)).toEqual([
+      'borrador',
+      'esperando_match',
+      'emparejando',
+      'ofertas_enviadas',
+    ]);
+  });
+
+  // editar-anular-cargas §4: guards derivados de la tabla.
+  it('pre-match: los mismos 4 estados, y ESTADOS_PRE_MATCH coincide', () => {
+    expect(ESTADOS_VIAJE.filter(esPreMatch)).toEqual([...ESTADOS_PRE_MATCH]);
+    expect([...ESTADOS_PRE_MATCH]).toEqual([
+      'borrador',
+      'esperando_match',
+      'emparejando',
+      'ofertas_enviadas',
+    ]);
+  });
+
+  it('cancelable después del match: solo asignado (en_proceso no, §12-P2)', () => {
+    expect(ESTADOS_VIAJE.filter(esCancelablePostMatch)).toEqual(['asignado']);
+  });
+
+  it('editable antes del match: sin emparejando (el matching está en curso)', () => {
+    expect(ESTADOS_VIAJE.filter(esEditablePreMatch)).toEqual([
+      'borrador',
+      'esperando_match',
+      'ofertas_enviadas',
+    ]);
+  });
+
+  it('datos libres: todo estado no terminal', () => {
+    expect(ESTADOS_VIAJE.filter(aceptaDatosLibres)).toEqual([
+      'borrador',
+      'esperando_match',
+      'emparejando',
+      'ofertas_enviadas',
+      'asignado',
+      'en_proceso',
+    ]);
+  });
+
+  it('solicitud de cambio: solo asignado', () => {
+    expect(ESTADOS_VIAJE.filter(aceptaSolicitudCambio)).toEqual(['asignado']);
   });
 
   it('aceptable para oferta: SOLO ofertas_enviadas (guard de #436)', () => {

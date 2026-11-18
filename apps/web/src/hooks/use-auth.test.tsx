@@ -56,6 +56,7 @@ const {
   useAuth,
 } = await import('./use-auth.js');
 const { setActiveEmpresaId, getActiveEmpresaId } = await import('../lib/api-client.js');
+const { elegirVistaEmpresa, vistaEmpresaElegida } = await import('../lib/vista-admin.js');
 
 function makeWrapper() {
   const client = new QueryClient();
@@ -67,6 +68,7 @@ function makeWrapper() {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -156,6 +158,16 @@ describe('signIn helpers', () => {
     await signOutUser();
     expect(getActiveEmpresaId()).toBeNull();
     expect(signOutMock).toHaveBeenCalled();
+  });
+
+  // acceso-usuarios-empresa-panel SC9: quien vuelve a entrar en la misma
+  // pestaña parte en el panel, como siempre.
+  it('signOutUser limpia la elección «Ir a mi empresa» de la pestaña', async () => {
+    elegirVistaEmpresa();
+    expect(vistaEmpresaElegida()).toBe(true);
+    signOutMock.mockResolvedValueOnce(undefined);
+    await signOutUser();
+    expect(vistaEmpresaElegida()).toBe(false);
   });
 });
 

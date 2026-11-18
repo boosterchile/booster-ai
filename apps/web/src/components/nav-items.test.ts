@@ -10,6 +10,10 @@ function buildMe(opts: {
   transportista?: boolean;
   generador?: boolean;
   stakeholder?: boolean;
+  /** Ficha propia: usuario_id de la sesión y el mismo RUT. */
+  fichaPropia?: boolean;
+  /** Señal vieja de #814, solo por usuario_id, sin comprobar el RUT. */
+  tieneFichaConductor?: boolean;
 }): MeOnboarded {
   const membership = opts.stakeholder
     ? {
@@ -38,6 +42,10 @@ function buildMe(opts: {
     user: { id: 'u', email: 'a@b.cl', full_name: 'X', is_platform_admin: false, status: 'activo' },
     memberships: [membership],
     active_membership: membership,
+    ...(opts.fichaPropia === undefined ? {} : { ficha_conductor_mismo_rut: opts.fichaPropia }),
+    ...(opts.tieneFichaConductor === undefined
+      ? {}
+      : { tiene_ficha_conductor: opts.tieneFichaConductor }),
   } as MeOnboarded;
 }
 
@@ -51,11 +59,31 @@ describe('navSectionsForMe', () => {
     expect(l).toEqual([
       'Inicio',
       'Empresa',
+      'Equipo',
       'Crear carga',
       'Mis cargas',
       'Sucursales',
       'Certificados',
     ]);
+  });
+
+  it('el dueño ve «Mi viaje» solo si la ficha es suya (usuario_id y RUT)', () => {
+    const propia = labels(
+      navSectionsForMe(buildMe({ transportista: true, role: 'dueno', fichaPropia: true })),
+    );
+    expect(propia).toContain('Mi viaje');
+
+    const deOtro = labels(
+      navSectionsForMe(
+        buildMe({
+          transportista: true,
+          role: 'dueno',
+          fichaPropia: false,
+          tieneFichaConductor: true,
+        }),
+      ),
+    );
+    expect(deOtro).not.toContain('Mi viaje');
   });
 
   it('transportista dueño → Inicio + transporte + Zonas de matching + Dispositivos', () => {
@@ -65,6 +93,8 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Zonas de matching');
     expect(l).toContain('Dispositivos'); // admin
     expect(l).toContain('Trayectos');
+    expect(l).toContain('Booster Fleet');
+    expect(l.indexOf('Booster Fleet')).toBeLessThan(l.indexOf('Seguimiento de flota'));
     expect(l).not.toContain('Mis cargas'); // no es generador
   });
 
@@ -99,6 +129,7 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Ofertas');
     expect(l).not.toContain('Dispositivos');
     expect(l).not.toContain('Trayectos');
+    expect(l).not.toContain('Booster Fleet');
     expect(l).not.toContain('Zonas de matching');
   });
 
@@ -111,8 +142,42 @@ describe('navSectionsForMe', () => {
     expect(sections.some((s) => s.heading === 'Generador')).toBe(true);
   });
 
+  // equipo-generador SC1: la gente de la empresa no depende del rol de la empresa.
+  it.each([
+    ['generador puro', { generador: true }],
+    ['transportista', { transportista: true }],
+    ['empresa dual', { transportista: true, generador: true }],
+  ] as const)('%s ve «Equipo» una vez, en la sección general', (_caso, flags) => {
+    for (const role of ['dueno', 'admin', 'despachador', 'visualizador'] as const) {
+      const sections = navSectionsForMe(buildMe({ ...flags, role }));
+      const l = labels(sections);
+      expect(
+        l.filter((x) => x === 'Equipo'),
+        role,
+      ).toHaveLength(1);
+      expect(
+        sections[0]?.items.map((i) => i.label),
+        role,
+      ).toContain('Equipo');
+    }
+  });
+
   it('stakeholder → solo Inicio + Zonas', () => {
     const l = labels(navSectionsForMe(buildMe({ stakeholder: true })));
     expect(l).toEqual(['Inicio', 'Zonas']);
+  });
+
+  it('«Rutas» aparece después de Servicios solo con la API de rutas encendida', () => {
+    const me = buildMe({ transportista: true, role: 'despachador' });
+    expect(labels(navSectionsForMe(me))).not.toContain('Rutas');
+    const con = labels(navSectionsForMe(me, { rutas: true }));
+    expect(con.slice(con.indexOf('Servicios'), con.indexOf('Servicios') + 2)).toEqual([
+      'Servicios',
+      'Rutas',
+    ]);
+    // Una empresa que solo genera carga no la ve aunque esté encendida.
+    expect(labels(navSectionsForMe(buildMe({ generador: true }), { rutas: true }))).not.toContain(
+      'Rutas',
+    );
   });
 });

@@ -41,7 +41,8 @@ export interface IdentidadFirebaseAuth {
   deleteUser(uid: string): Promise<void>;
 }
 
-function codigoError(err: unknown): string | undefined {
+/** Código de un error de Firebase Admin (`auth/...`), si lo trae. */
+export function codigoError(err: unknown): string | undefined {
   if (typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string') {
     return err.code;
   }

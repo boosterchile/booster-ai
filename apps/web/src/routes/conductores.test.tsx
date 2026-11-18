@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -106,6 +106,38 @@ function buildConductor(overrides: Partial<Record<string, unknown>> = {}) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => undefined;
 }
+
+/**
+ * GET del detalle según la ruta: la ficha pide el conductor y la sección de
+ * documentos pide los suyos. Con un único `mockResolvedValue`, la consulta de
+ * documentos recibía `{ conductor }`, terminaba en error («Query data cannot
+ * be undefined») en un momento variable y volvía a renderizar mientras el
+ * test escribía en el formulario.
+ */
+function getDetalle(conductor: ReturnType<typeof buildConductor>) {
+  return vi
+    .spyOn(api, 'get')
+    .mockImplementation(async (path: string) =>
+      path.startsWith('/documentos/') ? { documentos: [] } : { conductor },
+    );
+}
+
+/**
+ * Espera a que la ficha termine de cargar antes de escribir en ella. El efecto
+ * que llega con los datos llena el formulario (la licencia parte vacía) y el
+ * teléfono de contacto. Si el test borra el campo antes de que corra, el
+ * efecto vuelve a poner el teléfono viejo y lo escrito queda pegado detrás:
+ * en CI se vio «+56911111111+56987654321».
+ */
+async function fichaCargada(telefonoInicial: string | null) {
+  await waitFor(() => {
+    expect(screen.getByLabelText(/Número de licencia/)).toHaveValue('LIC-12345');
+    expect(screen.getByLabelText(/Teléfono \(WhatsApp\)/)).toHaveValue(telefonoInicial ?? '');
+  });
+}
+
+/** Plazo de las esperas tras un clic: bajo cobertura en CI, 1 s no siempre alcanza. */
+const ESPERA_ENVIO = { timeout: 5000 };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -231,20 +263,31 @@ describe('ConductoresNuevoRoute', () => {
     expect(screen.getByText('Sin permisos')).toBeInTheDocument();
   });
 
+  /**
+   * Llena el formulario de alta de una vez. Tipear tecla por tecla seis campos
+   * tardaba más de 5 s en un runner lento y el test se caía por tiempo.
+   */
+  function llenarAlta(rut: string, nombre: string) {
+    const campos: [RegExp, string][] = [
+      [/^RUT/, rut],
+      [/^Nombre completo/, nombre],
+      [/^Teléfono/, '+56957790379'],
+      // Fase B: el email del conductor es obligatorio.
+      [/^Email/, 'juan@empresa.cl'],
+      [/^Número de licencia/, 'LIC-1'],
+      [/^Vencimiento de licencia/, '2027-12-31'],
+    ];
+    for (const [etiqueta, valor] of campos) {
+      fireEvent.change(screen.getByLabelText(etiqueta), { target: { value: valor } });
+    }
+  }
+
   it('submit con RUT inválido → no llama API, muestra error', async () => {
     const postSpy = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresNuevoRoute />);
 
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-9');
-    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan');
-    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
-    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
-    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
-    // Date input
-    const dateInput = screen.getByLabelText(/^Vencimiento de licencia/);
-    await userEvent.type(dateInput, '2027-12-31');
-
+    llenarAlta('11.111.111-9', 'Juan');
     await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
 
     // El RUT con dígito verificador incorrecto debería bloquear submit.
@@ -259,15 +302,7 @@ describe('ConductoresNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresNuevoRoute />);
 
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
-    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
-    // Fase B: el email del conductor es obligatorio.
-    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
-    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
-    const dateInput = screen.getByLabelText(/^Vencimiento de licencia/);
-    await userEvent.type(dateInput, '2027-12-31');
-
+    llenarAlta('11.111.111-1', 'Juan Pérez');
     await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
 
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
@@ -431,6 +466,29 @@ describe('ConductoresNuevoRoute', () => {
     expect(await screen.findByText(/otra empresa o tiene otro rol/)).toBeInTheDocument();
     expect(screen.queryByText(/PIN de activación/)).toBeNull();
   });
+
+  // `.specs/acceso-panel-plataforma` SC8.
+  it('error cuenta_personal_booster en el alta → explica que la cuenta se gestiona desde Booster', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(
+        409,
+        'cuenta_personal_booster',
+        { code: 'cuenta_personal_booster' },
+        'API error 409 (cuenta_personal_booster)',
+      ),
+    );
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+    await enviarAlta();
+
+    expect(
+      await screen.findByText(
+        'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/cuenta_personal_booster/)).toBeNull();
+    expect(screen.queryByText(/PIN de activación/)).toBeNull();
+  });
 });
 
 describe('ConductoresDetalleRoute', () => {
@@ -502,8 +560,8 @@ describe('ConductoresDetalleRoute', () => {
   });
 
   it('pendiente con email de relleno: guarda el real y muestra el PIN reenviado', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      conductor: buildConductor({
+    getDetalle(
+      buildConductor({
         user: {
           id: 'u-1',
           full_name: 'Camila Rojas',
@@ -513,7 +571,7 @@ describe('ConductoresDetalleRoute', () => {
           is_pending: true,
         },
       }),
-    });
+    );
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       email: 'usuario@example.com',
       invitacion_reenviada: true,
@@ -523,14 +581,18 @@ describe('ConductoresDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     expect(await screen.findByText(/email de relleno/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/Email de contacto/), 'usuario@example.com');
-    await userEvent.click(
-      screen.getByRole('button', { name: /Guardar email y reenviar invitación/ }),
-    );
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
-        email: 'usuario@example.com',
-      }),
+    const email = screen.getByLabelText(/Email de contacto/);
+    await userEvent.type(email, 'usuario@example.com');
+    expect(email).toHaveValue('usuario@example.com');
+    const reenviar = screen.getByRole('button', { name: /Guardar email y reenviar invitación/ });
+    expect(reenviar).toBeEnabled();
+    await userEvent.click(reenviar);
+    await waitFor(
+      () =>
+        expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
+          email: 'usuario@example.com',
+        }),
+      ESPERA_ENVIO,
     );
     expect(await screen.findByText('482915')).toBeInTheDocument();
     expect(
@@ -592,49 +654,95 @@ describe('ConductoresDetalleRoute', () => {
     expect(screen.queryByText('482915')).toBeNull();
   });
 
-  it('teléfono inválido deshabilita el reenvío y muestra el aviso', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+  function conductorPendienteConTelefono() {
+    return buildConductor({
+      user: {
+        id: 'u-1',
+        full_name: 'Juan Pérez',
+        rut: '11.111.111-1',
+        email: 'viejo@example.com',
+        phone: '+56911111111',
+        is_pending: true,
+      },
+    });
+  }
+
+  it('teléfono inválido deshabilita guardar y reenviar, y muestra el aviso', async () => {
+    getDetalle(conductorPendienteConTelefono());
     const post = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
     expect(input).toHaveAttribute('placeholder', '+56912345678');
+    await fichaCargada('+56911111111');
     await userEvent.clear(input);
     await userEvent.type(input, '+569');
     expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
-    const boton = screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' });
-    expect(boton).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Guardar teléfono' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Guardar y reenviar invitación' })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('un fijo +562 no habilita el reenvío y usa el mismo aviso', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+  it('un fijo +562 no habilita guardar y usa el mismo aviso', async () => {
+    getDetalle(buildConductor());
     const post = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56912345678');
     await userEvent.clear(input);
     await userEvent.type(input, '+56212345678');
     expect(screen.getByText('Ingresa un teléfono válido, como +56912345678')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' }),
-    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Guardar teléfono' })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('guarda el teléfono, muestra el PIN nuevo y actualiza el encabezado', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      conductor: buildConductor({
-        user: {
-          id: 'u-1',
-          full_name: 'Juan Pérez',
-          rut: '11.111.111-1',
-          email: 'viejo@example.com',
-          phone: '+56911111111',
-          is_pending: true,
-        },
-      }),
+  it('cuenta activa: no ofrece reenviar la invitación', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(await screen.findByRole('button', { name: 'Guardar teléfono' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /reenviar invitación/ })).toBeNull();
+  });
+
+  it('pendiente: «Guardar teléfono» solo cambia el número y no muestra PIN', async () => {
+    getDetalle(conductorPendienteConTelefono());
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      phone: '+56987654321',
+      email: 'viejo@example.com',
+      invitacion_reenviada: false,
+      cuenta_activa: false,
     });
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(await screen.findByText('+56911111111')).toBeInTheDocument();
+    expect(screen.getByText(/el PIN que ya tiene sigue sirviendo/)).toBeInTheDocument();
+    const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56911111111');
+    await userEvent.clear(input);
+    await userEvent.type(input, '+56987654321');
+    // Si vuelve a fallar, dice por qué: el número quedó mal escrito o el botón
+    // seguía deshabilitado al hacer clic.
+    expect(input).toHaveValue('+56987654321');
+    const boton = screen.getByRole('button', { name: 'Guardar teléfono' });
+    expect(boton).toBeEnabled();
+    await userEvent.click(boton);
+    await waitFor(
+      () =>
+        expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
+          phone: '+56987654321',
+          reenviar_invitacion: false,
+        }),
+      ESPERA_ENVIO,
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Teléfono guardado.');
+    expect(screen.getByText('+56987654321')).toBeInTheDocument();
+    expect(screen.queryByText('+56911111111')).toBeNull();
+    expect(screen.queryByText(/Invitación reenviada/)).toBeNull();
+  });
+
+  it('pendiente: «Guardar y reenviar invitación» muestra el PIN nuevo y actualiza el encabezado', async () => {
+    getDetalle(conductorPendienteConTelefono());
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       phone: '+56987654321',
       email: 'juan@example.com',
@@ -647,21 +755,29 @@ describe('ConductoresDetalleRoute', () => {
     expect(await screen.findByText('viejo@example.com')).toBeInTheDocument();
     expect(screen.getByText('+56911111111')).toBeInTheDocument();
     const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56911111111');
     await userEvent.clear(input);
     await userEvent.type(input, '+56987654321');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' }),
-    );
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
-        phone: '+56987654321',
-      }),
+    // Si vuelve a fallar, dice por qué: el número quedó mal escrito o el botón
+    // seguía deshabilitado al hacer clic.
+    expect(input).toHaveValue('+56987654321');
+    const boton = screen.getByRole('button', { name: 'Guardar y reenviar invitación' });
+    expect(boton).toBeEnabled();
+    await userEvent.click(boton);
+    await waitFor(
+      () =>
+        expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
+          phone: '+56987654321',
+          reenviar_invitacion: true,
+        }),
+      ESPERA_ENVIO,
     );
     expect(await screen.findByText('135790')).toBeInTheDocument();
     expect(screen.getByText('+56987654321')).toBeInTheDocument();
     expect(screen.getByText('juan@example.com')).toBeInTheDocument();
     expect(screen.queryByText('viejo@example.com')).toBeNull();
     expect(screen.queryByText('+56911111111')).toBeNull();
+    expect(screen.queryByText('Teléfono guardado.')).toBeNull();
   });
 
   it('conductor retirado (deleted_at) → form disabled + banner', async () => {
@@ -869,5 +985,68 @@ describe('ConductoresNuevoRoute — teléfono obligatorio (canal WhatsApp)', () 
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect((post.mock.calls[0]?.[1] as { phone?: string }).phone).toBe('+56957790379');
+  });
+});
+
+// `.specs/acceso-panel-plataforma` SC8: la cuenta del personal de Booster se
+// gestiona desde Booster; la ficha y el alta lo explican en tuteo.
+describe('conductores — cuenta del personal de Booster (SC8)', () => {
+  const MENSAJE = 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.';
+  const rechazoPersonal = () =>
+    new ApiError(
+      409,
+      'cuenta_personal_booster',
+      { code: 'cuenta_personal_booster', message: MENSAJE },
+      'API error 409 (cuenta_personal_booster)',
+    );
+
+  it('ficha: cambiar el email → muestra el mensaje', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Camila Rojas',
+          rut: '11.111.111-1',
+          email: 'pending-rut-111111111@boosterchile.invalid',
+          phone: null,
+          is_pending: true,
+        },
+      }),
+    });
+    vi.spyOn(api, 'post').mockRejectedValueOnce(rechazoPersonal());
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    await userEvent.type(await screen.findByLabelText(/Email de contacto/), 'usuario@example.com');
+    await userEvent.click(
+      screen.getByRole('button', { name: /Guardar email y reenviar invitación/ }),
+    );
+
+    expect(await screen.findByText(MENSAJE)).toBeInTheDocument();
+  });
+
+  it('ficha: guardar el teléfono → muestra el mensaje', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Juan Pérez',
+          rut: '11.111.111-1',
+          email: 'viejo@example.com',
+          phone: '+56911111111',
+          is_pending: true,
+        },
+      }),
+    });
+    vi.spyOn(api, 'post').mockRejectedValueOnce(rechazoPersonal());
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    await fichaCargada('+56911111111');
+    await userEvent.clear(input);
+    await userEvent.type(input, '+56987654321');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar teléfono' }));
+
+    expect(await screen.findByText(MENSAJE)).toBeInTheDocument();
+    expect(screen.queryByText(/API error 409/)).toBeNull();
   });
 });

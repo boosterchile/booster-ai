@@ -12,6 +12,13 @@ beforeAll(() => {
 vi.mock('../../src/services/confirmar-entrega-viaje.js', () => ({
   confirmarEntregaViaje: vi.fn(),
 }));
+vi.mock('../../src/services/reportar-incidente.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/reportar-incidente.js')>();
+  return {
+    ...actual,
+    reportarIncidente: vi.fn(),
+  };
+});
 vi.mock('../../src/services/confirmar-recogida-viaje.js', () => ({
   confirmarRecogidaViaje: vi.fn(),
 }));
@@ -53,6 +60,7 @@ vi.mock('../../src/observability/business-span.js', () => ({
 const { withBusinessSpan } = await import('../../src/observability/business-span.js');
 
 const { confirmarEntregaViaje } = await import('../../src/services/confirmar-entrega-viaje.js');
+const { reportarIncidente } = await import('../../src/services/reportar-incidente.js');
 const { confirmarRecogidaViaje } = await import('../../src/services/confirmar-recogida-viaje.js');
 const {
   asignarConductorAAssignment,
@@ -118,12 +126,15 @@ const ASSIGNMENT_DETAIL_ROW = {
   pickedUpAt: null,
   deliveredAt: null,
   cancelledAt: null,
+  cancelledByActor: null,
+  cancellationReason: null,
   empresaIdAssign: CARRIER_EMP,
   empresaLegalName: 'Carrier SpA',
   vehicleId: 'veh-uuid',
   vehiclePlate: 'AB-CD-12',
   vehicleStatus: 'activo',
   vehicleType: 'camion_pequeno',
+  vehicleCapacityKg: 5000,
   driverUserId: 'driver-uuid',
   driverName: 'Pedro Conductor',
   tripId: TRIP_ID,
@@ -140,6 +151,10 @@ const ASSIGNMENT_DETAIL_ROW = {
   pickupWindowEnd: new Date('2026-05-01T12:00:00Z'),
   proposedPriceClp: 250000,
   shipperLegalName: 'Shipper SpA',
+  consigneeName: 'Bodega',
+  consigneeWhatsappE164: '+56911111111',
+  notes: 'Andén 4',
+  reference: 'PO-1',
 };
 
 async function buildApp(opts: { db: unknown; certConfig?: unknown }) {
@@ -169,6 +184,7 @@ const VALID_CTX = JSON.stringify({
   user: { id: USER_ID },
   activeMembership: {
     empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+    membership: { role: 'dueno' },
   },
 });
 
@@ -255,6 +271,118 @@ describe('GET /assignments/:id', () => {
     expect(res.status).toBe(403);
   });
 
+  // editar-anular-cargas §6.11 / §12-P7: la oficina ve el cambio; el conductor solo que existe.
+  const SOLICITUD_ROW = {
+    id: '6f1c2a7e-4b2d-4c55-9a7b-1d2e3f4a5b6c',
+    tripId: TRIP_ID,
+    assignmentId: ASSIGNMENT_ID,
+    requestedByUserId: 'gen-user',
+    status: 'pendiente',
+    changes: { weight_kg: 2000 },
+    previousValues: { weight_kg: 1000 },
+    respondedByUserId: null,
+    respondedAt: null,
+    responseReason: null,
+    invalidationReason: null,
+    lastReminderAt: null,
+    remindersSent: 0,
+    createdAt: new Date('2026-11-09T15:00:00Z'),
+    closedAt: null,
+  };
+
+  it('expone la capacidad del vehículo asignado (y null sin vehículo)', async () => {
+    const conVehiculo = makeDb({ selects: [[ASSIGNMENT_DETAIL_ROW], [], []] });
+    const app1 = await buildApp({ db: conVehiculo });
+    const r1 = (await (
+      await app1.request(`/assignments/${ASSIGNMENT_ID}`, {
+        headers: { 'x-test-userctx': VALID_CTX },
+      })
+    ).json()) as { assignment: { vehicle_capacity_kg: number | null } };
+    expect(r1.assignment.vehicle_capacity_kg).toBe(5000);
+    const sinVehiculo = makeDb({ selects: [[{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null }], []] });
+    const app2 = await buildApp({ db: sinVehiculo });
+    const r2 = (await (
+      await app2.request(`/assignments/${ASSIGNMENT_ID}`, {
+        headers: { 'x-test-userctx': VALID_CTX },
+      })
+    ).json()) as { assignment: { vehicle_capacity_kg: number | null } };
+    expect(r2.assignment.vehicle_capacity_kg).toBeNull();
+  });
+
+  it('con cambio pendiente, la oficina ve el diff completo', async () => {
+    const db = makeDb({
+      selects: [[{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null }], [SOLICITUD_ROW]],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}`, {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    const body = (await res.json()) as { trip_request: { cambio_pendiente: unknown } };
+    expect(body.trip_request.cambio_pendiente).toEqual({
+      existe: true,
+      id: SOLICITUD_ROW.id,
+      cambios: { weight_kg: 2000 },
+      valores_anteriores: { weight_kg: 1000 },
+      creado_en: '2026-11-09T15:00:00.000Z',
+    });
+  });
+
+  it('con cambio pendiente, el conductor solo sabe que existe, sin los datos propuestos', async () => {
+    const db = makeDb({
+      selects: [
+        [{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null, driverUserId: USER_ID }],
+        [SOLICITUD_ROW],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}`, {
+      headers: {
+        'x-test-userctx': JSON.stringify({
+          user: { id: USER_ID },
+          activeMembership: {
+            empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+            membership: { role: 'conductor' },
+          },
+        }),
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { cambio_pendiente: unknown } };
+    expect(body.trip_request.cambio_pendiente).toEqual({
+      existe: true,
+      creado_en: '2026-11-09T15:00:00.000Z',
+    });
+  });
+
+  it('cancelado por el generador: expone fecha, autor y motivo (editar-anular-cargas §9)', async () => {
+    const db = makeDb({
+      selects: [
+        [
+          {
+            ...ASSIGNMENT_DETAIL_ROW,
+            vehicleId: null,
+            assignmentStatus: 'cancelado',
+            tripStatus: 'cancelado',
+            cancelledAt: new Date('2026-11-09T16:00:00Z'),
+            cancelledByActor: 'generador_carga',
+            cancellationReason: 'El cliente postergó el pedido',
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}`, {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignment: Record<string, unknown> };
+    expect(body.assignment).toMatchObject({
+      cancelled_at: '2026-11-09T16:00:00.000Z',
+      cancelled_by_actor: 'generador_carga',
+      cancellation_reason: 'El cliente postergó el pedido',
+    });
+  });
+
   it('happy path: retorna trip_request + assignment + ubicacion_actual null si no hay vehículo', async () => {
     const db = makeDb({
       selects: [[{ ...ASSIGNMENT_DETAIL_ROW, vehicleId: null }]],
@@ -269,6 +397,12 @@ describe('GET /assignments/:id', () => {
       assignment: { ubicacion_actual: unknown };
     };
     expect(body.trip_request.tracking_code).toBe('TR-1');
+    // editar-anular-cargas §12-P4: la transportista ve contacto, notas y referencia.
+    expect(body.trip_request).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111' },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+    });
     expect(body.assignment.ubicacion_actual).toBeNull();
     const assignment = (
       body as { assignment: { driver_user_id: string | null; vehicle_id: string | null } }
@@ -283,6 +417,8 @@ describe('GET /assignments/:id', () => {
     const db = makeDb({
       selects: [
         [ASSIGNMENT_DETAIL_ROW],
+        // Viaje asignado: lectura de la solicitud de cambio pendiente (ninguna).
+        [],
         [
           {
             timestampDevice: new Date('2026-05-10T10:30:00Z'),
@@ -336,6 +472,11 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       headers: { 'x-test-userctx': VALID_CTX },
     });
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'forbidden_owner_mismatch',
+      code: 'forbidden_owner_mismatch',
+    });
+    expect(confirmarEntregaViaje).not.toHaveBeenCalled();
   });
 
   it('happy path: confirmarEntregaViaje retorna ok=true → 200 con delivered_at', async () => {
@@ -346,7 +487,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       deliveredAt,
     });
     const db = makeDb({
-      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP }]],
+      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP, driverUserId: USER_ID }]],
     });
     const app = await buildApp({ db });
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-entrega`, {
@@ -365,7 +506,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       currentStatus: 'cancelado',
     });
     const db = makeDb({
-      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP }]],
+      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP, driverUserId: USER_ID }]],
     });
     const app = await buildApp({ db });
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-entrega`, {
@@ -383,7 +524,7 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       code: 'trip_not_found',
     });
     const db = makeDb({
-      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP }]],
+      selects: [[{ tripId: TRIP_ID, empresaId: CARRIER_EMP, driverUserId: USER_ID }]],
     });
     const app = await buildApp({ db });
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-entrega`, {
@@ -391,6 +532,201 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       headers: { 'x-test-userctx': VALID_CTX },
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('entrega e incidente: solo el conductor asignado', () => {
+  const RUT_SINTETICO = '11.111.111-1';
+  const PATENTE_SINTETICA = 'TEST01';
+  const CONDUCTOR_ID = '11111111-1111-4111-8111-111111111111';
+  const DUENO_ID = '22222222-2222-4222-8222-222222222222';
+  const ADMIN_ID = '33333333-3333-4333-8333-333333333333';
+
+  function ctxSintetico(userId: string, role: 'conductor' | 'dueno' | 'admin', email: string) {
+    return JSON.stringify({
+      user: {
+        id: userId,
+        email,
+        rut: RUT_SINTETICO,
+        fullName: 'Usuario Sintetico',
+      },
+      activeMembership: {
+        empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+        membership: { role },
+      },
+    });
+  }
+
+  function fila(driverUserId: string | null) {
+    return {
+      tripId: TRIP_ID,
+      empresaId: CARRIER_EMP,
+      driverUserId,
+      vehiclePlate: PATENTE_SINTETICA,
+    };
+  }
+
+  async function pedir(
+    path: 'confirmar-entrega' | 'incidents',
+    userId: string,
+    role: 'conductor' | 'dueno' | 'admin',
+    email: string,
+    driverUserId: string | null,
+  ) {
+    (confirmarEntregaViaje as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      alreadyDelivered: false,
+      deliveredAt: new Date('2026-10-20T12:00:00Z'),
+    });
+    (reportarIncidente as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      tripEventId: 'evt-sintetico',
+      recordedAt: new Date('2026-10-20T12:00:00Z'),
+    });
+    const db = makeDb({ selects: [[fila(driverUserId)]] });
+    const app = await buildApp({ db });
+    const esIncidente = path === 'incidents';
+    return app.request(`/assignments/${ASSIGNMENT_ID}/${path}`, {
+      method: esIncidente ? 'POST' : 'PATCH',
+      headers: {
+        'x-test-userctx': ctxSintetico(userId, role, email),
+        ...(esIncidente ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(esIncidente ? { body: JSON.stringify({ incident_type: 'demora' }) } : {}),
+    });
+  }
+
+  it('el conductor asignado confirma la entrega', async () => {
+    const res = await pedir(
+      'confirmar-entrega',
+      CONDUCTOR_ID,
+      'conductor',
+      'conductor@example.com',
+      CONDUCTOR_ID,
+    );
+    expect(res.status).toBe(200);
+    expect(confirmarEntregaViaje).toHaveBeenCalledOnce();
+  });
+
+  it('el dueño asignado a sí mismo confirma la entrega', async () => {
+    const res = await pedir('confirmar-entrega', DUENO_ID, 'dueno', 'dueno@example.com', DUENO_ID);
+    expect(res.status).toBe(200);
+    expect(confirmarEntregaViaje).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['admin', ADMIN_ID, 'admin@example.com'],
+    ['dueno', DUENO_ID, 'dueno@example.com'],
+  ] as const)(
+    'el %s que no es el conductor no confirma la entrega',
+    async (role, userId, email) => {
+      const res = await pedir('confirmar-entrega', userId, role, email, CONDUCTOR_ID);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: 'not_assigned_driver',
+        code: 'not_assigned_driver',
+      });
+      expect(confirmarEntregaViaje).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sin conductor asignado no se confirma la entrega', async () => {
+    const res = await pedir('confirmar-entrega', DUENO_ID, 'dueno', 'dueno@example.com', null);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'not_assigned_driver',
+      code: 'not_assigned_driver',
+    });
+    expect(confirmarEntregaViaje).not.toHaveBeenCalled();
+  });
+
+  it('el conductor asignado reporta un incidente', async () => {
+    const res = await pedir(
+      'incidents',
+      CONDUCTOR_ID,
+      'conductor',
+      'conductor@example.com',
+      CONDUCTOR_ID,
+    );
+    expect(res.status).toBe(201);
+    expect(reportarIncidente).toHaveBeenCalledOnce();
+  });
+
+  it('el dueño asignado a sí mismo reporta un incidente', async () => {
+    const res = await pedir('incidents', DUENO_ID, 'dueno', 'dueno@example.com', DUENO_ID);
+    expect(res.status).toBe(201);
+    expect(reportarIncidente).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['admin', ADMIN_ID, 'admin@example.com'],
+    ['dueno', DUENO_ID, 'dueno@example.com'],
+  ] as const)(
+    'el %s que no es el conductor no reporta el incidente',
+    async (role, userId, email) => {
+      const res = await pedir('incidents', userId, role, email, CONDUCTOR_ID);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({
+        error: 'not_assigned_driver',
+        code: 'not_assigned_driver',
+      });
+      expect(reportarIncidente).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sin conductor asignado no se reporta el incidente', async () => {
+    const res = await pedir('incidents', ADMIN_ID, 'admin', 'admin@example.com', null);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'not_assigned_driver',
+      code: 'not_assigned_driver',
+    });
+    expect(reportarIncidente).not.toHaveBeenCalled();
+  });
+
+  it('un incidente de una asignación inexistente responde 404', async () => {
+    const db = makeDb({ selects: [[]] });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/incidents`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-userctx': ctxSintetico(CONDUCTOR_ID, 'conductor', 'conductor@example.com'),
+      },
+      body: JSON.stringify({ incident_type: 'demora' }),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      error: 'assignment_not_found',
+      code: 'assignment_not_found',
+    });
+    expect(reportarIncidente).not.toHaveBeenCalled();
+  });
+
+  it('un incidente de otra empresa sigue en forbidden_owner_mismatch', async () => {
+    (reportarIncidente as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      tripEventId: 'evt-sintetico',
+      recordedAt: new Date('2026-10-20T12:00:00Z'),
+    });
+    const db = makeDb({
+      selects: [[{ empresaId: 'OTRA', driverUserId: null, vehiclePlate: PATENTE_SINTETICA }]],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/incidents`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-userctx': ctxSintetico(ADMIN_ID, 'admin', 'admin@example.com'),
+      },
+      body: JSON.stringify({ incident_type: 'demora' }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'forbidden_owner_mismatch',
+      code: 'forbidden_owner_mismatch',
+    });
+    expect(reportarIncidente).not.toHaveBeenCalled();
   });
 });
 
@@ -673,6 +1009,36 @@ describe('GET /assignments', () => {
     expect(a?.trip.origin.address_raw).toBe('Av. Presidente Riesco 5335');
   });
 
+  // editar-anular-cargas §6.11: el listado marca el servicio con un cambio sin responder.
+  it('marca el cambio pendiente y trae contacto, notas y referencia', async () => {
+    const app = await buildApp({
+      db: makeDb({
+        selects: [
+          [
+            {
+              ...LISTA_ROW,
+              consigneeName: 'Bodega',
+              consigneeWhatsappE164: '+56911111111',
+              notes: 'Andén 4',
+              reference: 'PO-1',
+              cambioPendienteEn: new Date('2026-11-09T15:00:00Z'),
+            },
+            { ...LISTA_ROW, assignmentId: 'otro', cambioPendienteEn: null },
+          ],
+        ],
+      }),
+    });
+    const res = await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    const body = (await res.json()) as { assignments: Array<{ trip: Record<string, unknown> }> };
+    expect(body.assignments[0]?.trip).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111' },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+      cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00.000Z' },
+    });
+    expect(body.assignments[1]?.trip.cambio_pendiente).toBeNull();
+  });
+
   it('con conductor asignado lo devuelve con nombre', async () => {
     const app = await buildApp({
       db: makeDb({
@@ -698,6 +1064,70 @@ describe('GET /assignments', () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json()) as { assignments: unknown[] }).toEqual({ assignments: [] });
+  });
+
+  // editar-anular-cargas §9 + §6.11: la oficina se entera de la cancelación del generador.
+  it('una cancelada por el generador trae `cancelacion`; una activa trae null', async () => {
+    const app = await buildApp({
+      db: makeDb({
+        selects: [
+          [
+            {
+              ...LISTA_ROW,
+              assignmentStatus: 'cancelado',
+              tripStatus: 'cancelado',
+              cancelledByActor: 'generador_carga',
+              cancellationReason: 'Se cayó la venta',
+              cancelledAt: new Date('2026-11-09T12:00:00Z'),
+            },
+            { ...LISTA_ROW, assignmentId: 'otro' },
+          ],
+        ],
+      }),
+    });
+    const res = await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    const body = (await res.json()) as {
+      assignments: Array<{ status: string; cancelacion: unknown; trip: { cancelacion: unknown } }>;
+    };
+    const esperada = {
+      por_actor: 'generador_carga',
+      razon: 'Se cayó la venta',
+      en: '2026-11-09T12:00:00.000Z',
+    };
+    expect(body.assignments[0]?.status).toBe('cancelado');
+    expect(body.assignments[0]?.cancelacion).toEqual(esperada);
+    expect(body.assignments[0]?.trip.cancelacion).toEqual(esperada);
+    expect(body.assignments[1]?.cancelacion).toBeNull();
+    expect(body.assignments[1]?.trip.cancelacion).toBeNull();
+  });
+
+  it('el filtro incluye las canceladas por el generador de las últimas 72 horas', async () => {
+    const { PgDialect } = await import('drizzle-orm/pg-core');
+    const db = makeDb({ selects: [[]] });
+    const wheres: unknown[] = [];
+    const select = db.select;
+    db.select = vi.fn(() => {
+      const chain = select() as Record<string, unknown> & { where: (w: unknown) => unknown };
+      const where = chain.where;
+      chain.where = vi.fn((w: unknown) => {
+        wheres.push(w);
+        return where(w);
+      });
+      return chain;
+    }) as typeof db.select;
+    const antes = Date.now();
+    const app = await buildApp({ db });
+    await app.request('/assignments', { headers: { 'x-test-userctx': VALID_CTX } });
+    expect(wheres).toHaveLength(1);
+    const q = new PgDialect().sqlToQuery(wheres[0] as never);
+    expect(q.sql).toContain('"cancelado_por_actor"');
+    expect(q.sql).toContain('"cancelado_en"');
+    expect(q.params).toEqual(expect.arrayContaining([CARRIER_EMP, 'cancelado', 'generador_carga']));
+    const desde = q.params.find((p) => typeof p === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(p));
+    expect(desde).toBeDefined();
+    const ms = antes - new Date(desde as string).getTime();
+    expect(ms).toBeGreaterThanOrEqual(72 * 3600_000 - 5_000);
+    expect(ms).toBeLessThanOrEqual(72 * 3600_000 + 5_000);
   });
 
   it('una fecha inválida no rompe la respuesta entera', async () => {
@@ -839,6 +1269,38 @@ describe('PATCH /assignments/:id/confirmar-recogida', () => {
     expect(res.status).toBe(409);
     expect((await res.json()) as { current_status: string }).toEqual(
       expect.objectContaining({ code: 'invalid_status', current_status: 'entregado' }),
+    );
+  });
+
+  it('ruta sin vehículo → 409 ruta_sin_vehiculo', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'ruta_sin_vehiculo',
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('conductor') },
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ error: 'ruta_sin_vehiculo', code: 'ruta_sin_vehiculo' }),
+    );
+  });
+
+  it('ruta sin conductor → 409 ruta_sin_conductor', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'ruta_sin_conductor',
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: null }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('dueno') },
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ error: 'ruta_sin_conductor', code: 'ruta_sin_conductor' }),
     );
   });
 

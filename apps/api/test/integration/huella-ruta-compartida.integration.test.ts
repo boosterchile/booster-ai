@@ -1,0 +1,735 @@
+import { randomUUID } from 'node:crypto';
+import { and, eq, inArray } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import * as schema from '../../src/db/schema.js';
+import { haversineKm } from '../../src/services/calcular-cobertura-telemetria.js';
+import {
+  cerrarHuellaDeRuta,
+  cerrarRutaYCertificar,
+} from '../../src/services/cerrar-huella-de-ruta.js';
+import {
+  armarDatosEmision,
+  emitirCertificadoViaje,
+} from '../../src/services/emitir-certificado-viaje.js';
+import { estimarDistanciaKm } from '../../src/services/estimar-distancia.js';
+import { estimarHuellaDeRuta } from '../../src/services/estimar-huella-de-ruta.js';
+import { calcularHuellaDeServicioSolo } from '../../src/services/huella-por-ruta.js';
+import { rutaCompartidaDelViaje } from '../../src/services/ruta-compartida.js';
+import { rutAleatorio } from '../helpers/rut-aleatorio.js';
+import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
+
+/**
+ * huella-consolidada parte 4 (ADR-089) contra Postgres real: una ruta con
+ * varios servicios se mide entera al cerrarse, su emisión se reparte entre los
+ * servicios por toneladas-kilómetro de distancia directa, y los certificados
+ * salen recién ahí (criterios 5 y 6 de la spec).
+ */
+const noop = (): void => undefined;
+const logger = {
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
+  child: () => logger,
+} as never;
+
+const t = (hhmmss: string) => new Date(`2026-11-10T${hhmmss}Z`);
+// El camión avanza 0,0054° de longitud cada 30 s (≈ 0,5 km): 1 km por minuto.
+const KM_POR_MINUTO = 2 * haversineKm(-33.4, -70.6, -33.4, -70.6054);
+const num = (v: string | null | undefined) => (v == null ? null : Number(v));
+const suma3 = (valores: (number | null)[]) =>
+  Math.round(valores.reduce((a: number, b) => a + (b ?? 0), 0) * 1000) / 1000;
+
+interface Carga {
+  readonly pesoKg: number | null;
+  readonly directaKm: string;
+  readonly recogida: string | null;
+  readonly entrega: string | null;
+  /** Cancelada después de recogida: no se entrega y no recibe certificado. */
+  readonly cancelada?: string;
+  readonly origen?: { readonly direccion: string; readonly region: string };
+  readonly destino?: { readonly direccion: string; readonly region: string };
+}
+
+describe('integration: huella de una ruta con varios servicios', () => {
+  let handle: TestDbHandle;
+  beforeAll(() => {
+    handle = createTestDb();
+  });
+  afterAll(async () => {
+    await handle.pool.end();
+  });
+
+  function uno<T>(rows: T[], que: string): T {
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`fixture: ${que} no creado`);
+    }
+    return row;
+  }
+
+  /**
+   * Una ruta de la flota con sus cargas ya recorridas, coherente entre
+   * asignaciones, paradas y ruta. `cerrada: false` la deja en curso.
+   */
+  async function ruta(
+    cargas: readonly Carga[],
+    opts: {
+      huella?: boolean;
+      cerrada?: boolean;
+      minutosConGps?: number;
+      /** Ruta todavía sin recorrer: sin fechas y sin GPS. */
+      planificada?: boolean;
+    } = {},
+  ) {
+    const { db } = handle;
+    const suffix = randomUUID().slice(0, 8);
+    const [plan] = await db
+      .insert(schema.plans)
+      .values({
+        slug: 'gratis',
+        name: 'Plan',
+        description: 'fixture',
+        monthlyPriceClp: 0,
+        features: {},
+      })
+      .onConflictDoNothing({ target: schema.plans.slug })
+      .returning({ id: schema.plans.id });
+    const planId =
+      plan?.id ?? (await db.select({ id: schema.plans.id }).from(schema.plans).limit(1)).at(0)?.id;
+    if (!planId) {
+      throw new Error('fixture: plan no disponible');
+    }
+    const conductor = uno(
+      await db
+        .insert(schema.users)
+        .values({
+          firebaseUid: `fb-h4-${suffix}`,
+          email: `h4-${suffix}@test.invalid`,
+          fullName: 'Conductor',
+          rut: rutAleatorio(),
+        })
+        .returning({ id: schema.users.id }),
+      'conductor',
+    );
+    const empresa = uno(
+      await db
+        .insert(schema.empresas)
+        .values({
+          legalName: `Transportes H4 ${suffix}`,
+          rut: rutAleatorio(),
+          contactEmail: `h4-${suffix}@empresa.invalid`,
+          contactPhone: '+56911111111',
+          addressStreet: 'Calle 1',
+          addressCity: 'Santiago',
+          addressRegion: 'RM',
+          isTransportista: true,
+          isGeneradorCarga: true,
+          status: 'activa',
+          planId,
+          carbonMeasurementEnabled: opts.huella !== false,
+        })
+        .returning({ id: schema.empresas.id }),
+      'empresa',
+    );
+    const vehiculo = uno(
+      await db
+        .insert(schema.vehicles)
+        .values({
+          empresaId: empresa.id,
+          plate: `H4${suffix.toUpperCase()}`,
+          vehicleType: 'camion_mediano',
+          capacityKg: 5000,
+          fuelType: 'diesel',
+          consumptionLPer100kmBaseline: '30.00',
+          curbWeightKg: 6000,
+        })
+        .returning({ id: schema.vehicles.id }),
+      'vehículo',
+    );
+
+    const cerrada = opts.cerrada !== false && !opts.planificada;
+    const instantes = cargas.flatMap((c) =>
+      [c.recogida, c.entrega, c.cancelada].flatMap((x) => (x ? [t(x).getTime()] : [])),
+    );
+    const laRuta = uno(
+      await db
+        .insert(schema.rutas)
+        .values({
+          empresaId: empresa.id,
+          vehicleId: vehiculo.id,
+          driverUserId: conductor.id,
+          status: opts.planificada ? 'planificada' : cerrada ? 'cerrada' : 'en_curso',
+          startedAt: opts.planificada ? null : new Date(Math.min(...instantes)),
+          closedAt: cerrada ? new Date(Math.max(...instantes)) : null,
+        })
+        .returning({ id: schema.rutas.id }),
+      'ruta',
+    );
+
+    const viajes: string[] = [];
+    for (const [i, c] of cargas.entries()) {
+      const entregada = c.entrega !== null;
+      const viaje = uno(
+        await db
+          .insert(schema.trips)
+          .values({
+            trackingCode: randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase(),
+            generadorCargaEmpresaId: empresa.id,
+            originAddressRaw: c.origen?.direccion ?? `Origen ${i}`,
+            originRegionCode: c.origen?.region ?? null,
+            destinationAddressRaw: c.destino?.direccion ?? `Destino ${i}`,
+            destinationRegionCode: c.destino?.region ?? null,
+            cargoType: 'carga_seca',
+            cargoWeightKg: c.pesoKg,
+            pickupDateRaw: '2026-11-10',
+            status: entregada ? 'entregado' : c.cancelada ? 'cancelado' : 'asignado',
+          })
+          .returning({ id: schema.trips.id }),
+        'viaje',
+      );
+      const oferta = uno(
+        await db
+          .insert(schema.offers)
+          .values({
+            tripId: viaje.id,
+            empresaId: empresa.id,
+            score: 80,
+            proposedPriceClp: 100_000,
+            expiresAt: t('23:00:00'),
+          })
+          .returning({ id: schema.offers.id }),
+        'oferta',
+      );
+      await db.insert(schema.assignments).values({
+        tripId: viaje.id,
+        offerId: oferta.id,
+        empresaId: empresa.id,
+        vehicleId: vehiculo.id,
+        driverUserId: conductor.id,
+        rutaId: laRuta.id,
+        agreedPriceClp: 100_000,
+        status: entregada
+          ? 'entregado'
+          : c.cancelada
+            ? 'cancelado'
+            : c.recogida
+              ? 'recogido'
+              : 'asignado',
+        acceptedAt: t('09:30:00'),
+        pickedUpAt: c.recogida ? t(c.recogida) : null,
+        deliveredAt: c.entrega ? t(c.entrega) : null,
+        ...(c.cancelada
+          ? {
+              cancelledAt: t(c.cancelada),
+              cancelledByActor: 'transportista' as const,
+              cancellationReason: 'fixture',
+            }
+          : {}),
+      });
+      await db.insert(schema.paradasRuta).values([
+        {
+          rutaId: laRuta.id,
+          orden: i,
+          tipo: 'recogida',
+          tripId: viaje.id,
+          resolvedAt: c.recogida ? t(c.recogida) : null,
+        },
+        {
+          rutaId: laRuta.id,
+          orden: cargas.length + i,
+          tipo: 'entrega',
+          tripId: viaje.id,
+          resolvedAt: c.entrega ? t(c.entrega) : null,
+        },
+      ]);
+      await db.insert(schema.tripMetrics).values({
+        tripId: viaje.id,
+        distanceKmEstimated: c.directaKm,
+        carbonEmissionsKgco2eEstimated: '9.999',
+        precisionMethod: 'modelado',
+        routeDataSource: 'maps_directions',
+        coveragePct: '0.00',
+        certificationLevel: 'secundario_modeled',
+      });
+      viajes.push(viaje.id);
+    }
+
+    // La ruta que se cierra ya trae su estimación (la escribe cada operación de
+    // la oficina). Es la referencia de plausibilidad del cierre: las trazas de
+    // abajo miden ≈9 km.
+    if (cerrada) {
+      await db
+        .insert(schema.metricasRuta)
+        .values({ rutaId: laRuta.id, distanceKmEstimated: '10.00' });
+    }
+
+    // GPS del celular del conductor: un punto cada 30 s desde las 10:00.
+    const minutos = opts.planificada ? 0 : (opts.minutosConGps ?? 9);
+    if (minutos > 0) {
+      await db.insert(schema.posicionesMovilConductor).values(
+        Array.from({ length: minutos * 2 + 1 }, (_, k) => ({
+          vehicleId: vehiculo.id,
+          userId: conductor.id,
+          timestampDevice: new Date(t('10:00:00').getTime() + k * 30_000),
+          latitude: '-33.4000000',
+          longitude: (-70.6 - k * 0.0054).toFixed(7),
+        })),
+      );
+    }
+    return { rutaId: laRuta.id, viajes, empresaId: empresa.id, vehiculoId: vehiculo.id };
+  }
+
+  const metricasDeViajes = async (ids: readonly string[]) => {
+    const filas = await handle.db
+      .select()
+      .from(schema.tripMetrics)
+      .where(inArray(schema.tripMetrics.tripId, [...ids]));
+    return ids.map((id) =>
+      uno(
+        filas.filter((f) => f.tripId === id),
+        'métricas',
+      ),
+    );
+  };
+  const metricasDeRuta = async (rutaId: string) =>
+    (
+      await handle.db
+        .select()
+        .from(schema.metricasRuta)
+        .where(eq(schema.metricasRuta.rutaId, rutaId))
+    )[0];
+
+  // A sube 2.000 kg, B 1.000 kg, baja A, sube C con 1.500 kg, baja B, baja C.
+  const TRES: Carga[] = [
+    { pesoKg: 2000, directaKm: '10.00', recogida: '10:00:00', entrega: '10:04:00' },
+    { pesoKg: 1000, directaKm: '6.00', recogida: '10:02:00', entrega: '10:07:00' },
+    { pesoKg: 1500, directaKm: '4.00', recogida: '10:05:00', entrega: '10:09:00' },
+  ];
+
+  test('al cerrar una ruta de tres servicios: una fila de ruta y tres de viaje que suman el total (criterio 5)', async () => {
+    const { rutaId, viajes } = await ruta(TRES);
+
+    const r = await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+    expect(r).toMatchObject({ estado: 'calculada', huella: 'medida' });
+    if (r.estado !== 'calculada') {
+      throw new Error('se esperaba la huella calculada');
+    }
+    expect([...r.entregados].sort()).toEqual([...viajes].sort());
+
+    const deRuta = await metricasDeRuta(rutaId);
+    expect(deRuta).toBeDefined();
+    expect(num(deRuta?.carbonEmissionsKgco2eActual)).toBe(r.emisionesKgco2e);
+    expect(num(deRuta?.carbonEmissionsKgco2eActual)).toBeGreaterThan(0);
+    expect(num(deRuta?.distanceKmActual)).toBeCloseTo(9 * KM_POR_MINUTO, 1);
+    expect(deRuta).toMatchObject({
+      routeDataSource: 'movil_gps',
+      precisionMethod: 'modelado',
+      versionMetodoReparto: 'tkm-distancia-directa-v1',
+    });
+    // Carga a bordo por tramo: 2.000 kg 2 min, 3.000 kg 2 min, 1.000 kg 1 min,
+    // 2.500 kg 2 min y 1.500 kg 2 min, a 1 km por minuto: 19 t·km.
+    expect(num(deRuta?.actividadTkm)).toBeCloseTo(19 * KM_POR_MINUTO, 1);
+
+    const deViajes = await metricasDeViajes(viajes);
+    expect(suma3(deViajes.map((m) => num(m.carbonEmissionsKgco2eActual)))).toBe(
+      num(deRuta?.carbonEmissionsKgco2eActual),
+    );
+    expect(suma3(deViajes.map((m) => num(m.emisionesKgco2eTtw)))).toBe(
+      num(deRuta?.emisionesKgco2eTtw),
+    );
+    expect(suma3(deViajes.map((m) => num(m.emisionesKgco2eWtt)))).toBe(
+      num(deRuta?.emisionesKgco2eWtt),
+    );
+    expect(suma3(deViajes.map((m) => num(m.fuelConsumedLActual)))).toBe(
+      num(deRuta?.fuelConsumedLActual),
+    );
+    expect(suma3(deViajes.map((m) => num(m.participacion)))).toBe(100);
+    // a = 20, 6 y 6 t·km de distancia directa sobre 32.
+    expect(deViajes.map((m) => num(m.actividadTkm))).toEqual([20, 6, 6]);
+    expect(deViajes.map((m) => num(m.participacion))).toEqual([62.5, 18.75, 18.75]);
+    for (const m of deViajes) {
+      expect(m).toMatchObject({
+        rutaId,
+        routeDataSource: 'movil_gps',
+        certificationLevel: deRuta?.certificationLevel,
+        coveragePct: deRuta?.coveragePct,
+        precisionMethod: 'modelado',
+        versionMetodoReparto: 'tkm-distancia-directa-v1',
+        // Cada servicio publica su distancia directa, que es la estimada.
+        distanceKmActual: null,
+      });
+      // La estimación previa no se toca.
+      expect(m.carbonEmissionsKgco2eEstimated).toBe('9.999');
+    }
+  });
+
+  test('el certificado de cada carga lleva su participación y el total de la ruta (§3.10)', async () => {
+    const { rutaId, viajes } = await ruta(TRES);
+    await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+    const total = num((await metricasDeRuta(rutaId))?.carbonEmissionsKgco2eActual);
+
+    const participaciones: number[] = [];
+    for (const tripId of viajes) {
+      const [trip] = await handle.db.select().from(schema.trips).where(eq(schema.trips.id, tripId));
+      const [metrics] = await metricasDeViajes([tripId]);
+      if (!trip || !metrics) {
+        throw new Error('fixture: viaje sin métricas');
+      }
+      const armado = await armarDatosEmision({ db: handle.db, logger, trip, metrics });
+      if (!armado.ok) {
+        throw new Error(`no se armó el certificado: ${armado.reason}`);
+      }
+      const { consolidacion } = armado.datos.metricas;
+      expect(consolidacion).toMatchObject({
+        kgco2eWtwRuta: total,
+        versionMetodo: 'tkm-distancia-directa-v1',
+      });
+      // La cifra de la carga es su participación sobre el total, salvo el redondeo.
+      const parte = armado.datos.metricas.kgco2eWtwActual ?? 0;
+      expect(parte).toBeCloseTo(((total ?? 0) * (consolidacion?.participacionPct ?? 0)) / 100, 2);
+      participaciones.push(consolidacion?.participacionPct ?? 0);
+    }
+    expect(participaciones).toEqual([62.5, 18.75, 18.75]);
+  });
+
+  test('cerrar dos veces deja las mismas cifras', async () => {
+    const { rutaId, viajes } = await ruta(TRES);
+    await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+    const antes = (await metricasDeViajes(viajes)).map((m) => m.carbonEmissionsKgco2eActual);
+    await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+    const despues = (await metricasDeViajes(viajes)).map((m) => m.carbonEmissionsKgco2eActual);
+    expect(despues).toEqual(antes);
+  });
+
+  test('al cerrar la ruta se emite un certificado por cada servicio entregado (criterio 5)', async () => {
+    const { rutaId, viajes } = await ruta(TRES);
+    const emitir = vi.fn(async () => ({
+      skipped: false as const,
+      pdfGcsUri: 'gs://x/y.pdf',
+      sigGcsUri: 'gs://x/y.sig',
+      pdfSha256: 'abc',
+      kmsKeyVersion: '1',
+      issuedAt: new Date(),
+      pdfBytes: 1,
+    }));
+
+    const r = await cerrarRutaYCertificar({ db: handle.db, logger, rutaId, config: {}, emitir });
+
+    expect(r.certificados).toBe(3);
+    expect(emitir.mock.calls.map(([o]) => (o as { tripId: string }).tripId).sort()).toEqual(
+      [...viajes].sort(),
+    );
+    // La huella ya estaba repartida cuando se emitió.
+    expect(num((await metricasDeRuta(rutaId))?.carbonEmissionsKgco2eActual)).toBeGreaterThan(0);
+  });
+
+  test('una ruta en curso no se mide ni emite certificados aunque un servicio esté entregado (criterio 6)', async () => {
+    const { rutaId, viajes } = await ruta(
+      [
+        { pesoKg: 2000, directaKm: '10.00', recogida: '10:00:00', entrega: '10:04:00' },
+        { pesoKg: 1000, directaKm: '6.00', recogida: '10:02:00', entrega: null },
+      ],
+      { cerrada: false },
+    );
+    const entregado = viajes[0] ?? '';
+
+    expect(await rutaCompartidaDelViaje(handle.db, entregado)).toEqual({ rutaId, cerrada: false });
+    expect(await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId })).toEqual({
+      estado: 'omitida',
+      motivo: 'ruta_no_cerrada',
+    });
+    expect(await metricasDeRuta(rutaId)).toBeUndefined();
+    const r = await emitirCertificadoViaje({
+      db: handle.db,
+      logger,
+      tripId: entregado,
+      config: {
+        kmsKeyId: 'projects/p/locations/l/keyRings/r/cryptoKeys/k',
+        certificatesBucket: 'bucket',
+        verifyBaseUrl: 'https://api.test.invalid',
+      },
+    });
+    expect(r).toEqual({ skipped: true, reason: 'ruta_no_cerrada' });
+    expect((await metricasDeViajes([entregado]))[0]?.certificateIssuedAt).toBeNull();
+  });
+
+  test('un servicio cancelado después de recogido participa y su parte no se carga a los demás (§3.7)', async () => {
+    const { rutaId, viajes } = await ruta([
+      { pesoKg: 2000, directaKm: '10.00', recogida: '10:00:00', entrega: '10:04:00' },
+      { pesoKg: 1000, directaKm: '6.00', recogida: '10:02:00', entrega: '10:09:00' },
+      {
+        pesoKg: 1500,
+        directaKm: '4.00',
+        recogida: '10:05:00',
+        entrega: null,
+        cancelada: '10:08:00',
+      },
+    ]);
+
+    const r = await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+    if (r.estado !== 'calculada') {
+      throw new Error('se esperaba la huella calculada');
+    }
+    expect([...r.entregados].sort()).toEqual([viajes[0], viajes[1]].sort());
+    const [a, b, cancelado] = await metricasDeViajes(viajes);
+    const total = r.emisionesKgco2e ?? 0;
+    expect(num(cancelado?.participacion)).toBe(18.75);
+    expect(num(cancelado?.carbonEmissionsKgco2eActual)).toBeGreaterThan(0);
+    expect(
+      suma3([num(a?.carbonEmissionsKgco2eActual), num(b?.carbonEmissionsKgco2eActual)]),
+    ).toBeLessThan(total);
+    expect(suma3([a, b, cancelado].map((m) => num(m?.carbonEmissionsKgco2eActual)))).toBe(total);
+  });
+
+  test('un servicio cancelado antes de su recogida no participa', async () => {
+    const { rutaId, viajes } = await ruta([
+      { pesoKg: 2000, directaKm: '10.00', recogida: '10:00:00', entrega: '10:04:00' },
+      { pesoKg: 1000, directaKm: '6.00', recogida: '10:02:00', entrega: '10:09:00' },
+      { pesoKg: 1500, directaKm: '4.00', recogida: null, entrega: null, cancelada: '10:01:00' },
+    ]);
+
+    const r = await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+    expect(r).toMatchObject({ estado: 'calculada', huella: 'medida' });
+    const [a, b, fuera] = await metricasDeViajes(viajes);
+    expect(suma3([num(a?.participacion), num(b?.participacion)])).toBe(100);
+    expect(fuera).toMatchObject({
+      participacion: null,
+      carbonEmissionsKgco2eActual: null,
+      rutaId: null,
+    });
+  });
+
+  test('sin GPS en la ventana no hay cifras reales: el certificado cae a la estimación', async () => {
+    const { rutaId, viajes } = await ruta(TRES, { minutosConGps: 0 });
+
+    const r = await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+    expect(r).toMatchObject({
+      estado: 'calculada',
+      huella: 'degradada_cobertura',
+      emisionesKgco2e: null,
+    });
+    expect((await metricasDeRuta(rutaId))?.carbonEmissionsKgco2eActual).toBeNull();
+    for (const m of await metricasDeViajes(viajes)) {
+      expect(m.carbonEmissionsKgco2eActual).toBeNull();
+      expect(m.carbonEmissionsKgco2eEstimated).toBe('9.999');
+      expect(m.routeDataSource).toBe('maps_directions');
+    }
+  });
+
+  test('un servicio sin peso declarado deja la ruta sin cifras reales, nunca en cero', async () => {
+    const { rutaId, viajes } = await ruta([
+      { pesoKg: 2000, directaKm: '10.00', recogida: '10:00:00', entrega: '10:04:00' },
+      { pesoKg: null, directaKm: '6.00', recogida: '10:02:00', entrega: '10:09:00' },
+    ]);
+
+    const r = await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+    expect(r).toMatchObject({ estado: 'calculada', huella: 'peso_ausente', emisionesKgco2e: null });
+    for (const m of await metricasDeViajes(viajes)) {
+      expect(m.carbonEmissionsKgco2eActual).toBeNull();
+    }
+  });
+
+  test('sin opt-in de huella solo quedan la fuente, la cobertura y el nivel', async () => {
+    const { rutaId, viajes } = await ruta(TRES, { huella: false });
+
+    const r = await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+    expect(r).toMatchObject({
+      estado: 'calculada',
+      huella: 'opt_in_inactivo',
+      emisionesKgco2e: null,
+    });
+    const deRuta = await metricasDeRuta(rutaId);
+    expect(deRuta).toMatchObject({
+      routeDataSource: 'movil_gps',
+      carbonEmissionsKgco2eActual: null,
+    });
+    expect(num(deRuta?.distanceKmActual)).toBeCloseTo(9 * KM_POR_MINUTO, 1);
+    for (const m of await metricasDeViajes(viajes)) {
+      expect(m).toMatchObject({ routeDataSource: 'movil_gps', carbonEmissionsKgco2eActual: null });
+    }
+  });
+
+  test('una carga que viaja sola en su ruta no es una ruta compartida', async () => {
+    const { viajes } = await ruta([
+      { pesoKg: 2000, directaKm: '10.00', recogida: '10:00:00', entrega: '10:04:00' },
+    ]);
+    expect(await rutaCompartidaDelViaje(handle.db, viajes[0] ?? '')).toBeNull();
+    expect(await rutaCompartidaDelViaje(handle.db, randomUUID())).toBeNull();
+  });
+
+  test('una ruta que no existe se omite', async () => {
+    expect(await cerrarHuellaDeRuta({ db: handle.db, logger, rutaId: randomUUID() })).toEqual({
+      estado: 'omitida',
+      motivo: 'ruta_no_encontrada',
+    });
+  });
+
+  /**
+   * §3.9: mientras la ruta está planificada o en curso, cada carga muestra la
+   * estimación de su parte, con el mismo reparto sobre la emisión estimada de
+   * la ruta.
+   */
+  describe('estimación mientras la ruta está abierta', () => {
+    const BODEGA = { direccion: 'Bodega Central, Quilicura', region: 'RM' };
+    // Las dos cargas salen de la misma bodega; B se entrega en Santiago y A en Valparaíso.
+    const DOS_PLANIFICADAS: Carga[] = [
+      {
+        pesoKg: 2000,
+        directaKm: '120.00',
+        recogida: null,
+        entrega: null,
+        origen: BODEGA,
+        destino: { direccion: 'Cliente A, Valparaíso', region: 'V' },
+      },
+      {
+        pesoKg: 1000,
+        directaKm: '30.00',
+        recogida: null,
+        entrega: null,
+        origen: { direccion: ' bodega central, quilicura ', region: 'RM' },
+        destino: { direccion: 'Cliente B, Maipú', region: 'RM' },
+      },
+    ];
+    /** Deja las paradas en el orden: recoge A, recoge B, entrega B, entrega A. */
+    async function ordenar(rutaId: string, viajes: readonly string[]) {
+      const [a, b] = viajes;
+      const orden: [string | undefined, 'recogida' | 'entrega', number][] = [
+        [a, 'recogida', 10],
+        [b, 'recogida', 11],
+        [b, 'entrega', 12],
+        [a, 'entrega', 13],
+      ];
+      for (const [tripId, tipo, n] of orden) {
+        await handle.db
+          .update(schema.paradasRuta)
+          .set({ orden: n })
+          .where(
+            and(
+              eq(schema.paradasRuta.rutaId, rutaId),
+              eq(schema.paradasRuta.tripId, tripId ?? ''),
+              eq(schema.paradasRuta.tipo, tipo),
+            ),
+          );
+      }
+    }
+
+    test('dos cargas: la estimación de la ruta se reparte y las partes suman el total', async () => {
+      const { rutaId, viajes } = await ruta(DOS_PLANIFICADAS, { planificada: true });
+      await ordenar(rutaId, viajes);
+
+      const r = await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      expect(r).toMatchObject({ estado: 'estimada', servicios: 2 });
+      const deRuta = await metricasDeRuta(rutaId);
+      // Bodega → bodega: 0 km. Bodega → Maipú y Maipú → Valparaíso, por la tabla de regiones.
+      const km = estimarDistanciaKm('RM', 'RM') + estimarDistanciaKm('RM', 'V');
+      expect(num(deRuta?.distanceKmEstimated)).toBe(km);
+      // 3.000 kg hasta Maipú y 2.000 kg hasta Valparaíso.
+      expect(num(deRuta?.actividadTkm)).toBeCloseTo(
+        3 * estimarDistanciaKm('RM', 'RM') + 2 * estimarDistanciaKm('RM', 'V'),
+        3,
+      );
+      expect(deRuta).toMatchObject({
+        routeDataSource: 'maps_directions',
+        precisionMethod: 'modelado',
+        carbonEmissionsKgco2eActual: null,
+      });
+      const deViajes = await metricasDeViajes(viajes);
+      expect(suma3(deViajes.map((m) => num(m.carbonEmissionsKgco2eEstimated)))).toBe(
+        num(deRuta?.carbonEmissionsKgco2eEstimated),
+      );
+      expect(suma3(deViajes.map((m) => num(m.fuelConsumedLEstimated)))).toBe(
+        num(deRuta?.fuelConsumedLEstimated),
+      );
+      // a = 2 t × 120 km y 1 t × 30 km: 240 y 30 sobre 270.
+      expect(deViajes.map((m) => num(m.participacion))).toEqual([88.89, 11.11]);
+      // La distancia directa de cada carga no se toca: es la que entra al reparto.
+      expect(deViajes.map((m) => m.distanceKmEstimated)).toEqual(['120.00', '30.00']);
+      for (const m of deViajes) {
+        expect(m).toMatchObject({ rutaId, carbonEmissionsKgco2eActual: null });
+      }
+    });
+
+    test('cambiar el orden de las paradas cambia la estimación de la ruta, no la participación', async () => {
+      const { rutaId, viajes } = await ruta(DOS_PLANIFICADAS, { planificada: true });
+      await ordenar(rutaId, viajes);
+      await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+      const antes = await metricasDeViajes(viajes);
+      const rutaAntes = num((await metricasDeRuta(rutaId))?.actividadTkm);
+
+      // Ahora entrega primero A (Valparaíso) y después B (Maipú).
+      const [a, b] = viajes;
+      await handle.db
+        .update(schema.paradasRuta)
+        .set({ orden: 20 })
+        .where(and(eq(schema.paradasRuta.tripId, a ?? ''), eq(schema.paradasRuta.tipo, 'entrega')));
+      await handle.db
+        .update(schema.paradasRuta)
+        .set({ orden: 21 })
+        .where(and(eq(schema.paradasRuta.tripId, b ?? ''), eq(schema.paradasRuta.tipo, 'entrega')));
+      await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      const despues = await metricasDeViajes(viajes);
+      expect(num((await metricasDeRuta(rutaId))?.actividadTkm)).not.toBe(rutaAntes);
+      expect(despues.map((m) => m.participacion)).toEqual(antes.map((m) => m.participacion));
+    });
+
+    test('una carga sola: su estimación es la del viaje de siempre', async () => {
+      const [sola] = DOS_PLANIFICADAS;
+      const { rutaId, viajes } = await ruta(sola ? [sola] : [], { planificada: true });
+
+      const r = await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      const esperado = calcularHuellaDeServicioSolo(viajes[0] ?? '', {
+        metodo: 'modelado',
+        distanciaKm: 120,
+        cargaKg: 2000,
+        vehiculo: {
+          combustible: 'diesel',
+          consumoBasePor100km: 30,
+          pesoVacioKg: 6000,
+          capacidadKg: 5000,
+        },
+      });
+      expect(r).toMatchObject({
+        estado: 'estimada',
+        servicios: 1,
+        emisionesKgco2e: esperado.emisiones.emisionesKgco2eWtw,
+      });
+      const [m] = await metricasDeViajes(viajes);
+      expect(num(m?.carbonEmissionsKgco2eEstimated)).toBe(esperado.emisiones.emisionesKgco2eWtw);
+      expect(num(m?.participacion)).toBe(100);
+    });
+
+    test('una carga cancelada no entra en la estimación de las demás', async () => {
+      const [a, b] = DOS_PLANIFICADAS;
+      const { rutaId, viajes } = await ruta(a && b ? [a, { ...b, cancelada: '09:45:00' }] : [], {
+        planificada: true,
+      });
+
+      const r = await estimarHuellaDeRuta({ db: handle.db, logger, rutaId });
+
+      expect(r).toMatchObject({ estado: 'estimada', servicios: 1 });
+      const [deA, deB] = await metricasDeViajes(viajes);
+      expect(num(deA?.participacion)).toBe(100);
+      expect(deB?.carbonEmissionsKgco2eEstimated).toBe('9.999');
+    });
+
+    test('una ruta cerrada no se vuelve a estimar', async () => {
+      const { rutaId } = await ruta(TRES);
+      expect(await estimarHuellaDeRuta({ db: handle.db, logger, rutaId })).toEqual({
+        estado: 'omitida',
+        motivo: 'ruta_no_vigente',
+      });
+    });
+  });
+});

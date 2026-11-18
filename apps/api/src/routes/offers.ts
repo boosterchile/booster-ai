@@ -2,16 +2,17 @@ import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { denegarAceptarOferta } from '../auth/capacidades.js';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
 import { offers, trips } from '../db/schema.js';
-import { ROLES_ACEPTAR_OFERTA, exigirRol } from '../lib/exigir-rol.js';
 import { zValidator } from '../lib/validation.js';
 import {
   OfferForbiddenForPreviewError,
   OfferNotFoundForPreviewError,
   generarEcoPreview,
 } from '../services/eco-route-preview.js';
+import type { NotifyTrackingLinkEmailDeps } from '../services/notify-tracking-link-email.js';
 import {
   OfferExpiredError,
   OfferNotFoundError,
@@ -47,6 +48,8 @@ export function createOfferRoutes(opts: {
    * envía WhatsApp (fallback dev local).
    */
   notifyTrackingLink?: import('../services/notify-tracking-link.js').NotifyTrackingLinkDeps;
+  /** seguimiento-por-correo — el mismo link por correo (canal independiente). */
+  notifyTrackingLinkEmail?: NotifyTrackingLinkEmailDeps;
 }) {
   const app = new Hono();
 
@@ -127,9 +130,10 @@ export function createOfferRoutes(opts: {
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
     }
-    const sinRol = exigirRol(c, active.membership.role, ROLES_ACEPTAR_OFERTA);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS offers-api: antes el POST solo exigía isTransportista.
+    const sinOferta = denegarAceptarOferta(c, userContext);
+    if (sinOferta) {
+      return sinOferta;
     }
 
     const offerId = c.req.param('id');
@@ -142,6 +146,9 @@ export function createOfferRoutes(opts: {
         empresaId: active.empresa.id,
         userId: userContext.user.id,
         ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+        ...(opts.notifyTrackingLinkEmail
+          ? { notifyTrackingLinkEmail: opts.notifyTrackingLinkEmail }
+          : {}),
       });
       return c.json(
         {
@@ -274,9 +281,10 @@ export function createOfferRoutes(opts: {
     if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
     }
-    const sinRol = exigirRol(c, active.membership.role, ROLES_ACEPTAR_OFERTA);
-    if (sinRol) {
-      return sinRol;
+    // CHEQUEOS_REEMPLAZADOS offers-api: antes el POST solo exigía isTransportista.
+    const sinOferta = denegarAceptarOferta(c, userContext);
+    if (sinOferta) {
+      return sinOferta;
     }
 
     const offerId = c.req.param('id');

@@ -1,18 +1,32 @@
-import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
+import { generarSignedUrlPdf, versionDePdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import {
   MENSAJES,
   abrirDisputaSchema,
+  cambioPropuestoSchema,
+  datosLibresInputSchema,
   errorOpcion,
+  puedeCancelarCarga,
+  puedePublicarCarga,
   tripRequestCreateInputSchema,
+  tripRequestEditInputSchema,
 } from '@booster-ai/shared-schemas';
-import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import {
+  aceptaDatosLibres,
+  aceptaSolicitudCambio,
+  esAnulablePorGenerador,
+  esCancelablePostMatch,
+  esEditablePreMatch,
+  esEstadoViaje,
+} from '@booster-ai/trip-state-machine';
+import { and, asc, desc, eq, isNull, not, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { ctxDeUserContext, denegarEditarCarga, denegarPublicarCarga } from '../auth/capacidades.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   configuracionComercial,
@@ -24,22 +38,33 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
-import { ROLES_COMERCIALES, ROLES_CONFIRMAR_RECEPCION, exigirRol } from '../lib/exigir-rol.js';
+import { ROLES_COMERCIALES, exigirRol } from '../lib/exigir-rol.js';
 import { issuesPublicos, zValidator } from '../lib/validation.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { desglosePropuesto, leerComercialViaje } from '../services/cambio-carga-comercial.js';
+import { cambiaComercial } from '../services/cambio-carga-valores.js';
+import { cancelarCarga } from '../services/cancelar-carga.js';
+import { cerrarRutaYCertificar } from '../services/cerrar-huella-de-ruta.js';
 import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
+import { completarCoordenadasPropuesta } from '../services/coordenadas-propuesta.js';
 import {
   type DesgloseGenerador,
   desgloseParaGenerador,
   modalidadPermitida,
   tasaParaPublicacion,
 } from '../services/cotizacion-comercial.js';
+import { editarCargaPreMatch } from '../services/editar-carga.js';
+import { editarDatosLibres } from '../services/editar-datos-libres.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { estimarHuellaDeRuta } from '../services/estimar-huella-de-ruta.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
-import { computeLiveTracking } from '../services/get-public-tracking.js';
+import { computeLiveTracking, coordenadaDe } from '../services/get-public-tracking.js';
+import { filasListaUnicas, serializarFilaLista } from '../services/inicio-viaje-lista.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { liquidarTrip } from '../services/liquidar-trip.js';
 import {
@@ -50,9 +75,27 @@ import {
 } from '../services/mandato-cobro/eventos-pago.js';
 import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
+import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
+import {
+  type NotifyTrackingLinkEmailDeps,
+  reenviarTrackingLinkEmailADestinatario,
+} from '../services/notify-tracking-link-email.js';
+import {
+  type NotifyTrackingLinkDeps,
+  reenviarTrackingLinkADestinatario,
+} from '../services/notify-tracking-link.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
 import { resolverEnlaceMapa } from '../services/resolver-enlace-mapa.js';
+import { contextoDeRuta } from '../services/ruta-en-seguimiento.js';
+import {
+  type SolicitudVista,
+  crearSolicitudCambio,
+  listarSolicitudesCambio,
+  retirarSolicitudCambio,
+  solicitudPendienteDeViaje,
+} from '../services/solicitud-cambio-carga.js';
+import { valoresViajeDesdeInput } from '../services/valores-viaje.js';
 
 /**
  * Endpoint canónico para que un generador de carga autenticado:
@@ -89,7 +132,7 @@ function generateTrackingCode(): string {
 }
 
 // Cancelable pre-asignación: lo decide la tabla de transiciones del
-// package (esCancelablePorShipper — ADR-061). Una vez `asignado` o
+// package (esAnulablePorGenerador — ADR-061). Una vez `asignado` o
 // posterior, el shipper coordina con el transportista (fuera del scope).
 
 /** ADR-079 §1 — cotización previa a publicar (query string). */
@@ -126,7 +169,8 @@ export function serializeTripMetrics(
     | 'certificateSha256'
     | 'certificateKmsKeyVersion'
     | 'certificateIssuedAt'
-  >,
+  > & { participacion?: string | null },
+  opts?: { readonly compartida?: boolean },
 ) {
   return {
     distance_km_estimated: m.distanceKmEstimated,
@@ -143,6 +187,9 @@ export function serializeTripMetrics(
     certificate_sha256: m.certificateSha256,
     certificate_kms_key_version: m.certificateKmsKeyVersion,
     certificate_issued_at: m.certificateIssuedAt,
+    // Huella consolidada §4: el generador ve que su cifra es una parte y cuál
+    // es su participación. El total de la ruta no sale por aquí.
+    consolidacion: opts?.compartida ? { participacion_pct: m.participacion ?? null } : null,
   };
 }
 
@@ -185,6 +232,15 @@ export function createTripRequestsV2Routes(opts: {
   routesProjectId?: string | undefined;
   /** Inyectable en tests. En runtime es el fetch global. */
   fetchImpl?: typeof fetch;
+  /**
+   * Deps para mandar por WhatsApp el enlace de seguimiento vigente al
+   * destinatario cuando cambia su contacto
+   * (`.specs/seguimiento-enlace-destinatario/` §3.2). Ausente → no se reenvía
+   * (dev sin Twilio).
+   */
+  notifyTrackingLink?: NotifyTrackingLinkDeps;
+  /** Lo mismo por correo. Ausente → no se reenvía por correo. */
+  notifyTrackingLinkEmail?: NotifyTrackingLinkEmailDeps;
 }) {
   const app = new Hono();
 
@@ -269,6 +325,11 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
     const { texto } = c.req.valid('json');
     const resultado = await resolverEnlaceMapa({
       texto,
@@ -291,6 +352,11 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
+    }
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
 
     const input = c.req.valid('json');
@@ -323,7 +389,6 @@ export function createTripRequestsV2Routes(opts: {
     }
 
     const origenPunto = puntoNumerico(input.origin.latitude, input.origin.longitude);
-    const destinoPunto = puntoNumerico(input.destination.latitude, input.destination.longitude);
 
     const [trip] = await opts.db
       .insert(trips)
@@ -331,39 +396,8 @@ export function createTripRequestsV2Routes(opts: {
         trackingCode: generateTrackingCode(),
         generadorCargaEmpresaId: auth.activeMembership.empresa.id,
         createdByUserId: auth.userContext.user.id,
-        originAddressRaw: input.origin.address_raw,
-        originRegionCode: input.origin.region_code,
-        ...(input.origin.comuna_code ? { originComunaCode: input.origin.comuna_code } : {}),
-        ...(origenPunto
-          ? { originLatitude: origenPunto.latitude, originLongitude: origenPunto.longitude }
-          : {}),
-        destinationAddressRaw: input.destination.address_raw,
-        destinationRegionCode: input.destination.region_code,
-        ...(input.destination.comuna_code
-          ? { destinationComunaCode: input.destination.comuna_code }
-          : {}),
-        ...(destinoPunto
-          ? {
-              destinationLatitude: destinoPunto.latitude,
-              destinationLongitude: destinoPunto.longitude,
-            }
-          : {}),
-        cargoType: input.cargo.cargo_type,
-        cargoWeightKg: input.cargo.weight_kg,
-        ...(input.cargo.volume_m3 ? { cargoVolumeM3: input.cargo.volume_m3 } : {}),
-        ...(input.cargo.description ? { cargoDescription: input.cargo.description } : {}),
-        pickupDateRaw: `${input.pickup_window.start_at} → ${input.pickup_window.end_at}`,
-        pickupWindowStart: new Date(input.pickup_window.start_at),
-        pickupWindowEnd: new Date(input.pickup_window.end_at),
-        ...(input.proposed_price_clp !== null
-          ? { proposedPriceClp: input.proposed_price_clp }
-          : {}),
-        // Phase 5 PR-L3b — datos consignee opt-in para tracking link directo.
-        ...(input.consignee?.name ? { consigneeName: input.consignee.name } : {}),
-        ...(input.consignee?.phone_e164
-          ? { consigneeWhatsappE164: input.consignee.phone_e164 }
-          : {}),
-        modalidadCarga: input.modalidad_carga,
+        // editar-anular-cargas §6.1: el mismo mapeo que usa la edición (PUT).
+        ...valoresViajeDesdeInput(input),
         ...(congelado
           ? {
               comisionPctAplicada: congelado.comisionPct.toFixed(2),
@@ -405,6 +439,8 @@ export function createTripRequestsV2Routes(opts: {
           originAddress: input.origin.address_raw,
           destinationAddress: input.destination.address_raw,
           routesProjectId: opts.routesProjectId,
+          // Si una edición cambió el origen mientras Routes respondía, no se pisa.
+          soloSiOrigenVigente: true,
         });
         opts.logger.info(
           { tripId: trip.id, originGeocoded: origen !== null },
@@ -505,13 +541,32 @@ export function createTripRequestsV2Routes(opts: {
         proposed_price_clp: trips.proposedPriceClp,
         created_at: trips.createdAt,
         certificate_issued_at: tripMetrics.certificateIssuedAt,
+        // Una sola consulta: la asignación es 1:1 con el viaje.
+        // El generador ve las ofertas pendientes (Felipe, 2026-10-19 17:41 CLT).
+        transportista_nombre: empresasTable.legalName,
+        assignment_status: assignments.status,
+        ofertas_pendientes: sql<number>`(
+          select count(*)::int from ${offers}
+          where ${offers.tripId} = ${trips.id} and ${offers.status} = 'pendiente'
+        )`,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
-      .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
+      .leftJoin(assignments, eq(assignments.tripId, trips.id))
+      .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
+      .where(
+        and(
+          eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id),
+          // Las anuladas (cancelado sin asignación) salen del listado, también
+          // las históricas (editar-anular-cargas §8.7, §12-P10).
+          not(and(eq(trips.status, 'cancelado'), isNull(assignments.id)) ?? sql`false`),
+        ),
+      )
       .orderBy(desc(trips.createdAt));
 
-    return c.json({ trip_requests: rows });
+    return c.json({
+      trip_requests: filasListaUnicas(rows).map((row) => serializarFilaLista(row)),
+    });
   });
 
   // ---------------------------------------------------------------------
@@ -573,6 +628,26 @@ export function createTripRequestsV2Routes(opts: {
       .where(eq(tripEvents.tripId, id))
       .orderBy(asc(tripEvents.recordedAt));
 
+    // §9: la edición avisa cuántas transportistas están evaluando la carga.
+    const [pendientes] =
+      trip.status === 'ofertas_enviadas'
+        ? await opts.db
+            .select({ n: sql<number>`count(*)::int` })
+            .from(offers)
+            .where(and(eq(offers.tripId, trip.id), eq(offers.status, 'pendiente')))
+        : [{ n: 0 }];
+
+    // Solo una carga asignada puede tener un cambio pendiente (§6.3).
+    const cambioPendiente =
+      trip.status === 'asignado' ? await solicitudPendienteDeViaje(opts.db, trip.id) : null;
+    // ADR-079 §5: el generador ve el desglose de lo que propuso (precio o modalidad).
+    const desgloseCambio =
+      cambioPendiente &&
+      (cambioPendiente.cambios.proposed_price_clp !== undefined ||
+        cambioPendiente.cambios.modalidad_carga !== undefined)
+        ? desglosePropuesto(await leerComercialViaje(opts.db, trip.id), cambioPendiente.cambios)
+        : null;
+
     const [assignmentRow] = await opts.db
       .select({
         id: assignments.id,
@@ -583,22 +658,26 @@ export function createTripRequestsV2Routes(opts: {
         delivered_at: assignments.deliveredAt,
         cancelled_at: assignments.cancelledAt,
         cancelled_by_actor: assignments.cancelledByActor,
+        cancellation_reason: assignments.cancellationReason,
         empresa_id: assignments.empresaId,
         empresa_legal_name: empresasTable.legalName,
-        vehicle_id: assignments.vehicleId,
+        vehicle_id: vehiculoDeAsignacion,
         vehicle_plate: vehicles.plate,
         vehicle_type: vehicles.vehicleType,
-        driver_user_id: assignments.driverUserId,
+        driver_user_id: conductorDeAsignacion,
         driver_name: usersTable.fullName,
+        driver_phone: usersTable.phone,
+        driver_whatsapp: usersTable.whatsappE164,
         // El token se acuña en el accept, sin mirar al destinatario. Si no
         // sale en este detalle, el generador no tiene enlace público cuando
         // el WhatsApp no tiene a quién escribir.
         public_tracking_token: assignments.publicTrackingToken,
+        ruta_id: assignments.rutaId,
       })
       .from(assignments)
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .leftJoin(usersTable, eq(usersTable.id, conductorDeAsignacion))
       .where(eq(assignments.tripId, id))
       .limit(1);
 
@@ -634,6 +713,8 @@ export function createTripRequestsV2Routes(opts: {
         destRegionCode: trip.destinationRegionCode,
         routesProjectId: opts.routesProjectId,
         nowMs: Date.now(),
+        rutaId: assignmentRow.ruta_id,
+        destino: coordenadaDe(trip.destinationLatitude, trip.destinationLongitude),
       });
       if (live.position) {
         ubicacionActual = {
@@ -648,20 +729,78 @@ export function createTripRequestsV2Routes(opts: {
       etaMinutes = live.etaMinutes;
     }
 
+    // Anulada ≡ cancelado sin asignación (§8.8). Quién y cuándo salen del
+    // último evento `cancelado`; las históricas pueden no tenerlo.
+    let anulacion: { en: string; por_nombre: string | null; razon: string | null } | null = null;
+    if (trip.status === 'cancelado' && !assignmentRow) {
+      const [evento] = await opts.db
+        .select({
+          recordedAt: tripEvents.recordedAt,
+          payload: tripEvents.payload,
+          porNombre: usersTable.fullName,
+        })
+        .from(tripEvents)
+        .leftJoin(usersTable, eq(usersTable.id, tripEvents.recordedByUserId))
+        .where(and(eq(tripEvents.tripId, id), eq(tripEvents.eventType, 'cancelado')))
+        .orderBy(desc(tripEvents.recordedAt))
+        .limit(1);
+      const razon = evento ? motivoDelPayload(evento.payload) : null;
+      anulacion = {
+        en: (evento?.recordedAt ?? trip.updatedAt).toISOString(),
+        por_nombre: evento?.porNombre ?? null,
+        razon,
+      };
+    }
+    const cancelacion =
+      assignmentRow?.status === 'cancelado' && assignmentRow.cancelled_at
+        ? {
+            en: assignmentRow.cancelled_at.toISOString(),
+            razon: assignmentRow.cancellation_reason ?? null,
+          }
+        : null;
+
+    const viajaConsolidada = assignmentRow?.ruta_id
+      ? (await contextoDeRuta(opts.db, { rutaId: assignmentRow.ruta_id, tripId: trip.id }))
+          .compartida
+      : false;
+
+    let assignmentOut: Record<string, unknown> | null = null;
+    if (assignmentRow) {
+      // `ruta_id` no sale: el generador solo sabe si viaja con otras cargas (§4.6).
+      const { driver_phone, driver_whatsapp, ruta_id: _rutaId, ...resto } = assignmentRow;
+      // El teléfono del conductor solo mientras el viaje está activo (§12-P11).
+      const telefono = driver_phone ?? driver_whatsapp ?? null;
+      const viajeActivo = trip.status === 'asignado' || trip.status === 'en_proceso';
+      assignmentOut = {
+        ...resto,
+        ...(viajeActivo && telefono ? { conductor_telefono_e164: telefono } : {}),
+      };
+    }
+
     return c.json({
-      trip_request: { ...serializeTripDetail(trip), comercial },
+      trip_request: {
+        ...serializeTripDetail(trip, auth.userContext, cambioPendiente, desgloseCambio),
+        comercial,
+        anulacion,
+        cancelacion,
+        ofertas_pendientes: pendientes?.n ?? 0,
+      },
       events,
       assignment: assignmentRow
         ? {
-            ...assignmentRow,
+            ...assignmentOut,
             // Siempre presente (uuid o null). Un destinatario vacío no lo omite.
             public_tracking_token: assignmentRow.public_tracking_token ?? null,
             ubicacion_actual: ubicacionActual,
             position_source: positionSource,
             eta_minutes: etaMinutes,
+            // ruta-parada-servicio §4.6: «viaja con otras cargas». No dice cuántas ni de quién.
+            viaja_consolidada: viajaConsolidada,
           }
         : null,
-      metrics: metricsRow ? serializeTripMetrics(metricsRow) : null,
+      metrics: metricsRow
+        ? serializeTripMetrics(metricsRow, { compartida: viajaConsolidada })
+        : null,
     });
   });
 
@@ -729,6 +868,8 @@ export function createTripRequestsV2Routes(opts: {
       bucket: opts.certConfig.certificatesBucket,
       empresaId,
       trackingCode: row.trackingCode,
+      // La versión vigente: la URI guardada es la de su PDF (reemision-certificado).
+      version: versionDePdf(row.certificatePdfUrl),
       ttlSeconds: 300,
     });
 
@@ -762,11 +903,12 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
-    const rolRecepcion = auth.activeMembership.membership.role;
-    const sinRolRecepcion = exigirRol(c, rolRecepcion, ROLES_CONFIRMAR_RECEPCION);
-    if (sinRolRecepcion) {
-      return sinRolRecepcion;
+    // CHEQUEOS_REEMPLAZADOS trip-requests: confirmar recepción es escritura.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
     }
+    const rolRecepcion = auth.activeMembership.membership.role;
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
@@ -782,6 +924,9 @@ export function createTripRequestsV2Routes(opts: {
       ...(opts.documentClosePolicy ? { documentClosePolicy: opts.documentClosePolicy } : {}),
     });
 
+    if (!result.ok && result.code === 'cambio_pendiente') {
+      getBusinessCounter('recogida_bloqueada_cambio_total').add(1, { via: 'entrega_generador' });
+    }
     if (!result.ok) {
       const statusCode =
         result.code === 'trip_not_found'
@@ -796,6 +941,7 @@ export function createTripRequestsV2Routes(opts: {
           ...(result.code === 'invalid_status' && result.currentStatus
             ? { current_status: result.currentStatus }
             : {}),
+          ...(result.code === 'cambio_pendiente' ? { solicitud_id: result.solicitudId } : {}),
         },
         statusCode,
       );
@@ -913,125 +1059,489 @@ export function createTripRequestsV2Routes(opts: {
   });
 
   // ---------------------------------------------------------------------
-  // PATCH /:id/cancelar — cancel pre-asignación.
-  //
-  // Solo permite cancelar si la tabla de transiciones lo autoriza (esCancelablePorShipper). Una vez
-  // `asignado` o posterior, el shipper debe coordinar la cancelación con
-  // el transportista (fuera del scope de este endpoint).
+  // PATCH /:id/datos-libres — destinatario, notas y referencia
+  // (editar-anular-cargas §6.2). Sin aceptación del transportista, en todo
+  // estado no terminal. La lógica vive en services/editar-datos-libres.ts.
+  // ---------------------------------------------------------------------
+  app.patch('/:id/datos-libres', zValidator('json', datosLibresInputSchema), async (c) => {
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const sinPermiso = denegarPublicarCarga(c, auth.userContext);
+    if (sinPermiso) {
+      return sinPermiso;
+    }
+    const tripId = c.req.param('id');
+    const resultado = await withBusinessSpan(
+      { name: 'cargas.datos_libres', attributes: { 'booster.trip_id': tripId } },
+      async (span) => {
+        const r = await editarDatosLibres(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            empresaId: auth.activeMembership.empresa.id,
+            userId: auth.userContext.user.id,
+            input: c.req.valid('json'),
+          },
+        );
+        setResultAttributes(span, { 'booster.outcome': r.ok ? 'editada' : r.code });
+        getBusinessCounter('carga_editada_total').add(1, {
+          modo: 'libre',
+          outcome: r.ok ? 'editada' : r.code,
+        });
+        return r;
+      },
+    );
+    if (!resultado.ok) {
+      switch (resultado.code) {
+        case 'trip_not_found':
+          return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+        case 'trip_not_editable':
+          return c.json(
+            {
+              error: 'trip_not_editable',
+              code: 'trip_not_editable',
+              current_status: resultado.currentStatus,
+            },
+            409,
+          );
+        case 'sin_cambios':
+          return c.json({ error: 'sin_cambios', code: 'sin_cambios' }, 422);
+      }
+    }
+
+    // Post-commit, fire-and-forget: avisar a la transportista y al conductor,
+    // y mandar el enlace vigente al destinatario
+    // (`.specs/seguimiento-enlace-destinatario/` §3.2).
+    const { asignacion, reenviarEnlace } = resultado;
+    if (asignacion) {
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId, asignacion, evento: 'datos_libres' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'fallo avisar datos libres editados (la edición quedó)');
+      }
+      if (reenviarEnlace.telefono && opts.notifyTrackingLink) {
+        try {
+          await reenviarTrackingLinkADestinatario(opts.notifyTrackingLink, {
+            assignmentId: asignacion.id,
+            telefono: reenviarEnlace.telefono,
+          });
+        } catch (err) {
+          opts.logger.error(
+            { err, tripId, assignmentId: asignacion.id },
+            'fallo reenviar link de tracking al destinatario (la edición quedó)',
+          );
+        }
+      }
+      if (reenviarEnlace.correo && opts.notifyTrackingLinkEmail) {
+        try {
+          await reenviarTrackingLinkEmailADestinatario(opts.notifyTrackingLinkEmail, {
+            assignmentId: asignacion.id,
+            correo: reenviarEnlace.correo,
+          });
+        } catch (err) {
+          opts.logger.error(
+            { err, tripId, assignmentId: asignacion.id },
+            'fallo reenviar link de tracking por correo al destinatario (la edición quedó)',
+          );
+        }
+      }
+    }
+    return c.json({
+      trip_request: {
+        id: tripId,
+        campos: resultado.campos,
+        enlace_seguimiento_renovado: resultado.enlaceRenovado,
+      },
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // PUT /:id — edición total antes del match (editar-anular-cargas §6.1).
+  // La lógica vive en services/editar-carga.ts; post-commit, igual que el
+  // POST: geocodificar el origen y correr el matching.
+  // ---------------------------------------------------------------------
+  app.put('/:id', zValidator('json', tripRequestEditInputSchema), async (c) => {
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const sinPermiso = denegarEditarCarga(c, auth.userContext);
+    if (sinPermiso) {
+      return sinPermiso;
+    }
+    const tripId = c.req.param('id');
+    const input = c.req.valid('json');
+    const r = await withBusinessSpan(
+      { name: 'cargas.editar_pre_match', attributes: { 'booster.trip_id': tripId } },
+      async (span) => {
+        const res = await editarCargaPreMatch(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            empresaId: auth.activeMembership.empresa.id,
+            userId: auth.userContext.user.id,
+            input,
+            contratoProgramadoActivadoEn:
+              auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null,
+          },
+        );
+        const resultado = res.ok ? (res.cambio ? 'editada' : 'sin_cambios') : res.code;
+        setResultAttributes(span, { 'booster.outcome': resultado });
+        if (res.ok && res.cambio) {
+          getBusinessCounter('carga_editada_total').add(1, { modo: 'pre_match' });
+        }
+        return res;
+      },
+    );
+    if (!r.ok) {
+      switch (r.code) {
+        case 'trip_not_found':
+          return c.json({ error: r.code, code: r.code }, 404);
+        case 'trip_busy':
+          return c.json({ error: r.code, code: r.code }, 409);
+        case 'trip_not_editable':
+          return c.json({ error: r.code, code: r.code, current_status: r.currentStatus }, 409);
+        case 'contrato_programado_no_habilitado':
+          return c.json({ error: r.code, code: r.code }, 422);
+      }
+    }
+
+    if (r.geocodificarOrigen && opts.routesProjectId) {
+      try {
+        await geocodificarOrigen({
+          db: opts.db,
+          logger: opts.logger,
+          tripId,
+          originAddress: r.geocodificarOrigen.originAddress,
+          destinationAddress: r.geocodificarOrigen.destinationAddress,
+          routesProjectId: opts.routesProjectId,
+          // Una respuesta atrasada no pisa un origen editado después.
+          soloSiOrigenVigente: true,
+        });
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'geocodificar origen tras editar la carga falló');
+      }
+    }
+
+    // §7: guardar en esperando_match corre el matching aunque no haya
+    // cambios — destraba una carga cuyo matching falló al crearse. El CAS de
+    // runMatching descarta una corrida concurrente.
+    let matching: Awaited<ReturnType<typeof runMatching>> | null = null;
+    if (r.estado === 'esperando_match') {
+      try {
+        matching = await runMatching({
+          db: opts.db,
+          logger: opts.logger,
+          tripId,
+          ...(opts.notify ? { notify: opts.notify } : {}),
+          ...(opts.ranking ? { ranking: opts.ranking } : {}),
+        });
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'matching tras editar la carga falló; queda esperando');
+      }
+    }
+
+    const [actualizada] = await opts.db
+      .select()
+      .from(trips)
+      .where(
+        and(
+          eq(trips.id, tripId),
+          eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id),
+        ),
+      )
+      .limit(1);
+    if (!actualizada) {
+      return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+    }
+    return c.json({
+      trip_request: serializeTripDetail(actualizada, auth.userContext),
+      matching: matching
+        ? {
+            candidates_evaluated: matching.candidatesEvaluated,
+            offers_created: matching.offersCreated,
+            offer_ids: matching.offers.map((o) => o.id),
+          }
+        : null,
+      invalidated_offers: r.ofertasInvalidadas,
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Solicitudes de cambio (editar-anular-cargas §6.3–6.5): después del match,
+  // todo cambio que no sea un dato libre lo acepta o rechaza el transportista.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/:id/solicitudes-cambio',
+    zValidator('json', z.object({ cambios: cambioPropuestoSchema }).strict()),
+    async (c) => {
+      const auth = requireShipperAuth(c, { requireActive: true });
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarEditarCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const tripId = c.req.param('id');
+      const empresaId = auth.activeMembership.empresa.id;
+      // §6.3: las coordenadas se resuelven ANTES de la tx, sin llamadas externas bajo lock.
+      const cambios = await completarCoordenadasPropuesta(
+        { db: opts.db, logger: opts.logger, routesProjectId: opts.routesProjectId },
+        { tripId, empresaId, cambios: c.req.valid('json').cambios },
+      );
+      const r = await withBusinessSpan(
+        { name: 'cargas.solicitud_cambio.crear', attributes: { 'booster.trip_id': tripId } },
+        async (span) => {
+          const res = await crearSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            { tripId, empresaId, userId: auth.userContext.user.id, cambios },
+          );
+          const resultado = res.ok ? 'creada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          getBusinessCounter('solicitud_cambio_total').add(1, {
+            resultado,
+            comercial: res.ok ? cambiaComercial(res.campos) : false,
+          });
+          return res;
+        },
+      );
+      if (!r.ok) {
+        switch (r.code) {
+          case 'trip_not_found':
+            return c.json({ error: r.code, code: r.code }, 404);
+          case 'trip_not_matched':
+            return c.json({ error: r.code, code: r.code }, 409);
+          case 'trip_not_editable':
+            return c.json({ error: r.code, code: r.code, current_status: r.currentStatus }, 409);
+          case 'cambio_pendiente_existente':
+            return c.json({ error: r.code, code: r.code, solicitud_id: r.solicitudId }, 409);
+          case 'sin_cambios':
+          case 'contrato_programado_no_habilitado':
+            return c.json({ error: r.code, code: r.code }, 422);
+        }
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId, asignacion: r.asignacion, evento: 'cambio_solicitado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'avisar solicitud de cambio falló (quedó creada)');
+      }
+      // ADR-079 §5: el desglose solo lo ve el generador.
+      return c.json(
+        {
+          solicitud: r.solicitud,
+          ...(r.desglosePropuesto ? { desglose_propuesto: r.desglosePropuesto } : {}),
+        },
+        201,
+      );
+    },
+  );
+
+  app.post(
+    '/:id/solicitudes-cambio/:sid/retirar',
+    zValidator('param', z.object({ id: z.string().uuid(), sid: z.string().uuid() }), (r, c) =>
+      r.success ? undefined : c.json({ error: 'not_found', code: 'not_found' }, 404),
+    ),
+    async (c) => {
+      const auth = requireShipperAuth(c, { requireActive: true });
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarEditarCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const { id: tripId, sid: solicitudId } = c.req.valid('param');
+      const r = await withBusinessSpan(
+        {
+          name: 'cargas.solicitud_cambio.retirar',
+          attributes: { 'booster.trip_id': tripId, 'booster.solicitud_id': solicitudId },
+        },
+        async (span) => {
+          const res = await retirarSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            {
+              tripId,
+              empresaId: auth.activeMembership.empresa.id,
+              userId: auth.userContext.user.id,
+              solicitudId,
+            },
+          );
+          const resultado = res.ok ? 'retirada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          getBusinessCounter('solicitud_cambio_total').add(1, { resultado, comercial: false });
+          return res;
+        },
+      );
+      if (!r.ok) {
+        return c.json({ error: r.code, code: r.code }, r.code === 'trip_not_found' ? 404 : 409);
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId, asignacion: r.asignacion, evento: 'cambio_retirado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId }, 'avisar solicitud retirada falló (quedó retirada)');
+      }
+      return c.json({ ok: true, solicitud_id: solicitudId });
+    },
+  );
+
+  app.get('/:id/solicitudes-cambio', async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const solicitudes = await listarSolicitudesCambio(
+      { db: opts.db },
+      { tripId: c.req.param('id'), empresaId: auth.activeMembership.empresa.id },
+    );
+    if (!solicitudes) {
+      return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+    }
+    return c.json({ solicitudes });
+  });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id/cancelar — anular antes del match o cancelar después
+  // (editar-anular-cargas §6.6). La lógica vive en services/cancelar-carga.ts.
   // ---------------------------------------------------------------------
   app.patch('/:id/cancelar', zValidator('json', cancelBodySchema), async (c) => {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
     }
-    const id = c.req.param('id');
+    // CHEQUEOS_REEMPLAZADOS trip-requests: requireShipper no miraba el rol.
+    const sinCarga = denegarPublicarCarga(c, auth.userContext);
+    if (sinCarga) {
+      return sinCarga;
+    }
+    const tripId = c.req.param('id');
     const body = c.req.valid('json');
-    const empresaId = auth.activeMembership.empresa.id;
-    const userId = auth.userContext.user.id;
-
-    // Transacción con lock de fila: serializa contra acceptOffer (que
-    // también toma FOR UPDATE sobre el trip). Sin esto, un accept
-    // concurrente podía quedar pisado por el cancel (o viceversa) y las
-    // ofertas pendientes quedaban aceptables post-cancelación
-    // (race de la auditoría 2026-06-09, riesgo alto #2).
-    const result = await opts.db.transaction(async (tx) => {
-      const tripRows = await tx
-        .select({ id: trips.id, status: trips.status, trackingCode: trips.trackingCode })
-        .from(trips)
-        .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
-        .for('update')
-        .limit(1);
-      const trip = tripRows[0];
-
-      if (!trip) {
-        return { kind: 'not_found' as const };
-      }
-
-      // Re-check post-lock: si un accept concurrente ganó la carrera,
-      // acá vemos 'asignado' y abortamos con 409.
-      if (!esEstadoViaje(trip.status) || !esCancelablePorShipper(trip.status)) {
-        return { kind: 'not_cancellable' as const, currentStatus: trip.status };
-      }
-
-      const now = new Date();
-      const [updated] = await tx
-        .update(trips)
-        .set({ status: 'cancelado', updatedAt: now })
-        .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
-        .returning();
-
-      if (!updated) {
-        return { kind: 'not_found' as const };
-      }
-
-      // Invalidar ofertas pendientes del trip: sin esto quedaban
-      // aceptables hasta su TTL y podían resucitar el viaje cancelado.
-      const invalidated = await tx
-        .update(offers)
-        .set({ status: 'expirada', updatedAt: now })
-        .where(and(eq(offers.tripId, id), eq(offers.status, 'pendiente')))
-        .returning({ id: offers.id });
-
-      await tx.insert(tripEvents).values({
-        tripId: id,
-        eventType: 'cancelado',
-        source: 'web',
-        recordedByUserId: userId,
-        payload: {
-          actor: 'generador_carga',
-          previous_status: trip.status,
-          invalidated_offers: invalidated.length,
-          ...(body.reason ? { reason: body.reason } : {}),
-        },
-      });
-
-      return {
-        kind: 'ok' as const,
-        trip,
-        updated,
-        invalidatedCount: invalidated.length,
-      };
-    });
-
-    if (result.kind === 'not_found') {
-      return c.json({ error: 'trip_not_found' }, 404);
-    }
-    if (result.kind === 'not_cancellable') {
-      return c.json(
-        {
-          error: 'trip_not_cancellable',
-          code: 'trip_not_cancellable',
-          current_status: result.currentStatus,
-        },
-        409,
-      );
-    }
-
-    opts.logger.info(
-      {
-        tripId: id,
-        trackingCode: result.trip.trackingCode,
-        previousStatus: result.trip.status,
-        invalidatedOffers: result.invalidatedCount,
-        empresaId,
-        userId,
+    const resultado = await withBusinessSpan(
+      { name: 'cargas.cancelar', attributes: { 'booster.trip_id': tripId } },
+      async (span) => {
+        const r = await cancelarCarga(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            empresaId: auth.activeMembership.empresa.id,
+            userId: auth.userContext.user.id,
+            ...(body.reason ? { reason: body.reason } : {}),
+          },
+        );
+        const outcome = r.ok ? r.tipo : r.code;
+        setResultAttributes(span, { 'booster.outcome': outcome });
+        getBusinessCounter('carga_cancelada_total').add(1, { tipo: outcome });
+        return r;
       },
-      'trip cancelled by shipper',
     );
+    if (!resultado.ok) {
+      switch (resultado.code) {
+        case 'trip_not_found':
+          return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+        case 'trip_not_cancellable':
+          return c.json(
+            {
+              error: 'trip_not_cancellable',
+              code: 'trip_not_cancellable',
+              current_status: resultado.currentStatus,
+            },
+            409,
+          );
+        case 'reason_required':
+          return c.json({ error: 'reason_required', code: 'reason_required' }, 422);
+      }
+    }
 
-    return c.json({
-      trip_request: {
-        id: result.updated.id,
-        tracking_code: result.updated.trackingCode,
-        status: result.updated.status,
-      },
-    });
+    // Post-commit: si la carga cancelada era lo último pendiente de una ruta
+    // con otras cargas ya entregadas, la ruta quedó cerrada y sus certificados
+    // salen ahora (huella-consolidada §3.9). Si falla, queda para el relleno.
+    if (resultado.tipo === 'cancelacion' && resultado.rutaCerradaId) {
+      try {
+        await cerrarRutaYCertificar({
+          db: opts.db,
+          logger: opts.logger,
+          rutaId: resultado.rutaCerradaId,
+          config: opts.certConfig ?? {},
+          routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId, rutaId: resultado.rutaCerradaId },
+          'el cierre de la ruta tras cancelar una carga falló',
+        );
+      }
+    }
+
+    // Post-commit: las cargas que siguen en la ruta se reparten ahora una
+    // estimación sin la cancelada (huella-consolidada §3.9).
+    if (resultado.tipo === 'cancelacion' && resultado.rutaVigenteId) {
+      try {
+        await estimarHuellaDeRuta({
+          db: opts.db,
+          logger: opts.logger,
+          rutaId: resultado.rutaVigenteId,
+          routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId, rutaId: resultado.rutaVigenteId },
+          'la estimación de la ruta tras cancelar una carga falló',
+        );
+      }
+    }
+
+    // Post-commit, fire-and-forget: la transportista y el conductor se enteran
+    // de la cancelación con su motivo (§8).
+    if (resultado.tipo === 'cancelacion') {
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          {
+            tripId,
+            asignacion: resultado.asignacion,
+            evento: 'cancelacion',
+            motivo: resultado.motivo,
+          },
+        );
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId },
+          'fallo avisar la cancelación (la carga quedó cancelada)',
+        );
+      }
+    }
+    return c.json({ trip_request: { id: tripId, status: 'cancelado', tipo: resultado.tipo } });
   });
 
   return app;
 }
 
-function serializeTripDetail(row: typeof trips.$inferSelect) {
+/** El motivo guardado en el payload de un evento `cancelado`, si lo hay. */
+function motivoDelPayload(payload: unknown): string | null {
+  if (payload && typeof payload === 'object' && 'reason' in payload) {
+    const r = payload.reason;
+    return typeof r === 'string' && r.length > 0 ? r : null;
+  }
+  return null;
+}
+
+function serializeTripDetail(
+  row: typeof trips.$inferSelect,
+  userContext: unknown,
+  cambioPendiente: SolicitudVista | null = null,
+  desgloseCambio: DesgloseGenerador | null = null,
+) {
   return {
     id: row.id,
     tracking_code: row.trackingCode,
@@ -1050,7 +1560,48 @@ function serializeTripDetail(row: typeof trips.$inferSelect) {
     pickup_window_end: row.pickupWindowEnd,
     proposed_price_clp: row.proposedPriceClp,
     modalidad_carga: row.modalidadCarga,
+    // editar-anular-cargas: datos libres (el generador los ve y los edita).
+    consignee: {
+      name: row.consigneeName,
+      phone_e164: row.consigneeWhatsappE164,
+      email: row.consigneeEmail,
+    },
+    notes: row.notes,
+    reference: row.reference,
+    // §6.8: el generador ve su propuesta completa mientras está pendiente.
+    cambio_pendiente: cambioPendiente
+      ? {
+          id: cambioPendiente.id,
+          cambios: cambioPendiente.cambios,
+          valores_anteriores: cambioPendiente.valores_anteriores,
+          creado_en: cambioPendiente.creado_en,
+          ...(desgloseCambio ? { desglose_propuesto: desgloseCambio } : {}),
+        }
+      : null,
+    acciones_permitidas: accionesPermitidas(row.status, userContext, cambioPendiente !== null),
     created_at: row.createdAt,
     updated_at: row.updatedAt,
+  };
+}
+
+/**
+ * Qué puede hacer quien mira la carga, en su estado actual (spec
+ * editar-anular-cargas §6-8). Combina los guards de la máquina de estados con
+ * las mismas capacidades que exigen las rutas, para que la web no ofrezca una
+ * acción que el API va a rechazar. Con una solicitud pendiente no se propone
+ * otra: se retira la vigente.
+ */
+function accionesPermitidas(estado: string, userContext: unknown, hayCambioPendiente: boolean) {
+  const ctx = ctxDeUserContext(userContext as Parameters<typeof ctxDeUserContext>[0]);
+  const editar = ctx !== null && puedePublicarCarga(ctx);
+  const cancelar = ctx !== null && puedeCancelarCarga(ctx);
+  const valido = esEstadoViaje(estado);
+  return {
+    editar: editar && valido && esEditablePreMatch(estado),
+    editar_datos_libres: editar && valido && aceptaDatosLibres(estado),
+    solicitar_cambio: editar && valido && aceptaSolicitudCambio(estado) && !hayCambioPendiente,
+    retirar_cambio: editar && hayCambioPendiente,
+    anular: cancelar && valido && esAnulablePorGenerador(estado),
+    cancelar: cancelar && valido && esCancelablePostMatch(estado),
   };
 }

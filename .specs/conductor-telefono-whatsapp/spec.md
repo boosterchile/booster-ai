@@ -2,6 +2,10 @@
 
 **Slug**: `conductor-telefono-whatsapp` · **Fecha**: 2026-10-19
 
+> Las salidas 3 y 7 las reemplaza `conductor-telefono-sin-reenvio`
+> (decisión del PO, 2026-10-21): guardar el teléfono ya no reenvía la
+> invitación salvo que se pida.
+
 ## Problema
 
 La ficha del conductor deja corregir el email y reenviar el PIN, pero no el

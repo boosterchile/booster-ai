@@ -411,3 +411,123 @@ resource "google_project_iam_member" "claude_cloud_readonly_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.claude_cloud_readonly.email}"
 }
+
+# -----------------------------------------------------------------------------
+# Cursor Cloud Agent — escritura mínima para terraform apply de schedulers
+# -----------------------------------------------------------------------------
+# Autorización PO (Felipe Vicencio, 2026-11-15): «ampliar entonces» — ampliar
+# IAM de cursor-agent@ para poder aplicar el job
+# google_cloud_scheduler_job.vehiculo_pendiente_recordatorio (y crons del
+# mismo patrón). Archivo protegido (IAM en infrastructure/); se declara en el PR.
+#
+# La SA ya existe fuera de Terraform (llave en el entorno Cursor Cloud). No
+# gestionamos su lifecycle aquí — solo bindings. Ya tiene roles/viewer +
+# lecturas auxiliares; NO puede impersonar github-deployer@.
+#
+# Mínimo explícito (nada más):
+#   (a) roles/storage.objectUser en el bucket de tfstate → lock create/delete
+#       + write del state (storage.objects.create/delete/get/update/list).
+#   (b) custom role cursorAgentSchedulerWriter → create/delete/get/list/update
+#       + fullView (refresh) + locations.get/list. Sin jobs.run / jobs.enable /
+#       jobs.pause: Terraform no los necesita para google_cloud_scheduler_job.
+#   (c) roles/iam.serviceAccountUser SOLO sobre internal_cron_invoker → actAs
+#       para el OIDC del http_target (requerido al create/update del job).
+# Lecturas de Cloud Run URL / SA email: cubiertas por roles/viewer existente.
+# NO se otorga redis.instances.getAuthString a cursor-agent@ (queda en
+# terraform-drift@). Apply de service_api usa -refresh=false para no
+# refrescar auth_string; ver bloque Cloud Run abajo.
+#
+# Riesgo residual (aceptado, inherente a writer a nivel proyecto):
+#   El custom role es project-level → create/update/delete de CUALQUIER job
+#   del proyecto. Con actAs sobre internal_cron_invoker, un create/update
+#   malicioso podría apuntar http_target.uri a un destino arbitrario y obtener
+#   Bearer OIDC de cron. GCP no ofrece conditional IAM por job name sin org
+#   policy / resource hierarchy; no inventamos condiciones no soportadas.
+#   Mitigación: sin jobs.run/enable/pause no se pueden disparar ni reactivar
+#   crons existentes sin un update del job; actAs se mantiene porque el
+#   provider exige serviceAccountUser al create del http_target OIDC.
+
+locals {
+  cursor_agent_member = "serviceAccount:cursor-agent@${google_project.booster_ai.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_storage_bucket_iam_member" "cursor_agent_tfstate" {
+  bucket = var.tfstate_bucket
+  role   = "roles/storage.objectUser"
+  member = local.cursor_agent_member
+}
+
+resource "google_project_iam_custom_role" "cursor_agent_scheduler_writer" {
+  role_id     = "cursorAgentSchedulerWriter"
+  title       = "Cursor Agent — Cloud Scheduler writer"
+  description = "Mínimo para terraform create/update/delete de google_cloud_scheduler_job (sin run/enable/pause). Autorizado PO 2026-11-15."
+  project     = google_project.booster_ai.project_id
+  permissions = [
+    "cloudscheduler.jobs.create",
+    "cloudscheduler.jobs.delete",
+    "cloudscheduler.jobs.fullView",
+    "cloudscheduler.jobs.get",
+    "cloudscheduler.jobs.list",
+    "cloudscheduler.jobs.update",
+    "cloudscheduler.locations.get",
+    "cloudscheduler.locations.list",
+  ]
+  stage = "GA"
+}
+
+resource "google_project_iam_member" "cursor_agent_scheduler_writer" {
+  project = google_project.booster_ai.project_id
+  role    = google_project_iam_custom_role.cursor_agent_scheduler_writer.id
+  member  = local.cursor_agent_member
+}
+
+# actAs sobre internal_cron_invoker: necesario para que Terraform cree/actualice
+# google_cloud_scheduler_job con http_target.oidc_token.service_account_email.
+# Sin este binding, el create falla con PERMISSION_DENIED actAs. Riesgo residual
+# documentado arriba (project-level scheduler writer + OIDC de cron).
+resource "google_service_account_iam_member" "cursor_agent_act_as_cron_invoker" {
+  service_account_id = google_service_account.internal_cron_invoker.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = local.cursor_agent_member
+}
+
+# -----------------------------------------------------------------------------
+# Cursor Cloud Agent — update acotado a booster-ai-api (service_api)
+# -----------------------------------------------------------------------------
+# Autorización PO (Felipe Vicencio, 2026-11-16): «amplía IAM del agent» — para
+# reconciliar drift EMAIL_FROM en module.service_api.google_cloud_run_v2_service
+# (Terraform Drift Check #173 / run 43955716887). Archivo protegido (IAM);
+# se declara en el PR.
+#
+# Mínimo explícito (nada más) — remedia Agentic Security Review HIGH/MEDIUM
+# en #996 (project-level run.services.update + getAuthString en writer):
+#   (d) roles/run.developer SOLO sobre el recurso Cloud Run `booster-ai-api`
+#       (google_cloud_run_v2_service_iam_member). No project-level custom
+#       role: no puede mutar web/matching/notificaciones/otros.
+#   (e) roles/iam.serviceAccountUser SOLO sobre cloud_run_runtime → actAs
+#       exigido por el provider al update del servicio con esa SA.
+#   Sin redis.instances.getAuthString (sigue exclusivo de terraform-drift@).
+#   Apply de EMAIL_FROM: `terraform apply -refresh=false -target=...` para
+#   no refrescar auth_string; el state ya tiene REDIS_* / secret redis-auth.
+#
+# Riesgo residual (aceptado):
+#   Quien controle la llave puede publicar revisiones en booster-ai-api
+#   (imagen/env/args) ejecutándose como cloud_run_runtime. No elude el
+#   Environment production de release.yml para los OTROS servicios; sí
+#   elude el gate humano para env/config del api. Mitigación: binding a
+#   un solo servicio; sin setIamPolicy project-wide; sin getAuthString;
+#   sin impersonar github-deployer@.
+
+resource "google_cloud_run_v2_service_iam_member" "cursor_agent_api_developer" {
+  project  = google_project.booster_ai.project_id
+  location = var.region
+  name     = module.service_api.name
+  role     = "roles/run.developer"
+  member   = local.cursor_agent_member
+}
+
+resource "google_service_account_iam_member" "cursor_agent_act_as_cloud_run_runtime" {
+  service_account_id = google_service_account.cloud_run_runtime.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = local.cursor_agent_member
+}

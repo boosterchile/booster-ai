@@ -256,6 +256,7 @@ async function main(): Promise<void> {
         firebaseUid: `pending-rut:${opts.rut}`,
         claveNumericaHash: null,
         activationPinHash: hashActivationPin(opts.pin),
+        activacionVenceEn: null,
         status: 'pendiente_verificacion' as const,
       };
       const found = await db
