@@ -43,8 +43,8 @@ Decisiones tomadas en este PR:
 - `cobertura_desde` es el punto más antiguo leído de toda la flota, como
   dice la spec §3.2. Con recorte parejo, un camión que reporta poco puede
   tener historia más antigua que uno que reporta mucho: la fecha dice desde
-  cuándo hay algún dato, no desde cuándo están todos completos. Queda
-  planteado al PO.
+  cuándo hay algún dato, no desde cuándo están todos completos. El PO
+  decidió el 2026-11-18 dejarlo así.
 
 ## PR 2 — Caché de la lectura de combustible
 
