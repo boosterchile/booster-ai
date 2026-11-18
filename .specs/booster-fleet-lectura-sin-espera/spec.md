@@ -51,8 +51,8 @@ Dos cosas agravan la espera:
 
 ### 3.1 El panel responde con la última lectura guardada
 
-Cada lectura de combustible se guarda con el instante en que se hizo. Al
-pedir el panel:
+Cada lectura de combustible se guarda con el instante en que se hizo. La
+pantalla pide el panel aceptando una lectura guardada (§3.3), y entonces:
 
 1. **Hay una lectura de menos de 10 minutos.** Se responde con ella. Es lo
    que hoy hace la caché, pero contado desde la lectura, no por tramos de
@@ -61,6 +61,9 @@ pedir el panel:
    de inmediato y la respuesta dice que no está al día.
 3. **No hay lectura, o tiene más de 24 horas.** Se lee y se espera, como
    hoy.
+
+Quien pide el panel sin aceptar una lectura guardada recibe siempre una al
+día: el caso 2 se trata como el 3.
 
 Documentos y mantenciones se leen siempre en vivo; esto es solo combustible.
 
@@ -83,8 +86,15 @@ campo existente cambia.
 - `combustible.leido_en`: instante en que se hizo la lectura que se está
   mostrando.
 - `combustible.al_dia`: falso cuando la lectura tiene más de 10 minutos.
-- `GET /booster-fleet?combustible=al_dia`: no acepta una lectura de más de
-  10 minutos; lee y espera. Es lo que usa la pantalla para refrescar.
+- `GET /booster-fleet?combustible=guardada`: acepta la última lectura
+  guardada aunque tenga más de 10 minutos. Lo manda la pantalla en su
+  primera petición. Sin el parámetro el panel responde con una lectura al
+  día, como antes de esta spec, y eso es lo que usa la pantalla para
+  refrescar.
+
+El parámetro es para aceptar la guardada, y no al revés, por las pantallas
+que no lo conocen: una pestaña con la versión anterior cargada, o cualquier
+otro cliente, sigue recibiendo cifras al día sin cambiar nada.
 
 ### 3.4 Lo que ve el dueño
 
@@ -117,12 +127,13 @@ flota está en orden con datos viejos sin decir de cuándo son.
 
 1. Con una lectura guardada de menos de 10 minutos, el panel responde con
    ella y `al_dia` es verdadero, aunque haya cambiado el tramo de reloj.
-2. Con una lectura guardada de entre 10 minutos y 24 horas, el panel
-   responde sin leer la telemetría, con `al_dia` falso y `leido_en` con su
-   instante.
+2. Con una lectura guardada de entre 10 minutos y 24 horas y
+   `?combustible=guardada`, el panel responde sin leer la telemetría, con
+   `al_dia` falso y `leido_en` con su instante.
 3. Sin lectura guardada, o con una de más de 24 horas, el panel lee, espera
    y responde con `al_dia` verdadero.
-4. `?combustible=al_dia` no devuelve nunca una lectura de más de 10 minutos.
+4. Sin el parámetro, el panel no devuelve nunca una lectura de más de 10
+   minutos.
 5. Dos peticiones simultáneas de la misma flota hacen una sola lectura.
 6. La pantalla, con `al_dia` falso, muestra las cifras guardadas con su
    hora, pide la lectura nueva y las reemplaza al llegar.
@@ -146,8 +157,10 @@ flota está en orden con datos viejos sin decir de cuándo son.
 Tomadas el 2026-11-18, al aceptar la spec con sus propuestas:
 
 1. La spec queda aceptada, con el cambio de contrato de §3.3: los campos
-   `combustible.leido_en` y `combustible.al_dia` y el parámetro
-   `?combustible=al_dia`.
+   `combustible.leido_en` y `combustible.al_dia` y un parámetro. El mismo
+   día, al implementar, el PO aceptó invertir el parámetro propuesto
+   (`?combustible=al_dia` pasó a `?combustible=guardada`): sin él, el panel
+   sigue respondiendo con una lectura al día.
 2. **Los números:** 10 minutos para «al día» y 24 horas como tope para
    mostrar una lectura guardada.
 3. **La primera apertura del día** sigue esperando la lectura completa. No
