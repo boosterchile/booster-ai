@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { empresas, telemetryPoints, vehicles } from '../db/schema.js';
@@ -11,6 +11,7 @@ import {
   type PuntoSegmentacion,
   type ResumenCombustibleVehiculo,
   type TrayectoTeltonika,
+  compararTrayectos,
   resumirCombustibleVehiculos,
   segmentarTrayectosTeltonika,
 } from '../domain/segmentar-trayectos-teltonika.js';
@@ -25,6 +26,22 @@ export const MAX_PUNTOS_TRAYECTO = 20_000;
  * (`.specs/booster-fleet-ventana-completa`).
  */
 export const PRESUPUESTO_PUNTOS_PANEL = 400_000;
+
+/**
+ * Tope de puntos de un solo vehículo por lectura. Los puntos de un vehículo
+ * están todos en memoria mientras se segmenta, y el API corre con un heap
+ * de unos 500 MB: este tope es lo que acota la memoria de la lectura. Un
+ * camión genera unos 25.000 puntos por semana; el que supere el tope se
+ * recorta a sus puntos más recientes y la lectura queda marcada.
+ */
+export const MAX_PUNTOS_POR_VEHICULO = 40_000;
+
+/**
+ * Filas que se piden a la base de una vez al leer un vehículo. La fila que
+ * entrega la base pesa varias veces lo que el punto ya convertido; leer por
+ * tandas deja en memoria una tanda de filas y los puntos del vehículo.
+ */
+export const FILAS_POR_TANDA = 5_000;
 
 /**
  * `global`: los puntos más recientes de toda la flota, hasta el tope.
@@ -72,6 +89,15 @@ const ioProyectado = sql<unknown>`jsonb_strip_nulls(jsonb_build_object(${sql.joi
   ),
   sql`, `,
 )}))`;
+
+interface FilaPunto {
+  vehicleId: string;
+  timestampDevice: Date;
+  latitude: string | null;
+  longitude: string | null;
+  speedKmh: number | null;
+  ioData: unknown;
+}
 
 const ioDataSchema = z.record(z.string(), z.union([z.number(), z.string()]));
 
@@ -205,14 +231,53 @@ export async function leerTrayectosDeLaFlota(opts: {
     lte(telemetryPoints.timestampDevice, opts.hasta),
   );
 
-  let usados: Array<{
-    vehicleId: string;
-    timestampDevice: Date;
-    latitude: string | null;
-    longitude: string | null;
-    speedKmh: number | null;
-    ioData: unknown;
-  }> = [];
+  // Cada tanda se segmenta y se suelta: en memoria queda una tanda de
+  // puntos a la vez, no la ventana entera de la flota.
+  const trayectos: TrayectoTeltonika[] = [];
+  const combustibleVehiculos: ResumenCombustibleVehiculo[] = [];
+  let ioInvalidos = 0;
+  let puntosLeidos = 0;
+  let masAntiguo: number | null = null;
+  const convertir = (filas: readonly FilaPunto[], puntos: PuntoSegmentacion[]) => {
+    for (const fila of filas) {
+      const vehiculo = porId.get(fila.vehicleId);
+      if (!vehiculo) {
+        continue;
+      }
+      const io = ioNumerico(fila.ioData);
+      if (io == null) {
+        ioInvalidos += 1;
+      }
+      const tMs = fila.timestampDevice.getTime();
+      if (masAntiguo == null || tMs < masAntiguo) {
+        masAntiguo = tMs;
+      }
+      puntos.push({
+        vehiculoId: fila.vehicleId,
+        empresaId: vehiculo.empresaId,
+        patente: vehiculo.plate,
+        capacidadEstanqueL: aNumero(vehiculo.capacidadEstanqueL ?? null),
+        fuenteCombustibleCan: fuenteDesdeFila(vehiculo.fuenteCombustibleCan),
+        // Hora del AVL, no `timestamp_recibido_en`: un buffer sin señal celular
+        // llega tarde y la ventana de robo (5 min) tiene que usar este reloj.
+        tMs,
+        lat: aNumero(fila.latitude),
+        lng: aNumero(fila.longitude),
+        speedKmh: fila.speedKmh,
+        io: io ?? {},
+      });
+    }
+  };
+  const segmentar = (puntos: readonly PuntoSegmentacion[]) => {
+    puntosLeidos += puntos.length;
+    for (const trayecto of segmentarTrayectosTeltonika(puntos, config)) {
+      trayectos.push(trayecto);
+    }
+    for (const resumen of resumirCombustibleVehiculos(puntos)) {
+      combustibleVehiculos.push(resumen);
+    }
+  };
+
   let truncado = false;
   let puntosEnVentana: number | null = null;
 
@@ -234,23 +299,43 @@ export async function leerTrayectosDeLaFlota(opts: {
     const cuotas = repartirPresupuesto(porVehiculo, maxPuntos);
     // En el orden de la flota, para que la lectura sea siempre la misma.
     for (const vehicleId of ids) {
-      const cuota = cuotas.get(vehicleId) ?? 0;
+      const cuota = Math.min(cuotas.get(vehicleId) ?? 0, MAX_PUNTOS_POR_VEHICULO);
       if (cuota < (porVehiculo.get(vehicleId) ?? 0)) {
         truncado = true;
       }
       if (cuota <= 0) {
         continue;
       }
-      // rls-allowlist: puntos de un vehículo de la empresa, ventana acotada, índice vehiculo+ts.
-      const delVehiculo = await opts.db
-        .select(seleccion)
-        .from(telemetryPoints)
-        .where(and(eq(telemetryPoints.vehicleId, vehicleId), enVentana))
-        .orderBy(desc(telemetryPoints.timestampDevice))
-        .limit(cuota);
-      for (const fila of delVehiculo) {
-        usados.push(fila);
+      // Del más reciente hacia atrás, por tandas. Un vehículo no repite
+      // instante (único por IMEI), así que la tanda siguiente parte antes
+      // del último punto leído.
+      const delVehiculo: PuntoSegmentacion[] = [];
+      let restante = cuota;
+      let antesDe: Date | null = null;
+      while (restante > 0) {
+        const pedir = Math.min(restante, FILAS_POR_TANDA);
+        // rls-allowlist: puntos de un vehículo de la empresa, ventana acotada, índice vehiculo+ts.
+        const filas: FilaPunto[] = await opts.db
+          .select(seleccion)
+          .from(telemetryPoints)
+          .where(
+            and(
+              eq(telemetryPoints.vehicleId, vehicleId),
+              enVentana,
+              antesDe ? lt(telemetryPoints.timestampDevice, antesDe) : undefined,
+            ),
+          )
+          .orderBy(desc(telemetryPoints.timestampDevice))
+          .limit(pedir);
+        convertir(filas, delVehiculo);
+        restante -= filas.length;
+        const ultima = filas[filas.length - 1];
+        if (!ultima || filas.length < pedir) {
+          break;
+        }
+        antesDe = ultima.timestampDevice;
       }
+      segmentar(delVehiculo);
     }
     if (truncado) {
       opts.logger.warn(
@@ -259,42 +344,20 @@ export async function leerTrayectosDeLaFlota(opts: {
       );
     }
   } else {
+    // Un vehículo solo tampoco pasa de su tope; el listado de la flota ya
+    // viene acotado por `MAX_PUNTOS_TRAYECTO`.
+    const tope = opts.vehiculoId ? Math.min(maxPuntos, MAX_PUNTOS_POR_VEHICULO) : maxPuntos;
     // rls-allowlist: puntos de esos vehículos, ventana acotada, índice vehiculo+ts.
     const filas = await opts.db
       .select(seleccion)
       .from(telemetryPoints)
       .where(and(inArray(telemetryPoints.vehicleId, ids), enVentana))
       .orderBy(desc(telemetryPoints.timestampDevice))
-      .limit(maxPuntos + 1);
-    truncado = filas.length > maxPuntos;
-    usados = truncado ? filas.slice(0, maxPuntos) : filas;
-  }
-
-  let ioInvalidos = 0;
-  const puntos: PuntoSegmentacion[] = [];
-  for (const fila of usados) {
-    const vehiculo = porId.get(fila.vehicleId);
-    if (!vehiculo) {
-      continue;
-    }
-    const io = ioNumerico(fila.ioData);
-    if (io == null) {
-      ioInvalidos += 1;
-    }
-    puntos.push({
-      vehiculoId: fila.vehicleId,
-      empresaId: vehiculo.empresaId,
-      patente: vehiculo.plate,
-      capacidadEstanqueL: aNumero(vehiculo.capacidadEstanqueL ?? null),
-      fuenteCombustibleCan: fuenteDesdeFila(vehiculo.fuenteCombustibleCan),
-      // Hora del AVL, no `timestamp_recibido_en`: un buffer sin señal celular
-      // llega tarde y la ventana de robo (5 min) tiene que usar este reloj.
-      tMs: fila.timestampDevice.getTime(),
-      lat: aNumero(fila.latitude),
-      lng: aNumero(fila.longitude),
-      speedKmh: fila.speedKmh,
-      io: io ?? {},
-    });
+      .limit(tope + 1);
+    truncado = filas.length > tope;
+    const puntos: PuntoSegmentacion[] = [];
+    convertir(truncado ? filas.slice(0, tope) : filas, puntos);
+    segmentar(puntos);
   }
 
   if (ioInvalidos > 0) {
@@ -304,29 +367,21 @@ export async function leerTrayectosDeLaFlota(opts: {
     );
   }
 
-  let masAntiguo: number | null = null;
-  if (truncado) {
-    for (const punto of puntos) {
-      if (masAntiguo == null || punto.tMs < masAntiguo) {
-        masAntiguo = punto.tMs;
-      }
-    }
-  }
-
-  const todos = segmentarTrayectosTeltonika(puntos, config);
+  const todos = trayectos.sort(compararTrayectos);
+  const coberturaDesde = truncado && masAntiguo != null ? new Date(masAntiguo).toISOString() : null;
   return {
     empresaId: opts.empresaId,
     desde: opts.desde.toISOString(),
     hasta: opts.hasta.toISOString(),
     vehiculosTeltonika: vehiculos.length,
     truncado,
-    coberturaDesde: masAntiguo == null ? null : new Date(masAntiguo).toISOString(),
-    puntosLeidos: puntos.length,
+    coberturaDesde,
+    puntosLeidos,
     puntosEnVentana,
     cta: null,
     ctaSensor: todos.length > 0 && todos.every((t) => t.ctaSensor),
     ctaCapacidadEstanque: todos.some((t) => t.ctaCapacidadEstanque),
-    vehiculos: resumirCombustibleVehiculos(puntos),
+    vehiculos: combustibleVehiculos.sort((a, b) => a.patente.localeCompare(b.patente, 'es')),
     trayectos: todos,
     resumenVehiculo: opts.vehiculoId ? resumirHubVehiculo(todos) : null,
   };

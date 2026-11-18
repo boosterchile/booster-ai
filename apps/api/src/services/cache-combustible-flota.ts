@@ -15,6 +15,11 @@ import type {
  *
  * La caché no es requisito para responder. Si Redis no contesta o lo
  * guardado no sirve, se lee de la base y se registra.
+ *
+ * Dos consultas de la misma flota que llegan a la vez comparten una sola
+ * lectura: la segunda espera a la primera en vez de leer de nuevo. La
+ * lectura ocupa memoria mientras dura, y sin esto una pantalla que
+ * reintenta la duplicaba.
  */
 
 export const TTL_CACHE_COMBUSTIBLE_S = 600;
@@ -58,13 +63,9 @@ export function leerCombustibleConCache(opts: {
   ahora?: () => Date;
 }): Leer {
   const ahora = opts.ahora ?? (() => new Date());
+  const enCurso = new Map<string, Promise<LecturaTrayectosFlota>>();
 
-  return async (args: ArgsLectura): Promise<LecturaTrayectosFlota> => {
-    const redis = opts.redis;
-    if (!redis) {
-      return { ...(await opts.leer(args)), origen: 'base' };
-    }
-
+  return (args: ArgsLectura): Promise<LecturaTrayectosFlota> => {
     const tramo = Math.floor(ahora().getTime() / TRAMO_MS);
     const clave = [
       PREFIJO,
@@ -73,6 +74,23 @@ export function leerCombustibleConCache(opts: {
       args.reparto ?? 'global',
       args.maxPuntos ?? 'defecto',
     ].join(':');
+
+    const yaEnCurso = enCurso.get(clave);
+    if (yaEnCurso) {
+      return yaEnCurso;
+    }
+    const lectura = resolver(args, clave).finally(() => {
+      enCurso.delete(clave);
+    });
+    enCurso.set(clave, lectura);
+    return lectura;
+  };
+
+  async function resolver(args: ArgsLectura, clave: string): Promise<LecturaTrayectosFlota> {
+    const redis = opts.redis;
+    if (!redis) {
+      return { ...(await opts.leer(args)), origen: 'base' };
+    }
 
     try {
       const guardado = await redis.get(clave);
@@ -102,5 +120,5 @@ export function leerCombustibleConCache(opts: {
       );
     });
     return { ...lectura, origen: 'base' };
-  };
+  }
 }

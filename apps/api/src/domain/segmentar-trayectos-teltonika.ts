@@ -392,24 +392,31 @@ export function segmentarTrayectosTeltonika(
     trayectos.push(...segmentarVehiculo(delVehiculo, config));
   }
 
-  trayectos.sort((a, b) => {
-    const fin = Date.parse(b.fin) - Date.parse(a.fin);
-    if (fin !== 0) {
-      return fin;
-    }
-    const inicio = Date.parse(b.inicio) - Date.parse(a.inicio);
-    if (inicio !== 0) {
-      return inicio;
-    }
-    if (a.vehiculoId < b.vehiculoId) {
-      return -1;
-    }
-    if (a.vehiculoId > b.vehiculoId) {
-      return 1;
-    }
-    return 0;
-  });
+  trayectos.sort(compararTrayectos);
   return trayectos;
+}
+
+/**
+ * Orden del listado: el que terminó más tarde primero; a igual fin, el que
+ * empezó más tarde; a igual todo, por vehículo. Quien segmenta por tandas
+ * ordena el total con esta misma regla.
+ */
+export function compararTrayectos(a: TrayectoTeltonika, b: TrayectoTeltonika): number {
+  const fin = Date.parse(b.fin) - Date.parse(a.fin);
+  if (fin !== 0) {
+    return fin;
+  }
+  const inicio = Date.parse(b.inicio) - Date.parse(a.inicio);
+  if (inicio !== 0) {
+    return inicio;
+  }
+  if (a.vehiculoId < b.vehiculoId) {
+    return -1;
+  }
+  if (a.vehiculoId > b.vehiculoId) {
+    return 1;
+  }
+  return 0;
 }
 
 const RANGO_COMBUSTIBLE: Record<CombustibleVehiculo, number> = {
