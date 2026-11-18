@@ -1,6 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { describe, expect, it, vi } from 'vitest';
-import { listarTrayectosTeltonika } from './listar-trayectos-teltonika.js';
+import {
+  leerTrayectosDeLaFlota,
+  listarTrayectosTeltonika,
+  repartirPresupuesto,
+} from './listar-trayectos-teltonika.js';
 
 const EMPRESA = '22222222-2222-4222-8222-222222222222';
 const VEHICULO = '11111111-1111-4111-8111-111111111111';
@@ -820,5 +824,189 @@ describe('listarTrayectosTeltonika', () => {
       fuenteCombustible: 'nivel_litros',
     });
     expect(lista.vehiculos[0]?.combustible).toBe('nivel_litros');
+  });
+});
+
+describe('repartirPresupuesto', () => {
+  it('si todo cabe, cada vehículo lleva todos sus puntos', () => {
+    const cuotas = repartirPresupuesto(
+      new Map([
+        ['a', 100],
+        ['b', 300],
+      ]),
+      1_000,
+    );
+    expect(Object.fromEntries(cuotas)).toEqual({ a: 100, b: 300 });
+  });
+
+  it('si no cabe, reparte parejo y lo que un vehículo no usa pasa a los demás', () => {
+    const cuotas = repartirPresupuesto(
+      new Map([
+        ['poco', 50],
+        ['mucho', 5_000],
+        ['medio', 400],
+      ]),
+      900,
+    );
+    expect(Object.fromEntries(cuotas)).toEqual({ poco: 50, medio: 400, mucho: 450 });
+    const parejo = repartirPresupuesto(
+      new Map([
+        ['a', 5_000],
+        ['b', 5_000],
+        ['c', 5_000],
+      ]),
+      900,
+    );
+    expect(Object.fromEntries(parejo)).toEqual({ a: 300, b: 300, c: 300 });
+  });
+});
+
+describe('leerTrayectosDeLaFlota por vehículo', () => {
+  const OTRO = '33333333-3333-4333-8333-333333333333';
+  const T0 = Date.parse('2026-09-02T12:00:00.000Z');
+
+  function punto(vehicleId: string, minuto: number, io: Record<string, number>) {
+    return {
+      vehicleId,
+      timestampDevice: new Date(T0 + minuto * 60_000),
+      latitude: String(-33.45 - minuto * 0.01),
+      longitude: '-70.66',
+      speedKmh: 40,
+      ioData: io,
+    };
+  }
+
+  /** Respuestas en orden: flota, umbrales, conteos y luego una lectura por vehículo. */
+  function dbPorVehiculo(respuestas: unknown[][]) {
+    const limites: number[] = [];
+    let llamadas = 0;
+    const db = {
+      select: vi.fn(() => {
+        const filas = respuestas[llamadas] ?? [];
+        llamadas += 1;
+        const chain: Record<string, unknown> = {};
+        const self = () => chain;
+        chain.from = vi.fn(self);
+        chain.where = vi.fn(self);
+        chain.groupBy = vi.fn(self);
+        chain.orderBy = vi.fn(self);
+        chain.limit = vi.fn((n: number) => {
+          limites.push(n);
+          return Promise.resolve(filas.slice(0, n));
+        });
+        chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+          Promise.resolve(filas).then(resolve, reject);
+        return chain;
+      }),
+    };
+    return { db: db as never, limites, llamadas: () => llamadas };
+  }
+
+  const flota = [
+    {
+      id: VEHICULO,
+      plate: 'ABCD12',
+      empresaId: EMPRESA,
+      capacidadEstanqueL: null,
+      fuenteCombustibleCan: null,
+    },
+    {
+      id: OTRO,
+      plate: 'WXYZ98',
+      empresaId: EMPRESA,
+      capacidadEstanqueL: null,
+      fuenteCombustibleCan: null,
+    },
+  ];
+  const umbrales = [{ umbralRoboGolpeL: null, umbralRoboHormigaL: null }];
+  const de = (vehicleId: string, n: number) =>
+    Array.from({ length: n }, (_, i) => punto(vehicleId, n - i, { '239': 1, '240': 1 }));
+
+  it('si la ventana cabe en el presupuesto lee todo y no declara recorte', async () => {
+    const mock = dbPorVehiculo([
+      flota,
+      umbrales,
+      [
+        { vehicleId: VEHICULO, puntos: 3 },
+        { vehicleId: OTRO, puntos: 2 },
+      ],
+      de(VEHICULO, 3),
+      de(OTRO, 2),
+    ]);
+    const lectura = await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      reparto: 'por_vehiculo',
+      maxPuntos: 100,
+    });
+    expect(lectura.truncado).toBe(false);
+    expect(lectura.coberturaDesde).toBeNull();
+    expect(lectura.puntosLeidos).toBe(5);
+    expect(lectura.puntosEnVentana).toBe(5);
+    // El primer límite es el de la lectura de umbrales de la empresa.
+    expect(mock.limites.slice(1)).toEqual([3, 2]);
+    expect(lectura.trayectos.map((t) => t.patente).sort()).toEqual(['ABCD12', 'WXYZ98']);
+  });
+
+  it('si no cabe, cada vehículo conserva historia y dice desde cuándo', async () => {
+    const mock = dbPorVehiculo([
+      flota,
+      umbrales,
+      [
+        { vehicleId: VEHICULO, puntos: 50 },
+        { vehicleId: OTRO, puntos: 4 },
+      ],
+      de(VEHICULO, 50),
+      de(OTRO, 4),
+    ]);
+    const lectura = await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      reparto: 'por_vehiculo',
+      maxPuntos: 10,
+    });
+    expect(lectura.truncado).toBe(true);
+    expect(mock.limites.slice(1).sort((a, b) => a - b)).toEqual([4, 6]);
+    expect(lectura.puntosLeidos).toBe(10);
+    expect(lectura.puntosEnVentana).toBe(54);
+    expect(lectura.coberturaDesde).toBe(new Date(T0 + 1 * 60_000).toISOString());
+    expect(lectura.trayectos.map((t) => t.patente).sort()).toEqual(['ABCD12', 'WXYZ98']);
+  });
+
+  it('sin puntos en la ventana no lee por vehículo', async () => {
+    const mock = dbPorVehiculo([flota, umbrales, []]);
+    const lectura = await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      reparto: 'por_vehiculo',
+    });
+    expect(lectura.trayectos).toEqual([]);
+    expect(lectura.truncado).toBe(false);
+    expect(mock.llamadas()).toBe(3);
+  });
+
+  it('el reparto global sigue cortando por fecha y también dice desde cuándo', async () => {
+    const mock = dbPorVehiculo([flota, umbrales, de(VEHICULO, 8)]);
+    const lectura = await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      maxPuntos: 5,
+    });
+    expect(lectura.truncado).toBe(true);
+    expect(lectura.puntosLeidos).toBe(5);
+    expect(lectura.puntosEnVentana).toBeNull();
+    expect(lectura.coberturaDesde).toBe(new Date(T0 + 4 * 60_000).toISOString());
   });
 });

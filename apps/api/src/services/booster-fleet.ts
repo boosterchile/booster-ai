@@ -24,9 +24,18 @@ import {
   users,
   vehicles,
 } from '../db/schema.js';
-import { leerTrayectosDeLaFlota } from './listar-trayectos-teltonika.js';
+import { getBusinessHistogram } from '../observability/business-metrics.js';
+import { PRESUPUESTO_PUNTOS_PANEL, leerTrayectosDeLaFlota } from './listar-trayectos-teltonika.js';
 
 const MS_DIA = 86_400_000;
+
+const puntosLeidos = getBusinessHistogram('booster_fleet_puntos_leidos', {
+  description: 'Puntos de telemetría que leyó el panel de Booster Fleet en una consulta',
+});
+const duracionLectura = getBusinessHistogram('booster_fleet_lectura_combustible_ms', {
+  description: 'Duración de la lectura de combustible del panel de Booster Fleet',
+  unit: 'ms',
+});
 const TOPE_MANTENCIONES = 500;
 const ZONA_FALLBACK = 'America/Santiago';
 
@@ -83,6 +92,8 @@ export async function armarPanelBoosterFleet(opts: {
   empresaId: string;
   ahora?: Date;
   leerCombustible?: typeof leerTrayectosDeLaFlota;
+  /** Puntos de telemetría que puede leer la consulta. Por defecto, el presupuesto del panel. */
+  presupuestoPuntos?: number | undefined;
 }): Promise<PanelBoosterFleet> {
   const ahora = opts.ahora ?? new Date();
   const zona = await leerZona(opts.db, opts.empresaId);
@@ -150,13 +161,19 @@ export async function armarPanelBoosterFleet(opts: {
     .limit(TOPE_MANTENCIONES + 1);
 
   const leer = opts.leerCombustible ?? leerTrayectosDeLaFlota;
+  const inicioLectura = Date.now();
   const lectura = await leer({
     db: opts.db,
     logger: opts.logger,
     empresaId: opts.empresaId,
     desde,
     hasta,
+    reparto: 'por_vehiculo',
+    maxPuntos: opts.presupuestoPuntos ?? PRESUPUESTO_PUNTOS_PANEL,
   });
+  const resultado = lectura.truncado ? 'truncado' : 'completo';
+  duracionLectura.record(Date.now() - inicioLectura, { resultado, origen: 'base' });
+  puntosLeidos.record(lectura.puntosLeidos, { resultado });
 
   const vehiculos: VehiculoBoosterFleet[] = flota.map((fila) => ({
     id: fila.id,
@@ -189,6 +206,7 @@ export async function armarPanelBoosterFleet(opts: {
     desde: lectura.desde,
     hasta: lectura.hasta,
     truncado: lectura.truncado,
+    coberturaDesde: lectura.coberturaDesde,
     mantencionesTruncadas: filasMantencion.length > TOPE_MANTENCIONES,
     vehiculos,
     trayectos: lectura.trayectos.map((trayecto) => ({

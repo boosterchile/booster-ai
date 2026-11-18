@@ -568,3 +568,26 @@ describe('desviación en el panel', () => {
     });
   });
 });
+
+describe('cobertura de la lectura', () => {
+  it('con recorte, el panel dice desde cuándo son las cifras', () => {
+    const panel = componerPanelBoosterFleet(
+      entrada({
+        vehiculos: [vehiculo(A, 'AAAA11')],
+        trayectos: [trayecto(A)],
+        truncado: true,
+        coberturaDesde: '2026-11-14T10:00:00.000Z',
+      }),
+    );
+    expect(panel.combustible.truncado).toBe(true);
+    expect(panel.combustible.cobertura_desde).toBe('2026-11-14T10:00:00.000Z');
+    expect(panelBoosterFleetSchema.safeParse(panel).success).toBe(true);
+  });
+
+  it('con la ventana completa el campo no viene', () => {
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'AAAA11')], trayectos: [trayecto(A)] }),
+    );
+    expect('cobertura_desde' in panel.combustible).toBe(false);
+  });
+});

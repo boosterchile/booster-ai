@@ -128,6 +128,11 @@ export const panelBoosterFleetSchema = z.object({
     desde: z.string(),
     hasta: z.string(),
     truncado: z.boolean(),
+    /**
+     * Con `truncado`, el instante del punto de telemetría más antiguo que se
+     * leyó: las cifras son desde ahí. No viene si la ventana se leyó completa.
+     */
+    cobertura_desde: z.string().optional(),
     litros: z.number().nullable(),
     km: z.number().nullable(),
     litros_por_100_km: z.number().nullable(),
@@ -254,6 +259,8 @@ export interface EntradaPanelBoosterFleet {
   mantencionesTruncadas: boolean;
   vehiculos: readonly VehiculoBoosterFleet[];
   trayectos: readonly TrayectoBoosterFleet[];
+  /** Con `truncado`, desde cuándo son los puntos que se leyeron. */
+  coberturaDesde?: string | null | undefined;
   documentosVehiculo: readonly DocumentoBoosterFleet[];
   conductores: readonly ConductorBoosterFleet[];
   documentosConductor: readonly DocumentoBoosterFleet[];
@@ -572,6 +579,9 @@ function armarCombustible(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet[
     desde: entrada.desde,
     hasta: entrada.hasta,
     truncado: entrada.truncado,
+    ...(entrada.truncado && entrada.coberturaDesde
+      ? { cobertura_desde: entrada.coberturaDesde }
+      : {}),
     litros: hayLitrosFlota ? redondear1(litrosFlota) : null,
     km: kmConfiablesFlota > 0 ? redondear1(kmConfiablesFlota) : null,
     litros_por_100_km: litrosPor100(litrosConfiablesFlota, kmConfiablesFlota),
