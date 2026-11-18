@@ -268,6 +268,33 @@ describe('BoosterFleetRoute', () => {
     expect(container.textContent ?? '').not.toMatch(/robo/i);
   });
 
+  it('con recorte, el aviso dice desde cuándo son las cifras', async () => {
+    const datos = panel();
+    datos.combustible.truncado = true;
+    datos.combustible.cobertura_desde = '2026-11-14T15:30:00.000Z';
+    entrar(datos);
+    const aviso = await screen.findByText(/Las cifras de combustible son desde el/);
+    expect(aviso).toHaveTextContent('sáb 14 nov, 12:30');
+    expect(aviso).toHaveTextContent('no los 7 días completos');
+    expect(screen.queryByText(/ventana de telemetría vino cortada/)).not.toBeInTheDocument();
+  });
+
+  it('con recorte y sin la fecha, mantiene el aviso general', async () => {
+    const datos = panel();
+    datos.combustible.truncado = true;
+    entrar(datos);
+    expect(await screen.findByText(/ventana de telemetría vino cortada/)).toBeInTheDocument();
+  });
+
+  it('con la ventana completa no hay aviso', async () => {
+    const datos = panel();
+    datos.combustible.truncado = false;
+    entrar(datos);
+    await screen.findByText('Desviación');
+    expect(screen.queryByText(/Las cifras de combustible son desde el/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ventana de telemetría vino cortada/)).not.toBeInTheDocument();
+  });
+
   it('una desviación sin datos del evento lo dice en palabras', async () => {
     entrar(panel());
     expect(await screen.findByText('Desviación de combustible por analizar')).toBeInTheDocument();

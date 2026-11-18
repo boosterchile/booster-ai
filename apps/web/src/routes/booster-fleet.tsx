@@ -11,7 +11,11 @@ import {
   mensajeDe,
 } from '../components/booster-fleet/formulario-mantencion.js';
 import { MantencionesFlota } from '../components/booster-fleet/mantenciones-flota.js';
-import { formatoFecha, hallazgosDocumentales } from '../components/booster-fleet/reglas.js';
+import {
+  formatoFecha,
+  formatoFechaHora,
+  hallazgosDocumentales,
+} from '../components/booster-fleet/reglas.js';
 import { ResumenFlota } from '../components/booster-fleet/resumen-flota.js';
 import {
   type MeOnboarded,
@@ -86,6 +90,7 @@ function Controles({
   const desde = formatoFecha(panel.combustible.desde);
   const hasta = formatoFecha(panel.combustible.hasta);
   const vehiculos = panel.combustible.vehiculos;
+  const desdeCobertura = formatoFechaHora(panel.combustible.cobertura_desde ?? null);
 
   return (
     <div>
@@ -106,7 +111,9 @@ function Controles({
 
       {panel.combustible.truncado ? (
         <p className="mt-3 rounded-md border border-urgency-100 bg-warning-50 px-3 py-2 text-sm text-warning-700">
-          La ventana de telemetría vino cortada. Las cifras de combustible pueden estar incompletas.
+          {desdeCobertura
+            ? `Las cifras de combustible son desde el ${desdeCobertura}, no los 7 días completos: la flota tiene más telemetría de la que entra en una consulta.`
+            : 'La ventana de telemetría vino cortada. Las cifras de combustible pueden estar incompletas.'}
         </p>
       ) : null}
 
