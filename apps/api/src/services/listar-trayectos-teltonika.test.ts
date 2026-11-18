@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   FILAS_POR_TANDA,
   MAX_PUNTOS_POR_VEHICULO,
+  ioNumerico,
   leerTrayectosDeLaFlota,
   listarTrayectosTeltonika,
   repartirPresupuesto,
@@ -1066,6 +1067,47 @@ describe('leerTrayectosDeLaFlota por vehículo', () => {
     expect(limites.at(-1)).toBe(MAX_PUNTOS_POR_VEHICULO + 1);
   });
 
+  it('registra cuánto tomó cada fase de la lectura', async () => {
+    const info = vi.fn();
+    const conInfo = { ...(logger as never as Record<string, unknown>), info } as never as Logger;
+    const total = FILAS_POR_TANDA + 3;
+    const puntos = de(VEHICULO, total);
+    const mock = dbPorVehiculo([
+      [flota[0]],
+      umbrales,
+      [{ vehicleId: VEHICULO, puntos: total }],
+      puntos.slice(0, FILAS_POR_TANDA),
+      puntos.slice(FILAS_POR_TANDA),
+    ]);
+    await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger: conInfo,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      reparto: 'por_vehiculo',
+      maxPuntos: 400_000,
+    });
+    expect(info).toHaveBeenCalledOnce();
+    const [campos, mensaje] = info.mock.calls[0] ?? [];
+    expect(mensaje).toBe('trayectos-teltonika: lectura por fases');
+    expect(campos).toMatchObject({
+      empresaId: EMPRESA,
+      reparto: 'por_vehiculo',
+      vehiculos: 1,
+      puntosLeidos: total,
+      tandas: 2,
+    });
+    for (const fase of ['conteoMs', 'baseMs', 'conversionMs', 'segmentacionMs', 'totalMs']) {
+      expect(campos[fase]).toEqual(expect.any(Number));
+      expect(campos[fase]).toBeGreaterThanOrEqual(0);
+    }
+    // La suma de las fases no puede pasar del total.
+    expect(
+      campos.conteoMs + campos.baseMs + campos.conversionMs + campos.segmentacionMs,
+    ).toBeLessThanOrEqual(campos.totalMs + 1);
+  });
+
   it('sin puntos en la ventana no lee por vehículo', async () => {
     const mock = dbPorVehiculo([flota, umbrales, []]);
     const lectura = await leerTrayectosDeLaFlota({
@@ -1095,5 +1137,34 @@ describe('leerTrayectosDeLaFlota por vehículo', () => {
     expect(lectura.puntosLeidos).toBe(5);
     expect(lectura.puntosEnVentana).toBeNull();
     expect(lectura.coberturaDesde).toBe(new Date(T0 + 4 * 60_000).toISOString());
+  });
+});
+
+describe('ioNumerico', () => {
+  it('deja solo los valores numéricos de un IO bien formado', () => {
+    expect(ioNumerico({ '239': 1, '84': 120.5, '89': 0, nota: 'texto' })).toEqual({
+      '239': 1,
+      '84': 120.5,
+      '89': 0,
+    });
+    expect(ioNumerico({})).toEqual({});
+  });
+
+  it('un IO que no es un objeto de números o textos se descarta entero', () => {
+    for (const malo of [
+      null,
+      undefined,
+      'texto',
+      7,
+      ['no-es-objeto'],
+      { '84': null },
+      { '84': true },
+      { '84': { anidado: 1 } },
+      { '84': [1] },
+      { '84': Number.NaN },
+      { '84': Number.POSITIVE_INFINITY },
+    ]) {
+      expect(ioNumerico(malo)).toBeNull();
+    }
   });
 });
