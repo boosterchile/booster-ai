@@ -85,7 +85,8 @@ Decisiones tomadas en este PR:
 
 Criterio 6.
 
-- [ ] El aviso de telemetría cortada dice desde cuándo son las cifras.
+- [x] El aviso de telemetría cortada dice desde cuándo son las cifras, en
+      hora de Santiago. Sin la fecha, mantiene el aviso general.
 
 ## Fuera de esta serie
 
