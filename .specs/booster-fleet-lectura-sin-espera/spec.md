@@ -1,6 +1,6 @@
 # Booster Fleet — que el dueño no espere la lectura
 
-**Estado**: propuesta, pendiente de aceptación del PO · **Fecha**: 2026-11-18 · **Pedido**: PO
+**Estado**: aceptada por el PO el 2026-11-18 · **Fecha**: 2026-11-18 · **Pedido**: PO
 
 Depende de [`.specs/booster-fleet-ventana-completa/spec.md`](../booster-fleet-ventana-completa/spec.md).
 No cambia ninguna regla de combustible ni cuánta telemetría se lee: cambia
@@ -141,18 +141,18 @@ flota está en orden con datos viejos sin decir de cuándo son.
 - Más CPU para el API.
 - La tabla de trayectos ya segmentados.
 
-## 7. Decisiones que necesita el PO
+## 7. Decisiones del PO
 
-1. **Aceptar la spec**, con el cambio de contrato de §3.3.
+Tomadas el 2026-11-18, al aceptar la spec con sus propuestas:
+
+1. La spec queda aceptada, con el cambio de contrato de §3.3: los campos
+   `combustible.leido_en` y `combustible.al_dia` y el parámetro
+   `?combustible=al_dia`.
 2. **Los números:** 10 minutos para «al día» y 24 horas como tope para
-   mostrar una lectura guardada. Con un tope más corto hay más aperturas
-   que esperan; con uno más largo, cifras más viejas a la vista mientras
-   llega la nueva.
-3. **La primera apertura del día.** Con esta spec todavía espera la lectura
-   completa. Se puede cerrar con una tarea programada que lea cada cierto
-   tiempo las flotas que usan el panel; pide un job nuevo de Cloud
-   Scheduler, que es infraestructura. Propuesta: no ahora; decidirlo con
-   los datos de uso después de desplegar esto.
-4. **El objetivo de 4 s de la spec anterior.** Propuesta: darlo por
-   reemplazado por el criterio 9 de esta spec, y dejar el tiempo de la
-   lectura completa como dato que se sigue midiendo, sin objetivo.
+   mostrar una lectura guardada.
+3. **La primera apertura del día** sigue esperando la lectura completa. No
+   se agrega una tarea programada por ahora; se decide con los datos de uso
+   después de desplegar esto.
+4. **El objetivo de 4 s** de la spec de la ventana completa (§4.4) queda
+   reemplazado por el criterio 9 de esta spec. El tiempo de la lectura
+   completa se sigue midiendo, sin objetivo.
