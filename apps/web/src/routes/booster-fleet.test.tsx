@@ -240,6 +240,74 @@ describe('BoosterFleetRoute', () => {
     expect(screen.queryByText('Booster Fleet')).not.toBeInTheDocument();
   });
 
+  it('pide el panel aceptando la lectura guardada y dice a qué hora se leyó', async () => {
+    const datos = panel();
+    datos.combustible.leido_en = new Date().toISOString();
+    datos.combustible.al_dia = true;
+    entrar(datos);
+    expect(await screen.findByText(/Combustible leído a las \d\d:\d\d/)).toBeInTheDocument();
+    expect(vi.mocked(api.get).mock.calls.map((c) => c[0])).toEqual([
+      '/booster-fleet?combustible=guardada',
+    ]);
+    expect(screen.queryByText(/actualizando/)).not.toBeInTheDocument();
+  });
+
+  it('con una lectura que no está al día la muestra, pide la nueva y la reemplaza', async () => {
+    const guardada = panel();
+    guardada.combustible.leido_en = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    guardada.combustible.al_dia = false;
+    guardada.combustible.litros_por_100_km = 77.7;
+    const nueva = panel();
+    nueva.combustible.leido_en = new Date().toISOString();
+    nueva.combustible.al_dia = true;
+    nueva.combustible.litros_por_100_km = 66.6;
+    let soltar: (valor: PanelBoosterFleet) => void = () => undefined;
+    const get = vi.spyOn(api, 'get').mockImplementation((url: string) =>
+      url.includes('combustible=guardada')
+        ? Promise.resolve(guardada)
+        : new Promise((resolve) => {
+            soltar = resolve as (valor: PanelBoosterFleet) => void;
+          }),
+    );
+    providedContext = { kind: 'onboarded', me: me() };
+    wrap(<BoosterFleetRoute />);
+
+    // Las cifras guardadas quedan a la vista mientras llega la lectura nueva.
+    expect(await screen.findByText(/actualizando…/)).toBeInTheDocument();
+    expect(screen.getByText('77,7')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(get.mock.calls.map((c) => c[0])).toEqual([
+        '/booster-fleet?combustible=guardada',
+        '/booster-fleet',
+      ]),
+    );
+
+    soltar(nueva);
+    expect(await screen.findByText('66,6')).toBeInTheDocument();
+    expect(screen.queryByText(/actualizando…/)).not.toBeInTheDocument();
+    expect(screen.queryByText('77,7')).not.toBeInTheDocument();
+  });
+
+  it('si la lectura nueva falla conserva las cifras y dice de qué hora son', async () => {
+    const guardada = panel();
+    guardada.combustible.leido_en = new Date(Date.now() - 20 * 60_000).toISOString();
+    guardada.combustible.al_dia = false;
+    guardada.combustible.litros_por_100_km = 77.7;
+    vi.spyOn(api, 'get').mockImplementation((url: string) =>
+      url.includes('combustible=guardada')
+        ? Promise.resolve(guardada)
+        : Promise.reject(new Error('sin red')),
+    );
+    providedContext = { kind: 'onboarded', me: me() };
+    wrap(<BoosterFleetRoute />);
+
+    expect(
+      await screen.findByText(/No se pudo actualizar\. Estas cifras son de las \d\d:\d\d\./),
+    ).toBeInTheDocument();
+    expect(screen.getByText('77,7')).toBeInTheDocument();
+    expect(screen.queryByText(/actualizando…/)).not.toBeInTheDocument();
+  });
+
   it('un despachador ve que el control es del dueño', () => {
     const get = vi.spyOn(api, 'get');
     providedContext = { kind: 'onboarded', me: me('despachador') };

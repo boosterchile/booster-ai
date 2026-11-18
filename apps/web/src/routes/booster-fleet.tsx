@@ -15,9 +15,11 @@ import {
   formatoFecha,
   formatoFechaHora,
   hallazgosDocumentales,
+  momentoDeLectura,
 } from '../components/booster-fleet/reglas.js';
 import { ResumenFlota } from '../components/booster-fleet/resumen-flota.js';
 import {
+  type ActualizacionCombustible,
   type MeOnboarded,
   puedeVerBoosterFleet,
   usePanelBoosterFleet,
@@ -60,10 +62,10 @@ function BoosterFleetPage({ me }: { me: MeOnboarded }) {
  * y por cuál partir; combustible manda y cada hallazgo trae su acción.
  */
 function Panel() {
-  const { consulta: q, invalidar } = usePanelBoosterFleet();
+  const { consulta: q, invalidar, actualizacion } = usePanelBoosterFleet();
 
   if (q.data) {
-    return <Controles panel={q.data} onCambio={invalidar} />;
+    return <Controles panel={q.data} onCambio={invalidar} actualizacion={actualizacion} />;
   }
   return (
     <div>
@@ -81,11 +83,14 @@ function Panel() {
 function Controles({
   panel,
   onCambio,
+  actualizacion,
 }: {
   panel: PanelBoosterFleet;
   onCambio: () => Promise<void>;
+  actualizacion: ActualizacionCombustible;
 }) {
   const [programando, setProgramando] = useState(false);
+  const leido = momentoDeLectura(panel.combustible.leido_en ?? null);
   const hallazgos = hallazgosDocumentales(panel.documental);
   const desde = formatoFecha(panel.combustible.desde);
   const hasta = formatoFecha(panel.combustible.hasta);
@@ -106,6 +111,17 @@ function Controles({
           <Plus className="h-4 w-4" aria-hidden /> Programar mantención
         </Button>
       </div>
+
+      {leido ? (
+        <p
+          className={`mt-1 text-sm ${actualizacion === 'fallo' ? 'text-warning-700' : 'text-neutral-500'}`}
+          aria-live="polite"
+        >
+          {actualizacion === 'fallo'
+            ? `No se pudo actualizar. Estas cifras son ${leido.startsWith('a ') ? `de ${leido.slice(2)}` : `d${leido}`}.`
+            : `Combustible leído ${leido}${actualizacion === 'en_curso' ? ' · actualizando…' : ''}`}
+        </p>
+      ) : null}
 
       <ResumenFlota panel={panel} documentosPendientes={hallazgos.length} />
 

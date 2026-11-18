@@ -214,6 +214,30 @@ export function formatoFechaHora(iso: string | null): string | null {
   return `${p.weekday} ${p.day} ${p.month}, ${p.hour}:${p.minute}`;
 }
 
+/**
+ * Cuándo se leyó el combustible, para completar «Combustible leído …»:
+ * «a las 12:30» si fue hoy en Santiago, «el mar 17 nov, 18:02» si fue otro
+ * día. Null si el instante no es válido.
+ */
+export function momentoDeLectura(iso: string | null, ahora: Date = new Date()): string | null {
+  if (iso == null) {
+    return null;
+  }
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) {
+    return null;
+  }
+  const dia = (d: Date) => {
+    const p = partes(d, { year: 'numeric', month: '2-digit', day: '2-digit' });
+    return `${p.year}-${p.month}-${p.day}`;
+  };
+  if (dia(fecha) !== dia(ahora)) {
+    return `el ${formatoFechaHora(iso)}`;
+  }
+  const p = partes(fecha, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return `a las ${p.hour}:${p.minute}`;
+}
+
 /** «13 nov» para una fecha de calendario `AAAA-MM-DD` o un instante ISO. */
 export function formatoFecha(valor: string | null): string | null {
   if (valor == null) {

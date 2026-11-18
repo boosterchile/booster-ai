@@ -39,12 +39,24 @@ Decisiones tomadas en este PR:
 
 Criterios 6, 7 y 9.
 
-- [ ] La primera petición va con `?combustible=guardada`.
-- [ ] Siempre muestra «Combustible leído a las HH:MM», en hora de Santiago.
-- [ ] Con `al_dia` falso, muestra «actualizando…», pide el panel sin el
+- [x] La primera petición va con `?combustible=guardada`.
+- [x] Siempre muestra «Combustible leído a las HH:MM», en hora de Santiago.
+- [x] Con `al_dia` falso, muestra «actualizando…», pide el panel sin el
       parámetro y reemplaza las cifras al llegar.
-- [ ] Si esa petición falla, conserva las cifras y dice de qué hora son.
+- [x] Si esa petición falla, conserva las cifras y dice de qué hora son.
 - [ ] Medir el criterio 9 en producción después del despliegue.
+
+Decisiones tomadas en este PR:
+
+- Si la lectura es de otro día en Santiago, la línea lleva la fecha:
+  «Combustible leído el mar 17 nov, 18:02». Con solo la hora, una lectura
+  de ayer se leería como de hoy.
+- El detalle del vehículo comparte la consulta del panel y recibe la
+  lectura nueva cuando llega; no muestra la línea de la hora.
+- Visto en local el 2026-11-18 con la cuenta del seed: con la lectura
+  guardada envejecida 20 horas, la pantalla hizo las dos peticiones y quedó
+  con la lectura nueva. El estado «actualizando…» dura milisegundos en
+  local y solo quedó cubierto por test.
 
 ## Fuera de esta serie
 
