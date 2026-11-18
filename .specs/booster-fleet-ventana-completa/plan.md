@@ -48,12 +48,38 @@ Decisiones tomadas en este PR:
 
 ## PR 2 — Caché de la lectura de combustible
 
-Criterios 7 y 8, y los tiempos del 9.
+Criterios 7, 8 y 9.
 
-- [ ] Guardar la lectura por empresa y tramo de 10 minutos en Redis.
-- [ ] Con Redis caído, leer de la base y registrarlo.
-- [ ] Marcar en la métrica de duración si la lectura salió de caché.
-- [ ] Medir §4.4 con 200.000 puntos sintéticos y adjuntar la medición.
+- [x] Guardar la lectura por empresa y tramo de 10 minutos en Redis.
+- [x] Con Redis caído, leer de la base y registrarlo.
+- [x] Marcar en la métrica de duración si la lectura salió de caché.
+- [x] Medir §4.4 con 200.000 puntos sintéticos y adjuntar la medición.
+
+Medición del 2026-11-17, en el equipo de desarrollo, con Postgres y Redis
+locales: 199.998 puntos en 7 días repartidos en 3 vehículos, con un
+`io_data` de 1.130 bytes por punto (casi el doble del real).
+
+| Lectura | Tiempo |
+|---|---|
+| De la base, tres corridas | 3.058, 3.042 y 2.964 ms |
+| Desde la caché, cinco corridas | 4, 1, 1, 1 y 1 ms |
+
+Las dos cumplen los objetivos de la spec §4.4 (menos de 4 s y menos de
+300 ms). La lectura de la base queda a un segundo del límite y la medición
+no es de producción: hay que mirarla en el histograma
+`booster_fleet_lectura_combustible_ms` después del primer despliegue. El
+valor guardado pesó 132 KB.
+
+Decisiones tomadas en este PR:
+
+- La clave lleva la empresa, el tramo de 10 minutos, el reparto y el
+  presupuesto. No lleva datos de la flota.
+- Lo guardado se valida antes de usarlo. Si no tiene forma de lectura o es
+  de otra empresa, se descarta y se lee de la base.
+- El guardado no se espera: la respuesta no depende de Redis.
+- Se reutiliza la conexión Redis que el API ya tiene; no se abre otra.
+- La caché envuelve solo al panel. El listado de trayectos y el detalle del
+  vehículo leen siempre de la base.
 
 ## PR 3 — La pantalla dice desde cuándo
 
