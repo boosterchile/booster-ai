@@ -85,6 +85,48 @@ describe('leerCombustibleConCache', () => {
     expect(TTL_CACHE_COMBUSTIBLE_S).toBe(600);
   });
 
+  it('dos consultas a la vez de la misma empresa comparten una sola lectura', async () => {
+    const redis = redisEnMemoria();
+    const { logger } = loggerEspia();
+    let soltar: (valor: LecturaTrayectosFlota) => void = () => undefined;
+    const leer = vi.fn(
+      () =>
+        new Promise<LecturaTrayectosFlota>((resolve) => {
+          soltar = resolve;
+        }),
+    );
+    const lector = leerCombustibleConCache({ redis, leer, ahora: () => new Date(T0) });
+
+    const primera = lector({ ...args(), logger });
+    const segunda = lector({ ...args(), logger });
+    await vi.waitFor(() => expect(leer).toHaveBeenCalled());
+    await Promise.resolve();
+    soltar(lectura(EMPRESA, 'compartida'));
+    const [a, b] = await Promise.all([primera, segunda]);
+
+    expect(leer).toHaveBeenCalledOnce();
+    expect(a.desde).toBe('compartida');
+    expect(b.desde).toBe('compartida');
+  });
+
+  it('una lectura que falla no deja pegada la siguiente', async () => {
+    const { logger } = loggerEspia();
+    const leer = vi
+      .fn<() => Promise<LecturaTrayectosFlota>>()
+      .mockRejectedValueOnce(new Error('base caída'))
+      .mockResolvedValueOnce(lectura(EMPRESA, 'segunda'));
+    const lector = leerCombustibleConCache({
+      redis: redisEnMemoria(),
+      leer,
+      ahora: () => new Date(T0),
+    });
+
+    await expect(lector({ ...args(), logger })).rejects.toThrow('base caída');
+    const despues = await lector({ ...args(), logger });
+    expect(despues.desde).toBe('segunda');
+    expect(leer).toHaveBeenCalledTimes(2);
+  });
+
   it('el tramo siguiente, otra empresa u otro presupuesto leen de nuevo', async () => {
     const redis = redisEnMemoria();
     const { logger } = loggerEspia();

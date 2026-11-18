@@ -88,6 +88,50 @@ Criterio 6.
 - [x] El aviso de telemetría cortada dice desde cuándo son las cifras, en
       hora de Santiago. Sin la fecha, mantiene el aviso general.
 
+## PR 4 — La lectura no agota la memoria del API
+
+Corrección posterior al primer despliegue (2026-11-18).
+
+Al abrir el panel de una flota con unos 198.000 puntos en la semana, el API
+se quedó sin memoria y el contenedor se cayó, tres veces. La lectura del
+PR 1 traía los puntos de cada vehículo en consultas separadas, pero los
+juntaba todos antes de segmentar. El API corre con un heap de unos 500 MB.
+La medición del PR 2 se hizo sin ese tope y no lo vio.
+
+- [x] Cada vehículo se segmenta al terminar de leerlo y sus puntos se
+      sueltan. Queda en memoria un vehículo a la vez.
+- [x] Las filas de un vehículo se piden por tandas de 5.000, del más
+      reciente hacia atrás.
+- [x] Tope de 40.000 puntos por vehículo y por lectura. El que lo supera se
+      recorta a sus puntos más recientes y la lectura queda marcada, igual
+      que cuando no alcanza el presupuesto. Vale también para la lectura de
+      un solo vehículo.
+- [x] Dos consultas simultáneas de la misma flota comparten una lectura.
+- [x] Tests primero, con el rojo en la Evidencia del PR.
+
+Medición del 2026-11-18, con los mismos 199.998 puntos sintéticos en 3
+vehículos, limitando el heap de Node:
+
+| Heap | Antes | Después |
+|---|---|---|
+| 512 MB | se cae sin memoria | lee en 0,9 a 1,3 s |
+| 256 MB | se cae | lee en 1,0 s |
+| 160 MB | se cae | se cae |
+
+Con 3 vehículos de 66.666 puntos, el tope deja 120.000 leídos y la lectura
+queda marcada como recortada. Un camión real genera unos 25.000 por semana.
+
+Decisiones tomadas en este PR:
+
+- El tope por vehículo es lo que acota la memoria; el presupuesto de la
+  flota sigue acotando el tiempo de lectura.
+- Las tandas avanzan por instante. Un vehículo no repite instante (la base
+  lo impide por IMEI), así que no se pierde ni se repite un punto.
+- El orden de los trayectos sale de una sola regla, `compararTrayectos`,
+  que usan el segmentador y la lectura por tandas.
+- La medición de memoria no queda como test automático: depende del heap
+  del proceso. Queda la regla de medir con `--max-old-space-size=512`.
+
 ## Fuera de esta serie
 
 - La tabla de trayectos ya segmentados (spec §7).

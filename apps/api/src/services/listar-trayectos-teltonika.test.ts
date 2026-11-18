@@ -1,6 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  FILAS_POR_TANDA,
+  MAX_PUNTOS_POR_VEHICULO,
   leerTrayectosDeLaFlota,
   listarTrayectosTeltonika,
   repartirPresupuesto,
@@ -977,6 +979,91 @@ describe('leerTrayectosDeLaFlota por vehículo', () => {
     expect(lectura.puntosEnVentana).toBe(54);
     expect(lectura.coberturaDesde).toBe(new Date(T0 + 1 * 60_000).toISOString());
     expect(lectura.trayectos.map((t) => t.patente).sort()).toEqual(['ABCD12', 'WXYZ98']);
+  });
+
+  it('un vehículo no trae más que su tope, aunque el presupuesto alcance', async () => {
+    const mock = dbPorVehiculo([
+      [flota[0]],
+      umbrales,
+      [{ vehicleId: VEHICULO, puntos: MAX_PUNTOS_POR_VEHICULO + 10 }],
+      de(VEHICULO, 3),
+    ]);
+    const lectura = await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      reparto: 'por_vehiculo',
+      maxPuntos: 400_000,
+    });
+    // Tenía más puntos que el tope: la lectura lo dice aunque el presupuesto sobrara.
+    expect(lectura.truncado).toBe(true);
+    expect(lectura.coberturaDesde).not.toBeNull();
+    // Nunca pide a la base más de una tanda de filas.
+    expect(Math.max(...mock.limites.slice(1))).toBeLessThanOrEqual(FILAS_POR_TANDA);
+  });
+
+  it('lee cada vehículo por tandas y segmenta igual que de una vez', async () => {
+    const total = FILAS_POR_TANDA * 2 + 7;
+    const puntos = de(VEHICULO, total);
+    const mock = dbPorVehiculo([
+      [flota[0]],
+      umbrales,
+      [{ vehicleId: VEHICULO, puntos: total }],
+      puntos.slice(0, FILAS_POR_TANDA),
+      puntos.slice(FILAS_POR_TANDA, FILAS_POR_TANDA * 2),
+      puntos.slice(FILAS_POR_TANDA * 2),
+    ]);
+    const lectura = await leerTrayectosDeLaFlota({
+      db: mock.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      reparto: 'por_vehiculo',
+      maxPuntos: 400_000,
+    });
+    expect(mock.limites.slice(1)).toEqual([FILAS_POR_TANDA, FILAS_POR_TANDA, 7]);
+    expect(lectura.puntosLeidos).toBe(total);
+    expect(lectura.truncado).toBe(false);
+
+    const deUnaVez = await leerTrayectosDeLaFlota({
+      db: makeDb([flota[0]], puntos).db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      maxPuntos: 400_000,
+    });
+    expect(lectura.trayectos).toEqual(deUnaVez.trayectos);
+    expect(lectura.vehiculos).toEqual(deUnaVez.vehiculos);
+  });
+
+  it('la lectura de un solo vehículo también respeta el tope', async () => {
+    const limites: number[] = [];
+    let llamadas = 0;
+    const db = {
+      select: vi.fn(() => {
+        llamadas += 1;
+        const filas = llamadas === 1 ? [flota[0]] : llamadas === 2 ? umbrales : de(VEHICULO, 3);
+        const chain = cadena(filas);
+        chain.limit = vi.fn(async (n: number) => {
+          limites.push(n);
+          return filas;
+        });
+        return chain;
+      }),
+    } as never;
+    await leerTrayectosDeLaFlota({
+      db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      vehiculoId: VEHICULO,
+    });
+    expect(limites.at(-1)).toBe(MAX_PUNTOS_POR_VEHICULO + 1);
   });
 
   it('sin puntos en la ventana no lee por vehículo', async () => {
