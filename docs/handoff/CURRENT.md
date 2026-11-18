@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod; rediseño completo en `main`, sin desplegar).  
+**Última actualización**: 2026-11-17 · America/Santiago (Booster Fleet en prod; rediseño y lectura completa de 7 días en `main`, sin desplegar).  
 **Prod**: `b9f512d0` (Release on request [44088137366](https://github.com/boosterchile/booster-ai/actions/runs/44088137366) SUCCESS; Cloud Build `7897c23a`) — api `booster-ai-api-00486-brt` @ **100 %**, web `00428-f8j` @ 100 %. Incluye Booster Fleet (#1002) + disparador release-on-request (#1003).  
-**`main`**: tip `bb70fd70` (#1015). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos), #1008 (web, textos de combustible), #1011 (api, hora, litros y lugar de la desviación), #1012 (web, overview nuevo de Booster Fleet), #1013 (web, detalle del vehículo) y #1015 (web, correcciones del detalle y del overview). #1004, #1005, #1007, #1009 y #1010 no cambian producto.  
+**`main`**: tip `23b1e80d` (#1020). Pendiente de deploy respecto de prod: #1006 (api, resumen de costos), #1008 (web, textos de combustible), #1011 (api, hora, litros y lugar de la desviación), #1012 (web, overview nuevo de Booster Fleet), #1013 (web, detalle del vehículo), #1015 (web, correcciones del detalle y del overview), #1018 (api, lectura completa de 7 días), #1019 (api, caché de la lectura) y #1020 (web, aviso de recorte). #1004, #1005, #1007, #1009 y #1010 no cambian producto.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,7 +15,7 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `bb70fd70` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos + #1011 contrato de la desviación + #1012 overview + #1013 detalle + #1015 correcciones |
+| `main` | `23b1e80d` | Lo de prod + #1004 guardas + #1006 costos + #1008 textos + #1011 contrato de la desviación + #1012 overview + #1013 detalle + #1015 correcciones + #1018 a #1020 lectura completa |
 | Prod | `b9f512d0` | Imagen de #1003; api/web al 100 %; canary 30 min OK |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -73,6 +73,10 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 - [#1013](https://github.com/boosterchile/booster-ai/pull/1013), en `main`: detalle del vehículo en `/app/booster-fleet/vehiculos/$id`.
 
 Nada del rediseño está en prod. **Visto en local con una desviación sembrada** (2026-11-17): se cargaron en la base de desarrollo puntos de telemetría del camión del seed E2E con una baja de nivel con el camión detenido, y la desviación pasó por el segmentador del API hasta el overview y el detalle, con su hora, sus litros y sus coordenadas. Al verla aparecieron tres fallas que corrigió [#1015](https://github.com/boosterchile/booster-ai/pull/1015), en `main`: el detalle no mostraba los trayectos sin dato de combustible, la fila de la desviación se partía en dos líneas y el nivel de estanque se leía mal. **Falta ver:** el mapa del evento (el entorno local no tiene clave de Google Maps), un camión sin lectura y con trayectos en el detalle (solo cubierto por test) y todo el rediseño con telemetría de producción. El nombre del lugar en palabras (C3 de la spec) no entra: se muestran coordenadas y el mapa.
+
+**Lectura completa de 7 días** (spec aceptada el 2026-11-17, `.specs/booster-fleet-ventana-completa/`; plan en `plan.md`). El panel decía «últimos 7 días» y leía los 20.000 puntos más recientes de toda la flota. Medido en prod en solo lectura: las dos flotas con telemetría superan ese tope, y en la más grande (8 camiones, unos 198.000 puntos por semana) el panel alcanzaba a leer unas 6,4 horas. Tres PRs, los tres en `main` y sin desplegar: [#1018](https://github.com/boosterchile/booster-ai/pull/1018) lee por vehículo solo los AVL que usa el segmentador, con un presupuesto de 400.000 puntos (`BOOSTER_FLEET_PRESUPUESTO_PUNTOS`) y el campo nuevo `combustible.cobertura_desde`; [#1019](https://github.com/boosterchile/booster-ai/pull/1019) guarda esa lectura en Redis por 10 minutos y lee de la base si Redis falla; [#1020](https://github.com/boosterchile/booster-ai/pull/1020) hace que el aviso de recorte diga desde cuándo son las cifras. **Para mirar después del deploy:** el histograma `booster_fleet_lectura_combustible_ms`; en local, con 200.000 puntos sintéticos, la lectura de la base tomó unos 3 s contra un objetivo de 4 s, y desde la caché entre 1 y 4 ms. **Pendiente de decisión del PO:** si `cobertura_desde` informa el punto más antiguo leído (como está) o la fecha desde la que todos los camiones están completos; solo importa cuando una flota supera el presupuesto.
+
+**Configuración de la flota más grande** (prod, solo lectura, 2026-11-17): de sus 12 vehículos activos, 4 no tienen Teltonika y 6 están configurados sin sensor de combustible, aunque 3 de esos envían nivel o consumo. Solo 2 tienen fuente y capacidad de estanque, y usan consumo acumulado, que no sirve para detectar una baja con el camión detenido. Con esa configuración el panel no puede mostrarle una desviación a esa flota. Se corrige configurando la fuente y la capacidad de cada camión, no con código.
 
 ## Agente
 
