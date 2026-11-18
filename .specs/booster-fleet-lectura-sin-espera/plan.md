@@ -44,7 +44,18 @@ Criterios 6, 7 y 9.
 - [x] Con `al_dia` falso, muestra «actualizando…», pide el panel sin el
       parámetro y reemplaza las cifras al llegar.
 - [x] Si esa petición falla, conserva las cifras y dice de qué hora son.
-- [ ] Medir el criterio 9 en producción después del despliegue.
+- [x] Medir el criterio 9 en producción después del despliegue.
+
+Medición del 2026-11-18 en producción, con la flota más grande (8 vehículos,
+unos 205.000 puntos), leída de los registros del API:
+
+| Petición | Lectura guardada | Tiempo |
+|---|---|---|
+| `?combustible=guardada`, primera apertura | no había | 9,2 s |
+| `?combustible=guardada`, 57 minutos después | de 57 minutos | 0,75 s |
+| Sin parámetro, la que pide la pantalla para refrescar | no sirve | 8,8 s |
+
+El criterio 9 (menos de 1 s con una lectura guardada) se cumple.
 
 Decisiones tomadas en este PR:
 
