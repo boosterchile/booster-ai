@@ -106,6 +106,51 @@ describe('armarPanelBoosterFleet', () => {
     );
     // Sin recorte, el panel no dice desde cuándo aunque la lectura lo traiga.
     expect('cobertura_desde' in panel.combustible).toBe(false);
+    // Una lectura directa de la base es de este instante y está al día.
+    expect(panel.combustible.leido_en).toBe(AHORA.toISOString());
+    expect(panel.combustible.al_dia).toBe(true);
+    expect(leer).toHaveBeenCalledWith(expect.objectContaining({ aceptarGuardada: false }));
+  });
+
+  it('pasa al panel la hora de una lectura guardada y la acepta si se pide', async () => {
+    const db = dbCon([
+      [{ timezone: 'America/Santiago' }],
+      [{ id: VEHICULO, patente: 'AAAA11', estado: 'activo', teltonikaImei: null }],
+      [],
+      [],
+      [],
+      [],
+    ]);
+    const leer = vi.fn(async () => ({
+      empresaId: EMPRESA,
+      desde: '2026-11-10T12:00:00.000Z',
+      hasta: '2026-11-17T12:00:00.000Z',
+      vehiculosTeltonika: 0,
+      truncado: false,
+      cta: null,
+      ctaSensor: false,
+      ctaCapacidadEstanque: false,
+      vehiculos: [],
+      trayectos: [],
+      resumenVehiculo: null,
+      coberturaDesde: null,
+      puntosLeidos: 0,
+      puntosEnVentana: null,
+      origen: 'cache' as const,
+      leidoEn: '2026-11-17T12:00:00.000Z',
+      alDia: false,
+    }));
+    const panel = await armarPanelBoosterFleet({
+      db: db as never,
+      logger,
+      empresaId: EMPRESA,
+      ahora: AHORA,
+      leerCombustible: leer,
+      combustibleGuardado: true,
+    });
+    expect(panel.combustible.leido_en).toBe('2026-11-17T12:00:00.000Z');
+    expect(panel.combustible.al_dia).toBe(false);
+    expect(leer).toHaveBeenCalledWith(expect.objectContaining({ aceptarGuardada: true }));
   });
 
   it('sin zona guardada usa America/Santiago y marca el tope de mantenciones', async () => {

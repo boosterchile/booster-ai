@@ -144,6 +144,10 @@ export interface LecturaTrayectosFlota {
   puntosEnVentana: number | null;
   /** Lo completa la caché de combustible: de dónde salió esta lectura. */
   origen?: 'cache' | 'base' | undefined;
+  /** Lo completa la caché de combustible: cuándo se hizo esta lectura. */
+  leidoEn?: string | undefined;
+  /** Lo completa la caché de combustible: si la lectura tiene menos de 10 minutos. */
+  alDia?: boolean | undefined;
   cta: 'vincular_teltonika' | null;
   ctaSensor: boolean;
   ctaCapacidadEstanque: boolean;
@@ -167,6 +171,11 @@ export async function leerTrayectosDeLaFlota(opts: {
   maxPuntos?: number;
   vehiculoId?: string | undefined;
   reparto?: RepartoPuntos;
+  /**
+   * Lo lee la caché de combustible: aceptar una lectura guardada de más de
+   * 10 minutos. Esta función lee siempre de la base y no lo usa.
+   */
+  aceptarGuardada?: boolean | undefined;
 }): Promise<LecturaTrayectosFlota> {
   const reparto = opts.reparto ?? 'global';
   // Un solo vehículo no compite con nadie: lee su ventana hasta el presupuesto.

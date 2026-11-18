@@ -39,6 +39,12 @@ const ROLES = new Set(['dueno', 'admin']);
 
 const idSchema = z.object({ id: z.string().uuid() });
 
+/**
+ * `combustible=guardada`: aceptar la última lectura guardada aunque tenga
+ * más de 10 minutos. Sin el parámetro el panel responde con una al día.
+ */
+const consultaPanelSchema = z.object({ combustible: z.enum(['guardada']).optional() });
+
 const consultas = getBusinessCounter('booster_fleet_consultas_total');
 const cambios = getBusinessCounter('booster_fleet_mantenciones_total');
 
@@ -93,6 +99,12 @@ export function createBoosterFleetRoutes(opts: {
       consultas.add(1, { resultado: 'forbidden' });
       return auth.response;
     }
+    const consulta = consultaPanelSchema.safeParse({ combustible: c.req.query('combustible') });
+    if (!consulta.success) {
+      consultas.add(1, { resultado: 'invalida' });
+      return c.json({ error: 'invalid_query', code: 'combustible_invalido' }, 400);
+    }
+    const combustibleGuardado = consulta.data.combustible === 'guardada';
     return await withBusinessSpan(
       { name: 'booster_fleet.panel', attributes: { 'booster.empresa_id': auth.empresaId } },
       async (span) => {
@@ -104,6 +116,7 @@ export function createBoosterFleetRoutes(opts: {
             ahora: ahora(),
             presupuestoPuntos: opts.presupuestoPuntos,
             leerCombustible,
+            combustibleGuardado,
           }),
         );
         consultas.add(1, { resultado: panel.combustible.truncado ? 'truncado' : 'ok' });
@@ -111,6 +124,7 @@ export function createBoosterFleetRoutes(opts: {
           'booster.fleet.vehiculos': panel.combustible.vehiculos.length,
           'booster.fleet.alertas_combustible': panel.combustible.con_alerta,
           'booster.fleet.combustible_truncado': panel.combustible.truncado,
+          'booster.fleet.combustible_al_dia': panel.combustible.al_dia ?? true,
           'booster.fleet.documentos_vehiculo': panel.documental.vehiculos_con_hallazgo,
           'booster.fleet.documentos_conductor': panel.documental.conductores_con_hallazgo,
           'booster.fleet.mantenciones_vencidas': panel.mantenciones.vencidas,

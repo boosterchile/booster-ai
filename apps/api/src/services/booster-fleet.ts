@@ -94,6 +94,8 @@ export async function armarPanelBoosterFleet(opts: {
   leerCombustible?: typeof leerTrayectosDeLaFlota;
   /** Puntos de telemetría que puede leer la consulta. Por defecto, el presupuesto del panel. */
   presupuestoPuntos?: number | undefined;
+  /** Aceptar una lectura de combustible guardada de más de 10 minutos. */
+  combustibleGuardado?: boolean | undefined;
 }): Promise<PanelBoosterFleet> {
   const ahora = opts.ahora ?? new Date();
   const zona = await leerZona(opts.db, opts.empresaId);
@@ -170,11 +172,16 @@ export async function armarPanelBoosterFleet(opts: {
     hasta,
     reparto: 'por_vehiculo',
     maxPuntos: opts.presupuestoPuntos ?? PRESUPUESTO_PUNTOS_PANEL,
+    aceptarGuardada: opts.combustibleGuardado ?? false,
   });
+  // Una lectura que no pasó por la caché es de este instante.
+  const leidoEn = lectura.leidoEn ?? ahora.toISOString();
+  const alDia = lectura.alDia ?? true;
   const resultado = lectura.truncado ? 'truncado' : 'completo';
   duracionLectura.record(Date.now() - inicioLectura, {
     resultado,
     origen: lectura.origen ?? 'base',
+    al_dia: alDia,
   });
   puntosLeidos.record(lectura.puntosLeidos, { resultado });
 
@@ -210,6 +217,8 @@ export async function armarPanelBoosterFleet(opts: {
     hasta: lectura.hasta,
     truncado: lectura.truncado,
     coberturaDesde: lectura.coberturaDesde,
+    leidoEn,
+    alDia,
     mantencionesTruncadas: filasMantencion.length > TOPE_MANTENCIONES,
     vehiculos,
     trayectos: lectura.trayectos.map((trayecto) => ({

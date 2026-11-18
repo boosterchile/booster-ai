@@ -119,6 +119,24 @@ describe('GET /booster-fleet', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { configuracion: { nombre: string } };
     expect(body.configuracion.nombre).toBe('Booster Fleet');
+    expect(armarPanelBoosterFleet).toHaveBeenCalledWith(
+      expect.objectContaining({ combustibleGuardado: false }),
+    );
+  });
+
+  it('con combustible=guardada acepta la lectura guardada', async () => {
+    vi.mocked(armarPanelBoosterFleet).mockResolvedValue(panel);
+    const res = await appDe().request('/?combustible=guardada');
+    expect(res.status).toBe(200);
+    expect(armarPanelBoosterFleet).toHaveBeenCalledWith(
+      expect.objectContaining({ combustibleGuardado: true }),
+    );
+  });
+
+  it('un valor desconocido en combustible responde 400 sin leer nada', async () => {
+    const res = await appDe().request('/?combustible=cualquiera');
+    expect(res.status).toBe(400);
+    expect(armarPanelBoosterFleet).not.toHaveBeenCalled();
   });
 });
 
