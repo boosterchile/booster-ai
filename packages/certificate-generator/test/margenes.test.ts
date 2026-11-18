@@ -91,8 +91,8 @@ describe.each(Object.keys(CASOS))('márgenes — caso %s', (caso) => {
 });
 
 describe('contenido hasta el pie', () => {
-  // Un test por caso: con coverage en CI cada PDF tarda 1–2 s y los 16 en un
-  // solo test pasaban el timeout de 30 s.
+  // Un test por caso: con coverage en CI los 16 PDF en un solo test pasaban
+  // el límite por test (ver `LIMITE_TEST_PDF_MS`).
   let minimo = Number.POSITIVE_INFINITY;
   it.each(casosLlenos().map((p, k) => [k, p] as const))(
     'origen con %i bloques extra: ningún bloque baja de TOPE_PIE',
