@@ -591,3 +591,28 @@ describe('cobertura de la lectura', () => {
     expect('cobertura_desde' in panel.combustible).toBe(false);
   });
 });
+
+describe('vigencia de la lectura de combustible', () => {
+  it('el panel dice cuándo se leyó el combustible y si está al día', () => {
+    const panel = componerPanelBoosterFleet(
+      entrada({
+        vehiculos: [vehiculo(A, 'AAAA11')],
+        trayectos: [trayecto(A)],
+        leidoEn: '2026-11-18T12:00:00.000Z',
+        alDia: false,
+      }),
+    );
+    expect(panel.combustible.leido_en).toBe('2026-11-18T12:00:00.000Z');
+    expect(panel.combustible.al_dia).toBe(false);
+    expect(panelBoosterFleetSchema.safeParse(panel).success).toBe(true);
+  });
+
+  it('sin ese dato los campos no vienen y el panel sigue siendo válido', () => {
+    const panel = componerPanelBoosterFleet(
+      entrada({ vehiculos: [vehiculo(A, 'AAAA11')], trayectos: [trayecto(A)] }),
+    );
+    expect('leido_en' in panel.combustible).toBe(false);
+    expect('al_dia' in panel.combustible).toBe(false);
+    expect(panelBoosterFleetSchema.safeParse(panel).success).toBe(true);
+  });
+});

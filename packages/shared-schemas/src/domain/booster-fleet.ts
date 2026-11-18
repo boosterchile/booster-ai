@@ -133,6 +133,14 @@ export const panelBoosterFleetSchema = z.object({
      * leyó: las cifras son desde ahí. No viene si la ventana se leyó completa.
      */
     cobertura_desde: z.string().optional(),
+    /** Instante en que se hizo la lectura de combustible que se muestra. */
+    leido_en: z.string().optional(),
+    /**
+     * Falso si esa lectura tiene más de 10 minutos. Solo pasa cuando se
+     * pidió con `?combustible=guardada`: la pantalla la muestra mientras
+     * pide una al día.
+     */
+    al_dia: z.boolean().optional(),
     litros: z.number().nullable(),
     km: z.number().nullable(),
     litros_por_100_km: z.number().nullable(),
@@ -261,6 +269,10 @@ export interface EntradaPanelBoosterFleet {
   trayectos: readonly TrayectoBoosterFleet[];
   /** Con `truncado`, desde cuándo son los puntos que se leyeron. */
   coberturaDesde?: string | null | undefined;
+  /** Cuándo se hizo la lectura de combustible. */
+  leidoEn?: string | undefined;
+  /** Si esa lectura tiene menos de 10 minutos. */
+  alDia?: boolean | undefined;
   documentosVehiculo: readonly DocumentoBoosterFleet[];
   conductores: readonly ConductorBoosterFleet[];
   documentosConductor: readonly DocumentoBoosterFleet[];
@@ -582,6 +594,8 @@ function armarCombustible(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet[
     ...(entrada.truncado && entrada.coberturaDesde
       ? { cobertura_desde: entrada.coberturaDesde }
       : {}),
+    ...(entrada.leidoEn ? { leido_en: entrada.leidoEn } : {}),
+    ...(entrada.alDia === undefined ? {} : { al_dia: entrada.alDia }),
     litros: hayLitrosFlota ? redondear1(litrosFlota) : null,
     km: kmConfiablesFlota > 0 ? redondear1(kmConfiablesFlota) : null,
     litros_por_100_km: litrosPor100(litrosConfiablesFlota, kmConfiablesFlota),
