@@ -172,7 +172,10 @@ export async function armarPanelBoosterFleet(opts: {
     maxPuntos: opts.presupuestoPuntos ?? PRESUPUESTO_PUNTOS_PANEL,
   });
   const resultado = lectura.truncado ? 'truncado' : 'completo';
-  duracionLectura.record(Date.now() - inicioLectura, { resultado, origen: 'base' });
+  duracionLectura.record(Date.now() - inicioLectura, {
+    resultado,
+    origen: lectura.origen ?? 'base',
+  });
   puntosLeidos.record(lectura.puntosLeidos, { resultado });
 
   const vehiculos: VehiculoBoosterFleet[] = flota.map((fila) => ({

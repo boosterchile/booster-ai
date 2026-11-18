@@ -16,6 +16,11 @@ import {
   cerrarMantencion,
   programarMantencion,
 } from '../services/booster-fleet.js';
+import {
+  type RedisCombustible,
+  leerCombustibleConCache,
+} from '../services/cache-combustible-flota.js';
+import { leerTrayectosDeLaFlota } from '../services/listar-trayectos-teltonika.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -43,9 +48,17 @@ export function createBoosterFleetRoutes(opts: {
   ahora?: () => Date;
   /** Puntos de telemetría por consulta del panel. Sale de la configuración. */
   presupuestoPuntos?: number | undefined;
+  /** Redis para la caché de combustible. Sin él, el panel lee siempre de la base. */
+  redis?: RedisCombustible | undefined;
+  leerCombustible?: typeof leerTrayectosDeLaFlota;
 }): Hono {
   const app = new Hono();
   const ahora = opts.ahora ?? (() => new Date());
+  const leerCombustible = leerCombustibleConCache({
+    redis: opts.redis,
+    leer: opts.leerCombustible ?? leerTrayectosDeLaFlota,
+    ahora,
+  });
 
   function requireDuenoAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
@@ -90,6 +103,7 @@ export function createBoosterFleetRoutes(opts: {
             empresaId: auth.empresaId,
             ahora: ahora(),
             presupuestoPuntos: opts.presupuestoPuntos,
+            leerCombustible,
           }),
         );
         consultas.add(1, { resultado: panel.combustible.truncado ? 'truncado' : 'ok' });

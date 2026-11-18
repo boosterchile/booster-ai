@@ -119,6 +119,8 @@ export interface LecturaTrayectosFlota {
   puntosLeidos: number;
   /** Puntos que había en la ventana. Solo se cuenta en el reparto por vehículo. */
   puntosEnVentana: number | null;
+  /** Lo completa la caché de combustible: de dónde salió esta lectura. */
+  origen?: 'cache' | 'base' | undefined;
   cta: 'vincular_teltonika' | null;
   ctaSensor: boolean;
   ctaCapacidadEstanque: boolean;

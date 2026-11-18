@@ -1138,6 +1138,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         presupuestoPuntos: config.BOOSTER_FLEET_PRESUPUESTO_PUNTOS,
+        redis: redisForRateLimit,
       }),
     );
 
