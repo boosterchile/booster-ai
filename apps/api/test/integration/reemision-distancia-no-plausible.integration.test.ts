@@ -48,7 +48,8 @@ const CONFIG = {
   verifyBaseUrl: 'https://api.test',
 };
 const EMITIDO_V1 = new Date('2026-11-16T02:32:02Z');
-const EMITIDO_V2 = new Date('2026-11-19T12:00:00Z');
+// Posterior a cualquier corrida: la corrección se registra con la hora real y la v2 debe ser posterior.
+const EMITIDO_V2 = new Date('2099-01-01T12:00:00Z');
 const t = (iso: string) => new Date(iso);
 const FACTORES =
   'GLEC Framework v2.0 (2019), ISBN 978-90-82-68790-3, Módulo 1, Tabla 32 (EU), p. 87 (defaults para tipo: camion_mediano)';
