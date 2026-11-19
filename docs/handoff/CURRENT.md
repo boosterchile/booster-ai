@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-18 · America/Santiago (Booster Fleet en prod con el rediseño, la lectura completa de 7 días y la lectura sin espera; falta verlo con sesión. Reemisión por distancia no plausible en PR, pendiente del visto del PO).  
-**Prod**: `21532312` (Release [44387563129](https://github.com/boosterchile/booster-ai/actions/runs/44387563129) SUCCESS, terminó el 2026-11-18 a las 17:50) — api `booster-ai-api-00490-g94` @ **100 %**, web `00432-tj2` @ 100 %; los 8 servicios en esa imagen. Cuarto release del día: 09:53 (`cbe37242`, rediseño y lectura completa), 12:13 (`5eaf4d38`, corrección de memoria #1023), 15:12 (`43df7972`, registro por fases #1025) y este, con la lectura sin espera (#1027 y #1028). Sin migraciones.  
-**`main`**: tip `21532312` (#1028), igual a prod. Nada pendiente de deploy.  
+**Última actualización**: 2026-11-18 · America/Santiago (Booster Fleet en prod con el rediseño, la lectura completa de 7 días y la lectura sin espera; falta verlo con sesión. Reemisión por distancia no plausible en prod con la migración 0087; falta el paso 2).  
+**Prod**: `2e6e2c67` (Release [44436488143](https://github.com/boosterchile/booster-ai/actions/runs/44436488143) SUCCESS, terminó el 2026-11-18 a las 23:18) — api `booster-ai-api-00491-q9d` @ **100 %**, web `00433-7pj` @ 100 %; los 8 servicios en esa imagen. Quinto release del día: 09:53 (`cbe37242`, rediseño y lectura completa), 12:13 (`5eaf4d38`, corrección de memoria #1023), 15:12 (`43df7972`, registro por fases #1025), 17:50 (`21532312`, lectura sin espera #1027 y #1028) y este, con la reemisión por distancia no plausible (#1031), el corte lineal de palabras largas del certificado (#876) y el límite de 90 s de sus tests (#1030). Migración 0087 aplicada.  
+**`main`**: tip `2e6e2c67` (#1031), igual a prod salvo este handoff. Nada pendiente de deploy.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,11 +15,11 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `21532312` | Igual a prod |
-| Prod | `21532312` | Release 44387563129; los 8 servicios al 100 % en su última revisión |
+| `main` | `2e6e2c67` | Igual a prod salvo este handoff |
+| Prod | `2e6e2c67` | Release 44436488143; los 8 servicios al 100 % en su última revisión |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
-**Smoke (2026-11-18, tras el cuarto release):** sin errores del api desde el deploy. `/booster-fleet` con la pantalla nueva: 200 en las tres peticiones medidas (detalle en «Lectura sin espera»). **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, y el panel de costos del platform-admin (arreglo de #1006).
+**Smoke (2026-11-18, tras el quinto release):** sin errores del api desde el deploy; `/health` y `/ready` 200. Migración 0087 verificada en solo lectura: `ck_certificados_viaje_motivo` admite `distancia_medida_no_plausible` y los 10 certificados siguen en versión 1 sin motivo. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con el corte de palabras de #876.
 **Registros:** `Drizzle migrate() complete` en `00486-brt` @ 13:15:11Z (America/Santiago 10:15).  
 **Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`.
 
@@ -59,7 +59,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 3. 1 viaje E2E sin parche → cert (E4).
 4. 1 reclamo o matching real + 1 viaje propio (E5–E6).
 5. Viaje sin FMC150 + DQ (E7); luego cobro técnico (E8).
-6. Visto al PR de reemisión por distancia no plausible y deploy; luego el paso 2 para BOO-4FF3XA y BOO-VZYIN2, el paso 1 y 2 para BOO-BKAXIK y BOO-KY7G69, y reemitir BOO-YWKZWR por el factor.
+6. Reemisión por distancia no plausible, ya en prod: paso 2 para BOO-4FF3XA y BOO-VZYIN2, el paso 1 y 2 para BOO-BKAXIK y BOO-KY7G69, y reemitir BOO-YWKZWR por el factor.
 
 ## Booster Fleet
 
@@ -85,7 +85,7 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 
 ## Reemisión por distancia no plausible
 
-**En PR** (rama `feat/reemision-distancia-no-plausible`, spec `.specs/reemision-distancia-no-plausible/`), pendiente del visto del PO: esquema (migración 0087 amplía `ck_certificados_viaje_motivo`), certificado (motivo nuevo, la cifra pasa a la estimación) y escritura en prod. Cuatro certificados emitidos antes de la regla de distancia plausible publican cifras «reales» sobre distancias que no cubren el recorrido: BOO-BKAXIK (2,51 km de 500), BOO-KY7G69 (195,95 de 471,60) y la ruta de prueba BOO-4FF3XA + BOO-VZYIN2 (0,03 de 37,75; imprimen 0,02 y 0,01 kg). Dos pasos, los dos jobs en seco por defecto y los corre el PO: `corregir-distancia-no-plausible.ts` deja la huella guardada como la dejaría hoy el cierre (unidad = ruta compartida o viaje solo), y `reemitir-certificado.ts` con `MOTIVO=distancia_medida_no_plausible` emite la versión siguiente con la línea de reemplazo, un viaje por corrida. **Paso 1 ya corrido en prod por el PO (2026-11-18 23:28Z) sobre la ruta de prueba**, verificado en solo lectura: `metricas_ruta` y las dos `metricas_viaje` sin cifras reales, `maps_directions`, cobertura 0, `distancia_no_plausible`, un evento por carga; las dos v1 siguen vigentes y publican 0,02 y 0,01 kg hasta el paso 2, que necesita la migración 0087 en prod (merge + deploy). BOO-BKAXIK y BOO-KY7G69 sin corregir. Muestras generadas en local el 2026-11-18 con el generador de `main`: BOO-YWKZWR v2 (Teltonika, sin sello) y BOO-4FF3XA como saldría corregido, en `.tmp-data-ops/` del checkout principal (sin versionar).
+**En prod desde el 2026-11-18** ([#1031](https://github.com/boosterchile/booster-ai/pull/1031), spec `.specs/reemision-distancia-no-plausible/`): esquema (migración 0087 amplía `ck_certificados_viaje_motivo`), certificado (motivo nuevo, la cifra pasa a la estimación) y escritura en prod. Cuatro certificados emitidos antes de la regla de distancia plausible publican cifras «reales» sobre distancias que no cubren el recorrido: BOO-BKAXIK (2,51 km de 500), BOO-KY7G69 (195,95 de 471,60) y la ruta de prueba BOO-4FF3XA + BOO-VZYIN2 (0,03 de 37,75; imprimen 0,02 y 0,01 kg). Dos pasos, los dos jobs en seco por defecto y los corre el PO: `corregir-distancia-no-plausible.ts` deja la huella guardada como la dejaría hoy el cierre (unidad = ruta compartida o viaje solo), y `reemitir-certificado.ts` con `MOTIVO=distancia_medida_no_plausible` emite la versión siguiente con la línea de reemplazo, un viaje por corrida. **Paso 1 ya corrido en prod por el PO (2026-11-18 23:28Z) sobre la ruta de prueba**, verificado en solo lectura: `metricas_ruta` y las dos `metricas_viaje` sin cifras reales, `maps_directions`, cobertura 0, `distancia_no_plausible`, un evento por carga; las dos v1 siguen vigentes y publican 0,02 y 0,01 kg hasta el paso 2, que ya se puede correr: la migración 0087 está en prod. BOO-BKAXIK y BOO-KY7G69 sin corregir. Muestras generadas en local el 2026-11-18 con el generador de `main`: BOO-YWKZWR v2 (Teltonika, sin sello) y BOO-4FF3XA como saldría corregido, en `.tmp-data-ops/` del checkout principal (sin versionar).
 
 ## Agente
 
