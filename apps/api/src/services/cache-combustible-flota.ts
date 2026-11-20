@@ -43,19 +43,23 @@ type Leer = typeof leerTrayectosDeLaFlota;
 type ArgsLectura = Parameters<Leer>[0];
 
 /** Lo que tiene que cumplir un valor guardado para usarlo como lectura. */
+const estructuraLectura = z
+  .object({
+    empresaId: z.string(),
+    desde: z.string(),
+    hasta: z.string(),
+    truncado: z.boolean(),
+    puntosLeidos: z.number(),
+    trayectos: z.array(z.unknown()),
+    vehiculos: z.array(z.unknown()),
+  })
+  .passthrough();
+
 const guardadoSchema = z.object({
   leidoEn: z.string().datetime(),
-  lectura: z
-    .object({
-      empresaId: z.string(),
-      desde: z.string(),
-      hasta: z.string(),
-      truncado: z.boolean(),
-      puntosLeidos: z.number(),
-      trayectos: z.array(z.unknown()),
-      vehiculos: z.array(z.unknown()),
-    })
-    .passthrough(),
+  // Lo guardado lo escribió esta misma caché bajo un prefijo versionado: se
+  // comprueba la estructura de arriba y el resto se toma como la lectura.
+  lectura: z.custom<LecturaTrayectosFlota>((v) => estructuraLectura.safeParse(v).success),
 });
 
 function mensaje(err: unknown): string {
@@ -121,7 +125,7 @@ export function leerCombustibleConCache(opts: {
       if (parsed.success && parsed.data.lectura.empresaId === args.empresaId) {
         return {
           leidoEn: parsed.data.leidoEn,
-          lectura: parsed.data.lectura as unknown as LecturaTrayectosFlota,
+          lectura: parsed.data.lectura,
         };
       }
       args.logger.warn(

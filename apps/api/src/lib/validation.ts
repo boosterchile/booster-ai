@@ -14,6 +14,7 @@
  * formato (`invalid_format`) expone `pattern` (la regex interna) en el body 400.
  */
 import { type Hook, zValidator as honoZValidator } from '@hono/zod-validator';
+import type { Env } from 'hono';
 
 type IssueBody = { code?: unknown; pattern?: unknown };
 const sinPattern = (i: unknown) => {
@@ -31,8 +32,8 @@ export function zodErrorBody(error: { issues: unknown[]; name: string }) {
   };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: hook genérico para cualquier schema/target.
-type AnyHook = Hook<any, any, any>;
+/** Hook de cualquier schema y target: el valor validado se trata como desconocido. */
+type AnyHook = Hook<unknown, Env, string>;
 
 const withDefault =
   (hook?: AnyHook): AnyHook =>

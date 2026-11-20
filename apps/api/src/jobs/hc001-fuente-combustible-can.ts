@@ -19,6 +19,7 @@
 
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
+import { z } from 'zod';
 
 export const CAMBIOS = [
   { patente: 'KZXB64', previo: '89', nuevo: '83' },
@@ -66,6 +67,14 @@ export async function aplicarFuenteCan(
   }
 }
 
+const clienteConParametros = z.object({
+  connectionParameters: z.object({
+    host: z.string().nullish(),
+    port: z.union([z.number(), z.string()]).nullish(),
+    database: z.string().nullish(),
+  }),
+});
+
 export interface Destino {
   host: string;
   port: number;
@@ -79,11 +88,9 @@ export interface Destino {
  */
 export function destinoDe(connectionString: string): Destino {
   // connectionParameters existe en runtime pero no en @types/pg.
-  const p = (
-    new pg.Client({ connectionString }) as unknown as {
-      connectionParameters: { host?: string; port?: number; database?: string };
-    }
-  ).connectionParameters;
+  const { connectionParameters: p } = clienteConParametros.parse(
+    new pg.Client({ connectionString }),
+  );
   const url = new URL(connectionString);
   const host = String(p.host ?? '');
   const db = String(p.database ?? '');
