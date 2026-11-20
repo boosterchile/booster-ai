@@ -7,6 +7,7 @@
 **Actualización 2026-09-23** (`main` @ `550b742`): por pedido del PO entra, fuera de slot, «Alta de empresas desde el panel de administración». Los tres slots no cambian.
 **Actualización 2026-10-07** (`main` @ `0008fa6`): el objetivo vuelve a ser TRL 10 ([ADR-082](adr/082-objetivo-trl10-supersede-precomercial.md)). Este documento pasa a ordenar el programa por fases; los tres slots son los frentes de la fase A.
 **Actualización 2026-10-29** (`main` @ `1b10cfa3`, prod en `18ce8e22`): se re-verificó el estado de cada slot contra prod. Las cifras y sus fuentes están en `docs/handoff/CURRENT.md`. T10-06 se cumple. Ningún slot se declara cerrado y no se registra ninguna excepción: el trabajo mergeado sin registro se lista como pendiente de decisión del PO (ver «Código en main después del 2026-10-10»).
+**Actualización 2026-11-20** (`main` @ `e7ad3c6c`, prod en `93f084f1`): se re-verificaron los 30 criterios contra el repo, GitHub Actions y GCP en solo lectura; las líneas «Hoy» están en `.specs/trl10/spec.md` y el plan de trabajo en [`docs/handoff/2026-11-20-plan-trl10.md`](handoff/2026-11-20-plan-trl10.md). #748 (Slot 2) se mergeó y espera release y `terraform apply`. Ningún slot se declara cerrado y ningún criterio se marca: eso lo decide el PO. Los estados de slot fechados 2026-10-29 de más abajo no se reescribieron.
 
 ---
 
@@ -16,11 +17,11 @@
 
 | Fase | Termina cuando | Estado |
 |---|---|---|
-| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa.** Al 2026-10-29 se cumple T10-06; T10-01 a T10-05 no; T10-07 espera la decisión del PO |
-| Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A. Tiene código adelantado sin declarar |
-| Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B. Tiene código adelantado sin declarar |
-| Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Tiene código adelantado sin declarar |
-| Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo |
+| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa.** Al 2026-11-20: T10-06 marcado; T10-07 con evidencia (tres semanales en verde) a la espera del PO; T10-03 mergeado (#748), sin desplegar ni aplicar; T10-01, 02, 04 y 05 no se cumplen: dependen de operación real con terceros y de configurar vehículos |
+| Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A. Al 2026-11-20 tienen evidencia sin marcar T10-08, 09, 10 y 13; no se cumplen T10-11 (falta la escucha con lector de pantalla), T10-12 (1 `any` y 1 cast) y T10-14 (p95 10,8 min) |
+| Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B. Al 2026-11-20 tienen evidencia sin marcar T10-15, 17 y 18; T10-16 está montado y falta ver un error real agrupado; T10-19 y T10-20 no tienen corrida, y el load test no tiene entorno (staging no existe) |
+| Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Al 2026-11-20 el código está en prod con los flags apagados (microservicios, wake-word, eco-routing, mandato); falta el acta del municipio |
+| Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo. Al 2026-11-20 el repo no registra RFP enviados, los cinco legales siguen con `lawyer_review: pendiente` (la Ley 21.719 rige el 2026-12-01) y no hay cliente con contrato |
 
 **Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO. #837 (mergeado el 10-29) migra a zod 4; si alcanza se verá en la semanal del 2026-11-02.
 

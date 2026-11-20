@@ -102,6 +102,10 @@ Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas a
 
 **En prod desde el 2026-11-20** ([#877](https://github.com/boosterchile/booster-ai/pull/877)). El certificado ya no imprime «Factor de emisión usado» ni «SEC Chile 2024»: imprime «Factores: WTW · TTW · WTT» con su fuente cuando la fuente guardada está en la tabla versionada (`carbon-calculator/src/factores/factores-certificado.ts`; el sufijo «(defaults para tipo: …)» del modo por defecto se ignora), y «Factor: WTW X kg CO₂e/L» sin desglose cuando no está (decisión del PO, 2026-11-20: el factor se imprime siempre). Suma la referencia HuellaChile 2025 si la fila la tiene guardada. La versión GLEC es la guardada, sin default: un viaje sin ella no se certifica ni se reemite (`version_glec_missing`); los 10 certificados de prod tienen `v3.0`. El armado vive en `armarDatosEmision`, que comparten emisión y reemisión. En prod al 2026-11-20: 3 certificados con fuente en la tabla (por el sufijo) y 7 con fuente nula y factor 3,25, que al reemitirse saldrían con la línea sin desglose. Los PDF ya firmados no cambian. **Falta:** ver un certificado emitido en prod con la plantilla nueva.
 
+## Programa TRL 10
+
+Línea base re-verificada el 2026-11-20 (repo, GitHub Actions y GCP en solo lectura; sin acceso a la BD): [`2026-11-20-plan-trl10.md`](./2026-11-20-plan-trl10.md), con el estado de los 30 criterios y el plan de trabajo. Marcado solo T10-06; con evidencia y a la espera del PO: T10-07, 08, 09, 10, 13, 15, 17 y 18. #748 (T10-03) está en `main` (`e7ad3c6c`) sin desplegar: la migración 0088 sale en el próximo release y falta el `terraform apply`. Plazos: decisión del mandato el 2026-11-30 y Ley 21.719 el 2026-12-01.
+
 ## Agente
 
 Observar/anotar E2–E8; **no** aprueba Environment `production` (ADR-076). `cursor-agent` tiene `run.developer`; no tiene `actions:write`. Release a prod vía `release.yml` (dispatch) o `release-on-request.yml` (archivo en `.github/release-requests/`) + Approve humano.
