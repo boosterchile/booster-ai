@@ -39,3 +39,15 @@
 
 1. Recuento final en el alcance: 0 `any` fuera de la augmentación declarada, 0 `@ts-ignore`, 0 `as unknown as`, `console.*` solo en el sink.
 2. typecheck, lint y tests de los workspaces tocados en verde.
+
+## Recaída y corrección (2026-11-20)
+
+La verificación del 2026-11-20 (`main` `5bf6daf2`) encontró tres ocurrencias nuevas, entradas con código posterior a esta spec:
+
+| Archivo | Ocurrencia | Corrección |
+|---|---|---|
+| `apps/api/src/lib/validation.ts` | `Hook<any, any, any>` | `Hook<unknown, Env, string>`: el envoltorio no lee el valor validado |
+| `apps/api/src/jobs/hc001-fuente-combustible-can.ts` | `new pg.Client(…) as unknown as {…}` para leer `connectionParameters`, que `@types/pg` no declara | Se lee con un schema Zod; si pg cambia esa forma, `destinoDe` falla en vez de devolver un destino vacío |
+| `apps/api/src/services/cache-combustible-flota.ts` | `parsed.data.lectura as unknown as LecturaTrayectosFlota` tras un `safeParse` | El schema tipa la lectura con `z.custom`, con la misma comprobación de estructura; sin cast |
+
+Recuento después de la corrección, en el alcance: 0 `any` fuera de `vitest-axe.d.ts`, 0 `@ts-ignore`, 0 `as unknown as`, `console.*` solo en el sink. No hay un check automático que impida una nueva recaída: Biome marca `any` (`noExplicitAny`) pero no `as unknown as`.
