@@ -17,6 +17,15 @@ export const TITULO_CERT = 'Certificado de huella de carbono';
 /** Frase ISO exacta de Felipe: subtítulo L2 y Metodología. */
 export const FRASE_ISO = 'Estos resultados han sido establecidos de acuerdo con ISO 14083:2023.';
 
+/**
+ * Título de la sección de ahorro por matching de retorno. FIJO a propósito
+ * (decisión de Orquestador, decision.md 18:07, opción a): «§6.4» es una sección
+ * de GLEC Framework v3.0 (Empty Backhaul Allocation, ADR-021). Es una cita del
+ * MÉTODO, no la versión de la emisión: con otra version_glec la sección podría
+ * no existir con ese número, así que no se interpola.
+ */
+export const TITULO_AHORRO = 'Ahorro CO\u2082e vía matching de retorno (método GLEC v3.0 §6.4)';
+
 export const TITULO_DISCLAIMER = 'IMPORTANTE — DATOS SECUNDARIOS MODELADOS';
 
 /** Subtítulo L1 con la versión GLEC (metodología) guardada en la emisión. */
@@ -88,17 +97,40 @@ export function presentacionNivel(m: {
  * carga es la directa y sale del reparto (ADR-089), así que la nota lo dice.
  */
 export function textoNotaMetodo(
-  fuenteFactores: string,
+  fuenteFactores: string | null,
   glecVersion: string,
   consolidada = false,
 ): string {
   const distancia = consolidada ? 'La distancia de la ruta' : 'La distancia';
-  return `${distancia} fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con factores ${fuenteFactores} y GLEC Framework ${glecVersion}; no proviene de una medición del vehículo.`;
+  // Sin fuente guardada (filas previas a 0068) no se inventa una (criterio 12).
+  const factores = fuenteFactores ? `factores ${fuenteFactores} y ` : '';
+  return `${distancia} fue medida por el dispositivo Teltonika instalado en el vehículo. El consumo de combustible se modeló con ${factores}GLEC Framework ${glecVersion}; no proviene de una medición del vehículo.`;
 }
 
 /** Cuerpo del disclaimer: texto exacto de Felipe con fuente y versión de la emisión. */
-export function textoDisclaimer(fuenteFactores: string, glecVersion: string): string {
-  return `Cálculo basado en datos secundarios modelados (Google Routes API + factores ${fuenteFactores} + GLEC Framework ${glecVersion}). NO auditable como dato primario bajo SBTi, CDP o CSRD assurance. Para certificado verificable con datos primarios (telemetría Teltonika), contactar a Booster.`;
+export function textoDisclaimer(fuenteFactores: string | null, glecVersion: string): string {
+  // Sin fuente guardada (filas previas a 0068) no se inventa una (criterio 12).
+  const factores = fuenteFactores ? `factores ${fuenteFactores} + ` : '';
+  return `Cálculo basado en datos secundarios modelados (Google Routes API + ${factores}GLEC Framework ${glecVersion}). NO auditable como dato primario bajo SBTi, CDP o CSRD assurance. Para certificado verificable con datos primarios (telemetría Teltonika), contactar a Booster.`;
+}
+
+/**
+ * Referencia HuellaChile 2025 (ux.md, criterio 14; copy propuesto por UX y
+ * aprobado por Orquestador 17:29): kg_ref = litros × (ttw_ref + wtt_ref).
+ * Sin litros no hay línea. Nunca dice «certificado/verificado HuellaChile».
+ */
+export function lineasReferenciaHuellaChile(
+  litros: number | null,
+  ref: { ttw: number; wtt: number } | null | undefined,
+): [string, string] | null {
+  if (litros === null || !ref) {
+    return null;
+  }
+  const kgRef = litros * (ref.ttw + ref.wtt);
+  return [
+    `Referencia HuellaChile 2025: ${numeroEsCl(kgRef)} kg CO\u2082e WTW`,
+    `Calculado con los mismos ${numeroEsCl(litros)} L y los factores MMA 2025 (TTW ${numeroEsCl(ref.ttw, 3)} + WTT ${numeroEsCl(ref.wtt, 3)} kg CO\u2082e/L). Solo referencia: el resultado de este certificado es el de arriba.`,
+  ];
 }
 
 /** Número es-CL: coma decimal y punto de miles (ux.md §Tipografía). */
@@ -183,6 +215,7 @@ export function lineaMetodoCert(m: {
   precisionMethod: DatosMetricasCertificado['precisionMethod'];
   routeDataSource?: DatosMetricasCertificado['routeDataSource'];
   coveragePct?: DatosMetricasCertificado['coveragePct'];
+  glecVersion: string;
 }): string | null {
   if (m.routeDataSource === undefined || m.coveragePct === undefined) {
     return null;
@@ -191,6 +224,7 @@ export function lineaMetodoCert(m: {
     precisionMethod: m.precisionMethod,
     routeDataSource: m.routeDataSource,
     coveragePct: m.coveragePct,
+    glecVersion: m.glecVersion,
   });
 }
 

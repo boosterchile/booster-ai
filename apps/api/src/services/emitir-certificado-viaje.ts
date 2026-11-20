@@ -26,6 +26,7 @@
  *     job de backfill (P2.f) lo retoma después.
  */
 
+import { factoresLineaCertificado } from '@booster-ai/carbon-calculator';
 import {
   type ParametrosEmisionCertificado,
   emitirCertificado,
@@ -76,6 +77,7 @@ export type EmitirResult =
         | 'trip_not_found'
         | 'trip_not_delivered'
         | 'metrics_missing'
+        | 'version_glec_missing'
         | 'already_issued'
         | 'no_shipper'
         /** Carga consolidada cuya ruta no tiene huella guardada: no hay total que imprimir. */
@@ -114,10 +116,20 @@ export async function armarDatosEmision(opts: {
   metrics: MetricsRow;
 }): Promise<
   | { ok: true; datos: DatosEmisionCertificado }
-  | { ok: false; reason: 'no_shipper' | 'trip_not_found' | 'ruta_sin_huella' }
+  | {
+      ok: false;
+      reason: 'no_shipper' | 'trip_not_found' | 'ruta_sin_huella' | 'version_glec_missing';
+    }
 > {
   const { db, logger, trip, metrics } = opts;
   const tripId = trip.id;
+  // HC-004: se imprime la versión GLEC real del cálculo, sin default 'v3.0'.
+  // Sin versión guardada no se firma un certificado, ni nuevo ni reemitido.
+  const glecVersion = metrics.glecVersion;
+  if (!glecVersion) {
+    logger.error({ tripId }, 'emitirCertificadoViaje skipped: métricas sin version_glec');
+    return { ok: false, reason: 'version_glec_missing' };
+  }
   // generadorCargaEmpresaId es nullable en el schema — los trips de
   // WhatsApp anonymous (pre-binding) lo tienen null. El cert necesita la
   // identidad del shipper para incluirlo en el PDF y firmar, así que
@@ -228,6 +240,24 @@ export async function armarDatosEmision(opts: {
     };
   }
 
+  // HC-004 (opción d): factores por litro desde la tabla versionada por
+  // factores_fuente. Si no calza, el PDF imprime solo el factor guardado, sin
+  // desglose, y queda en el log.
+  const factorUsado = numOrNull(metrics.emissionFactorUsed) ?? 0;
+  const factoresLinea = factoresLineaCertificado(metrics.factoresFuente, factorUsado);
+  if (!factoresLinea) {
+    logger.warn(
+      { tripId, factoresFuente: metrics.factoresFuente, emissionFactorUsed: factorUsado },
+      'emitirCertificadoViaje: factores sin desglose (fuente fuera de la tabla o factor no calza)',
+    );
+  }
+  const ttwRef = numOrNull(metrics.ttwRef);
+  const wttRef = numOrNull(metrics.wttRef);
+  const referencia =
+    ttwRef !== null && wttRef !== null && metrics.fuenteRef
+      ? { ttw: ttwRef, wtt: wttRef, fuente: metrics.fuenteRef }
+      : null;
+
   return {
     ok: true,
     datos: {
@@ -259,10 +289,12 @@ export async function armarDatosEmision(opts: {
         precisionMethod:
           (metrics.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
           'por_defecto',
-        glecVersion: metrics.glecVersion ?? 'v3.0',
-        emissionFactorUsado: numOrNull(metrics.emissionFactorUsed) ?? 0,
-        // HC-003 T1: la fuente guardada al calcular; filas previas a 0068 → etiqueta legacy.
-        fuenteFactores: metrics.factoresFuente ?? 'SEC Chile 2024 + GLEC v3.0',
+        glecVersion,
+        emissionFactorUsado: factorUsado,
+        // Filas previas a 0068 quedan en null: no se imprime «SEC Chile 2024» (criterio 12).
+        fuenteFactores: metrics.factoresFuente,
+        factoresLinea,
+        referencia,
         calculatedAt: metrics.calculatedAt ?? new Date(),
         // ADR-028 — dual-source data fields. Si están NULL (trips legacy
         // pre-migración 0009 que no fueron recalculados), el cert-generator

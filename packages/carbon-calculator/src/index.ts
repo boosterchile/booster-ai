@@ -55,6 +55,11 @@ export {
   COMBUSTIBLES_REFERENCIA_HUELLACHILE,
   REFERENCIA_HUELLACHILE_2025,
 } from './factores/referencia-huellachile-2025.js';
+export {
+  TABLA_FACTORES_CERTIFICADO,
+  factoresLineaCertificado,
+  type FactoresLineaCertificado,
+} from './factores/factores-certificado.js';
 export { DEFAULTS_POR_TIPO } from './factores/defaults-por-tipo.js';
 export {
   calcularFactorCorreccionPorCarga,

@@ -168,6 +168,7 @@ describe('integration: reemisión de un certificado', () => {
       emisionesKgco2eWtt: '103.927',
       emissionFactorUsed: '3.25000',
       precisionMethod: 'por_defecto',
+      glecVersion: 'v3.0',
       certificateSha256: sha('a'),
       certificatePdfUrl: `gs://b/certificates/e/${tracking}.pdf`,
       certificateKmsKeyVersion: '1',
@@ -318,6 +319,16 @@ describe('integration: reemisión de un certificado', () => {
     expect(r).toMatchObject({ ok: false, code: 'correccion_no_corresponde' });
     expect(emitirCertificado).not.toHaveBeenCalled();
     expect(await versiones(tripId)).toHaveLength(1);
+  });
+
+  test('sin versión GLEC guardada no reemite: no se firma con una versión inventada', async () => {
+    const { tripId } = await emitido({ glecVersion: null });
+    const r = await reemitir(tripId);
+
+    expect(r).toMatchObject({ ok: false, code: 'version_glec_missing' });
+    expect(emitirCertificado).not.toHaveBeenCalled();
+    expect(await versiones(tripId)).toHaveLength(1);
+    expect((await metricas(tripId)).emissionFactorUsed).toBe('3.25000');
   });
 
   test('si el factor nuevo no explica la cifra publicada, no hace nada', async () => {

@@ -238,6 +238,16 @@ describe('presentacionNivel (ADR-091): el sello depende de quién midió la dist
   });
 });
 
+describe('textoNotaMetodo sin fuente de factores guardada', () => {
+  it('no inventa una fuente: nombra solo la versión GLEC', async () => {
+    const { textoNotaMetodo } = await import('../src/render-helpers.js');
+    const nota = textoNotaMetodo(null, 'v3.0');
+    expect(nota).toContain('se modeló con GLEC Framework v3.0;');
+    expect(nota).not.toContain('factores');
+    expect(nota).not.toContain('null');
+  });
+});
+
 describe('textoNotaMetodo en una carga consolidada (ADR-089 + ADR-091)', () => {
   it('lo medido es la distancia de la ruta', async () => {
     const { textoNotaMetodo } = await import('../src/render-helpers.js');

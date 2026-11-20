@@ -81,7 +81,8 @@ export type CodigoNoReemitido =
   | 'datos_insuficientes'
   | 'solicitante_no_existe'
   | 'no_shipper'
-  | 'ruta_sin_huella';
+  | 'ruta_sin_huella'
+  | 'version_glec_missing';
 
 export type ResultadoReemision =
   | {
