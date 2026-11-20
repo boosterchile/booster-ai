@@ -7,10 +7,10 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
  * Integration (C5) — GET /auth/impersonate/targets filtra por
- * `es_usuario_prueba`, NO por `es_demo` (desacople ADR-053). Contra Postgres
- * real (migración 0050 auto-aplicada por globalSetup en CI):
+ * `es_usuario_prueba` (ADR-053). Contra Postgres real (migraciones
+ * auto-aplicadas por globalSetup en CI):
  *   - usuario de empresa `es_usuario_prueba=true` → SÍ aparece,
- *   - usuario de empresa `es_demo=true` (no-prueba) → NO aparece,
+ *   - usuario de empresa real (`es_usuario_prueba=false`) → NO aparece,
  *   - platform-admin → NO aparece.
  */
 
@@ -50,7 +50,7 @@ describe('integration: /auth/impersonate/targets filtra por es_usuario_prueba (C
       throw new Error('sin planes seedeados; migración 0002 debería haberlos creado');
     }
 
-    function empresaValues(tag: string, flags: { isDemo?: boolean; isTestUser?: boolean }) {
+    function empresaValues(tag: string, flags: { isTestUser?: boolean }) {
       return {
         planId,
         name: `E ${tag}`,
@@ -61,7 +61,6 @@ describe('integration: /auth/impersonate/targets filtra por es_usuario_prueba (C
         addressStreet: 'Calle 1',
         addressCity: 'Santiago',
         addressRegion: 'RM',
-        isDemo: flags.isDemo ?? false,
         isTestUser: flags.isTestUser ?? false,
       };
     }
@@ -70,11 +69,11 @@ describe('integration: /auth/impersonate/targets filtra por es_usuario_prueba (C
       .insert(empresas)
       .values(empresaValues('test', { isTestUser: true }))
       .returning({ id: empresas.id });
-    const [empDemo] = await handle.db
+    const [empReal] = await handle.db
       .insert(empresas)
-      .values(empresaValues('demo', { isDemo: true }))
+      .values(empresaValues('real', {}))
       .returning({ id: empresas.id });
-    empresaIds.push(empTest?.id ?? '', empDemo?.id ?? '');
+    empresaIds.push(empTest?.id ?? '', empReal?.id ?? '');
 
     async function mkUser(tag: string, isAdmin: boolean): Promise<string> {
       const rows = await handle.db
@@ -92,12 +91,12 @@ describe('integration: /auth/impersonate/targets filtra por es_usuario_prueba (C
     }
 
     const uTest = await mkUser('test', false);
-    const uDemo = await mkUser('demo', false);
+    const uReal = await mkUser('real', false);
     const uAdmin = await mkUser('admin', true);
 
     await handle.db.insert(memberships).values([
       { userId: uTest, empresaId: empTest?.id, role: 'dueno', status: 'activa' },
-      { userId: uDemo, empresaId: empDemo?.id, role: 'dueno', status: 'activa' },
+      { userId: uReal, empresaId: empReal?.id, role: 'dueno', status: 'activa' },
       { userId: uAdmin, empresaId: empTest?.id, role: 'admin', status: 'activa' },
     ]);
 
@@ -130,13 +129,13 @@ describe('integration: /auth/impersonate/targets filtra por es_usuario_prueba (C
     await handle.pool.end();
   });
 
-  test('lista solo el usuario de empresa es_usuario_prueba; NO el de es_demo ni el admin', async () => {
+  test('lista solo el usuario de empresa es_usuario_prueba; NO el de empresa real ni el admin', async () => {
     const res = await app.request('/auth/impersonate/targets', { method: 'GET' });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { targets: Array<{ full_name: string; empresa: string }> };
     const empresasListadas = body.targets.map((t) => t.empresa);
     expect(empresasListadas).toContain('Empresa test SpA');
-    expect(empresasListadas).not.toContain('Empresa demo SpA');
+    expect(empresasListadas).not.toContain('Empresa real SpA');
     expect(body.targets.every((t) => t.full_name !== 'U admin')).toBe(true);
   });
 });

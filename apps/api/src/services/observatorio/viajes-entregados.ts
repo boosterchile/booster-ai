@@ -39,7 +39,6 @@ export async function leerViajesEntregados(db: Db): Promise<ViajeEntregado[]> {
       and(
         eq(trips.status, 'entregado'),
         isNotNull(assignments.deliveredAt),
-        eq(generador.isDemo, false),
         eq(generador.isTestUser, false),
       ),
     )
