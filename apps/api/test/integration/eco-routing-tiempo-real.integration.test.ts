@@ -44,6 +44,7 @@ const ruta = (duracionS: number, km: number, litros: number, poly: string): Rout
   fuelL: litros,
   polylineEncoded: poly,
   startLocation: null,
+  endLocation: null,
 });
 
 describe('integration: eco-routing en tiempo real (T10-23)', () => {

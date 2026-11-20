@@ -5,19 +5,19 @@ import {
   rutSchema,
 } from '@booster-ai/shared-schemas';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { correoOcupado } from '../services/correo-de-cuenta.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
-import type { UserContext } from '../services/user-context.js';
 import { VINCULO_PERSONA_EXISTENTE, type VinculoPersona } from '../services/vinculo-persona.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
@@ -25,8 +25,7 @@ const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 /**
  * Endpoints admin para gestión de organizaciones stakeholder (ADR-034).
  *
- * Audiencia: platform-admin de Booster Chile SpA (allowlist
- * `BOOSTER_PLATFORM_ADMIN_EMAILS`).
+ * Audiencia: platform-admin de Booster Chile SpA (`requirePlatformAdmin`).
  *
  *   GET    /admin/stakeholder-orgs                   → lista
  *   POST   /admin/stakeholder-orgs                   → crear
@@ -53,22 +52,6 @@ export function createAdminStakeholderOrgsRoutes(opts: {
   webAppUrl?: string;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, userContext, adminEmail: email, adminUserId: userContext.user.id };
-  }
 
   // GET /admin/stakeholder-orgs?include_deleted=false
   app.get('/', async (c) => {
@@ -115,7 +98,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
         tipo: body.tipo,
         regionAmbito: body.region_ambito ?? null,
         sectorAmbito: body.sector_ambito ?? null,
-        createdByAdminId: auth.adminUserId,
+        createdByAdminId: auth.userContext.user.id,
       })
       .returning();
 
@@ -271,6 +254,20 @@ export function createAdminStakeholderOrgsRoutes(opts: {
       userId = existente.id;
       vinculo = VINCULO_PERSONA_EXISTENTE;
     } else {
+      // Una cuenta nueva no recibe un correo de la lista de respaldo del panel
+      // (`.specs/bordes-autenticacion` SC5), ni el de otra cuenta, sin
+      // distinguir mayúsculas, ni uno reservado
+      // (`.specs/correos-solicitudes-panel` SC3): la misma respuesta en los
+      // tres casos.
+      if (
+        await correoOcupado({
+          db: opts.db,
+          email: body.email,
+          lista: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        })
+      ) {
+        return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+      }
       vinculo = 'nueva';
       const codigo = generateActivationPin();
       codigoEmitido = codigo;
@@ -293,6 +290,10 @@ export function createAdminStakeholderOrgsRoutes(opts: {
       } catch (err) {
         if (esRutDuplicado(err)) {
           return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+        }
+        // Otra alta guardó el mismo correo entre la búsqueda y el INSERT.
+        if (esEmailDuplicado(err)) {
+          return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
         }
         throw err;
       }
@@ -321,7 +322,7 @@ export function createAdminStakeholderOrgsRoutes(opts: {
         organizacionStakeholderId: orgId,
         role: STAKEHOLDER_MEMBERSHIP_ROLE,
         status: 'pendiente_invitacion',
-        invitedByUserId: auth.adminUserId,
+        invitedByUserId: auth.userContext.user.id,
         invitedAt: new Date(),
         joinedAt: null,
       })

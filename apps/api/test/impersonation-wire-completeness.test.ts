@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { findMissingGuard } from '../scripts/check-impersonation-wire-completeness.js';
+import { collectMiddlewaresPerPath } from '../scripts/collect-middlewares-per-path.js';
 
 /**
  * Invariante de cobertura del impersonation-write-guard, corriendo en el job
@@ -45,5 +46,47 @@ describe('impersonation-write-guard wire completeness', () => {
       app.route('/trip-requests', createTripRequestsRoutes());
     `;
     expect(findMissingGuard(source)).toEqual([]);
+  });
+});
+
+// `.specs/confirmar-acceso-booster` SC12 (T5): la confirmación del acceso al
+// panel es una escritura que una sesión impersonada no puede hacer. El guard
+// de `/me/*` corre antes del userContext del path nuevo, así que no ve una
+// empresa activa y bloquea toda escritura impersonada.
+describe('impersonation-write-guard — confirmación del acceso al panel', () => {
+  const PATH = '/me/confirmar-acceso-booster';
+  const USE_GUARD = "app.use('/me/*', impersonationWriteGuardMiddleware)";
+  const USE_CONTEXTO = `app.use('${PATH}', userContextMiddlewareForMe)`;
+
+  it('el path tiene su app.use y queda bajo /me/*, con firebaseAuth y el guard', () => {
+    // El colector solo extrae identificadores que terminan en `Middleware`;
+    // `userContextMiddlewareForMe` se comprueba en el texto (test siguiente).
+    const mapa = collectMiddlewaresPerPath(SERVER_SOURCE);
+    expect(mapa.has(PATH)).toBe(true);
+    expect(mapa.get('/me/*')).toEqual(
+      expect.arrayContaining(['firebaseAuthMiddleware', 'impersonationWriteGuardMiddleware']),
+    );
+  });
+
+  it('el guard de /me/* se registra antes que el userContext del path', () => {
+    const guard = SERVER_SOURCE.indexOf(USE_GUARD);
+    const contexto = SERVER_SOURCE.indexOf(USE_CONTEXTO);
+    expect(guard).toBeGreaterThan(-1);
+    expect(contexto).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(contexto);
+  });
+
+  it("el mount y su userContext quedan antes de app.route('/me', meRouter)", () => {
+    // Un sub-mount de meRouter registrado después de app.route('/me', meRouter)
+    // compila y pasa los tests del router aislado, pero no existe en la app.
+    const montaje = SERVER_SOURCE.search(/meRouter\.route\(\s*'\/confirmar-acceso-booster'/);
+    const contexto = SERVER_SOURCE.indexOf(USE_CONTEXTO);
+    // La sentencia, no la mención en un comentario.
+    const me = SERVER_SOURCE.search(/^\s*app\.route\('\/me', meRouter\);/m);
+    expect(montaje).toBeGreaterThan(-1);
+    expect(contexto).toBeGreaterThan(-1);
+    expect(me).toBeGreaterThan(-1);
+    expect(contexto).toBeLessThan(me);
+    expect(montaje).toBeLessThan(me);
   });
 });

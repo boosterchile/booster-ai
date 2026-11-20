@@ -7,12 +7,14 @@ import {
   puedeAsignarViaje,
   puedeBorrarEnFlota,
   puedeCancelarCarga,
+  puedeEditarCarga,
   puedeGestionarDocumentosTransporte,
   puedeGestionarFlota,
   puedeGestionarSucursales,
   puedeInvitarMiembro,
   puedePedirCobraHoy,
   puedePublicarCarga,
+  puedeResponderCambioCarga,
   puedeVerFinanzas,
   puedeVerMenuGestion,
   puedeVerPanelConductor,
@@ -53,6 +55,10 @@ export interface FlagsCapacidad {
   menuGestion: boolean;
   publicarCarga: boolean;
   cancelarCarga: boolean;
+  /** editar-anular-cargas §9: editar la carga propia y proponer cambios. */
+  editarCarga: boolean;
+  /** editar-anular-cargas §9: aceptar o rechazar un cambio propuesto. */
+  responderCambioCarga: boolean;
   invitar: boolean;
   administrar: boolean;
   gestionarFlota: boolean;
@@ -78,6 +84,8 @@ export function flagsDe(me: MeRegistered): FlagsCapacidad {
     menuGestion: aplicar(ctx, puedeVerMenuGestion),
     publicarCarga: aplicar(ctx, puedePublicarCarga),
     cancelarCarga: aplicar(ctx, puedeCancelarCarga),
+    editarCarga: aplicar(ctx, puedeEditarCarga),
+    responderCambioCarga: aplicar(ctx, puedeResponderCambioCarga),
     invitar: aplicar(ctx, puedeInvitarMiembro),
     administrar: aplicar(ctx, puedeAdministrarEmpresa),
     gestionarFlota: aplicar(ctx, puedeGestionarFlota),

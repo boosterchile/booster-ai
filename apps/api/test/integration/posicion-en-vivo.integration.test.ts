@@ -83,7 +83,61 @@ describe('integration: resolverPosicionEnVivo (Teltonika fresco o móvil de la a
     // IMEI por fixture: `uq_telemetria_imei_ts` es único por (imei, timestamp).
     const imei = `86${suffix.replace(/\D/g, '').padEnd(13, '5').slice(0, 13)}`;
     // `asignacion_id` no tiene FK: basta un uuid por asignación.
-    return { userId: user.id, vehicleId: vehicle.id, imei, assignmentId: randomUUID() };
+    return {
+      userId: user.id,
+      empresaId: empresa.id,
+      vehicleId: vehicle.id,
+      imei,
+      assignmentId: randomUUID(),
+    };
+  }
+
+  /** Otra asignación real del MISMO vehículo, con su viaje en el estado dado. */
+  async function otraAsignacion(
+    f: { userId: string; empresaId: string; vehicleId: string },
+    tripStatus: 'asignado' | 'en_proceso' | 'entregado',
+  ) {
+    const { db } = handle;
+    const [trip] = await db
+      .insert(schema.trips)
+      .values({
+        trackingCode: randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase(),
+        generadorCargaEmpresaId: f.empresaId,
+        createdByUserId: f.userId,
+        originAddressRaw: 'A',
+        destinationAddressRaw: 'B',
+        cargoType: 'carga_seca',
+        cargoWeightKg: 1000,
+        pickupDateRaw: '2026-11-20',
+        status: tripStatus,
+      })
+      .returning({ id: schema.trips.id });
+    if (!trip) {
+      throw new Error('fixture: viaje no creado');
+    }
+    const [offer] = await db
+      .insert(schema.offers)
+      .values({
+        tripId: trip.id,
+        empresaId: f.empresaId,
+        score: 80,
+        proposedPriceClp: 100_000,
+        expiresAt: new Date(NOW + 86_400_000),
+      })
+      .returning({ id: schema.offers.id });
+    if (!offer) {
+      throw new Error('fixture: oferta no creada');
+    }
+    await db.insert(schema.assignments).values({
+      tripId: trip.id,
+      offerId: offer.id,
+      empresaId: f.empresaId,
+      vehicleId: f.vehicleId,
+      driverUserId: f.userId,
+      agreedPriceClp: 100_000,
+      status: tripStatus === 'entregado' ? 'entregado' : 'asignado',
+      acceptedAt: new Date(NOW),
+    });
   }
 
   function telemetria(
@@ -211,5 +265,48 @@ describe('integration: resolverPosicionEnVivo (Teltonika fresco o móvil de la a
         nowMs: NOW,
       }),
     ).resolves.toEqual({ source: null, pings: [] });
+  });
+
+  // `.specs/seguimiento-publico-minimizacion/` §3.2
+  test('asignado + el vehículo sirve OTRO viaje en proceso → sin Teltonika; solo el móvil de esta asignación', async () => {
+    const f = await fixture();
+    await otraAsignacion(f, 'en_proceso');
+    await telemetria(f, hace(2), '-36.8000000', '-73.0500000');
+
+    const args = {
+      db: handle.db,
+      assignmentId: f.assignmentId,
+      vehicleId: f.vehicleId,
+      nowMs: NOW,
+    };
+    await expect(resolverPosicionEnVivo({ ...args, tripStatus: 'asignado' })).resolves.toEqual({
+      source: null,
+      pings: [],
+    });
+
+    await movil(f, f.assignmentId, hace(1), '-33.4600000', '-70.6600000');
+    const conMovil = await resolverPosicionEnVivo({ ...args, tripStatus: 'asignado' });
+    expect(conMovil.source).toBe('mobile');
+    expect(conMovil.pings.map((p) => p.latitude)).toEqual([-33.46]);
+
+    // El viaje que ya está en proceso no cambia: Teltonika fresco gana.
+    const enProceso = await resolverPosicionEnVivo({ ...args, tripStatus: 'en_proceso' });
+    expect(enProceso.source).toBe('teltonika');
+  });
+
+  test('asignado + la otra asignación del vehículo NO está en proceso → Teltonika como siempre', async () => {
+    const f = await fixture();
+    await otraAsignacion(f, 'asignado');
+    await otraAsignacion(f, 'entregado');
+    await telemetria(f, hace(2), '-36.8000000', '-73.0500000');
+
+    const r = await resolverPosicionEnVivo({
+      db: handle.db,
+      assignmentId: f.assignmentId,
+      vehicleId: f.vehicleId,
+      tripStatus: 'asignado',
+      nowMs: NOW,
+    });
+    expect(r.source).toBe('teltonika');
   });
 });

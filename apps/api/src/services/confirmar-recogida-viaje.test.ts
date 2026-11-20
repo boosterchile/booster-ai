@@ -2,6 +2,14 @@ import { getTableName } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirmarRecogidaViaje } from './confirmar-recogida-viaje.js';
 
+// La ruta sigue a la asignación (ADR-088): aquí solo se comprueba que se pide.
+const sincronizarRutaMock = vi.hoisted(() =>
+  vi.fn(async () => ({ tipo: 'sin_cambios' as const, rutaId: 'ruta-1' })),
+);
+vi.mock('./sincronizar-ruta-de-asignacion.js', () => ({
+  sincronizarRutaDeAsignacion: sincronizarRutaMock,
+}));
+
 /**
  * Confirmar recogida — el paso que la máquina de estados modelaba y nadie
  * escribía (`asignaciones.recogido` / `viajes.en_proceso`).
@@ -32,9 +40,13 @@ interface Estado {
   assignmentStatus: string;
   tripStatus: string;
   driverUserId: string | null;
+  /** matching-desde-la-carga §3.8: sin vehículo no se confirma la recogida. */
+  vehicleId?: string | null;
   pickedUpAt: Date | null;
   /** Aceptación de la oferta: cota inferior del `pickedUpAt` provisto (T9). */
   acceptedAt?: Date;
+  /** editar-anular-cargas §6.12: solicitud de cambio pendiente del viaje. */
+  solicitudPendienteId?: string;
 }
 
 const ACCEPTED_AT = new Date('2026-08-01T12:00:00Z');
@@ -48,30 +60,51 @@ function makeDb(estado: Estado, opts: { assignmentExists?: boolean } = {}) {
   const updates: Array<{ tabla: string; set: Record<string, unknown> }> = [];
   const exists = opts.assignmentExists ?? true;
 
+  /** Orden de lecturas: tabla y si llevó `FOR UPDATE`. */
+  const lecturas: Array<{ tabla: string; lock: boolean }> = [];
   const tx = {
     select: () => ({
-      from: () => ({
-        innerJoin: () => ({
-          where: () => ({
-            limit: async () =>
-              exists
-                ? [
-                    {
-                      assignmentId: ASSIGNMENT_ID,
-                      assignmentStatus: estado.assignmentStatus,
-                      driverUserId: estado.driverUserId,
-                      pickedUpAt: estado.pickedUpAt,
-                      acceptedAt: estado.acceptedAt ?? ACCEPTED_AT,
-                      empresaId: EMPRESA_ID,
-                      tripId: TRIP_ID,
-                      tripStatus: estado.tripStatus,
-                    },
-                  ]
-                : [],
-            for: () => ({ limit: async () => (exists ? [{}] : []) }),
+      from: (tablaFrom: unknown) => {
+        const tabla = getTableName(tablaFrom as never);
+        return {
+          innerJoin: () => ({
+            where: () => ({
+              limit: async () => {
+                lecturas.push({ tabla, lock: false });
+                return exists
+                  ? [
+                      {
+                        assignmentId: ASSIGNMENT_ID,
+                        assignmentStatus: estado.assignmentStatus,
+                        driverUserId: estado.driverUserId,
+                        vehicleId: estado.vehicleId === undefined ? 'veh-1' : estado.vehicleId,
+                        pickedUpAt: estado.pickedUpAt,
+                        acceptedAt: estado.acceptedAt ?? ACCEPTED_AT,
+                        empresaId: EMPRESA_ID,
+                        tripId: TRIP_ID,
+                        tripStatus: estado.tripStatus,
+                      },
+                    ]
+                  : [];
+              },
+            }),
           }),
-        }),
-      }),
+          where: () => ({
+            for: () => ({
+              limit: async () => {
+                lecturas.push({ tabla, lock: true });
+                return exists ? [{ id: TRIP_ID }] : [];
+              },
+            }),
+            limit: async () => {
+              lecturas.push({ tabla, lock: false });
+              return tabla === 'solicitudes_cambio_viaje' && estado.solicitudPendienteId
+                ? [{ id: estado.solicitudPendienteId }]
+                : [];
+            },
+          }),
+        };
+      },
     }),
     update: (tabla: unknown) => ({
       set: (set: Record<string, unknown>) => ({
@@ -102,6 +135,7 @@ function makeDb(estado: Estado, opts: { assignmentExists?: boolean } = {}) {
     db: { transaction: async (fn: (t: unknown) => unknown) => fn(tx) } as never,
     inserts,
     updates,
+    lecturas,
   };
 }
 
@@ -138,6 +172,10 @@ describe('confirmarRecogidaViaje', () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.eventType).toBe('recogida_confirmada');
     expect(inserts[0]?.tripId).toBe(TRIP_ID);
+    expect(sincronizarRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origen: 'recogida_confirmada' }),
+    );
   });
 
   it('confirmar dos veces es idempotente y NO duplica el evento', async () => {
@@ -204,6 +242,42 @@ describe('confirmarRecogidaViaje', () => {
       return;
     }
     expect(r.code).toBe('assignment_not_found');
+  });
+
+  it('sin vehículo en la ruta → ruta_sin_vehiculo', async () => {
+    const { db, updates } = makeDb({
+      assignmentStatus: 'asignado',
+      tripStatus: 'asignado',
+      driverUserId: DRIVER_ID,
+      vehicleId: null,
+      pickedUpAt: null,
+    });
+    const r = await confirmarRecogidaViaje({ db, logger, assignmentId: ASSIGNMENT_ID, actor });
+    expect(r).toEqual({ ok: false, code: 'ruta_sin_vehiculo' });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('sin conductor en la ruta → ruta_sin_conductor', async () => {
+    const { db, updates } = makeDb({
+      assignmentStatus: 'asignado',
+      tripStatus: 'asignado',
+      driverUserId: null,
+      vehicleId: 'veh-1',
+      pickedUpAt: null,
+    });
+    const r = await confirmarRecogidaViaje({
+      db,
+      logger,
+      assignmentId: ASSIGNMENT_ID,
+      actor: {
+        userId: 'jefa-1',
+        empresaId: EMPRESA_ID,
+        esConductorAsignado: false,
+        esCarrierConEscritura: true,
+      },
+    });
+    expect(r).toEqual({ ok: false, code: 'ruta_sin_conductor' });
+    expect(updates).toHaveLength(0);
   });
 
   it('un conductor que NO es el asignado no puede confirmar', async () => {
@@ -414,5 +488,41 @@ describe('confirmarRecogidaViaje', () => {
 
       expect(r.ok).toBe(true);
     });
+  });
+});
+
+describe('confirmarRecogidaViaje — cambio pendiente (editar-anular-cargas §6.12)', () => {
+  const asignado = {
+    assignmentStatus: 'asignado',
+    tripStatus: 'asignado',
+    driverUserId: DRIVER_ID,
+    pickedUpAt: null,
+  };
+
+  it('bloquea el viaje antes de leer la asignación y la solicitud', async () => {
+    const { db, lecturas } = makeDb(asignado);
+    await confirmarRecogidaViaje({ db, logger, assignmentId: ASSIGNMENT_ID, actor });
+    expect(lecturas[0]).toEqual({ tabla: 'viajes', lock: true });
+    expect(lecturas.map((l) => l.tabla)).toContain('solicitudes_cambio_viaje');
+  });
+
+  it('con una solicitud pendiente responde cambio_pendiente y no escribe nada', async () => {
+    const { db, inserts, updates } = makeDb({ ...asignado, solicitudPendienteId: 'sol-1' });
+    const r = await confirmarRecogidaViaje({ db, logger, assignmentId: ASSIGNMENT_ID, actor });
+    expect(r).toEqual({ ok: false, code: 'cambio_pendiente', solicitudId: 'sol-1' });
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+
+  it('la recogida ya hecha sigue siendo idempotente aunque haya una solicitud', async () => {
+    const { db } = makeDb({
+      assignmentStatus: 'recogido',
+      tripStatus: 'en_proceso',
+      driverUserId: DRIVER_ID,
+      pickedUpAt: new Date('2026-08-01T13:00:00Z'),
+      solicitudPendienteId: 'sol-1',
+    });
+    const r = await confirmarRecogidaViaje({ db, logger, assignmentId: ASSIGNMENT_ID, actor });
+    expect(r).toMatchObject({ ok: true, alreadyPickedUp: true });
   });
 });

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../../lib/api-client.js';
+import { logger } from '../../lib/logger.js';
 import { ActivarEmpresa } from './ActivarEmpresa.js';
 
 const MEMBERSHIP_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
@@ -42,7 +43,7 @@ beforeEach(() => {
 
 describe('ActivarEmpresa', () => {
   it('lista pendientes y activa sin SQL', async () => {
-    const getSpy = vi.spyOn(api, 'get').mockResolvedValue({ empresas: [PENDIENTE] });
+    vi.spyOn(api, 'get').mockResolvedValue({ empresas: [PENDIENTE] });
     const patchSpy = vi.spyOn(api, 'patch').mockResolvedValue({
       ok: true,
       estado: 'activa',
@@ -52,7 +53,6 @@ describe('ActivarEmpresa', () => {
     render(<ActivarEmpresa />);
 
     expect(await screen.findByText('Transportes Sur SpA')).toBeInTheDocument();
-    expect(getSpy).toHaveBeenCalledWith('/admin/empresas?estado=pendiente_verificacion');
 
     fireEvent.click(screen.getByTestId('empresa-activar-e-1'));
 
@@ -228,5 +228,114 @@ describe('ActivarEmpresa', () => {
     expect(
       await screen.findByText('No encontramos esa invitación en esta empresa.'),
     ).toBeInTheDocument();
+  });
+});
+
+/** acceso-usuarios-empresa-panel SC4 y SC7. */
+describe('ActivarEmpresa — código nuevo y filtro inicial (SC4, SC7)', () => {
+  it('arranca en «Todas»: la empresa activa recién creada y sus pendientes se ven sin cambiar el filtro', async () => {
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [
+        { ...PENDIENTE, estado: 'activa' as const, miembros_pendientes: [MIEMBRO_PENDIENTE] },
+      ],
+    });
+
+    render(<ActivarEmpresa />);
+
+    expect(await screen.findByText('Javier Vicencio')).toBeInTheDocument();
+    expect(getSpy).toHaveBeenCalledWith('/admin/empresas');
+    expect(screen.getByTestId('empresa-filtro-todas')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId(`reemitir-codigo-${MEMBERSHIP_ID}`)).toBeInTheDocument();
+  });
+
+  it('el filtro «Pendientes» sigue disponible', async () => {
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue({ empresas: [PENDIENTE] });
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-pendiente_verificacion'));
+
+    await waitFor(() =>
+      expect(getSpy).toHaveBeenCalledWith('/admin/empresas?estado=pendiente_verificacion'),
+    );
+  });
+
+  it('el código nuevo va con la dirección absoluta de /activar, el RUT y el vencimiento, en tuteo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, miembros_pendientes: [MIEMBRO_PENDIENTE] }],
+    });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      codigo_activacion: '482915',
+      expira_en: '2026-10-05T12:00:00.000Z',
+      membership_id: MEMBERSHIP_ID,
+    });
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId(`reemitir-codigo-${MEMBERSHIP_ID}`));
+
+    const entrega = await screen.findByTestId(`codigo-entrega-${MEMBERSHIP_ID}`);
+    expect(entrega).toHaveTextContent(`${window.location.origin}/activar`);
+    expect(entrega).toHaveTextContent('12345678-5');
+    expect(entrega).toHaveTextContent('482915');
+    expect(entrega).toHaveTextContent(/Vence el/);
+    expect(entrega).toHaveTextContent(/Entrégale/);
+    expect(entrega.textContent ?? '').not.toMatch(/Entrá|escribí|elegí/);
+    // Quien elige la clave es la persona, no el admin.
+    expect(entrega).toHaveTextContent(/la persona elige su propia clave/);
+  });
+
+  it('si el portapapeles falla al copiar la dirección, queda registrado y la dirección sigue en pantalla', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, miembros_pendientes: [MIEMBRO_PENDIENTE] }],
+    });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      codigo_activacion: '482915',
+      expira_en: '2026-10-05T12:00:00.000Z',
+      membership_id: MEMBERSHIP_ID,
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: vi.fn(async () => {
+          throw new Error('NotAllowedError');
+        }),
+      },
+      configurable: true,
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId(`reemitir-codigo-${MEMBERSHIP_ID}`));
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar dirección/i }));
+
+    await waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipId: `${MEMBERSHIP_ID}-direccion` }),
+      expect.any(String),
+    );
+    expect(screen.getByRole('button', { name: /Copiar dirección/i })).toBeInTheDocument();
+    expect(screen.getByTestId(`codigo-entrega-${MEMBERSHIP_ID}`)).toHaveTextContent(
+      `${window.location.origin}/activar`,
+    );
+  });
+
+  it('copia la dirección de /activar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, miembros_pendientes: [MIEMBRO_PENDIENTE] }],
+    });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      codigo_activacion: '482915',
+      expira_en: '2026-10-05T12:00:00.000Z',
+      membership_id: MEMBERSHIP_ID,
+    });
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId(`reemitir-codigo-${MEMBERSHIP_ID}`));
+    fireEvent.click(await screen.findByRole('button', { name: /Copiar dirección/i }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/activar`),
+    );
+    expect(await screen.findByRole('button', { name: /Copiada ✓/ })).toBeInTheDocument();
   });
 });

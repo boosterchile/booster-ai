@@ -2,6 +2,7 @@ import { type TipoCombustible, calcularEmptyBackhaul } from '@booster-ai/carbon-
 import type { Logger } from '@booster-ai/logger';
 import { and, asc, eq, gt, lt, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { asignacionConVehiculo, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
 import { REGION_CENTROIDS_LAT_LNG } from './get-public-tracking.js';
@@ -146,7 +147,7 @@ export async function actualizarFactorMatchingViaje(opts: {
   // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C / rls-viabilidad §2C)
   const asgRows = await db
     .select({
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       deliveredAt: assignments.deliveredAt,
     })
     .from(assignments)
@@ -212,7 +213,7 @@ export async function actualizarFactorMatchingViaje(opts: {
     .innerJoin(assignments, eq(assignments.tripId, trips.id))
     .where(
       and(
-        eq(assignments.vehicleId, assignment.vehicleId),
+        asignacionConVehiculo(assignment.vehicleId),
         ne(trips.id, tripId),
         gt(trips.pickupWindowStart, assignment.deliveredAt),
         lt(trips.pickupWindowStart, ventanaFinDate),

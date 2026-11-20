@@ -23,6 +23,25 @@ vi.mock('../../src/services/calcular-metricas-viaje.js', () => ({
   })),
 }));
 
+// ruta-parada-servicio parte 2: la ruta de dos paradas se verifica en su
+// propio test unitario y contra Postgres (ruta-de-asignacion.integration).
+// Acá solo importa que acceptOffer la cree dentro de su transacción.
+const crearRutaMock = vi.fn(async () => ({ rutaId: 'ruta-1' }));
+vi.mock('../../src/services/crear-ruta-de-asignacion.js', () => ({
+  crearRutaDeAsignacion: (...args: unknown[]) => crearRutaMock(...(args as [])),
+}));
+
+// seguimiento-por-correo: el envío por correo se verifica en su propio test;
+// acá solo importa que acceptOffer lo despache y que su falla no lo revierta.
+const notifyEmailMock = vi.fn(async () => ({
+  assignmentId: 'assign-1',
+  skipped: false,
+  enviados: 1,
+}));
+vi.mock('../../src/services/notify-tracking-link-email.js', () => ({
+  notifyTrackingLinkEmailAtAssignment: (...args: unknown[]) => notifyEmailMock(...(args as [])),
+}));
+
 const noop = (): void => undefined;
 const noopLogger = {
   trace: noop,
@@ -240,7 +259,7 @@ describe('acceptOffer', () => {
 
   it('happy path: accept con 0 supersededOffers + assignment creado', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }], // UPDATE offer
         [], // UPDATE supersededed (vacío, era la única)
@@ -265,9 +284,43 @@ describe('acceptOffer', () => {
     expect(db.forSpy).toHaveBeenCalledWith('update');
   });
 
+  it.each([
+    ['envía el link por correo con la asignación creada', null],
+    ['si el correo falla, la aceptación queda igual', new Error('resend caído')],
+  ])('%s', async (_caso, falla) => {
+    notifyEmailMock.mockClear();
+    if (falla) {
+      notifyEmailMock.mockRejectedValueOnce(falla);
+    }
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [
+        [{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1', agreedPriceClp: 250000 }],
+        [],
+      ],
+    });
+    const emailDeps = {
+      db: db as never,
+      logger: noopLogger,
+      emailSender: { send: vi.fn() },
+      webAppUrl: 'https://app.boosterchile.com',
+    };
+    const result = await acceptOffer({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      userId: USER_ID,
+      notifyTrackingLinkEmail: emailDeps,
+    });
+    expect(result.assignment.id).toBe('assign-1');
+    expect(notifyEmailMock).toHaveBeenCalledWith(emailDeps, { assignmentId: 'assign-1' });
+  });
+
   it('happy path: accept con N supersededOffers (otras offers pendientes del mismo trip)', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }],
         [{ id: 'o2' }, { id: 'o3' }, { id: 'o4' }], // 3 supersededOffers
@@ -285,9 +338,9 @@ describe('acceptOffer', () => {
     expect(result.supersededOfferIds).toEqual(['o2', 'o3', 'o4']);
   });
 
-  it('UPDATE offer retorna empty → throw "Update offer returned no row"', async () => {
+  it('UPDATE offer con CAS no aplica (dejó de estar pendiente) → OfferNotPendingError', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[]], // UPDATE retorna vacío
     });
     await expect(
@@ -298,12 +351,38 @@ describe('acceptOffer', () => {
         empresaId: EMPRESA_ID,
         userId: USER_ID,
       }),
-    ).rejects.toThrow(/Update offer returned no row/);
+    ).rejects.toBeInstanceOf(OfferNotPendingError);
+  });
+
+  // editar-anular-cargas PR1: la oferta se revalida con lock después del lock
+  // del viaje. La carrera completa la cubre accept-oferta-cas.integration.
+  it.each([
+    ['ya no pendiente', { ...VALID_OFFER, status: 'expirada' }, OfferNotPendingError],
+    [
+      'vencida al relerla',
+      { ...VALID_OFFER, expiresAt: new Date(Date.now() - 1000) },
+      OfferExpiredError,
+    ],
+  ])('relectura tras el lock: %s → rechaza sin escribir', async (_caso, relectura, error) => {
+    const db = makeDb({ selects: [[VALID_OFFER], [VALID_TRIP], [relectura]] });
+    await expect(
+      acceptOffer({
+        db: db as never,
+        logger: noopLogger,
+        offerId: OFFER_ID,
+        empresaId: EMPRESA_ID,
+        userId: USER_ID,
+      }),
+    ).rejects.toBeInstanceOf(error);
+    expect(db.update).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    // Dos locks: el del viaje y el de la oferta.
+    expect(db.forSpy).toHaveBeenCalledTimes(2);
   });
 
   it('INSERT assignment retorna empty → throw', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }]],
       inserts: [[]], // INSERT assignment vacío
     });
@@ -318,12 +397,55 @@ describe('acceptOffer', () => {
     ).rejects.toThrow(/Insert assignment returned no row/);
   });
 
+  it('crea la ruta de la asignación dentro de la transacción del accept', async () => {
+    crearRutaMock.mockClear();
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
+    });
+    await acceptOffer({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      userId: USER_ID,
+    });
+    expect(crearRutaMock).toHaveBeenCalledTimes(1);
+    expect(crearRutaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ insert: expect.any(Function) }),
+      { assignment: expect.objectContaining({ id: 'assign-1', tripId: TRIP_ID }), userId: USER_ID },
+    );
+  });
+
+  it('si la ruta no se puede crear, el accept falla y no sigue', async () => {
+    crearRutaMock.mockClear();
+    crearRutaMock.mockRejectedValueOnce(new Error('sin ruta'));
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
+    });
+    await expect(
+      acceptOffer({
+        db: db as never,
+        logger: noopLogger,
+        offerId: OFFER_ID,
+        empresaId: EMPRESA_ID,
+        userId: USER_ID,
+      }),
+    ).rejects.toThrow('sin ruta');
+    // Ni el supersede de ofertas hermanas ni el viaje a `asignado`: solo el
+    // UPDATE de la oferta corrió antes de la ruta.
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
   it('acuña tracking_token_publico UUID v4 aunque el viaje no traiga destinatario', async () => {
     // El SELECT del trip en el accept solo trae id + status. No hay
     // destinatario_nombre / destinatario_whatsapp en esta fila: el token
     // no puede depender de esos campos.
     const db = makeDb({
-      selects: [[VALID_OFFER], [VALID_TRIP]],
+      selects: [[VALID_OFFER], [VALID_TRIP], [VALID_OFFER]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
       inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
     });
@@ -347,11 +469,15 @@ describe('acceptOffer', () => {
     expect(VALID_TRIP).not.toHaveProperty('consigneeWhatsappE164');
   });
 
-  it('suggestedVehicleId null → assignment.vehicleId queda como string vacío', async () => {
+  it('suggestedVehicleId null → assignment.vehicleId queda null (sin vehículo)', async () => {
     const db = makeDb({
-      selects: [[{ ...VALID_OFFER, suggestedVehicleId: null }], [VALID_TRIP]],
+      selects: [
+        [{ ...VALID_OFFER, suggestedVehicleId: null }],
+        [VALID_TRIP],
+        [{ ...VALID_OFFER, suggestedVehicleId: null }],
+      ],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
-      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: '' }], []],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: null }], []],
     });
     const result = await acceptOffer({
       db: db as never,
@@ -361,6 +487,14 @@ describe('acceptOffer', () => {
       userId: USER_ID,
     });
     expect(result.assignment.id).toBe('assign-1');
+    const assignmentInsert = db.insertedValues[0] as { vehicleId: string | null };
+    expect(assignmentInsert.vehicleId).toBeNull();
+    expect(crearRutaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        assignment: expect.objectContaining({ vehicleId: null }),
+      }),
+    );
   });
 });
 

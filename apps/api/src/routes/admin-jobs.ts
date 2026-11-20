@@ -43,6 +43,7 @@ import {
   markOnboardingOrphanReaped,
   reapOrphanOnboardingFirebaseUsers,
 } from '../jobs/reap-orphan-onboarding-firebase.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
@@ -62,6 +63,8 @@ import {
   type PublicarDocumentoSubido,
   reconciliarDocumentosPendientes,
 } from '../services/reconciliar-documentos-pendientes.js';
+import { recordarSolicitudesCambio } from '../services/recordar-solicitudes-cambio.js';
+import { recordarVehiculoPendiente } from '../services/recordar-vehiculo-pendiente.js';
 import {
   ValorUfNoDisponibleError,
   fechaChile,
@@ -74,6 +77,11 @@ import {
  * sobrecargas de `pg.Pool.query` no calzan estructuralmente con esa interfaz;
  * este adaptador las reduce a la única forma que usan, sin casts.
  */
+/** editar-anular-cargas §6: recordatorios de solicitudes de cambio, por resultado. */
+const recordatorioCambioCounter = getBusinessCounter('solicitud_cambio_recordatorio_total');
+/** matching-desde-la-carga §3.9: recordatorios de vehículo pendiente, por resultado. */
+const recordatorioVehiculoCounter = getBusinessCounter('vehiculo_pendiente_recordatorio_total');
+
 function adaptarPool(pool: pg.Pool): PoolLike & OrphanPoolLike {
   return {
     async query(sql: string, params?: unknown[]) {
@@ -213,6 +221,74 @@ export function createAdminJobsRoutes(opts: {
       mora_pct_mes: r.moraPctMes,
       anticipos_pct_mes: r.anticiposPctMes,
       viajes_en_mandato: r.viajesEnMandato,
+    });
+  });
+
+  /**
+   * editar-anular-cargas §6.14 — recordatorio de solicitudes de cambio sin
+   * responder, a la oficina de la transportista. Sin VAPID no hay push que
+   * mandar: 200 con `skipped:true`, sin tocar la base.
+   */
+  app.post('/solicitudes-cambio-recordatorio', async (c) => {
+    if (!appConfig.WEBPUSH_VAPID_PUBLIC_KEY || !appConfig.WEBPUSH_VAPID_PRIVATE_KEY) {
+      return c.json({ ok: true, skipped: true, reason: 'webpush_no_configurado' });
+    }
+    const r = await withBusinessSpan(
+      { name: 'jobs.solicitudes_cambio_recordatorio' },
+      async (span) => {
+        const res = await recordarSolicitudesCambio({
+          db: opts.db,
+          logger: opts.logger,
+          intervaloMin: appConfig.CAMBIO_RECORDATORIO_INTERVALO_MIN,
+        });
+        setResultAttributes(span, {
+          'booster.recordados': res.recordados,
+          'booster.fallidos': res.fallidos,
+        });
+        recordatorioCambioCounter.add(res.recordados, { resultado: 'enviado' });
+        recordatorioCambioCounter.add(res.fallidos, { resultado: 'fallido' });
+        return res;
+      },
+    );
+    return c.json({ ok: true, recordados: r.recordados, fallidos: r.fallidos });
+  });
+
+  /**
+   * matching-desde-la-carga §3.9 / §11-3 — recordatorio 24 h / 2 h a la
+   * oficina si falta el vehículo, y aviso al generador si la ventana ya
+   * empezó. Sin VAPID: 200 con `skipped:true`, sin tocar la base.
+   */
+  app.post('/vehiculo-pendiente-recordatorio', async (c) => {
+    if (!appConfig.WEBPUSH_VAPID_PUBLIC_KEY || !appConfig.WEBPUSH_VAPID_PRIVATE_KEY) {
+      return c.json({ ok: true, skipped: true, reason: 'webpush_no_configurado' });
+    }
+    const r = await withBusinessSpan(
+      { name: 'jobs.vehiculo_pendiente_recordatorio' },
+      async (span) => {
+        const res = await recordarVehiculoPendiente({
+          db: opts.db,
+          logger: opts.logger,
+        });
+        setResultAttributes(span, {
+          'booster.recordados_oficina': res.recordadosOficina,
+          'booster.avisados_generador': res.avisadosGenerador,
+          'booster.fallidos': res.fallidos,
+        });
+        recordatorioVehiculoCounter.add(res.recordadosOficina, {
+          resultado: 'oficina',
+        });
+        recordatorioVehiculoCounter.add(res.avisadosGenerador, {
+          resultado: 'generador',
+        });
+        recordatorioVehiculoCounter.add(res.fallidos, { resultado: 'fallido' });
+        return res;
+      },
+    );
+    return c.json({
+      ok: true,
+      recordados_oficina: r.recordadosOficina,
+      avisados_generador: r.avisadosGenerador,
+      fallidos: r.fallidos,
     });
   });
 

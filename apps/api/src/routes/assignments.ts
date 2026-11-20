@@ -16,25 +16,32 @@
  * ahí ve el assignment como sub-objeto.
  */
 
-import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
+import { generarSignedUrlPdf, versionDePdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import {
   ctxDeUserContext,
+  denegarResponderCambioCarga,
   esGestor,
   puedeAsignarViaje,
   veSoloSuViaje,
 } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import {
+  asignacionConConductor,
+  conductorDeAsignacion,
+  vehiculoDeAsignacion,
+} from '../db/configuracion-de-asignacion.js';
+import {
   assignments,
   empresas as empresasTable,
   posicionesMovilConductor,
   telemetryPoints,
+  tripChangeRequests,
   tripMetrics,
   trips,
   users as usersTable,
@@ -51,6 +58,8 @@ import {
   VehicleNotAssignableError,
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
+import { calcularMetricasEstimadas } from '../services/calcular-metricas-viaje.js';
+import { cambiaComercial, cambiaHuella } from '../services/cambio-carga-valores.js';
 import { explicarCoberturaCero } from '../services/clasificar-cobertura-cero.js';
 import {
   type DocumentClosePolicy,
@@ -65,11 +74,19 @@ import {
   registrarRespuestaSugerenciaRuta,
 } from '../services/eco-routing-tiempo-real.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { estimarHuellaDeRuta } from '../services/estimar-huella-de-ruta.js';
 import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
+import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
+import { rutaCompartidaDelViaje } from '../services/ruta-compartida.js';
 import { safeIsoString } from '../services/safe-iso-string.js';
+import {
+  aceptarSolicitudCambio,
+  rechazarSolicitudCambio,
+  solicitudPendienteDeViaje,
+} from '../services/solicitud-cambio-carga.js';
 import { serializeTripMetrics } from './trip-requests-v2.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
@@ -80,6 +97,16 @@ const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_tot
  * idempotente, distinguible para no inflar el conteo de recogidas nuevas).
  */
 const recogidasConfirmadasCounter = getBusinessCounter('recogidas_confirmadas_total');
+/** editar-anular-cargas §6: respuestas del transportista a un cambio de carga. */
+const solicitudCambioCounter = getBusinessCounter('solicitud_cambio_total');
+/** Ids de las rutas de solicitudes: un id mal formado es un recurso que no existe (404). */
+const idsSolicitudSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
+const idsSolicitudInvalidos = (r: { success: boolean }, c: Context) =>
+  r.success ? undefined : c.json({ error: 'not_found', code: 'not_found' }, 404);
+/** Body de `POST /:id/solicitudes-cambio/:sid/rechazar` (§6.10). */
+const rechazarCambioBodySchema = z.object({ reason: z.string().trim().min(1).max(500).optional() });
+/** editar-anular-cargas §6: recogidas o entregas frenadas por un cambio de carga pendiente. */
+const recogidaBloqueadaCambioCounter = getBusinessCounter('recogida_bloqueada_cambio_total');
 
 /** Query de `GET /assignments/:id/traza`: cap de puntos (default 800, máx 2000). */
 const trazaCargaQuerySchema = z.object({
@@ -189,6 +216,14 @@ export function createAssignmentsRoutes(opts: {
     // Estados operacionales. Los terminales (entregado, cancelado) quedan
     // fuera: esta pantalla es para despachar, no para consultar histórico.
     const ACTIVE_STATUSES = ['asignado', 'recogido'] as const;
+    // Excepción (editar-anular-cargas §9, badge «Cancelado por el generador»):
+    // los servicios que el generador canceló en las últimas 72 horas siguen
+    // en la lista. Decisión interna: una ventana corta basta para que la
+    // oficina se entere aunque no haya abierto la app el día de la
+    // cancelación (un fin de semana largo cabe), sin convertir la pantalla
+    // de despacho en histórico. Pasadas las 72 horas desaparecen.
+    const VENTANA_CANCELADAS_MS = 72 * 60 * 60 * 1000;
+    const canceladasDesde = new Date(Date.now() - VENTANA_CANCELADAS_MS);
     // CHEQUEOS_REEMPLAZADOS assignments-lista: el listado no tenía rol.
     // Sin contexto se niega: no se entrega la lista completa.
     const ctxLista = ctxDeUserContext(auth.userContext);
@@ -196,7 +231,7 @@ export function createAssignmentsRoutes(opts: {
       return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
     }
     const filtroConductor = veSoloSuViaje(ctxLista)
-      ? [eq(assignments.driverUserId, auth.userContext.user.id)]
+      ? [asignacionConConductor(auth.userContext.user.id)]
       : [];
     const rows = await opts.db
       .select({
@@ -205,9 +240,12 @@ export function createAssignmentsRoutes(opts: {
         acceptedAt: assignments.acceptedAt,
         pickedUpAt: assignments.pickedUpAt,
         agreedPriceClp: assignments.agreedPriceClp,
-        driverUserId: assignments.driverUserId,
+        cancelledAt: assignments.cancelledAt,
+        cancelledByActor: assignments.cancelledByActor,
+        cancellationReason: assignments.cancellationReason,
+        driverUserId: conductorDeAsignacion,
         driverName: usersTable.fullName,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         tripId: trips.id,
         trackingCode: trips.trackingCode,
@@ -220,48 +258,86 @@ export function createAssignmentsRoutes(opts: {
         cargoWeightKg: trips.cargoWeightKg,
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
+        // editar-anular-cargas §6.11: datos libres y si hay un cambio sin responder.
+        consigneeName: trips.consigneeName,
+        consigneeWhatsappE164: trips.consigneeWhatsappE164,
+        notes: trips.notes,
+        reference: trips.reference,
+        cambioPendienteEn: sql<Date | string | null>`(
+          select ${tripChangeRequests.createdAt} from ${tripChangeRequests}
+          where ${tripChangeRequests.tripId} = ${trips.id}
+            and ${tripChangeRequests.status} = 'pendiente'
+          limit 1
+        )`,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .leftJoin(usersTable, eq(usersTable.id, conductorDeAsignacion))
       .where(
         and(
           eq(assignments.empresaId, auth.activeMembership.empresa.id),
-          inArray(assignments.status, ACTIVE_STATUSES),
+          or(
+            inArray(assignments.status, ACTIVE_STATUSES),
+            and(
+              eq(assignments.status, 'cancelado'),
+              eq(assignments.cancelledByActor, 'generador_carga'),
+              gte(assignments.cancelledAt, canceladasDesde),
+            ),
+          ),
           ...filtroConductor,
         ),
       )
       .orderBy(desc(assignments.acceptedAt));
 
     return c.json({
-      assignments: rows.map((r) => ({
-        id: r.assignmentId,
-        status: r.assignmentStatus,
-        accepted_at: safeIsoString(r.acceptedAt),
-        picked_up_at: safeIsoString(r.pickedUpAt),
-        agreed_price_clp: r.agreedPriceClp,
-        // `null` explícito, no campo ausente: la UI necesita distinguir "sin
-        // conductor" de "no me lo mandaron".
-        driver: r.driverUserId
-          ? { user_id: r.driverUserId, full_name: r.driverName ?? null }
-          : null,
-        vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
-        trip: {
-          id: r.tripId,
-          tracking_code: r.trackingCode,
-          status: r.tripStatus,
-          origin: { address_raw: r.originAddressRaw, region_code: r.originRegionCode },
-          destination: {
-            address_raw: r.destinationAddressRaw,
-            region_code: r.destinationRegionCode,
+      assignments: rows.map((r) => {
+        // §6.11: `cancelacion {por_actor, razon, en}` o null si no aplica.
+        const cancelacion =
+          r.assignmentStatus === 'cancelado' && r.cancelledByActor
+            ? {
+                por_actor: r.cancelledByActor,
+                razon: r.cancellationReason ?? null,
+                en: safeIsoString(r.cancelledAt),
+              }
+            : null;
+        return {
+          id: r.assignmentId,
+          status: r.assignmentStatus,
+          accepted_at: safeIsoString(r.acceptedAt),
+          picked_up_at: safeIsoString(r.pickedUpAt),
+          agreed_price_clp: r.agreedPriceClp,
+          // `null` explícito, no campo ausente: la UI necesita distinguir "sin
+          // conductor" de "no me lo mandaron".
+          driver: r.driverUserId
+            ? { user_id: r.driverUserId, full_name: r.driverName ?? null }
+            : null,
+          vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
+          trip: {
+            id: r.tripId,
+            tracking_code: r.trackingCode,
+            status: r.tripStatus,
+            origin: { address_raw: r.originAddressRaw, region_code: r.originRegionCode },
+            destination: {
+              address_raw: r.destinationAddressRaw,
+              region_code: r.destinationRegionCode,
+            },
+            cargo_type: r.cargoType,
+            cargo_weight_kg: r.cargoWeightKg,
+            pickup_window_start: safeIsoString(r.pickupWindowStart),
+            pickup_window_end: safeIsoString(r.pickupWindowEnd),
+            consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
+            notes: r.notes,
+            reference: r.reference,
+            // El listado solo marca el servicio; el diff vive en el detalle.
+            cambio_pendiente: r.cambioPendienteEn
+              ? { existe: true, creado_en: safeIsoString(r.cambioPendienteEn) }
+              : null,
+            cancelacion,
           },
-          cargo_type: r.cargoType,
-          cargo_weight_kg: r.cargoWeightKg,
-          pickup_window_start: safeIsoString(r.pickupWindowStart),
-          pickup_window_end: safeIsoString(r.pickupWindowEnd),
-        },
-      })),
+          cancelacion,
+        };
+      }),
     });
   });
 
@@ -315,13 +391,17 @@ export function createAssignmentsRoutes(opts: {
         pickedUpAt: assignments.pickedUpAt,
         deliveredAt: assignments.deliveredAt,
         cancelledAt: assignments.cancelledAt,
+        cancelledByActor: assignments.cancelledByActor,
+        cancellationReason: assignments.cancellationReason,
         empresaIdAssign: assignments.empresaId,
         empresaLegalName: empresasTable.legalName,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         vehicleStatus: vehicles.vehicleStatus,
         vehicleType: vehicles.vehicleType,
-        driverUserId: assignments.driverUserId,
+        // editar-anular-cargas §9: avisar antes de aceptar un peso que no cabe.
+        vehicleCapacityKg: vehicles.capacityKg,
+        driverUserId: conductorDeAsignacion,
         driverName: usersTable.fullName,
         // trip
         tripId: trips.id,
@@ -337,14 +417,19 @@ export function createAssignmentsRoutes(opts: {
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
         proposedPriceClp: trips.proposedPriceClp,
+        // editar-anular-cargas §12-P4: datos libres que ve la transportista.
+        consigneeName: trips.consigneeName,
+        consigneeWhatsappE164: trips.consigneeWhatsappE164,
+        notes: trips.notes,
+        reference: trips.reference,
         shipperLegalName: empresaShipper.legalName,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
       .leftJoin(empresaShipper, eq(empresaShipper.id, trips.generadorCargaEmpresaId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .leftJoin(usersTable, eq(usersTable.id, conductorDeAsignacion))
       .where(eq(assignments.id, assignmentId))
       .limit(1);
 
@@ -358,6 +443,22 @@ export function createAssignmentsRoutes(opts: {
     if (veSoloSuViaje(ctxDetalle) && row.driverUserId !== auth.userContext.user.id) {
       return c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403);
     }
+
+    // editar-anular-cargas §6.11: la oficina ve el cambio propuesto completo;
+    // el conductor solo sabe que existe (§12-P7).
+    const pendiente =
+      row.tripStatus === 'asignado' ? await solicitudPendienteDeViaje(opts.db, row.tripId) : null;
+    const cambioPendiente = pendiente
+      ? veSoloSuViaje(ctxDetalle)
+        ? { existe: true as const, creado_en: pendiente.creado_en }
+        : {
+            existe: true as const,
+            id: pendiente.id,
+            cambios: pendiente.cambios,
+            valores_anteriores: pendiente.valores_anteriores,
+            creado_en: pendiente.creado_en,
+          }
+      : null;
 
     // Última ubicación del vehículo asignado (si tiene Teltonika emitiendo).
     let ubicacionActual: {
@@ -418,6 +519,10 @@ export function createAssignmentsRoutes(opts: {
         pickup_window_end: row.pickupWindowEnd?.toISOString() ?? null,
         proposed_price_clp: row.proposedPriceClp,
         shipper_legal_name: row.shipperLegalName,
+        consignee: { name: row.consigneeName, phone_e164: row.consigneeWhatsappE164 },
+        notes: row.notes,
+        reference: row.reference,
+        cambio_pendiente: cambioPendiente,
       },
       assignment: {
         id: row.assignmentId,
@@ -427,12 +532,16 @@ export function createAssignmentsRoutes(opts: {
         picked_up_at: row.pickedUpAt?.toISOString() ?? null,
         delivered_at: row.deliveredAt?.toISOString() ?? null,
         cancelled_at: row.cancelledAt?.toISOString() ?? null,
+        // Quién canceló y por qué: el banner de la transportista (editar-anular-cargas §9).
+        cancelled_by_actor: row.cancelledByActor ?? null,
+        cancellation_reason: row.cancellationReason ?? null,
         empresa_id: row.empresaIdAssign,
         empresa_legal_name: row.empresaLegalName,
         vehicle_id: row.vehicleId,
         vehicle_plate: row.vehiclePlate,
         vehicle_status: row.vehicleId ? (row.vehicleStatus ?? null) : null,
         vehicle_type: row.vehicleType,
+        vehicle_capacity_kg: row.vehicleId ? (row.vehicleCapacityKg ?? null) : null,
         driver_user_id: row.driverUserId,
         driver_name: row.driverName,
         ubicacion_actual: ubicacionActual,
@@ -534,7 +643,7 @@ export function createAssignmentsRoutes(opts: {
           // ¿Es el conductor de este servicio? Se resuelve contra la fila, no
           // contra lo que el cliente diga.
           const rows = await opts.db
-            .select({ driverUserId: assignments.driverUserId })
+            .select({ driverUserId: conductorDeAsignacion })
             .from(assignments)
             .where(eq(assignments.id, assignmentId))
             .limit(1);
@@ -571,6 +680,10 @@ export function createAssignmentsRoutes(opts: {
                   : result.code === 'invalid_picked_up_at'
                     ? 400
                     : 409;
+            if (result.code === 'cambio_pendiente') {
+              // editar-anular-cargas §6.12: el transportista debe responder antes.
+              recogidaBloqueadaCambioCounter.add(1, { via });
+            }
             return c.json(
               {
                 error: result.code,
@@ -578,6 +691,7 @@ export function createAssignmentsRoutes(opts: {
                 ...(result.code === 'invalid_status' && result.currentStatus
                   ? { current_status: result.currentStatus }
                   : {}),
+                ...(result.code === 'cambio_pendiente' ? { solicitud_id: result.solicitudId } : {}),
               },
               statusCode,
             );
@@ -634,7 +748,7 @@ export function createAssignmentsRoutes(opts: {
       .select({
         tripId: assignments.tripId,
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
@@ -668,6 +782,9 @@ export function createAssignmentsRoutes(opts: {
       ...(opts.documentClosePolicy ? { documentClosePolicy: opts.documentClosePolicy } : {}),
     });
 
+    if (!result.ok && result.code === 'cambio_pendiente') {
+      recogidaBloqueadaCambioCounter.add(1, { via: 'entrega_carrier' });
+    }
     if (!result.ok) {
       const statusCode =
         result.code === 'trip_not_found'
@@ -682,6 +799,7 @@ export function createAssignmentsRoutes(opts: {
           ...(result.code === 'invalid_status' && result.currentStatus
             ? { current_status: result.currentStatus }
             : {}),
+          ...(result.code === 'cambio_pendiente' ? { solicitud_id: result.solicitudId } : {}),
         },
         statusCode,
       );
@@ -759,7 +877,7 @@ export function createAssignmentsRoutes(opts: {
       .select({
         assignmentId: assignments.id,
         assignmentStatus: assignments.status,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
         empresaId: assignments.empresaId,
         pickedUpAt: assignments.pickedUpAt,
         deliveredAt: assignments.deliveredAt,
@@ -780,14 +898,14 @@ export function createAssignmentsRoutes(opts: {
         certificateSha256: tripMetrics.certificateSha256,
         certificateKmsKeyVersion: tripMetrics.certificateKmsKeyVersion,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
-        vehicleId: assignments.vehicleId,
+        vehicleId: vehiculoDeAsignacion,
         teltonikaImei: vehicles.teltonikaImei,
         teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
       .where(eq(assignments.id, assignmentId))
       .limit(1);
     return rows[0];
@@ -913,6 +1031,8 @@ export function createAssignmentsRoutes(opts: {
       bucket: opts.certConfig.certificatesBucket,
       empresaId: row.generadorEmpresaId,
       trackingCode: row.trackingCode,
+      // La versión vigente: la URI guardada es la de su PDF (reemision-certificado).
+      version: versionDePdf(row.certificatePdfUrl),
       ttlSeconds: 300,
     });
     return c.json({
@@ -936,8 +1056,8 @@ export function createAssignmentsRoutes(opts: {
     const [assignment] = await opts.db
       .select({
         id: assignments.id,
-        driverUserId: assignments.driverUserId,
-        vehicleId: assignments.vehicleId,
+        driverUserId: conductorDeAsignacion,
+        vehicleId: vehiculoDeAsignacion,
         status: assignments.status,
         originLatitude: trips.originLatitude,
         originLongitude: trips.originLongitude,
@@ -955,6 +1075,9 @@ export function createAssignmentsRoutes(opts: {
     // Solo aceptamos posiciones durante el viaje activo (no si ya terminó).
     if (assignment.status !== 'asignado' && assignment.status !== 'recogido') {
       return c.json({ error: 'assignment_not_active', code: 'assignment_not_active' }, 409);
+    }
+    if (assignment.vehicleId == null) {
+      return c.json({ error: 'ruta_sin_vehiculo', code: 'ruta_sin_vehiculo' }, 409);
     }
 
     await opts.db.insert(posicionesMovilConductor).values({
@@ -1086,7 +1209,7 @@ export function createAssignmentsRoutes(opts: {
     const rows = await opts.db
       .select({
         empresaId: assignments.empresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       .from(assignments)
       .where(eq(assignments.id, assignmentId))
@@ -1347,6 +1470,167 @@ export function createAssignmentsRoutes(opts: {
       return c.json({ error: 'internal_server_error' }, 500);
     }
   });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/solicitudes-cambio/:sid/aceptar y /rechazar — el transportista
+  // responde un cambio que propuso el generador (editar-anular-cargas §6.9–10).
+  // `requireCarrierAuth` no mira el rol: el chequeo de capacidad es obligatorio.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/:id/solicitudes-cambio/:sid/aceptar',
+    zValidator('param', idsSolicitudSchema, idsSolicitudInvalidos),
+    async (c) => {
+      const auth = requireCarrierAuth(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarResponderCambioCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const { id: assignmentId, sid: solicitudId } = c.req.valid('param');
+      const r = await withBusinessSpan(
+        {
+          name: 'asignaciones.solicitud_cambio.aceptar',
+          attributes: {
+            'booster.assignment_id': assignmentId,
+            'booster.solicitud_id': solicitudId,
+          },
+        },
+        async (span) => {
+          const res = await aceptarSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            {
+              assignmentId,
+              empresaId: auth.activeMembership.empresa.id,
+              userId: auth.userContext.user.id,
+              solicitudId,
+            },
+          );
+          const resultado = res.ok ? 'aceptada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          solicitudCambioCounter.add(1, {
+            resultado,
+            comercial: res.ok ? cambiaComercial(res.campos) : false,
+          });
+          return res;
+        },
+      );
+      if (!r.ok) {
+        switch (r.code) {
+          case 'assignment_not_found':
+          case 'solicitud_not_found':
+            return c.json({ error: r.code, code: r.code }, 404);
+          case 'solicitud_no_vigente':
+            return c.json({ error: r.code, code: r.code }, 409);
+          case 'solicitud_invalidada':
+            return c.json({ error: r.code, code: r.code, motivo: r.motivo }, 409);
+          case 'excede_capacidad_vehiculo':
+            return c.json(
+              { error: r.code, code: r.code, capacidad_kg: r.capacidadKg, peso_kg: r.pesoKg },
+              422,
+            );
+          case 'contrato_programado_no_habilitado':
+            return c.json({ error: r.code, code: r.code }, 422);
+        }
+      }
+
+      // Post-commit: huella estimada y avisos. Ninguno revierte la aceptación;
+      // cada fallo queda logueado.
+      const { aviso } = r;
+      if (cambiaHuella(r.campos)) {
+        try {
+          await calcularMetricasEstimadas({
+            db: opts.db,
+            logger: opts.logger,
+            tripId: aviso.tripId,
+            vehicleId: r.vehicleId,
+            routesProjectId: opts.routesProjectId,
+          });
+          // Si la carga viaja con otras, la estimación es la de su ruta: se
+          // vuelve a repartir con el dato nuevo (huella-consolidada §3.9).
+          const compartida = await rutaCompartidaDelViaje(opts.db, aviso.tripId);
+          if (compartida && !compartida.cerrada) {
+            await estimarHuellaDeRuta({
+              db: opts.db,
+              logger: opts.logger,
+              rutaId: compartida.rutaId,
+              routesProjectId: opts.routesProjectId,
+            });
+          }
+        } catch (err) {
+          opts.logger.error({ err, tripId: aviso.tripId }, 'recalcular huella tras cambio falló');
+        }
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId: aviso.tripId, asignacion: aviso.asignacion, evento: 'cambio_aceptado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId: aviso.tripId }, 'avisar cambio aceptado falló');
+      }
+      return c.json({ ok: true, solicitud_id: solicitudId, campos: r.campos });
+    },
+  );
+
+  app.post(
+    '/:id/solicitudes-cambio/:sid/rechazar',
+    zValidator('param', idsSolicitudSchema, idsSolicitudInvalidos),
+    zValidator('json', rechazarCambioBodySchema),
+    async (c) => {
+      const auth = requireCarrierAuth(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const sinPermiso = denegarResponderCambioCarga(c, auth.userContext);
+      if (sinPermiso) {
+        return sinPermiso;
+      }
+      const { id: assignmentId, sid: solicitudId } = c.req.valid('param');
+      const { reason } = c.req.valid('json');
+      const r = await withBusinessSpan(
+        {
+          name: 'asignaciones.solicitud_cambio.rechazar',
+          attributes: {
+            'booster.assignment_id': assignmentId,
+            'booster.solicitud_id': solicitudId,
+          },
+        },
+        async (span) => {
+          const res = await rechazarSolicitudCambio(
+            { db: opts.db, logger: opts.logger },
+            {
+              assignmentId,
+              empresaId: auth.activeMembership.empresa.id,
+              userId: auth.userContext.user.id,
+              solicitudId,
+              ...(reason ? { reason } : {}),
+            },
+          );
+          const resultado = res.ok ? 'rechazada' : res.code;
+          setResultAttributes(span, { 'booster.outcome': resultado });
+          solicitudCambioCounter.add(1, { resultado, comercial: false });
+          return res;
+        },
+      );
+      if (!r.ok) {
+        return c.json(
+          { error: r.code, code: r.code },
+          r.code === 'solicitud_no_vigente' ? 409 : 404,
+        );
+      }
+      try {
+        await notifyCambioCarga(
+          { db: opts.db, logger: opts.logger },
+          { tripId: r.aviso.tripId, asignacion: r.aviso.asignacion, evento: 'cambio_rechazado' },
+        );
+      } catch (err) {
+        opts.logger.error({ err, tripId: r.aviso.tripId }, 'avisar cambio rechazado falló');
+      }
+      return c.json({ ok: true, solicitud_id: solicitudId });
+    },
+  );
 
   // ---------------------------------------------------------------------
   // GET /:id/traza — recorrido real de la CARGA sobre la ruta esperada.

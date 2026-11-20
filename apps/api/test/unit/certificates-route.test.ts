@@ -6,7 +6,9 @@ beforeAll(() => {
   process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
 });
 
-vi.mock('@booster-ai/certificate-generator', () => ({
+vi.mock('@booster-ai/certificate-generator', async (original) => ({
+  // La lectura de la versión desde la URI del PDF es la real.
+  versionDePdf: (await original<typeof import('@booster-ai/certificate-generator')>()).versionDePdf,
   descargarSidecar: vi.fn(),
 }));
 
@@ -275,6 +277,25 @@ describe('GET /certificates/:tracking_code/verify', () => {
     const res = await app.request('/certificates/BOO-X/verify');
     expect(res.status).toBe(500);
     expect(noopLogger.error).toHaveBeenCalled();
+  });
+
+  it('certificado reemitido → descarga la firma de la versión vigente', async () => {
+    (descargarSidecar as ReturnType<typeof vi.fn>).mockClear();
+    (descargarSidecar as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const db = makeDb({
+      selects: [
+        [
+          {
+            empresaId: SHIPPER_EMP,
+            certificateIssuedAt: new Date(),
+            certificatePdfUrl: `gs://b/certificates/${SHIPPER_EMP}/BOO-X.v2.pdf`,
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db, certConfig: VALID_CONFIG });
+    await app.request('/certificates/BOO-X/verify');
+    expect(descargarSidecar).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }));
   });
 
   it('happy path: retorna sidecar con valid:true + verification_hint', async () => {

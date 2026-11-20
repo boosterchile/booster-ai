@@ -5,6 +5,7 @@ import {
 import type { Logger } from '@booster-ai/logger';
 import { and, asc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   bitacoraBackfillDistancia,
@@ -14,6 +15,7 @@ import {
 } from '../db/schema.js';
 import type { NivelCert, ReconstruccionTrip } from './backfill-distancia-real.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
+import { guardarMetricasDeRuta } from './huella-por-ruta.js';
 import { cargarPingsVentana } from './posicion-segmento.js';
 import { computeRoutes } from './routes-api.js';
 
@@ -50,7 +52,7 @@ export async function contarCandidatosBackfill(db: Db): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(tripMetrics)
     .innerJoin(assignments, eq(assignments.tripId, tripMetrics.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .innerJoin(trips, eq(trips.id, tripMetrics.tripId))
     .where(condicionCandidatoBackfill());
   return rows[0]?.n ?? 0;
@@ -73,14 +75,14 @@ export async function cargarCandidatosBackfill(
       coveragePct: tripMetrics.coveragePct,
       certificationLevel: tripMetrics.certificationLevel,
       precisionMethod: tripMetrics.precisionMethod,
-      vehicleId: assignments.vehicleId,
+      vehicleId: vehiculoDeAsignacion,
       deliveredAt: assignments.deliveredAt,
       pickupWindowStart: trips.pickupWindowStart,
       createdAt: trips.createdAt,
     })
     .from(tripMetrics)
     .innerJoin(assignments, eq(assignments.tripId, tripMetrics.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .innerJoin(trips, eq(trips.id, tripMetrics.tripId))
     .where(where)
     .orderBy(asc(tripMetrics.tripId))
@@ -226,6 +228,19 @@ export async function persistirBackfill(db: Db, r: ReconstruccionTrip): Promise<
           updatedAt: sql`now()`,
         })
         .where(eq(tripMetrics.tripId, r.tripId));
+      // La ruta del viaje queda con la misma distancia y el mismo nivel (ADR-089).
+      await guardarMetricasDeRuta(tx, {
+        tripId: r.tripId,
+        momento: 'nivel',
+        huella: null,
+        nivel: {
+          routeDataSource: 'teltonika_gps',
+          coveragePct: r.resultado.coveragePct,
+          certificationLevel: r.resultado.nivelNuevo,
+          uncertaintyFactor,
+        },
+        distanciaKmReal: r.resultado.distanciaKmReal,
+      });
     }
   });
 }

@@ -55,6 +55,11 @@ export {
   COMBUSTIBLES_REFERENCIA_HUELLACHILE,
   REFERENCIA_HUELLACHILE_2025,
 } from './factores/referencia-huellachile-2025.js';
+export {
+  TABLA_FACTORES_CERTIFICADO,
+  factoresLineaCertificado,
+  type FactoresLineaCertificado,
+} from './factores/factores-certificado.js';
 export { DEFAULTS_POR_TIPO } from './factores/defaults-por-tipo.js';
 export {
   calcularFactorCorreccionPorCarga,
@@ -94,3 +99,18 @@ export {
   THRESHOLD_PRIMARIO_PCT,
   THRESHOLD_SECUNDARIO_MODELED_PCT,
 } from './certificacion/index.js';
+// Huella por ruta y su reparto entre servicios (ADR-089). Todavía no la usa
+// el cálculo que corre en producción.
+export {
+  calcularEmisionesRuta,
+  derivarNivelRuta,
+  repartirPorActividad,
+  VERSION_METODO_REPARTO,
+  type NivelDeRuta,
+  type ParametrosRuta,
+  type ParteDeServicio,
+  type ResultadoEmisionesRuta,
+  type ServicioParaReparto,
+  type TramoDeRuta,
+  type TramoMedido,
+} from './ruta/index.js';

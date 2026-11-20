@@ -87,6 +87,7 @@ describe('formatRouteDataSource — fuente de la ruta en el certificado (ADR-077
 describe('lineaMetodoCert — línea de método en el PDF (ADR-077 §4)', () => {
   it('movil_gps → «GPS del celular del conductor», nunca «verificable»', () => {
     const linea = lineaMetodoCert({
+      glecVersion: 'v3.0',
       precisionMethod: 'modelado',
       routeDataSource: 'movil_gps',
       coveragePct: 100,
@@ -96,15 +97,20 @@ describe('lineaMetodoCert — línea de método en el PDF (ADR-077 §4)', () => 
   });
 
   it('cert legacy sin fuente de ruta → null (no se inventa método)', () => {
-    expect(lineaMetodoCert({ precisionMethod: 'modelado' })).toBeNull();
+    expect(lineaMetodoCert({ precisionMethod: 'modelado', glecVersion: 'v3.0' })).toBeNull();
     expect(
-      lineaMetodoCert({ precisionMethod: 'modelado', routeDataSource: 'maps_directions' }),
+      lineaMetodoCert({
+        glecVersion: 'v3.0',
+        precisionMethod: 'modelado',
+        routeDataSource: 'maps_directions',
+      }),
     ).toBeNull();
   });
 
   it('primario → CAN bus + ruta GPS del vehículo', () => {
     expect(
       lineaMetodoCert({
+        glecVersion: 'v3.0',
         precisionMethod: 'exacto_canbus',
         routeDataSource: 'teltonika_gps',
         coveragePct: 99,
@@ -126,7 +132,7 @@ describe('lineaMetodoCert — línea de método en el PDF (ADR-077 §4)', () => 
       { precisionMethod: 'por_defecto', routeDataSource: 'manual_declared', coveragePct: 0 },
     ] as const;
     for (const c of casos) {
-      const linea = lineaMetodoCert(c);
+      const linea = lineaMetodoCert({ ...c, glecVersion: 'v3.0' });
       expect(linea, JSON.stringify(c)).not.toBeNull();
       const ancho = font.widthOfTextAtSize(linea ?? '', TAMANO_LINEA_METODO);
       expect(ancho, `${linea} → ${ancho.toFixed(1)} pt`).toBeLessThanOrEqual(

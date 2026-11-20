@@ -510,7 +510,119 @@
       "idx": 72,
       "version": "7",
       "when": 1780876800090,
-      "tag": "0072_retiro_superficie_demo",
+      "tag": "0072_instrucciones_retiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1780876800100,
+      "tag": "0073_seguimiento_por_correo",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1780876800110,
+      "tag": "0074_usuarios_activacion_vence_en",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1780876800120,
+      "tag": "0075_viajes_notas_referencia_eventos_edicion",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1780876800220,
+      "tag": "0076_ofertas_unica_pendiente",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1780876800320,
+      "tag": "0077_solicitudes_cambio_viaje",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1780876800321,
+      "tag": "0078_rutas_paradas",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1780963200321,
+      "tag": "0079_asignacion_vehiculo_opcional",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1781049600321,
+      "tag": "0080_metricas_ruta",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1781049600420,
+      "tag": "0081_confirmaciones_acceso_booster",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1781136000420,
+      "tag": "0082_reemision_certificado",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1781222400420,
+      "tag": "0083_recordatorio_vehiculo_pendiente",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1781308800420,
+      "tag": "0084_invitaciones_correo_cuenta",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1781395200420,
+      "tag": "0085_viajes_propios_transportista",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1781481600420,
+      "tag": "0086_booster_fleet_mantenciones",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1781568000420,
+      "tag": "0087_reemision_distancia_no_plausible",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1781654400420,
+      "tag": "0088_retiro_superficie_demo",
       "breakpoints": true
     }
   ]

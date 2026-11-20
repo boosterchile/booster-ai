@@ -73,11 +73,16 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createMeWakeWordRoutes: { category: 'ENFORCED', rationale: '' },
   createTripRequestsV2Routes: { category: 'ENFORCED', rationale: '' },
   createOfferRoutes: { category: 'ENFORCED', rationale: '' },
+  createMarketplaceReclamarRoutes: { category: 'ENFORCED', rationale: '' },
+  createViajesPropiosRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyAssignmentsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminDispositivosRoutes: { category: 'ENFORCED', rationale: '' },
   // Platform-admin asocia Teltonika sin membresía de la empresa. firebaseAuth
   // + userContext preceden el mount; gate adicional requirePlatformAdmin.
   createAdminDispositivosPlataformaRoutes: { category: 'ENFORCED', rationale: '' },
+  // Flota de todas las empresas, solo lectura (.specs/flota-plataforma).
+  // firebaseAuth + userContext preceden el mount; gate adicional requirePlatformAdmin.
+  createAdminFlotaPlataformaRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminCobraHoyRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
   // T10-24 — firebaseAuth + userContext preceden el mount; gate requirePlatformAdmin.
@@ -86,6 +91,10 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // Fase 3.5 — alta de miembros en empresa existente. firebaseAuth + userContext
   // preceden el mount (/admin/empresas/*); gate adicional requirePlatformAdmin.
   createAdminEmpresaMiembrosRoutes: { category: 'ENFORCED', rationale: '' },
+  // alta-personal-booster — alta del personal de Booster. firebaseAuth +
+  // userContext preceden el mount (/admin/personal-booster y /*); gate
+  // adicional requirePlatformAdmin en cada handler.
+  createAdminPersonalBoosterRoutes: { category: 'ENFORCED', rationale: '' },
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
   // ADR-079 §3: firebaseAuth + userContext preceden el mount
   // (/admin/configuracion-comercial y /*); gate adicional requirePlatformAdmin.
@@ -102,6 +111,10 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAuthImpersonateRoutes: { category: 'ENFORCED', rationale: '' },
   createVehiculosRoutes: { category: 'ENFORCED', rationale: '' },
   createTrayectosTeltonikaRoutes: { category: 'ENFORCED', rationale: '' },
+  // Booster Fleet: firebaseAuth + userContext preceden el mount (/booster-fleet y /*).
+  createBoosterFleetRoutes: { category: 'ENFORCED', rationale: '' },
+  // /rutas — firebaseAuth + userContext + guardia de impersonación + guardia de visibilidad.
+  createRutasRoutes: { category: 'ENFORCED', rationale: '' },
   createConductoresRoutes: { category: 'ENFORCED', rationale: '' },
   createSucursalesRoutes: { category: 'ENFORCED', rationale: '' },
   createDocumentosRoutes: { category: 'ENFORCED', rationale: '' },
@@ -114,6 +127,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // app.use('/documents/*', …); la autorización por tenant (shipper-owner |
   // carrier-assigned) la resuelve cada handler.
   transportDocsRouter: { category: 'ENFORCED', rationale: '' },
+  // Instrucciones de retiro: firebaseAuth + userContext preceden el mount vía
+  // app.use('/viajes/*', …); la autorización por viaje la resuelve el handler
+  // con autorizarSobreViaje (generador dueño | transportista asignada |
+  // conductor de la asignación).
+  pickupInstructionsRouter: { category: 'ENFORCED', rationale: '' },
 
   // --- GATED-CLOSED (bare firebaseAuth, gate in-handler) ---
   meRouter: {
@@ -129,6 +147,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // (app.use('/me/empresa', userContextMiddlewareForMe)); autorización =
   // membresía activa + rol dueno|admin. El empresaId nunca viene del cliente.
   createMeEmpresaRoutes: { category: 'ENFORCED', rationale: '' },
+  // confirmar-acceso-booster — /me/confirmar-acceso-booster: userContext
+  // precede el mount (app.use('/me/confirmar-acceso-booster',
+  // userContextMiddlewareForMe)); el usuario sale de la sesión, nunca del body.
+  // El guard de /me/* corre antes y bloquea la escritura impersonada.
+  createMeConfirmarAccesoBoosterRoutes: { category: 'ENFORCED', rationale: '' },
   // CRUD zonas de matching — /me/zonas: userContext precede el mount
   // (app.use('/me/zonas', userContextMiddlewareForMe)); autorización =
   // membresía activa + empresa transportista + rol dueno|admin.
@@ -195,7 +218,12 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAuthActivarRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:
-      'POST /auth/activar (equipo-de-la-empresa): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`), se consume de un solo uso (el hash se borra) y el endpoint corre tras rate-limit por IP fail-closed con cubo propio. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido: sin oráculo de enumeración.',
+      'POST /auth/activar (equipo-de-la-empresa, alta-personal-booster): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`) o, para el personal de Booster sin invitación, `es_admin_plataforma = true` (la marca la pone un platform-admin desde el panel). Una cuenta con `es_admin_plataforma = true` activa solo con un código del panel vigente según `activacion_vence_en` (solo los emisores del panel lo dejan; los demás lo ponen en NULL), también si tiene invitaciones; driver-activate aplica la misma regla. Ninguno de los dos activa una cuenta `suspendido` o `eliminado`. El código se consume de un solo uso (el hash y `activacion_vence_en` se borran, y la escritura exige que el hash siga siendo el verificado) y el endpoint corre tras límites de intentos fail-closed con cubos propios. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido / suspendida o eliminada: sin oráculo de enumeración; sin código pendiente se verifica igual contra un hash de relleno.',
+  },
+  createAuthInvitarCuentaRoutes: {
+    category: 'INTENTIONAL-OPEN',
+    rationale:
+      'GET/POST /auth/invitar-cuenta (ADR-093): pre-auth POR DISEÑO — consume token opaco one-shot de invitación por correo a la UI /crear-cuenta. GET lee el secreto solo del header x-invite-token (nunca query; Cloud Run logs). Defensas: token hasheado en DB, vencimiento 7 días, un solo uso atómico, Zod en boundaries, rate-limit IP, uniform 410 invitacion_invalida. Crea Firebase email/password + fila usuarios; personal Booster queda es_admin_plataforma. Sin sesión Firebase previa.',
   },
   createAuthUniversalRoutes: {
     category: 'INTENTIONAL-OPEN',
@@ -205,7 +233,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createDriverAuthRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:
-      'emisor de auth driver (/auth/driver-activate; driver aún sin Firebase user; rate-limit-pin inline). Verificado: sin app.use de auth precediéndolo.',
+      'emisor de auth driver (/auth/driver-activate; driver aún sin Firebase user; rate-limit-pin inline). Una cuenta con `es_admin_plataforma = true` activa solo con un código del panel vigente según `activacion_vence_en`, la misma regla que /auth/activar, con la misma 401 de un PIN incorrecto. Verificado: sin app.use de auth precediéndolo.',
   },
 
   // --- MIXED ---

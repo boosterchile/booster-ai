@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   desgloseParaGenerador,
   modalidadPermitida,
+  tasaCongeladaParaModalidad,
   tasaParaPublicacion,
 } from './cotizacion-comercial.js';
 
@@ -42,5 +43,29 @@ describe('desgloseParaGenerador (ADR-079 §1 y §5)', () => {
       desgloseParaGenerador({ precioTransportistaClp: 100_000, comisionPct: '10.00', ivaPct: 19 })
         .comision_clp,
     ).toBe(10_000);
+  });
+});
+
+describe('tasaCongeladaParaModalidad (editar-anular-cargas §7)', () => {
+  // La versión congelada al publicar difiere de la vigente (20/10).
+  const CONGELADA = {
+    ...C,
+    comisiones: { ...C.comisiones, spot_pct: 15, programada_pct: 8 },
+  };
+
+  it('spot ↔ programada toman la tasa de la versión congelada, no de la vigente', () => {
+    expect(tasaCongeladaParaModalidad(CONGELADA, 'spot')).toBe(15);
+    expect(tasaCongeladaParaModalidad(CONGELADA, 'programada')).toBe(8);
+    expect(tasaCongeladaParaModalidad(CONGELADA, 'programada')).not.toBe(
+      tasaParaPublicacion(C, 'programada'),
+    );
+  });
+
+  it('un cambio de modalidad nunca usa la tasa de retorno', () => {
+    const conRetorno = {
+      ...CONGELADA,
+      comisiones: { ...CONGELADA.comisiones, retorno_programada_pct: 3 },
+    };
+    expect(tasaCongeladaParaModalidad(conRetorno, 'programada')).toBe(8);
   });
 });

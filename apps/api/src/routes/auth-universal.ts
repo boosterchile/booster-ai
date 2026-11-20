@@ -8,6 +8,10 @@ import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { verifyClaveNumerica } from '../services/clave-numerica.js';
+import {
+  type ResultadoReutilizacion,
+  cuentaProveedorReutilizable,
+} from '../services/cuenta-proveedor-reutilizable.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
@@ -167,7 +171,32 @@ export function createAuthUniversalRoutes(opts: {
       try {
         const existing = await opts.firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);
         if (existing) {
-          firebaseUid = existing.uid;
+          // Se reutiliza solo si ya es de esta fila o está libre
+          // (`.specs/correos-solicitudes-panel` SC5). Si no, la misma 502 de
+          // una falla del proveedor, sin escribir.
+          let veredicto: ResultadoReutilizacion;
+          try {
+            veredicto = await cuentaProveedorReutilizable({
+              db: opts.db,
+              auth: opts.firebaseAuth,
+              cuenta: existing,
+              usuarioId: user.id,
+            });
+          } catch (err) {
+            opts.logger.error(
+              { err, userId: user.id },
+              'login-rut: no se pudo revisar la cuenta del proveedor encontrada',
+            );
+            return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+          }
+          if (!veredicto.reutilizable) {
+            opts.logger.error(
+              { userId: user.id, motivo: veredicto.motivo },
+              'login-rut: la cuenta del proveedor encontrada no se reutiliza',
+            );
+            return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+          }
+          firebaseUid = veredicto.uid;
         } else {
           const created = await opts.firebaseAuth.createUser({
             email: syntheticEmail,

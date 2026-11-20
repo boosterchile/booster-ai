@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL, Table, getTableName, is } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -60,6 +62,16 @@ interface MakeDbOpts {
     aprobadoEn: Date | null;
   }>;
   updateRows?: Array<{ id: string; email: string }>;
+  /** Filas de `usuarios` que devuelve la búsqueda de una cuenta por correo. */
+  cuentasConCorreo?: unknown[];
+}
+
+/**
+ * La tabla se reconoce por nombre: algunos describe recargan los módulos y la
+ * instancia de `usuarios` de la ruta no es la de este archivo.
+ */
+function esUsuarios(tabla: unknown): boolean {
+  return is(tabla, Table) && getTableName(tabla) === 'usuarios';
 }
 
 function makeDb(opts: MakeDbOpts = {}) {
@@ -69,7 +81,12 @@ function makeDb(opts: MakeDbOpts = {}) {
     orderBy: selectOrderBy,
     limit: selectLimit,
   }));
-  const selectFrom = vi.fn(() => ({ where: selectWhere }));
+  const cuentasWhere = vi.fn((_predicado: unknown) => ({
+    limit: vi.fn(async () => opts.cuentasConCorreo ?? []),
+  }));
+  const selectFrom = vi.fn((tabla: unknown) =>
+    esUsuarios(tabla) ? { where: cuentasWhere } : { where: selectWhere },
+  );
   const select = vi.fn(() => ({ from: selectFrom }));
 
   const updateReturning = vi.fn(async () => opts.updateRows ?? []);
@@ -100,7 +117,7 @@ function makeDb(opts: MakeDbOpts = {}) {
   type DbStub = Parameters<typeof createAdminSignupRequestsRoutes>[0]['db'];
   return {
     db: { select, update, transaction } as unknown as DbStub,
-    spies: { select, update, transaction, tx },
+    spies: { select, update, transaction, tx, cuentasWhere },
   };
 }
 
@@ -321,6 +338,72 @@ describe('POST /admin/signup-requests endpoints (SC-1.2.1)', () => {
     expect(json.code).toBe('firebase_user_already_exists');
   });
 
+  // `.specs/correos-solicitudes-panel` SC1 — sin enlace de onboarding.
+  it('POST /:id/approve con un correo de la lista, con mayúsculas → 409 firebase_user_already_exists, sin cuenta ni enlace', async () => {
+    const d = makeDb({
+      selectRows: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          email: 'Dev@BoosterChile.com',
+          nombreCompleto: 'Otra Persona',
+          estado: 'pendiente_aprobacion',
+          solicitadoEn: new Date(),
+          aprobadoPor: null,
+          aprobadoEn: null,
+        },
+      ],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = makeAppWithContext(d.db, a.auth, n);
+
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'firebase_user_already_exists' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
+    expect(d.spies.update).not.toHaveBeenCalled();
+    expect(d.spies.transaction).not.toHaveBeenCalled();
+    expect(n.notifyUserOfApproval).not.toHaveBeenCalled();
+  });
+
+  it('POST /:id/approve con el correo de otra cuenta → 409 firebase_user_already_exists, sin cuenta ni enlace', async () => {
+    const d = makeDb({
+      selectRows: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          email: 'existente@cliente.cl',
+          nombreCompleto: 'Existente',
+          estado: 'pendiente_aprobacion',
+          solicitadoEn: new Date(),
+          aprobadoPor: null,
+          aprobadoEn: null,
+        },
+      ],
+      cuentasConCorreo: [{ id: 'cuenta-existente' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = makeAppWithContext(d.db, a.auth, n);
+
+    const res = await app.request('/11111111-1111-4111-8111-111111111111/approve', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'firebase_user_already_exists' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
+    expect(d.spies.cuentasWhere).toHaveBeenCalledTimes(1);
+  });
+
   it('POST /:id/reject happy → 200 + notify rejection', async () => {
     const d = makeDb({ updateRows: [{ id: 'req-r', email: 'rechaz@cli.cl' }] });
     const a = makeAuthStub();
@@ -528,6 +611,55 @@ describe('POST /:id/approve con ADMIN_PROVISIONED_ONBOARDING_ENABLED=true (W1.4 
     expect(a.spies.generatePasswordResetLink).toHaveBeenCalledWith('nuevo@cliente.cl');
   });
 
+  // `.specs/correos-solicitudes-panel` SC1 — con enlace de onboarding.
+  it('con un correo de la lista → 409 firebase_user_already_exists, sin onboarding_link ni access_link', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [{ ...selectRow(), email: 'dev@boosterchile.com' }],
+      updateRows: [{ id: REQUEST_ID, email: 'dev@boosterchile.com' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'firebase_user_already_exists' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
+    expect(d.spies.update).not.toHaveBeenCalled();
+    expect(n.notifyUserOfApproval).not.toHaveBeenCalled();
+  });
+
+  it('con un correo reservado de una cuenta por RUT → 409 firebase_user_already_exists, sin onboarding_link ni access_link', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [{ ...selectRow(), email: 'users+123456785@boosterchile.invalid' }],
+      updateRows: [{ id: REQUEST_ID, email: 'users+123456785@boosterchile.invalid' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'firebase_user_already_exists' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
+    expect(d.spies.update).not.toHaveBeenCalled();
+    expect(n.notifyUserOfApproval).not.toHaveBeenCalled();
+  });
+
   it('T2.0 — si Firebase no puede generar el link de acceso, el approve igual entrega el alta', async () => {
     const mod = await loadModWithAdminProvisionedConfig();
     const d = makeDb({
@@ -680,7 +812,7 @@ describe('POST /exencion — alta por exención (alta-membresia fase 1)', () => 
   function makeExencionDb(limitResults: unknown[][]) {
     const queue = [...limitResults];
     const selectLimit = vi.fn(async () => queue.shift() ?? []);
-    const selectWhere = vi.fn(() => ({
+    const selectWhere = vi.fn((_predicado?: unknown) => ({
       limit: selectLimit,
       orderBy: vi.fn(() => ({ limit: selectLimit })),
     }));
@@ -698,7 +830,7 @@ describe('POST /exencion — alta por exención (alta-membresia fase 1)', () => 
     type DbStub = Parameters<typeof createAdminSignupRequestsRoutes>[0]['db'];
     return {
       db: { select, update, insert } as unknown as DbStub,
-      spies: { insert, update },
+      spies: { insert, update, selectWhere },
     };
   }
 
@@ -790,6 +922,67 @@ describe('POST /exencion — alta por exención (alta-membresia fase 1)', () => 
     expect(res.status).toBe(409);
     const json = (await res.json()) as { code: string };
     expect(json.code).toBe('email_already_registered');
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(d.spies.insert).not.toHaveBeenCalled();
+  });
+
+  // `.specs/correos-solicitudes-panel` SC3.
+  it('la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[{ id: 'cuenta-mayus' }]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(409);
+    const predicado = d.spies.selectWhere.mock.calls[0]?.[0];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['ana@cliente.cl']);
+  });
+
+  // `.specs/correos-solicitudes-panel` SC1.
+  it('un correo reservado de un conductor por RUT → 409 email_already_registered sin createUser ni solicitud', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[], [], [approveRow()]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({ ...body, email: 'drivers+123456785@boosterchile.invalid' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'email_already_registered' });
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(d.spies.insert).not.toHaveBeenCalled();
+  });
+
+  // `.specs/correos-solicitudes-panel` SC1.
+  it('un correo de la lista de respaldo, con mayúsculas → 409 email_already_registered sin createUser ni solicitud', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[], [], [approveRow()]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({ ...body, email: 'Dev@BoosterChile.com' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'conflict', code: 'email_already_registered' });
     expect(a.spies.createUser).not.toHaveBeenCalled();
     expect(d.spies.insert).not.toHaveBeenCalled();
   });

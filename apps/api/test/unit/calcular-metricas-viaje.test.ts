@@ -11,6 +11,11 @@ import {
 vi.mock('../../src/services/routes-api.js', () => ({
   computeRoutes: vi.fn(),
 }));
+vi.mock('@booster-ai/matching-algorithm', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@booster-ai/matching-algorithm')>();
+  return { ...orig, claseMasChicaElegible: vi.fn(orig.claseMasChicaElegible) };
+});
+const { claseMasChicaElegible } = await import('@booster-ai/matching-algorithm');
 // T12/T13: las métricas de negocio de la huella se capturan con spies (el meter
 // real es no-op en tests y no deja rastro).
 const { counterSpies } = vi.hoisted(() => ({
@@ -125,7 +130,9 @@ const VEH_ID = '22222222-2222-4222-8222-222222222222';
 
 const TRIP_BASE = {
   id: TRIP_ID,
+  cargoType: 'carga_seca' as const,
   cargoWeightKg: 5000,
+  cargoVolumeM3: null as number | null,
   originAddressRaw: 'Av. Apoquindo 4500, Las Condes',
   destinationAddressRaw: 'Plaza Sotomayor, Valparaíso',
   originRegionCode: 'RM',
@@ -133,6 +140,14 @@ const TRIP_BASE = {
   pickupWindowStart: new Date('2026-05-01T10:00:00Z'),
   createdAt: new Date('2026-05-01T09:00:00Z'),
 };
+
+/**
+ * Distancia estimada de los viajes de `recalcularNivelPostEntrega`. Las trazas
+ * de estos tests miden desde ≈1,45 km: con 2 km de referencia todas pasan el
+ * mínimo de plausibilidad (50 %, spec distancia-medida-plausible) y los casos
+ * siguen probando lo suyo. Los de plausibilidad fijan su propia referencia.
+ */
+const KM_ESTIMADOS = '2';
 
 /** HC-001 parte 2: el único UPDATE escribe solo las columnas de la decisión. */
 function expectSoloDecision(db: { update: unknown }) {
@@ -163,7 +178,7 @@ describe('calcularMetricasEstimadas', () => {
     ).rejects.toThrow(TripNotFoundError);
   });
 
-  it('vehicleId=null → modo por_defecto camion_mediano + INSERT initial', async () => {
+  it('vehicleId=null → por_defecto con clase más chica elegible (camion_pequeno)', async () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE], // SELECT trip
@@ -182,7 +197,51 @@ describe('calcularMetricasEstimadas', () => {
     expect(result.tripId).toBe(TRIP_ID);
     expect(result.isInitialCalculation).toBe(true);
     expect(result.emisiones.metodoPrecision).toBe('por_defecto');
+    expect(result.emisiones.fuenteFactores).toContain('camion_pequeno');
     expect(result.emisiones.emisionesKgco2eWtw).toBeGreaterThan(0);
+    expect(claseMasChicaElegible).toHaveBeenCalledWith({
+      cargoType: 'carga_seca',
+      weightKg: 5000,
+      volumeM3: null,
+    });
+  });
+
+  it('vehicleId=null pasa cargoVolumeM3 a claseMasChicaElegible', async () => {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, cargoVolumeM3: 42 }], []],
+      inserts: [[]],
+    });
+
+    await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+    });
+
+    expect(claseMasChicaElegible).toHaveBeenCalledWith({
+      cargoType: 'carga_seca',
+      weightKg: 5000,
+      volumeM3: 42,
+    });
+  });
+
+  it('vehicleId=null + refrigerada → por_defecto refrigerado (no camion_mediano)', async () => {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, cargoType: 'refrigerada', cargoWeightKg: 2_000 }], []],
+      inserts: [[]],
+    });
+
+    const result = await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+    });
+
+    expect(result.emisiones.metodoPrecision).toBe('por_defecto');
+    expect(result.emisiones.fuenteFactores).toContain('refrigerado');
+    expect(result.emisiones.fuenteFactores).not.toContain('camion_mediano');
   });
 
   it('vehículo con perfil completo → modo modelado', async () => {
@@ -192,7 +251,7 @@ describe('calcularMetricasEstimadas', () => {
         [
           {
             id: VEH_ID,
-            fuelType: 'diesel_b5',
+            fuelType: 'diesel',
             consumptionLPer100kmBaseline: '28.5',
             curbWeightKg: 7000,
             capacityKg: 12000,
@@ -317,7 +376,7 @@ describe('calcularMetricasEstimadas', () => {
     expect(result.emisiones.metodoPrecision).toBe('por_defecto');
   });
 
-  it('vehicleId no encontrado en BD → fallback por_defecto camion_mediano', async () => {
+  it('vehicleId no encontrado en BD → fallback por_defecto clase más chica', async () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
@@ -663,7 +722,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS }],
         [], // no assignment
       ],
     });
@@ -679,7 +738,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS }],
         [{ vehicleId: null, deliveredAt: ASSIGN_DELIVERED }],
       ],
     });
@@ -699,7 +758,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: null }],
       ],
@@ -733,7 +792,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: '860693084796730' }],
       ],
@@ -751,7 +810,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [],
       ],
@@ -774,7 +833,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE], // pickupWindowStart 10:00 (planificada)
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: RECOGIDA_REAL }],
         [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
@@ -804,7 +863,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: null }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: null }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
@@ -827,7 +886,7 @@ describe('recalcularNivelPostEntrega', () => {
     const db = makeDb({
       selects: [
         [{ ...TRIP_BASE, pickupWindowStart: null }],
-        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
         [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
         [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
@@ -870,7 +929,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
   };
   const selectsTeltonika = () => [
     [TRIP_BASE],
-    [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+    [{ tripId: TRIP_ID, distanceKmEstimated: KM_ESTIMADOS, precisionMethod: 'modelado' }],
     [{ vehicleId: VEH_ID, deliveredAt: DELIVERED, pickedUpAt: null }],
     [{ id: VEH_ID, teltonikaImei: '123456789012345', teltonikaImeiEspejo: null }],
   ];
@@ -914,9 +973,9 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     // descartar el hueco subestimaría (el error de backhaul que F0-0 corrige).
     const observadoKm = haversineKm(-33.4, -70.6, -33.41, -70.61);
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(observadoKm + 5, 6);
-    // Y NO la distancia estimada del trip (100 km): ése ES el bug F0-0 — con
+    // Y NO la distancia estimada del trip (KM_ESTIMADOS): ése ES el bug F0-0 — con
     // 260k pings reales en la DB el certificado caía igual al fallback estimado.
-    expect(Number(setArg.distanceKmActual)).not.toBeCloseTo(100, 6);
+    expect(Number(setArg.distanceKmActual)).not.toBeCloseTo(Number(KM_ESTIMADOS), 6);
   });
 
   it('kmCubiertos en el resultado = Σ tramos observados (excluye los huecos estimados por Routes)', async () => {
@@ -1104,7 +1163,14 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     } = {},
   ) => [
     [{ ...TRIP_BASE, generadorCargaEmpresaId: null, carbonMeasurementOverride: null, ...o.trip }],
-    [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado', ...o.metrics }],
+    [
+      {
+        tripId: TRIP_ID,
+        distanceKmEstimated: KM_ESTIMADOS,
+        precisionMethod: 'modelado',
+        ...o.metrics,
+      },
+    ],
     [
       {
         vehicleId: VEH_ID,
@@ -1178,6 +1244,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     expect(setArg.precisionMethod).toBe('modelado');
     expect(setArg.routeDataSource).toBe('teltonika_gps');
     expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo, 6);
+    // El factor y la versión guardados son los del cálculo real: el
+    // certificado imprime ese factor junto a esas emisiones.
+    expect(setArg.emissionFactorUsed).toBe(esperado.factorEmisionUsado.toString());
+    expect(setArg.glecVersion).toBe(esperado.versionGlec);
     expect(counter('huella_segmento_total')?.add).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ resultado: 'medida', fuente: 'teltonika_gps' }),
@@ -1253,6 +1323,10 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
     expect(setArg.routeDataSource).toBe('teltonika_gps');
     expect(setArg.certificationLevel).toBe('secundario_modeled');
     expect(Number(setArg.coveragePct)).toBeLessThan(80);
+    // Sin huella real el certificado usa la estimación: el factor guardado
+    // sigue siendo el de esa estimación y el cierre no lo toca.
+    expect(setArg).not.toHaveProperty('emissionFactorUsed');
+    expect(setArg).not.toHaveProperty('glecVersion');
     expect(counter('huella_cobertura_degradada_total')?.add).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ fuente: 'teltonika_gps', motivo: 'cobertura_bajo_umbral' }),
@@ -1276,6 +1350,78 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       1,
       expect.objectContaining({ motivo: 'sin_observacion' }),
     );
+  });
+
+  // spec distancia-medida-plausible (A con 50 %), criterio 5.
+  // 15 posiciones cada 20 s dentro de unos 40 m: sin huecos, cobertura 100 %,
+  // y la «distancia» es solo la deriva del GPS (ruta de prueba del 2026-11-15).
+  const quieto = () =>
+    Array.from({ length: 15 }, (_, i) => ({
+      tMs: i * 20_000,
+      lat: -29.981 + (i % 2) * 0.00002,
+      lng: -71.3503 + (i % 3) * 0.00002,
+    }));
+
+  it.each([
+    ['móvil', { teltonikaImei: null }],
+    ['Teltonika', {}],
+  ] as const)(
+    'NO PLAUSIBLE (%s) — quieto con cobertura 100 % y referencia 11,69 km → cae a la estimación, sin cifras reales',
+    async (_c, vehicle) => {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(quieto());
+      const db = makeDb({
+        selects: selects({ metrics: { distanceKmEstimated: '11.69' }, vehicle }),
+        updates: [[]],
+      });
+      const res = await run(db);
+      expect(res.abortReason).toBe('no_plausible');
+      expect(res.huella).toBe('degradada_cobertura');
+      expect(res.emisionesKgco2eReales).toBeNull();
+      expect(res.distanciaKmReal).toBeNull();
+      const setArg = setDe(db);
+      expect(setArg.routeDataSource).toBe('maps_directions');
+      expect(setArg.distanceKmActual).toBeNull();
+      expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
+      expect(Number(setArg.coveragePct)).toBe(0);
+      expect(setArg.fuenteDistancia).toBe('routes_estimada');
+      expect(setArg.motivoFallback).toBe('distancia_no_plausible');
+      expect(setArg.decisionVersion).toBe(3);
+      expect(setArg).not.toHaveProperty('emissionFactorUsed');
+      expect(counter('huella_cobertura_degradada_total')?.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ motivo: 'no_plausible' }),
+      );
+      expect(computeRoutes).not.toHaveBeenCalled();
+    },
+  );
+
+  it('NO PLAUSIBLE con opt-in INACTIVO → no guarda distancia real; solo la decisión de fuente', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(quieto());
+    const db = makeDb({
+      selects: selects({
+        metrics: { distanceKmEstimated: '11.69' },
+        empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }],
+      }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.recomputed).toBe(false);
+    expect(res.abortReason).toBe('no_plausible');
+    expect(res.distanciaKmReal).toBeNull();
+    expectSoloDecision(db);
+    expect(setDe(db).motivoFallback).toBe('distancia_no_plausible');
+  });
+
+  it('PLAUSIBLE en el borde — medido ≥ 50 % de la referencia → sigue medida', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({ metrics: { distanceKmEstimated: (kmContinuo * 2).toFixed(6) } }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.abortReason ?? null).toBeNull();
+    expect(res.huella).toBe('medida');
+    expect(Number(setDe(db).distanceKmActual)).toBeCloseTo(kmContinuo, 6);
   });
 
   it('sin observación con opt-in INACTIVO → sigue sin UPDATE (comportamiento T11 intacto)', async () => {
@@ -1398,6 +1544,8 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       );
       // HC-003 T1: el desglose persistido es el del cálculo REAL, no el estimado.
       expect(setArg.emisionesKgco2eTtw).toBe(esperado.emisionesKgco2eTtw.toString());
+      expect(setArg.emissionFactorUsed).toBe(esperado.factorEmisionUsado.toString());
+      expect(setArg.glecVersion).toBe(esperado.versionGlec);
       expect(setArg.emisionesKgco2eWtt).toBe(esperado.emisionesKgco2eWtt.toString());
       expect(setArg.intensidadGco2ePorTkm).toBe(esperado.intensidadGco2ePorTonKm.toString());
       expect(setArg.factoresFuente).toBe(esperado.fuenteFactores);
@@ -1648,32 +1796,75 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(7.3, 1);
     });
 
-    it.each(['sin_sensor', '89', null])(
-      'HC-005 fix0: config %j con 83 limpio → no lee el 83, can_sin_lecturas y modelado',
+    // `.specs/huella-lee-can-por-datos`: revierte el punto 1 de fix0. La huella
+    // lee el 83 cuando el equipo lo envía, sin mirar `fuente_combustible_can`.
+    it.each(['sin_sensor', '89', '84', null])(
+      'config %j con 83 limpio → lee el 83, exacto_canbus y primario con los mismos litros',
       async (cfg) => {
         const pings = largo();
         (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+        (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
         const db = makeDb({
           selects: selects({ vehicle: { fuenteCombustibleCan: cfg } }),
           updates: [[]],
         });
         await run(db);
-        expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
-        expect(setDe(db)).toMatchObject({
-          precisionMethod: 'modelado',
-          fuenteEnergia: 'modelo_perfil',
-          motivoFallback: 'can_sin_lecturas',
+        expect(cargarLecturasConsumoCan).toHaveBeenCalledTimes(1);
+        const setArg = setDe(db);
+        expect(setArg).toMatchObject({
+          precisionMethod: 'exacto_canbus',
+          fuenteEnergia: 'can_83',
+          certificationLevel: 'primario_verificable',
         });
-        // fix1 QA #871: sin '83' no es un descarte del 83 → el contador no sube.
-        expect(counter('huella_canbus_no_usado_total')?.add).not.toHaveBeenCalled();
+        expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(8, 2);
       },
     );
 
-    it('HC-005 fix0: config sin 83 y ventana sobre el tope → can_sin_lecturas (la config manda)', async () => {
+    it('equipo que no envía el 83 → can_sin_lecturas, modelado y el contador de descartes no sube', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([]);
+      const db = makeDb({
+        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
+        updates: [[]],
+      });
+      await run(db);
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        fuenteEnergia: 'modelo_perfil',
+        motivoFallback: 'can_sin_lecturas',
+      });
+      // Una ausencia no es un descarte del 83.
+      expect(counter('huella_canbus_no_usado_total')?.add).not.toHaveBeenCalled();
+    });
+
+    it('config sin_sensor y 83 no monótono → modelado con su motivo, y el contador sube', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      const lecturas = conContador(pings, 8).map((l, i) =>
+        i === 20 ? { ...l, io: { '83': 0 } } : l,
+      );
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(lecturas);
+      const db = makeDb({
+        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
+        updates: [[]],
+      });
+      await run(db);
+      expect(setDe(db)).toMatchObject({
+        precisionMethod: 'modelado',
+        motivoFallback: 'can_no_monotono',
+      });
+      expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(1, {
+        motivo: 'can_no_monotono',
+      });
+    });
+
+    it('config sin_sensor y ventana sobre el tope → ventana_excede_tope, sin leer el 83', async () => {
       (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(largo());
       const db = conVentana(DIAS7 + 1, { fuenteCombustibleCan: 'sin_sensor' });
       await run(db);
-      expect(setDe(db).motivoFallback).toBe('can_sin_lecturas');
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db).motivoFallback).toBe('ventana_excede_tope');
     });
 
     it('HC-005 fix0: muestra chica (4 L en ≈22 km, en banda) → can_muestra_insuficiente y modelado', async () => {
@@ -1686,18 +1877,6 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
         precisionMethod: 'modelado',
         motivoFallback: 'can_muestra_insuficiente',
       });
-    });
-
-    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado (fix0)', async () => {
-      const pings = largo();
-      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
-      const db = makeDb({
-        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
-        updates: [[]],
-      });
-      await run(db);
-      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled(); // fix0: sin '83' no se lee
-      expect(setDe(db).precisionMethod).toBe('modelado');
     });
 
     it('83 en un vehículo eléctrico → no se usa (el contador mide litros)', async () => {

@@ -10,6 +10,18 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
 let providedContext: Ctx = { kind: 'unmanaged' };
 
+// El panel de instrucciones de retiro tiene sus propios tests
+// (components/instrucciones-retiro); acá solo importa que se monte.
+vi.mock('../components/instrucciones-retiro/InstruccionesRetiroPanel.js', () => ({
+  InstruccionesRetiroPanel: ({ tripId, canWrite }: { tripId: string; canWrite: boolean }) => (
+    <div
+      data-testid="instrucciones-retiro-panel"
+      data-trip-id={tripId}
+      data-can-write={String(canWrite)}
+    />
+  ),
+}));
+
 vi.mock('../components/ProtectedRoute.js', () => ({
   ProtectedRoute: ({ children }: { children: (ctx: Ctx) => ReactNode }) => (
     <>{children(providedContext)}</>
@@ -168,6 +180,60 @@ describe('CargaTrackRoute', () => {
     });
   });
 
+  // matching-desde-la-carga §3.11: sin patente el título dice «Vehículo por asignar».
+  it('asignación sin patente → título «Vehículo por asignar»', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'asignado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        empresa_legal_name: 'Transportes Andes',
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_name: null,
+        ubicacion_actual: null,
+      },
+    });
+    renderRoute();
+    await waitFor(() => {
+      expect(screen.getByTestId('live-tracking')).toHaveAttribute(
+        'data-title',
+        expect.stringContaining('Vehículo por asignar'),
+      );
+    });
+  });
+
+  // instrucciones-retiro: el panel se monta con el permiso de publicar cargas.
+  it.each([
+    ['dueno', 'true'],
+    ['visualizador', 'false'],
+  ] as const)('%s → panel de instrucciones de retiro (canWrite=%s)', async (role, canWrite) => {
+    providedContext = { kind: 'onboarded', me: makeMe(role) };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'ofertas_enviadas',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: null,
+    });
+    renderRoute();
+    const panel = await screen.findByTestId('instrucciones-retiro-panel');
+    expect(panel).toHaveAttribute('data-trip-id', 'trip-1');
+    expect(panel).toHaveAttribute('data-can-write', canWrite);
+  });
+
   // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
 
   function liveDetail(over: {
@@ -227,6 +293,31 @@ describe('CargaTrackRoute', () => {
     renderRoute();
     await waitFor(() => expect(screen.getByText(/GPS del vehículo/i)).toBeInTheDocument());
     expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('no disponible aún');
+  });
+
+  // ruta-parada-servicio §4.6: el generador solo sabe que viaja con otras cargas.
+  it('carga en una ruta compartida → «Viaja con otras cargas», aunque todavía no haya posición', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    const detalle = liveDetail({ ubicacion: false, position_source: null, eta_minutes: null });
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      ...detalle,
+      assignment: { ...detalle.assignment, viaja_consolidada: true },
+    });
+    renderRoute();
+    expect(await screen.findByText('Viaja con otras cargas')).toBeInTheDocument();
+    expect(
+      screen.getByText(/La ubicación se muestra entre la recogida y la entrega de tu carga/),
+    ).toBeInTheDocument();
+  });
+
+  it('carga que viaja sola, o un API anterior → no dice nada de otras cargas', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce(
+      liveDetail({ ubicacion: true, position_source: 'mobile', eta_minutes: 42 }),
+    );
+    renderRoute();
+    await waitFor(() => expect(screen.getByText(/Llegada estimada/i)).toBeInTheDocument());
+    expect(screen.queryByText('Viaja con otras cargas')).toBeNull();
   });
 
   it('sin posición → no promete ETA ni fuente', async () => {

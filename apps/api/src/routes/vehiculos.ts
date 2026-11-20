@@ -25,6 +25,11 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import { ctxDeUserContext, puedeGestionarFlota, veSoloSuViaje } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
+import {
+  asignacionConConductor,
+  asignacionConVehiculo,
+  vehiculoDeAsignacion,
+} from '../db/configuracion-de-asignacion.js';
 import { pgErrorCode } from '../db/pg-error.js';
 import {
   assignments,
@@ -37,9 +42,9 @@ import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
-import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
 import { queryUltimaPosicionGpsValida } from '../services/ultima-posicion-gps.js';
+import { ultimasPosicionesDeVehiculos } from '../services/ultimas-posiciones-vehiculos.js';
 import { obtenerClimaActual } from '../services/weather-api.js';
 
 /**
@@ -122,7 +127,8 @@ const createBodySchema = z.object({
   vehicle_type: z.enum(vehicleTypes),
   unit_category: unitCategorySchema.optional(),
   unit_type: unitTypeSchema.optional(),
-  body_type: bodyTypeSchema.nullable().optional(),
+  /** matching-desde-la-carga §4: carrocería obligatoria al crear. */
+  body_type: bodyTypeSchema,
   capacity_kg: z.number().int().min(0).max(100_000),
   capacity_m3: z.number().int().positive().max(500).nullable().optional(),
   year: z.number().int().min(1980).max(2100).nullable().optional(),
@@ -133,10 +139,18 @@ const createBodySchema = z.object({
   consumption_l_per_100km_baseline: z.number().positive().max(99.99).nullable().optional(),
   capacidad_estanque_l: capacidadEstanqueLInputSchema,
   fuente_combustible_can: fuenteCombustibleCanSchema.optional(),
+  /** Unidad de un tercero (ADR-090 / matching-desde-la-carga §3.10). */
+  es_de_tercero: z.boolean().optional(),
 });
 
 const updateBodySchema = createBodySchema.partial().extend({
   vehicle_status: z.enum(vehicleStatuses).optional(),
+  /**
+   * matching-desde-la-carga §3.5 / §11-1: no se puede borrar (`null` → 400
+   * por el enum). Si el vehículo aún no tiene carrocería y el PATCH omite
+   * el campo, el handler responde 400 `body_type_required`.
+   */
+  body_type: bodyTypeSchema.optional(),
 });
 
 /**
@@ -568,12 +582,12 @@ export function createVehiculosRoutes(opts: {
 
     if (veSoloSuViaje(ctxFlota)) {
       const asignados = await opts.db
-        .select({ vehicleId: assignments.vehicleId })
+        .select({ vehicleId: vehiculoDeAsignacion })
         .from(assignments)
         .where(
           and(
             eq(assignments.empresaId, empresaId),
-            eq(assignments.driverUserId, auth.userContext.user.id),
+            asignacionConConductor(auth.userContext.user.id),
             inArray(assignments.status, ['asignado', 'recogido']),
           ),
         );
@@ -585,126 +599,10 @@ export function createVehiculosRoutes(opts: {
       vehicleRows = vehicleRows.filter((row) => propios.has(row.id));
     }
 
-    // D1/D2 — Particionamos los vehículos en tres grupos:
-    //   - withOwnDevice: tienen teltonika_imei propio → lookup por
-    //     vehicle_id (path histórico, eficiente con indice ya existente).
-    //   - withMirrorImei: solo tienen espejo → lookup por imei. Su data
-    //     pertenece al stream de otro vehículo físico (demo o redundancia).
-    //   - withoutDevice: sin Teltonika → lookup en posiciones_movil_conductor
-    //     por vehicle_id (D2 browser GPS).
-    const withOwnDevice = vehicleRows.filter((v) => v.teltonika_imei != null);
-    const withMirrorImei = vehicleRows.filter(
-      (v) => v.teltonika_imei == null && v.teltonika_imei_espejo != null,
-    );
-    const withoutDevice = vehicleRows.filter(
-      (v) => v.teltonika_imei == null && v.teltonika_imei_espejo == null,
-    );
-
-    type LastPoint = {
-      timestamp_device: Date;
-      latitude: string | null;
-      longitude: string | null;
-      speed_kmh: number | null;
-      angle_deg: number | null;
-    };
-
-    const ownVehicleIds = withOwnDevice.map((v) => v.id);
-    const ownLastPoints =
-      ownVehicleIds.length === 0
-        ? []
-        : await opts.db
-            .selectDistinctOn([telemetryPoints.vehicleId], {
-              vehicle_id: telemetryPoints.vehicleId,
-              timestamp_device: telemetryPoints.timestampDevice,
-              latitude: telemetryPoints.latitude,
-              longitude: telemetryPoints.longitude,
-              speed_kmh: telemetryPoints.speedKmh,
-              angle_deg: telemetryPoints.angleDeg,
-            })
-            .from(telemetryPoints)
-            // Última posición VÁLIDA por vehículo: descarta null + "null island"
-            // (0,0) para que el marcador de flota no caiga en el Golfo de Guinea.
-            .where(
-              and(
-                inArray(telemetryPoints.vehicleId, ownVehicleIds),
-                coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
-              ),
-            )
-            .orderBy(telemetryPoints.vehicleId, desc(telemetryPoints.timestampDevice));
-    const lastByVehicleId = new Map<string, LastPoint>();
-    for (const p of ownLastPoints) {
-      if (p.vehicle_id != null) {
-        lastByVehicleId.set(p.vehicle_id, p);
-      }
-    }
-
-    const mirrorImeis = [
-      ...new Set(
-        withMirrorImei.map((v) => v.teltonika_imei_espejo).filter((x): x is string => x != null),
-      ),
-    ];
-    const mirrorLastPoints =
-      mirrorImeis.length === 0
-        ? []
-        : await opts.db
-            .selectDistinctOn([telemetryPoints.imei], {
-              imei: telemetryPoints.imei,
-              timestamp_device: telemetryPoints.timestampDevice,
-              latitude: telemetryPoints.latitude,
-              longitude: telemetryPoints.longitude,
-              speed_kmh: telemetryPoints.speedKmh,
-              angle_deg: telemetryPoints.angleDeg,
-            })
-            .from(telemetryPoints)
-            .where(
-              and(
-                inArray(telemetryPoints.imei, mirrorImeis),
-                coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
-              ),
-            )
-            .orderBy(telemetryPoints.imei, desc(telemetryPoints.timestampDevice));
-    const lastByImei = new Map<string, LastPoint>();
-    for (const p of mirrorLastPoints) {
-      lastByImei.set(p.imei, p);
-    }
-
-    // D2 — Browser GPS lookup para vehículos sin Teltonika.
-    const noDeviceVehicleIds = withoutDevice.map((v) => v.id);
-    const browserLastPoints =
-      noDeviceVehicleIds.length === 0
-        ? []
-        : await opts.db
-            .selectDistinctOn([posicionesMovilConductor.vehicleId], {
-              vehicle_id: posicionesMovilConductor.vehicleId,
-              timestamp_device: posicionesMovilConductor.timestampDevice,
-              latitude: posicionesMovilConductor.latitude,
-              longitude: posicionesMovilConductor.longitude,
-              speed_kmh: posicionesMovilConductor.speedKmh,
-              heading_deg: posicionesMovilConductor.headingDeg,
-            })
-            .from(posicionesMovilConductor)
-            .where(inArray(posicionesMovilConductor.vehicleId, noDeviceVehicleIds))
-            .orderBy(
-              posicionesMovilConductor.vehicleId,
-              desc(posicionesMovilConductor.timestampDevice),
-            );
-    const browserByVehicleId = new Map<string, LastPoint>();
-    for (const p of browserLastPoints) {
-      browserByVehicleId.set(p.vehicle_id, {
-        timestamp_device: p.timestamp_device,
-        latitude: p.latitude,
-        longitude: p.longitude,
-        speed_kmh: p.speed_kmh != null ? Number.parseFloat(p.speed_kmh) : null,
-        angle_deg: p.heading_deg,
-      });
-    }
+    const posiciones = await ultimasPosicionesDeVehiculos(opts.db, vehicleRows);
 
     const fleet = vehicleRows.map((v) => {
-      const point: LastPoint | undefined = v.teltonika_imei
-        ? lastByVehicleId.get(v.id)
-        : v.teltonika_imei_espejo
-          ? lastByImei.get(v.teltonika_imei_espejo)
-          : browserByVehicleId.get(v.id);
+      const point = posiciones.get(v.id);
       const source: 'own' | 'mirror' | 'browser_gps' | null = v.teltonika_imei
         ? 'own'
         : v.teltonika_imei_espejo
@@ -759,19 +657,17 @@ export function createVehiculosRoutes(opts: {
     // haya mandado él mismo.
     let unitCategory: UnitCategory;
     let unitType: UnitType;
-    let bodyType: BodyType | null;
+    const bodyType: BodyType = body.body_type;
     let derivadoDeTipoLegacy = false;
 
     if (body.unit_type === undefined) {
       const derivado = derivarUnidadDesdeTipoLegacy(body.vehicle_type);
       unitType = derivado.unitType;
       unitCategory = body.unit_category ?? derivado.unitCategory;
-      bodyType = body.body_type !== undefined ? (body.body_type ?? null) : derivado.bodyType;
       derivadoDeTipoLegacy = true;
     } else {
       unitType = body.unit_type;
       unitCategory = body.unit_category ?? 'motriz';
-      bodyType = body.body_type ?? null;
     }
 
     // D4 condición 3 — CHECK tipo↔categoría (+ D4.5) validado en Zod/runtime
@@ -812,6 +708,7 @@ export function createVehiculosRoutes(opts: {
             body.consumption_l_per_100km_baseline != null
               ? body.consumption_l_per_100km_baseline.toString()
               : null,
+          esDeTercero: body.es_de_tercero ?? false,
         })
         .returning();
 
@@ -902,12 +799,27 @@ export function createVehiculosRoutes(opts: {
         curbWeightKg: vehicles.curbWeightKg,
         consumptionLPer100kmBaseline: vehicles.consumptionLPer100kmBaseline,
         fuelType: vehicles.fuelType,
+        bodyType: vehicles.bodyType,
       })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
       .limit(1);
     if (!existing) {
       return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    // matching-desde-la-carga §3.5 / §11-1: carrocería obligatoria al editar
+    // si el vehículo aún no la tiene. `body_type: null` ya lo rechaza Zod
+    // (enum); aquí cubrimos el PATCH parcial que omite el campo.
+    if (body.body_type === undefined && existing.bodyType == null) {
+      return c.json(
+        {
+          error: 'body_type_required',
+          code: 'body_type_required',
+          message: 'La carrocería es obligatoria al editar un vehículo que aún no la tiene',
+        },
+        400,
+      );
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -925,6 +837,9 @@ export function createVehiculosRoutes(opts: {
     }
     if (body.body_type !== undefined) {
       updates.bodyType = body.body_type;
+    }
+    if (body.es_de_tercero !== undefined) {
+      updates.esDeTercero = body.es_de_tercero;
     }
     if (body.capacity_kg !== undefined) {
       updates.capacityKg = body.capacity_kg;
@@ -1511,13 +1426,13 @@ export function createVehiculosRoutes(opts: {
 
     if (veSoloSuViaje(ctxUbicacion)) {
       const asignados = await opts.db
-        .select({ vehicleId: assignments.vehicleId })
+        .select({ vehicleId: vehiculoDeAsignacion })
         .from(assignments)
         .where(
           and(
             eq(assignments.empresaId, empresaId),
-            eq(assignments.driverUserId, auth.userContext.user.id),
-            eq(assignments.vehicleId, id),
+            asignacionConConductor(auth.userContext.user.id),
+            asignacionConVehiculo(id),
             inArray(assignments.status, ['asignado', 'recogido']),
           ),
         );
@@ -1793,6 +1708,7 @@ function serializeVehicle(row: typeof vehicles.$inferSelect) {
     curb_weight_kg: row.curbWeightKg,
     consumption_l_per_100km_baseline: row.consumptionLPer100kmBaseline,
     teltonika_imei: row.teltonikaImei,
+    es_de_tercero: row.esDeTercero,
     status: row.vehicleStatus,
     created_at: row.createdAt,
     updated_at: row.updatedAt,

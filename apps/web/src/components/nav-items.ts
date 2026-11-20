@@ -4,6 +4,7 @@ import {
   Bus,
   ClipboardList,
   Fuel,
+  Gauge,
   Home,
   Leaf,
   type LucideIcon,
@@ -16,6 +17,7 @@ import {
   Truck,
   UserCog,
   Users,
+  Waypoints,
 } from 'lucide-react';
 import type { MeResponse } from '../hooks/use-me.js';
 import { flagsDe } from '../lib/capacidades.js';
@@ -45,7 +47,10 @@ const INICIO: NavItem = { label: 'Inicio', to: '/app', icon: Home };
  * El conductor y el platform-admin NO usan este shell (tienen shell propio), así
  * que no se modelan acá.
  */
-export function navSectionsForMe(me: MeOnboarded): NavSection[] {
+export function navSectionsForMe(
+  me: MeOnboarded,
+  opciones: { rutas?: boolean } = {},
+): NavSection[] {
   const empresa = me.active_membership?.empresa;
   const role = me.active_membership?.role;
   const flags = flagsDe(me);
@@ -68,11 +73,22 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
   if (empresa && isAdmin) {
     inicioItems.push({ label: 'Empresa', to: '/app/empresa', icon: Leaf });
   }
+  // equipo-de-la-empresa / equipo-generador: la gente es de la empresa, no
+  // del rol de la empresa. La ve todo operador; el backend decide quién da
+  // de alta (dueño y admin).
+  if (empresa) {
+    inicioItems.push({ label: 'Equipo', to: '/app/equipo', icon: UserCog });
+  }
   const sections: NavSection[] = [{ items: inicioItems }];
 
   if (empresa?.is_transportista) {
     const transporte: NavItem[] = [
       { label: 'Seguimiento de flota', to: '/app/flota', icon: MapPinned },
+    ];
+    if (isAdmin) {
+      transporte.unshift({ label: 'Booster Fleet', to: '/app/booster-fleet', icon: Gauge });
+    }
+    transporte.push(
       { label: 'Ofertas', to: '/app/ofertas', icon: Truck },
       // Servicios va inmediatamente después de Ofertas porque ese es el flujo
       // real: llega la oferta, se acepta, y la carga hay que despacharla —
@@ -82,12 +98,18 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Servicios', to: '/app/servicios', icon: ClipboardList },
       { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
       { label: 'Conductores', to: '/app/conductores', icon: Users },
-      // equipo-de-la-empresa: la gestión del equipo la hace el cliente, no
-      // Booster. El backend enforca por rol (dueño/admin escriben, el resto
-      // solo mira), así que el ítem es visible para todos los operadores.
-      { label: 'Equipo', to: '/app/equipo', icon: UserCog },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
-    ];
+    );
+    // Rutas va después de Servicios: primero se acepta la carga y se le pone
+    // conductor; después se junta con otras. Solo con la API encendida.
+    if (opciones.rutas) {
+      const despuesDeServicios = transporte.findIndex((item) => item.label === 'Servicios');
+      transporte.splice(despuesDeServicios + 1, 0, {
+        label: 'Rutas',
+        to: '/app/rutas',
+        icon: Waypoints,
+      });
+    }
     // CHEQUEOS_REEMPLAZADOS nav-gestion / inicio-plata: la plata es dueño y admin.
     if (flags.verFinanzas) {
       transporte.push(
@@ -96,7 +118,8 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       );
     }
     if (isAdmin) {
-      transporte.splice(1, 0, {
+      const despuesDelMapa = transporte.findIndex((item) => item.label === 'Seguimiento de flota');
+      transporte.splice(despuesDelMapa + 1, 0, {
         label: 'Trayectos',
         to: '/app/trayectos',
         icon: Fuel,

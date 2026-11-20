@@ -8,6 +8,11 @@ import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, gte, isNotNull, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
+  asignacionConConductor,
+  conductorDeAsignacion,
+  vehiculoDeAsignacion,
+} from '../db/configuracion-de-asignacion.js';
+import {
   assignments,
   posicionesMovilConductor,
   sugerenciasRuta,
@@ -210,8 +215,8 @@ async function evaluarInterno(opts: {
   const [ctx] = await db
     .select({
       status: assignments.status,
-      driverUserId: assignments.driverUserId,
-      vehicleId: assignments.vehicleId,
+      driverUserId: conductorDeAsignacion,
+      vehicleId: vehiculoDeAsignacion,
       tripId: trips.id,
       originLatitude: trips.originLatitude,
       originLongitude: trips.originLongitude,
@@ -221,7 +226,7 @@ async function evaluarInterno(opts: {
     })
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(eq(assignments.id, assignmentId))
     .limit(1);
   if (!ctx || ctx.status !== 'recogido' || !ctx.driverUserId) {
@@ -381,7 +386,7 @@ export async function barrerEcoRoutingTeltonika(opts: {
   const activas = await opts.db
     .select({ id: assignments.id })
     .from(assignments)
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .innerJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(and(eq(assignments.status, 'recogido'), isNotNull(vehicles.teltonikaImei)));
   const resultados: Record<string, number> = {};
   for (const a of activas) {
@@ -435,7 +440,7 @@ export async function obtenerSugerenciaRutaActiva(opts: {
     .where(
       and(
         eq(sugerenciasRuta.assignmentId, opts.assignmentId),
-        eq(assignments.driverUserId, opts.userId),
+        asignacionConConductor(opts.userId),
         eq(sugerenciasRuta.estado, 'sugerida'),
         isNull(sugerenciasRuta.respuesta),
         gte(sugerenciasRuta.detectedAt, new Date(opts.nowMs - ECO_ROUTING_COOLDOWN_MS)),
@@ -472,7 +477,7 @@ export async function registrarRespuestaSugerenciaRuta(opts: {
   // rls-allowlist: scope por asignación; la autorización es el conductor asignado
   const [fila] = await opts.db
     .select({
-      driverUserId: assignments.driverUserId,
+      driverUserId: conductorDeAsignacion,
       estado: sugerenciasRuta.estado,
       respuesta: sugerenciasRuta.respuesta,
     })

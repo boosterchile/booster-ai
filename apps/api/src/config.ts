@@ -175,6 +175,17 @@ export const apiEnvSchema = commonEnvSchema
     TRANSPORT_DOCUMENTS_BUCKET: z.string().min(1).optional(),
 
     /**
+     * Instrucciones de retiro (spec instrucciones-retiro).
+     *
+     * INSTRUCCIONES_RETIRO_BUCKET: bucket GCS del QR o comprobante del lugar
+     *   de retiro, bajo `instrucciones-retiro/{viajeId}/{uuid}.{ext}`. Usa
+     *   `uploads_raw` (storage.tf: sin retención, borra a los 90 días), no el
+     *   bucket `documents`: el PO decidió que no se retiene 6 años. Optional:
+     *   si está ausente, subir o leer un archivo responde 503.
+     */
+    INSTRUCCIONES_RETIRO_BUCKET: z.string().min(1).optional(),
+
+    /**
      * Pub/Sub topic name del evento `document.uploaded` (creado en
      * messaging.tf). El endpoint de subida publica acá tras persistir la fila
      * `pendiente`; el worker TED (sub-fase 4b) lo consume. Optional: si está
@@ -505,6 +516,19 @@ export const apiEnvSchema = commonEnvSchema
     MATCHING_ALGORITHM_V2_ACTIVATED: booleanFlag(false),
 
     /**
+     * ADR-090, spec matching-desde-la-carga parte 2 — qué elegibilidad decide
+     * a qué empresas se ofrece una carga.
+     *   - `vigente` (default): un vehículo activo con capacidad para el peso.
+     *   - `sombra`: decide el vigente; la elegibilidad por carga (carrocería
+     *     y configuraciones con arrastre; el volumen solo avisa) se calcula al lado y la
+     *     diferencia queda en el log `matching: elegibilidad por carga` y en
+     *     la métrica `matching_elegibilidad_comparaciones_total`.
+     *   - `activa`: decide la elegibilidad por carga.
+     * Pasar a `activa` es una activación en producción: la decide el PO.
+     */
+    MATCHING_ELEGIBILIDAD_MODO: z.enum(['vigente', 'sombra', 'activa']).default('vigente'),
+
+    /**
      * ADR-035 (Wave 4) — Feature flag para activar el flow universal
      * RUT + clave numérica en `/login`.
      *
@@ -572,6 +596,23 @@ export const apiEnvSchema = commonEnvSchema
      * OFF hasta validar en staging (ADR-083) y con un viaje real.
      */
     ECO_ROUTING_REALTIME_ACTIVATED: booleanFlag(false),
+
+    /**
+     * Rutas con varias paradas (ADR-088, plan de ruta-parada-servicio §2) —
+     * API del transportista bajo `/rutas`. OFF: todo responde 404. Se enciende
+     * junto con la web (parte 6), el seguimiento con paradas (parte 7) y el
+     * reparto de huella (ADR-089): la spec §7 y §11-1 piden que salgan juntos.
+     * Encenderla es una activación en producción y la decide el PO.
+     */
+    RUTAS_API_ACTIVADA: booleanFlag(false),
+
+    /**
+     * Puntos de telemetría que el panel de Booster Fleet puede leer en una
+     * consulta (`.specs/booster-fleet-ventana-completa` §4.2). Un camión
+     * genera unos 25.000 por semana: 400.000 cubren 16 camiones con sus 7
+     * días. Sobre eso el panel recorta parejo por vehículo y lo declara.
+     */
+    BOOSTER_FLEET_PRESUPUESTO_PUNTOS: z.coerce.number().int().positive().default(400_000),
 
     /**
      * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
@@ -678,10 +719,11 @@ export const apiEnvSchema = commonEnvSchema
     RESEND_API_KEY: z.string().min(8).optional(),
 
     /**
-     * Remitente de los correos salientes. El dominio debe estar verificado en
-     * Resend (registros DNS) o el proveedor rechaza el envío con 422.
+     * Remitente de los correos salientes (decisión PO 2026-11-16: canónico
+     * global `contacto@boosterchile.com`). El dominio debe estar verificado
+     * en Resend (registros DNS) o el proveedor rechaza el envío con 422.
      */
-    EMAIL_FROM: z.string().min(3).default('Booster <no-reply@boosterchile.com>'),
+    EMAIL_FROM: z.string().min(3).default('Booster <contacto@boosterchile.com>'),
 
     /**
      * onboarding-flow-redesign T1.3 — TTL del token one-shot, en horas. Default
@@ -700,6 +742,13 @@ export const apiEnvSchema = commonEnvSchema
      * lo consume `services/geofence-origen.ts` vía el caller (función pura).
      */
     GEOFENCE_RADIUS_M: z.coerce.number().int().positive().default(150),
+
+    /**
+     * editar-anular-cargas §6.14 — cada cuántos minutos se le recuerda a la
+     * transportista una solicitud de cambio sin responder. El job corre cada
+     * 15 min (infrastructure/cambio-carga.tf); este valor decide cuáles toca.
+     */
+    CAMBIO_RECORDATORIO_INTERVALO_MIN: z.coerce.number().int().positive().default(60),
 
     /**
      * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del

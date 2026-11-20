@@ -199,6 +199,36 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Fuera de alcance:** RLS en Postgres (decidido en `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md`), columna de sector, `teltonika_imei_espejo` (Slot 2), miembros de organizaciones stakeholder.
 
+## Fuera de slot — Booster Fleet
+
+**Por qué:** pedido del PO el 2026-11-17. La gestión de flota existía como tarifa (ADR-079) y no como control para el dueño del transportista.
+
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Los tres slots de la fase A siguen como estaban. Spec en `.specs/booster-fleet/spec.md`.
+
+**Terminado cuando:** el dueño de un transportista abre Booster Fleet y ve, de su empresa, el combustible de 7 días, el estado documental de cada vehículo y cada conductor, y puede programar y cerrar una mantención. Los criterios de la spec §5 están cubiertos por tests. El cobro sigue en la bandera que prende el platform-admin.
+
+**Estado al 2026-11-17:** desplegado en prod (`b9f512d0`, api `00486-brt` / web `00428-f8j` al 100 %). Ruta API `/booster-fleet` responde 401 sin sesión; pantalla `/app/booster-fleet` sirve 200. Migración **0086** aplicada al startup (`Drizzle migrate() complete`). Queda el smoke con sesión del dueño para cerrar el criterio de término.
+
+**Fuera de alcance:** predicción de mantenciones, edición del archivo en esta pantalla, y cambiar la tarifa o el segmentador de combustible.
+
+**Rediseño de la pantalla (pedido del PO, 2026-11-17):** spec aceptada el 2026-11-17 en `.specs/booster-fleet-rediseno/spec.md`, con las ampliaciones de contrato C1 y C2; C3 no entra. Terminado cuando sus criterios §5 están cubiertos por tests y la pantalla nueva está en `main`. Al 2026-11-17 el criterio se cumple: el contrato (#1011), el overview (#1012) y el detalle del vehículo (#1013) están en `main`, con los criterios de la spec cubiertos por tests. Se vio en local con una desviación sembrada y #1015 corrigió lo que apareció. En prod desde el 2026-11-18 (`cbe37242`). Falta verlo con sesión y telemetría de producción.
+
+**Ventana completa (pedido del PO, 2026-11-17):** el panel decía «7 días» y leía como máximo 20.000 puntos; en la flota más grande eso cubría unas seis horas. Spec aceptada en `.specs/booster-fleet-ventana-completa/spec.md`. Al 2026-11-17 el criterio de término se cumple: la lectura por vehículo (#1018), la caché (#1019) y el aviso (#1020) están en `main`, con los criterios de la spec cubiertos por tests y los tiempos medidos en local. En prod desde el 2026-11-18 (`cbe37242`). El PO decidió el 2026-11-18 dejar `cobertura_desde` como está. El primer despliegue agotaba la memoria del API con la flota más grande; #1023 lo corrigió y está en prod desde el 2026-11-18 (`5eaf4d38`). Primeras dos respuestas del panel en prod: 4,6 s y 3,5 s. Falta ver el panel con sesión y el histograma de lectura.
+
+**Lectura sin espera (pedido del PO, 2026-11-18):** la lectura completa toma 8 a 10 s en prod y no hay una fase culpable. Spec aceptada en `.specs/booster-fleet-lectura-sin-espera/spec.md`: el panel responde con la última lectura guardada y la pantalla pide la nueva. Al 2026-11-18 el criterio de término se cumple: el API (#1027) y la pantalla (#1028) están en `main` y en prod (`21532312`), con los criterios cubiertos por tests y el criterio 9 medido en prod (0,75 s con una lectura guardada). Falta verlo con sesión y la decisión del PO sobre la primera apertura del día.
+
+## Fuera de slot — Ruta, parada y servicio (etapa 2)
+
+**Por qué:** pedido explícito del PO. El 2026-11-10 aceptó las doce decisiones de ADR-088, ADR-089 y ADR-090 y las de la spec, y el mismo día decidió que este frente entra fuera de slot. El modelo actual, un viaje igual a un camión, no representa un camión con cargas de varios generadores.
+
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Los tres slots de la fase A siguen como están. Spec en `.specs/ruta-parada-servicio/spec.md`.
+
+**Terminado cuando:** se cumplen los criterios de `.specs/ruta-parada-servicio/spec.md` §10 y sus ocho partes (§7) están en producción. Las partes 5 a 7 salen en el mismo release que el reparto de huella de ADR-089.
+
+**Estado al 2026-11-11:** las tres specs están aceptadas (`ruta-parada-servicio`, `matching-desde-la-carga`, `huella-consolidada`). Sin código.
+
+**Fuera de alcance:** transbordo, optimización automática del orden de paradas, rutas con más de una empresa transportista, más de una unidad de arrastre y sugerencia de agrupaciones (spec §8).
+
 ## Código en main después del 2026-09-13
 
 Verificado por los mensajes de commit hasta `4c72aec` (#719, 2026-09-23). No re-ejecuta los criterios de término y no cierra ningún slot.

@@ -8,6 +8,7 @@ import {
   puedeAceptarPorVoz,
   puedeAdministrarEmpresa,
   puedeAsignarViaje,
+  puedeEditarCarga,
   puedeEjecutarViaje,
   puedeEscribir,
   puedeGestionarDocumentosTransporte,
@@ -16,6 +17,7 @@ import {
   puedeInvitarMiembro,
   puedePedirCobraHoy,
   puedePublicarCarga,
+  puedeResponderCambioCarga,
   puedeVerFinanzas,
   puedeVerMapaFlota,
   puedeVerMenuGestion,
@@ -152,6 +154,25 @@ describe('matriz de capacidades por rol', () => {
     ).toBe(true);
     expect(puedePublicarCarga(DUENO)).toBe(false);
     expect(puedePublicarCarga(ctx({ role: 'conductor', isGeneradorCarga: true }))).toBe(false);
+  });
+
+  // editar-anular-cargas §6: editar la carga es lo mismo que publicarla;
+  // responder un cambio es lo mismo que aceptar una oferta.
+  it('editar una carga: gestor de un generador; el visualizador no', () => {
+    expect(puedeEditarCarga(DUENO_G)).toBe(true);
+    expect(puedeEditarCarga(DESPACHADOR_G)).toBe(true);
+    expect(puedeEditarCarga(VISUALIZADOR_G)).toBe(false);
+    expect(puedeEditarCarga(DUENO)).toBe(false);
+  });
+
+  it('responder un cambio de carga: quien puede aceptar ofertas', () => {
+    expect(puedeResponderCambioCarga(DUENO)).toBe(true);
+    expect(puedeResponderCambioCarga(ADMIN)).toBe(true);
+    expect(puedeResponderCambioCarga(DESPACHADOR)).toBe(false);
+    expect(puedeResponderCambioCarga(DESPACHADOR_CON_PERMISO)).toBe(true);
+    expect(puedeResponderCambioCarga(CONDUCTOR)).toBe(false);
+    expect(puedeResponderCambioCarga(VISUALIZADOR_T)).toBe(false);
+    expect(puedeResponderCambioCarga(DUENO_G)).toBe(false);
   });
 
   it('invitar y administrar la empresa: dueño y admin', () => {

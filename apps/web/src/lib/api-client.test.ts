@@ -230,6 +230,24 @@ describe('api.postForm', () => {
   });
 });
 
+describe('api.putForm', () => {
+  it('manda FormData por PUT sin Content-Type json', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ instrucciones: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const form = new FormData();
+    form.append('nota', 'Andén 4');
+    await api.putForm('/viajes/t1/instrucciones-retiro', form);
+    const call = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    expect(call.method).toBe('PUT');
+    expect(call.body).toBe(form);
+    expect(new Headers(call.headers).get('content-type')).toBeNull();
+  });
+});
+
 describe('api.patch / api.put', () => {
   it('patch con body', async () => {
     const fetchSpy = vi

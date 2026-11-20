@@ -14,6 +14,11 @@ import {
 } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularMetricasEstimadas } from './calcular-metricas-viaje.js';
+import { crearRutaDeAsignacion } from './crear-ruta-de-asignacion.js';
+import {
+  type NotifyTrackingLinkEmailDeps,
+  notifyTrackingLinkEmailAtAssignment,
+} from './notify-tracking-link-email.js';
 import {
   type NotifyTrackingLinkDeps,
   notifyTrackingLinkAtAssignment,
@@ -103,6 +108,11 @@ interface AcceptOfferOptions {
    * el envío (dev local, tests).
    */
   notifyTrackingLink?: NotifyTrackingLinkDeps;
+  /**
+   * seguimiento-por-correo — Deps para enviar el mismo link por correo al
+   * generador y al destinatario. Canal independiente del WhatsApp.
+   */
+  notifyTrackingLinkEmail?: NotifyTrackingLinkEmailDeps;
 }
 
 export async function acceptOffer(opts: AcceptOfferOptions): Promise<AcceptOfferResult> {
@@ -129,7 +139,8 @@ export async function acceptOffer(opts: AcceptOfferOptions): Promise<AcceptOffer
 }
 
 async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferResult> {
-  const { db, logger, offerId, empresaId, userId, notifyTrackingLink } = opts;
+  const { db, logger, offerId, empresaId, userId, notifyTrackingLink, notifyTrackingLinkEmail } =
+    opts;
 
   return await db
     .transaction(async (tx) => {
@@ -170,9 +181,30 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
         throw new TripNotAcceptableError(offer.tripId, trip.status);
       }
 
+      // 1c. Revalidar la oferta DESPUÉS del lock del viaje (editar-anular-cargas
+      // PR1). La lectura del paso 1 es anterior al lock: entre medio otra tx
+      // pudo invalidarla (edición que vuelve a ofertar, anulación). Se relee
+      // con su propio lock y se vuelve a exigir pendiente y vigente.
+      const ofertaBloqueada = (
+        await tx
+          .select({ status: offers.status, expiresAt: offers.expiresAt })
+          .from(offers)
+          .where(and(eq(offers.id, offerId), eq(offers.empresaId, empresaId)))
+          .for('update')
+          .limit(1)
+      )[0];
+      if (!ofertaBloqueada || ofertaBloqueada.status !== 'pendiente') {
+        throw new OfferNotPendingError(offerId, ofertaBloqueada?.status ?? 'missing');
+      }
+      if (ofertaBloqueada.expiresAt.getTime() < Date.now()) {
+        throw new OfferExpiredError(offerId);
+      }
+
       const now = new Date();
 
-      // 2. Marcar offer aceptada.
+      // 2. Marcar offer aceptada, con CAS sobre `pendiente`: el UPDATE solo
+      // aplica si la oferta sigue pendiente, aunque algo se cuele entre la
+      // relectura y este punto.
       const [acceptedOffer] = await tx
         .update(offers)
         .set({
@@ -181,10 +213,10 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
           responseChannel: 'web',
           updatedAt: now,
         })
-        .where(eq(offers.id, offerId))
+        .where(and(eq(offers.id, offerId), eq(offers.status, 'pendiente')))
         .returning();
       if (!acceptedOffer) {
-        throw new Error('Update offer returned no row');
+        throw new OfferNotPendingError(offerId, 'cambiada');
       }
 
       // 3. Crear assignment. UNIQUE (viaje_id) protege contra race.
@@ -197,7 +229,7 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
           tripId: offer.tripId,
           offerId: offer.id,
           empresaId: offer.empresaId,
-          vehicleId: offer.suggestedVehicleId ?? '',
+          vehicleId: offer.suggestedVehicleId ?? null,
           status: 'asignado',
           agreedPriceClp: offer.proposedPriceClp,
           acceptedAt: now,
@@ -207,6 +239,10 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
       if (!assignment) {
         throw new Error('Insert assignment returned no row');
       }
+
+      // 3b. La ruta de dos paradas del servicio (ADR-088). Misma transacción:
+      // no existe una asignación nueva sin ruta.
+      await crearRutaDeAsignacion(tx, { assignment, userId });
 
       // 4. Otras offers del mismo trip pasan a reemplazada.
       // rls-allowlist: supersede de ofertas hermanas del mismo trip (offer.tripId ya validado) (rls-viabilidad §2)
@@ -326,6 +362,21 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
           logger.error(
             { err, assignmentId: result.assignment.id },
             'fallo despachar tracking link tras accept (sin impacto en assignment)',
+          );
+        }
+      }
+
+      // seguimiento-por-correo — el mismo link por correo. Fire-and-forget e
+      // independiente del WhatsApp: si uno falla, el otro sale igual.
+      if (notifyTrackingLinkEmail) {
+        try {
+          await notifyTrackingLinkEmailAtAssignment(notifyTrackingLinkEmail, {
+            assignmentId: result.assignment.id,
+          });
+        } catch (err) {
+          logger.error(
+            { err, assignmentId: result.assignment.id },
+            'fallo despachar tracking link por correo tras accept (sin impacto en assignment)',
           );
         }
       }

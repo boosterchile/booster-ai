@@ -14,6 +14,7 @@ import {
   users,
 } from '../db/schema.js';
 import { hashClaveNumerica } from './clave-numerica.js';
+import { correoOcupado } from './correo-de-cuenta.js';
 
 /**
  * Resultado del onboarding exitoso. Mismo shape que /me onboarded para
@@ -127,7 +128,10 @@ export type OnboardingAuthorization = 'self_service' | 'admin_provisioned';
  *
  * Pre-condiciones (validadas dentro de la transacción para evitar TOCTOU):
  *   - No existe user con `firebaseUid` (sino UserAlreadyExistsError 409).
- *   - No existe user con `email` (sino EmailAlreadyInUseError 409).
+ *   - No existe user con `email`, sin distinguir mayúsculas, y el correo no
+ *     está en la lista de respaldo del panel ni es reservado (sino
+ *     EmailAlreadyInUseError 409, `.specs/correos-solicitudes-panel` SC3 y
+ *     `.specs/bordes-autenticacion` SC5).
  *   - No existe empresa con `input.empresa.rut` (sino EmpresaRutDuplicateError 409).
  *   - El plan slug existe en `planes` y está activo (sino PlanNotFoundError 400).
  *
@@ -149,6 +153,13 @@ export async function onboardEmpresa(opts: {
   authorizedBy: OnboardingAuthorization;
   /** Valor del flag `EMPRESA_SELF_ONBOARDING_ENABLED`; consultado solo para `self_service`. */
   selfServiceEnabled: boolean;
+  /**
+   * `config.BOOSTER_PLATFORM_ADMIN_EMAILS`, la lista de respaldo del panel. El
+   * alta no crea una cuenta con uno de esos correos
+   * (`.specs/bordes-autenticacion` SC5). Obligatoria: sin ella el chequeo
+   * quedaría apagado sin aviso.
+   */
+  platformAdminEmails: readonly string[];
   /**
    * onboarding-flow-redesign T1.5a — consumo del token one-shot. REQUERIDO
    * cuando `authorizedBy='admin_provisioned'`. El route (T1.5b) verifica el
@@ -241,13 +252,11 @@ export async function onboardEmpresa(opts: {
       throw new UserAlreadyExistsError(identidadUid);
     }
 
-    // 2. Verificar email no usado por otro user.
-    const existingByEmail = await tx
-      .select()
-      .from(users)
-      .where(eq(users.email, identidadEmail))
-      .limit(1);
-    if (existingByEmail.length > 0) {
+    // 2. Verificar que el email no sea de otro user, sin distinguir
+    //    mayúsculas, ni reservado (`.specs/correos-solicitudes-panel` SC3),
+    //    ni de la lista de respaldo del panel (`.specs/bordes-autenticacion`
+    //    SC5). Misma respuesta en los tres casos.
+    if (await correoOcupado({ db: tx, email: identidadEmail, lista: opts.platformAdminEmails })) {
       throw new EmailAlreadyInUseError(identidadEmail);
     }
 

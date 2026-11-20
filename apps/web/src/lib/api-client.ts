@@ -193,6 +193,9 @@ export const api = {
    */
   postForm: <T>(path: string, form: FormData, init?: RequestInit) =>
     request<T>('POST', path, form, init, true),
+  /** PUT multipart (instrucciones de retiro: `file` + campos de texto). */
+  putForm: <T>(path: string, form: FormData, init?: RequestInit) =>
+    request<T>('PUT', path, form, init, true),
   patch: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>('PATCH', path, body, init),
   put: <T>(path: string, body?: unknown, init?: RequestInit) => request<T>('PUT', path, body, init),

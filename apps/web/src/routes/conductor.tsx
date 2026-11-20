@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
+import { DocumentosViajeConductor } from '../components/conductor/DocumentosViajeConductor.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
 import { WakeWordBanner } from '../components/conductor/WakeWordBanner.js';
 import { SugerenciaRutaCard } from '../components/eco-routing/SugerenciaRutaCard.js';
@@ -22,8 +23,10 @@ import { partesCuando } from '../components/inicio/cuando.js';
 import { INICIO_LICENCIA_CONDUCTOR_ACTIVA } from '../components/inicio/flags.js';
 import { IncidentePanel } from '../components/inicio/incidente-panel.js';
 import { TripHeroCard } from '../components/inicio/trip-hero-card.js';
+import { InstruccionesRetiroConductor } from '../components/instrucciones-retiro/InstruccionesRetiroConductor.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
+import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
@@ -76,8 +79,61 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * latinoamericano: "tu/tienes/aquí" (no "vos/tenés/acá").
  */
 
+/** Una parada de la hoja de ruta (ruta-parada-servicio §4.8). */
+export interface ParadaDeHoja {
+  orden: number;
+  tipo: 'recogida' | 'entrega';
+  resuelta_en: string | null;
+  asignacion_id: string;
+  cancelado: boolean;
+  codigo_seguimiento: string;
+  direccion: string;
+  contacto: { nombre: string | null; telefono_e164: string | null } | null;
+}
+
+export interface HojaDeRutaConductor {
+  id: string;
+  estado: string;
+  paradas: ParadaDeHoja[];
+}
+
+/** La parada que sigue: la primera sin resolver de una carga vigente. */
+function paradaQueSigue(hoja: HojaDeRutaConductor): ParadaDeHoja | null {
+  return hoja.paradas.find((p) => !p.resuelta_en && !p.cancelado) ?? null;
+}
+
+/** Una hoja solo aporta cuando la ruta lleva más de una carga. */
+function esRutaCompartida(hoja: HojaDeRutaConductor): boolean {
+  return new Set(hoja.paradas.map((p) => p.asignacion_id)).size > 1;
+}
+
+/**
+ * Ordena las cargas como las pide la ruta: primero la de la parada que sigue.
+ * Las que no están en una ruta compartida conservan su lugar, después.
+ */
+function ordenarPorRuta(
+  assignments: DriverAssignment[],
+  hojas: HojaDeRutaConductor[],
+): DriverAssignment[] {
+  const turno = new Map<string, number>();
+  for (const hoja of hojas) {
+    for (const p of hoja.paradas) {
+      if (!p.resuelta_en && !p.cancelado && !turno.has(p.asignacion_id)) {
+        turno.set(p.asignacion_id, p.orden);
+      }
+    }
+  }
+  const lugar = (a: DriverAssignment) => turno.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+  return assignments
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => lugar(x.a) - lugar(y.a) || x.i - y.i)
+    .map(({ a }) => a);
+}
+
 export interface DriverAssignment {
   id: string;
+  /** Ruta a la que pertenece la carga; ausente en respuestas anteriores a las rutas. */
+  ruta_id?: string | null;
   status: string;
   trip: {
     id: string;
@@ -89,6 +145,12 @@ export interface DriverAssignment {
     cargo_weight_kg: number | null;
     pickup_window_start: string | null;
     pickup_window_end: string | null;
+    /** editar-anular-cargas §12-P4 — datos libres que fija el generador. */
+    consignee?: { name: string | null; phone_e164: string | null } | null;
+    notes?: string | null;
+    reference?: string | null;
+    /** editar-anular-cargas §12-P7: el conductor solo sabe que existe, no qué propone. */
+    cambio_pendiente?: { existe: true; creado_en: string | null } | null;
   };
   carrier_empresa: { id: string; legal_name: string | null };
   vehicle: { id: string; plate: string | null; has_teltonika: boolean } | null;
@@ -232,10 +294,14 @@ function WhatsAppSafetyBanner() {
 
 function AssignmentsSection() {
   const [assignments, setAssignments] = useState<DriverAssignment[]>([]);
+  const [hojas, setHojas] = useState<HojaDeRutaConductor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [geoPermission, setGeoPermission] = useState<PermissionStatus>('unknown');
   const [refrescando, setRefrescando] = useState(false);
+  // Sube con cada respuesta de `/me/assignments`: libera el bloqueo por un
+  // 409 `cambio_pendiente` cuando la lista nueva ya no trae el cambio.
+  const [versionCarga, setVersionCarga] = useState(0);
 
   // El fetch vive en un callback para poder repetirlo: el conductor recibe
   // servicios mientras tiene la pantalla abierta, y antes no había forma de
@@ -244,8 +310,14 @@ function AssignmentsSection() {
     setError(null);
     setRefrescando(true);
     try {
-      const res = await api.get<{ assignments: DriverAssignment[] }>('/me/assignments');
-      setAssignments(res.assignments);
+      const res = await api.get<{
+        assignments: DriverAssignment[];
+        rutas?: HojaDeRutaConductor[];
+      }>('/me/assignments');
+      const compartidas = (res.rutas ?? []).filter(esRutaCompartida);
+      setHojas(compartidas);
+      setAssignments(ordenarPorRuta(res.assignments, compartidas));
+      setVersionCarga((v) => v + 1);
     } catch (err) {
       // Mensajes en lenguaje del conductor: `Error 500: boom` no le sirve a
       // alguien que está en ruta.
@@ -359,7 +431,15 @@ function AssignmentsSection() {
 
   return (
     <section className="mt-6 space-y-4">
-      <AssignmentCard destacado assignment={primero} geoPermission={geoPermission} />
+      {hojas.map((hoja) => (
+        <HojaDeRuta key={hoja.id} hoja={hoja} />
+      ))}
+      <AssignmentCard
+        destacado
+        assignment={primero}
+        geoPermission={geoPermission}
+        versionCarga={versionCarga}
+      />
       {resto.length > 0 ? (
         <div>
           <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
@@ -368,7 +448,11 @@ function AssignmentsSection() {
           <ul className="mt-2 space-y-2">
             {resto.map((item) => (
               <li key={item.id}>
-                <AssignmentCard assignment={item} geoPermission={geoPermission} />
+                <AssignmentCard
+                  assignment={item}
+                  geoPermission={geoPermission}
+                  versionCarga={versionCarga}
+                />
               </li>
             ))}
           </ul>
@@ -389,6 +473,88 @@ function AssignmentsSection() {
           Licencia por vencer
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * Hoja de ruta: las paradas de una ruta con varias cargas, en el orden en que
+ * la oficina la armó (el conductor no reordena, spec §11-3). Dice cuál sigue;
+ * cada parada se confirma en la tarjeta de su carga, más abajo.
+ */
+function HojaDeRuta({ hoja }: { hoja: HojaDeRutaConductor }) {
+  const vigentes = hoja.paradas.filter((p) => !p.cancelado);
+  const hechas = vigentes.filter((p) => p.resuelta_en).length;
+  const sigue = paradaQueSigue(hoja);
+  return (
+    <section
+      aria-label="Hoja de ruta"
+      className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="font-semibold text-base text-neutral-900">Hoja de ruta</h2>
+        <p className="text-neutral-600 text-sm">
+          {vigentes.length} paradas · {hechas} {hechas === 1 ? 'hecha' : 'hechas'}
+        </p>
+      </div>
+      <ol className="mt-3 space-y-2">
+        {hoja.paradas.map((p, i) => {
+          const esLaQueSigue = p === sigue;
+          const estado = p.cancelado
+            ? 'Cancelada'
+            : p.resuelta_en
+              ? 'Hecha'
+              : esLaQueSigue
+                ? 'Sigue'
+                : null;
+          return (
+            <li
+              key={`${p.asignacion_id}-${p.tipo}`}
+              aria-current={esLaQueSigue ? 'step' : undefined}
+              className={`flex items-start gap-3 rounded-md border px-3 py-2 ${
+                esLaQueSigue
+                  ? 'border-primary-300 bg-primary-50'
+                  : 'border-neutral-200 bg-neutral-50'
+              }`}
+            >
+              <span
+                className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-semibold text-xs ${
+                  esLaQueSigue ? 'bg-primary-600 text-white' : 'bg-neutral-200 text-neutral-700'
+                }`}
+              >
+                {i + 1}
+              </span>
+              <div
+                className={`min-w-0 flex-1 text-sm ${
+                  p.cancelado ? 'text-neutral-400 line-through' : 'text-neutral-800'
+                }`}
+              >
+                <p className="font-medium">
+                  {p.tipo === 'recogida' ? 'Recoger' : 'Entregar'}{' '}
+                  <span className="font-mono text-neutral-600 text-xs">{p.codigo_seguimiento}</span>
+                </p>
+                <p className="break-words">{p.direccion}</p>
+                {p.contacto?.nombre ? (
+                  <p className="text-neutral-600 text-xs">{p.contacto.nombre}</p>
+                ) : null}
+              </div>
+              {estado ? (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 font-medium text-xs ${
+                    estado === 'Sigue'
+                      ? 'bg-primary-600 text-white'
+                      : estado === 'Hecha'
+                        ? 'bg-success-50 text-success-700'
+                        : 'bg-neutral-200 text-neutral-600'
+                  }`}
+                >
+                  {estado}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
@@ -642,12 +808,18 @@ export function AssignmentCard({
   assignment,
   geoPermission,
   sugerenciasRuta = true,
+  instruccionesRetiro = true,
   destacado = false,
+  versionCarga,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
+  /** Contador de cargas de `/me/assignments` (ver `useConfirmarRecogida`). */
+  versionCarga?: number;
   /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
   sugerenciasRuta?: boolean;
+  /** instrucciones-retiro: false en la preview pública, que no tiene sesión ni viaje real. */
+  instruccionesRetiro?: boolean;
   destacado?: boolean;
 }) {
   const reporter = useDriverPositionReporter();
@@ -677,6 +849,8 @@ export function AssignmentCard({
     assignmentId: a.id,
     initialRecogida: a.status === 'recogido',
     geofence: reporter.lastGeofence,
+    cambioPendiente: a.trip.cambio_pendiente?.existe === true,
+    ...(versionCarga !== undefined ? { versionCarga } : {}),
   });
 
   const fase: FaseServicio = entregada
@@ -903,10 +1077,27 @@ export function AssignmentCard({
           transportista) y terminaba viendo herramientas de su jefe — "asignar
           conductor" y el factoring de Cobra hoy—, cuyas acciones después le
           respondían 403. */}
+      {/* editar-anular-cargas §12-P4: contacto del destinatario, notas y referencia,
+          antes y durante el viaje (al entregar es cuando más sirve el contacto). */}
+      <DatosLibresViaje
+        className="mt-4"
+        consignee={a.trip.consignee ?? null}
+        notes={a.trip.notes ?? null}
+        reference={a.trip.reference ?? null}
+      />
       <div className="mt-4 space-y-2 border-neutral-100 border-t pt-4">
         {fase === 'por_recoger' && (
           <>
-            {recogida.sugerida && (
+            {instruccionesRetiro && <InstruccionesRetiroConductor tripId={a.trip.id} />}
+            {recogida.bloqueadaPorCambio && (
+              <output
+                data-testid="cambio-pendiente-conductor"
+                className="block rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900 text-sm"
+              >
+                Hay un cambio pendiente. Espera la respuesta de tu transportista antes de recoger.
+              </output>
+            )}
+            {recogida.sugerida && !recogida.bloqueadaPorCambio && (
               // El geofence solo sugiere: <output> anuncia la llegada al punto
               // de recogida sin disparar nada. El tap sigue siendo del conductor.
               <output
@@ -919,7 +1110,7 @@ export function AssignmentCard({
             {/* Confirmarla mueve el viaje a `en_proceso`, que es lo que destraba la
                 posición en el link de tracking del destinatario y lo que hace que
                 su empresa deje de ver «Por recoger» en Servicios. */}
-            {confirmando === 'recogida' ? (
+            {confirmando === 'recogida' && !recogida.bloqueadaPorCambio ? (
               <ConfirmacionInline
                 pregunta="¿Confirmas que ya cargaste esta carga en el camión?"
                 onConfirmar={() => void ejecutarConfirmacion()}
@@ -929,7 +1120,7 @@ export function AssignmentCard({
               <button
                 type="button"
                 onClick={() => setConfirmando('recogida')}
-                disabled={recogida.recogiendo}
+                disabled={recogida.recogiendo || recogida.bloqueadaPorCambio}
                 data-testid="confirmar-recogida"
                 className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
               >
@@ -945,6 +1136,7 @@ export function AssignmentCard({
                 incidenteAbierto={incidenteAbierto}
                 onIncidente={() => setIncidenteAbierto((valor) => !valor)}
                 assignmentId={a.id}
+                tripId={a.trip.id}
               />
             ) : null}
             <NavegacionEnPantalla
@@ -1108,6 +1300,7 @@ function AccionesViaje({
   incidenteAbierto,
   onIncidente,
   assignmentId,
+  tripId,
 }: {
   onRuta: () => void;
   documentosAbiertos: boolean;
@@ -1115,6 +1308,7 @@ function AccionesViaje({
   incidenteAbierto: boolean;
   onIncidente: () => void;
   assignmentId: string;
+  tripId: string;
 }) {
   return (
     <div className="space-y-2">
@@ -1141,11 +1335,7 @@ function AccionesViaje({
           Incidente
         </button>
       </div>
-      {documentosAbiertos ? (
-        <p className="text-neutral-600 text-sm">
-          La guía y la factura las carga tu oficina. Desde esta pantalla no se suben.
-        </p>
-      ) : null}
+      {documentosAbiertos ? <DocumentosViajeConductor tripId={tripId} /> : null}
       {incidenteAbierto ? (
         <IncidentePanel assignmentId={assignmentId} onClose={onIncidente} />
       ) : null}

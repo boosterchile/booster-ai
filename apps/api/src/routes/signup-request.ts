@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
 import { signupRequestSchema } from '@booster-ai/shared-schemas';
 import { Hono } from 'hono';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { zValidator } from '../lib/validation.js';
 import { submitSignupRequest } from '../services/signup-request.js';
@@ -17,7 +18,8 @@ import { submitSignupRequest } from '../services/signup-request.js';
  *      fail-closed 503 si Redis down) montado upstream en server.ts.
  *   2. zValidator body — valida `{ email, nombreCompleto }`. Invalid → 422.
  *   3. Service `submitSignupRequest` — INSERT si email no en `users`,
- *      shadow si ya existe (response idéntico). Email enumeration defense.
+ *      shadow si ya existe o está en la lista de respaldo del panel
+ *      (response idéntico). Email enumeration defense.
  *
  * Response:
  *   - 202 { ok: true } — siempre que la request pasó el rate-limit + zValidator.
@@ -37,7 +39,13 @@ export function createSignupRequestRoutes(opts: { db: Db; logger: Logger }): Hon
     const correlationId = c.req.header('x-correlation-id') ?? randomUUID();
 
     try {
-      await submitSignupRequest(opts.db, opts.logger, body, correlationId);
+      await submitSignupRequest(
+        opts.db,
+        opts.logger,
+        body,
+        correlationId,
+        appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+      );
       // Response idéntico independiente del outcome (submitted vs shadowed)
       // — defensa contra email enumeration (SC-1.2.5).
       return c.json({ ok: true }, 202);

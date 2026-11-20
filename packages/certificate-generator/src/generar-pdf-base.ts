@@ -18,20 +18,30 @@
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, type PDFFont, rgb, setCharacterSpacing } from 'pdf-lib';
+import {
+  FRASE_CONSOLIDACION,
+  TEXTO_METODO_REPARTO,
+  validarConsolidacion,
+} from './consolidacion.js';
 import { type FuentesCert, embeberFuentes } from './fuentes.js';
+import { lineaReemplazo, validarVersion } from './reemision.js';
 import {
   FRASE_ISO,
+  type Presentacion,
   TAMANO_LINEA_METODO,
+  TITULO_AHORRO,
   TITULO_CERT,
   TITULO_DISCLAIMER,
   declaracionDistancia,
   formatRouteDataSource,
   formatearNumeroPrincipal,
   lineaMetodoCert,
+  lineasReferenciaHuellaChile,
   numeroEsCl,
   presentacionNivel,
   subtituloMetodologia,
   textoDisclaimer,
+  textoNotaMetodo,
 } from './render-helpers.js';
 import type {
   DatosEmpresaCertificado,
@@ -86,7 +96,7 @@ export async function generarPdfConCajas(
   const c = new Cursor(pdfDoc, registro);
 
   // 1. Fila superior: marca a la izquierda; código y versión a la derecha.
-  const ver = params.viaje.version ?? { numero: 1 };
+  const ver = validarVersion(params.viaje.version);
   c.texto('Booster', MX, c.y - 16, 16, f.bold, AZUL);
   c.derecha('Código de viaje', c.y - 10, 9, f.regular, GRIS);
   c.derecha(params.viaje.trackingCode, c.y - 24, 11, f.bold, TEXTO);
@@ -127,20 +137,14 @@ export async function generarPdfConCajas(
   c.y -= 12;
 
   // 6. Badge de calidad de datos.
+  const colores = COLORES_BADGE[pres.presentacion];
   const ancho = f.semibold.widthOfTextAtSize(pres.badge, 9.5) + 20;
   rectRedondeado(c.page, MX, c.y - 12 - 18, ancho, 18, 9, {
-    color: pres.estimado ? hex('#FEF3E2') : hex('#E6F4EA'),
-    borderColor: pres.estimado ? hex('#F0B46B') : hex('#86C79B'),
+    color: colores.fondo,
+    borderColor: colores.borde,
     borderWidth: 0.75,
   });
-  c.texto(
-    pres.badge,
-    MX + 10,
-    c.y - 12 - 12.5,
-    9.5,
-    f.semibold,
-    pres.estimado ? hex('#7C3A0A') : hex('#14532D'),
-  );
+  c.texto(pres.badge, MX + 10, c.y - 12 - 12.5, 9.5, f.semibold, colores.texto);
   c.y -= 12 + 18 + 22;
 
   // 7. Fechas (3 columnas). Null → «—», sin caer a otro dato (T3 trae las reales).
@@ -156,8 +160,20 @@ export async function generarPdfConCajas(
   });
   c.y -= 40;
 
+  // 7b. Certificado reemitido: a qué versión reemplaza, de cuándo y por qué.
+  const reemplazo = lineaReemplazo(ver, formatDate);
+  if (reemplazo) {
+    // Una sola línea (spec §8-2): si no cabe, falla en vez de cortarla.
+    if (partir(reemplazo, f.regular, 9, MX2 - MX).length > 1) {
+      throw new Error(`la línea de reemplazo no cabe en una línea: «${reemplazo}»`);
+    }
+    c.texto(reemplazo, MX, c.y, 9, f.regular, TEXTO);
+    c.y -= 24;
+  }
+
   // 8. Resultados.
   const kgWtw = m.kgco2eWtwActual ?? m.kgco2eWtwEstimated ?? 0;
+  const consolidacion = validarConsolidacion(m.consolidacion, kgWtw);
   const num = formatearNumeroPrincipal(kgWtw, m.uncertaintyFactor);
   const topCaja = c.y;
   c.y -= 22;
@@ -183,8 +199,13 @@ export async function generarPdfConCajas(
   }
   const distanciaKm = m.distanciaKmActual ?? m.distanciaKmEstimated ?? 0;
   // Invariante F0-0 §7: la distancia va cualificada por la cobertura medida.
+  // Una carga consolidada publica su distancia directa: la que entró al
+  // reparto, no lo que el camión recorrió. No lleva cobertura: no es medida.
+  const distancia = consolidacion
+    ? `Distancia directa: ${numeroEsCl(distanciaKm, 1)} km`
+    : `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)})`;
   detalles.push(
-    `Distancia: ${numeroEsCl(distanciaKm, 1)} km (${declaracionDistancia(m.coveragePct)}) · Combustible: ${
+    `${distancia} · Combustible: ${
       m.combustibleConsumido !== null
         ? `${numeroEsCl(m.combustibleConsumido)} ${m.combustibleUnidad ?? ''}`
         : '—'
@@ -194,6 +215,26 @@ export async function generarPdfConCajas(
     for (const l of partir(d, f.regular, 9.5, MX2 - MX - 32)) {
       c.y -= 14;
       c.texto(l, MX + 16, c.y, 9.5, f.regular, TEXTO);
+    }
+  }
+  // Referencia HuellaChile: secundaria (9,5 / 8,5 pt gris, sin bold), bajo una línea fina.
+  const ref = lineasReferenciaHuellaChile(
+    m.combustibleUnidad === 'L' ? m.combustibleConsumido : null,
+    m.referencia,
+  );
+  if (ref) {
+    c.y -= 12;
+    c.page.drawLine({
+      start: { x: MX + 16, y: c.y },
+      end: { x: MX2 - 16, y: c.y },
+      thickness: 0.5,
+      color: hex('#D9DEE3'),
+    });
+    c.y -= 14;
+    c.texto(ref[0], MX + 16, c.y, 9.5, f.regular, GRIS);
+    for (const l of partir(ref[1], f.regular, 8.5, MX2 - MX - 32)) {
+      c.y -= 11;
+      c.texto(l, MX + 16, c.y, 8.5, f.regular, GRIS);
     }
   }
   c.y -= 16;
@@ -210,7 +251,7 @@ export async function generarPdfConCajas(
   // 9. Disclaimer: inmediatamente después de Resultados y entero (no se parte).
   if (pres.estimado) {
     const lineas = partir(
-      textoDisclaimer(m.fuenteFactores, m.glecVersion),
+      textoDisclaimer(m.factoresLinea?.etiqueta ?? m.fuenteFactores, m.glecVersion),
       f.regular,
       9,
       MX2 - MX - 28,
@@ -229,6 +270,22 @@ export async function generarPdfConCajas(
     lineas.forEach((l, i) => c.texto(l, MX + 14, c.y - 34 - i * 13, 9, f.regular, TEXTO));
     c.y -= alto + 20;
   }
+  // ADR-091 §2: nota de método en párrafo normal, en el lugar del disclaimer.
+  if (pres.presentacion === 'medido_teltonika') {
+    const lineas = partir(
+      textoNotaMetodo(
+        m.factoresLinea?.etiqueta ?? m.fuenteFactores,
+        m.glecVersion,
+        m.consolidacion !== undefined,
+      ),
+      f.regular,
+      9,
+      MX2 - MX,
+    );
+    c.asegurar(lineas.length * 13 + 8);
+    lineas.forEach((l, i) => c.texto(l, MX, c.y - 10 - i * 13, 9, f.regular, GRIS));
+    c.y -= lineas.length * 13 + 20;
+  }
 
   // Metodología (auditoría).
   c.seccion('Metodología', f);
@@ -243,14 +300,41 @@ export async function generarPdfConCajas(
     formatPrecisionMethod(m.precisionMethod),
     f,
   );
-  c.par(
-    'Factor de emisión usado',
-    `${numeroEsCl(m.emissionFactorUsado)} kg CO\u2082e / unidad`,
-    null,
-    null,
-    f,
-  );
-  c.par('Fuente de factores', m.fuenteFactores, null, null, f);
+  // Línea de factores (ux.md §Factores): solo si la tabla versionada resolvió la fuente.
+  const fl = m.factoresLinea;
+  if (fl) {
+    c.asegurar(40);
+    const u = 'kg CO\u2082e/L';
+    c.texto(
+      `Factores: WTW ${numeroEsCl(fl.wtw)} ${u} · TTW ${numeroEsCl(fl.ttw)} ${u} · WTT ${numeroEsCl(fl.wtt)} ${u}`,
+      MX,
+      c.y,
+      9.5,
+      f.semibold,
+      TEXTO,
+    );
+    c.texto(`Fuente de factores: ${fl.etiqueta}`, MX, c.y - 13, 8.5, f.regular, GRIS);
+    c.y -= 40;
+  } else if (m.emissionFactorUsado > 0) {
+    // Sin fila en la tabla no hay desglose TTW/WTT, pero el factor guardado se
+    // imprime igual: la cifra tiene que poder explicarse con lo impreso
+    // (`.specs/reemision-certificado/`, criterio 5).
+    // Una fuente sin fila se cita como se guardó y puede ser larga: se parte.
+    const fuente = m.fuenteFactores
+      ? partir(`Fuente de factores: ${m.fuenteFactores}`, f.regular, 8.5, MX2 - MX)
+      : [];
+    c.asegurar(27 + fuente.length * 13);
+    c.texto(
+      `Factor: WTW ${numeroEsCl(m.emissionFactorUsado)} kg CO\u2082e/L`,
+      MX,
+      c.y,
+      9.5,
+      f.semibold,
+      TEXTO,
+    );
+    fuente.forEach((l, i) => c.texto(l, MX, c.y - 13 - i * 13, 8.5, f.regular, GRIS));
+    c.y -= 27 + fuente.length * 13;
+  }
   // ADR-028 — origen del polyline; solo si el campo está presente.
   if (m.routeDataSource) {
     c.par(
@@ -265,6 +349,34 @@ export async function generarPdfConCajas(
     if (lineaMetodo !== null) {
       c.par('Método', lineaMetodo, null, null, f, TAMANO_LINEA_METODO);
     }
+  }
+
+  // Carga consolidada (ADR-089): con qué método se repartió la huella de la
+  // ruta, qué parte es de esta carga y cuánto fue el total.
+  if (consolidacion) {
+    c.seccion('Carga consolidada', f);
+    const lineas = partir(FRASE_CONSOLIDACION, f.regular, 9.5, MX2 - MX);
+    // La frase y sus dos filas van juntas: no se parten entre dos páginas.
+    c.asegurar(lineas.length * 13 + 17 + 60);
+    for (const l of lineas) {
+      c.texto(l, MX, c.y, 9.5, f.regular, TEXTO);
+      c.y -= 13;
+    }
+    c.y -= 17;
+    c.par(
+      'Método de reparto',
+      TEXTO_METODO_REPARTO,
+      'Versión del método',
+      consolidacion.versionMetodo,
+      f,
+    );
+    c.par(
+      'Participación de esta carga',
+      `${numeroEsCl(consolidacion.participacionPct)} %`,
+      'Huella total de la ruta',
+      `${numeroEsCl(consolidacion.kgco2eWtwRuta)} kg CO\u2082e`,
+      f,
+    );
   }
 
   // Trayecto.
@@ -301,7 +413,7 @@ export async function generarPdfConCajas(
   const factorMatching = m.factorMatchingAplicado;
   const ahorroBackhaul = m.ahorroCo2eVsSinMatchingKgco2eWtw;
   if (factorMatching != null && ahorroBackhaul != null && ahorroBackhaul > 0) {
-    c.seccion('Ahorro CO\u2082e vía matching de retorno (GLEC v3.0 §6.4)', f);
+    c.seccion(TITULO_AHORRO, f);
     c.par(
       'Factor de matching aplicado',
       `${(factorMatching * 100).toFixed(0)}%`,
@@ -330,7 +442,8 @@ export async function generarPdfConCajas(
   }
 
   // Verificación.
-  c.asegurar(50);
+  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
+  c.asegurar(50 + (lineasUrl.length - 1) * 11);
   c.y -= 6;
   c.texto(
     'Este documento está firmado digitalmente con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.',
@@ -340,7 +453,6 @@ export async function generarPdfConCajas(
     f.regular,
     GRIS,
   );
-  const lineasUrl = partir(`Verifica la firma en: ${params.verifyUrl}`, f.semibold, 8.5, MX2 - MX);
   lineasUrl.forEach((l, i) => c.texto(l, MX, c.y - 13 - i * 11, 8.5, f.semibold, AZUL));
   c.texto(
     'Documento emitido por Booster Chile SpA. Cualquier alteración invalida la firma.',
@@ -368,7 +480,7 @@ export async function generarPdfConCajas(
   // estrictos (eIDAS, auditores ESG) rechazan el legacy.
   const pdfWithPlaceholder = plainAddPlaceholder({
     pdfBuffer: Buffer.from(pdfBytes),
-    reason: 'Certificación de huella de carbono GLEC v3.0',
+    reason: `Certificación de huella de carbono GLEC ${params.metricas.glecVersion}`,
     contactInfo: 'sustentabilidad@boosterchile.com',
     name: 'Booster Chile SpA',
     location: 'Santiago, Chile',
@@ -518,6 +630,12 @@ const AZUL = hex('#0B3D5C');
 const TEXTO = hex('#1F2933');
 const GRIS = hex('#52606D');
 const AMBAR = hex('#B45309');
+/** Colores del badge por presentación (ADR-091): ámbar solo en Estimado. */
+const COLORES_BADGE: Record<Presentacion, { fondo: RGB; borde: RGB; texto: RGB }> = {
+  primario: { fondo: hex('#E6F4EA'), borde: hex('#86C79B'), texto: hex('#14532D') },
+  medido_teltonika: { fondo: hex('#E8F1F8'), borde: hex('#8FB4D1'), texto: hex('#0B3D5C') },
+  estimado: { fondo: hex('#FEF3E2'), borde: hex('#F0B46B'), texto: hex('#7C3A0A') },
+};
 
 /** Cursor vertical con salto de página cuando un bloque no cabe. */
 class Cursor {
@@ -539,7 +657,8 @@ class Cursor {
       this.page = this.doc.addPage(A4);
       this.pagina += 1;
       registrarPagina(this.page, this.pagina, this.registro);
-      this.y = TOPE;
+      // El primer texto de la página nueva cuelga bajo el tope (alto ≤ 11 pt).
+      this.y = TOPE - 11;
     }
     if (titulo) {
       this.tituloPendiente = null;
@@ -655,14 +774,20 @@ function cortarPalabra(p: string, font: PDFFont, size: number, ancho: number): s
   if (font.widthOfTextAtSize(p, size) <= ancho) {
     return [p];
   }
+  // Ancho acumulado por carácter (O(n)); medir el trozo entero en cada paso
+  // era O(n²) y un token de 300 caracteres llevaba el PDF a ~1,5 s.
   const trozos: string[] = [];
   let actual = '';
+  let anchoActual = 0;
   for (const ch of p) {
-    if (actual && font.widthOfTextAtSize(actual + ch, size) > ancho) {
+    const w = font.widthOfTextAtSize(ch, size);
+    if (actual && anchoActual + w > ancho) {
       trozos.push(actual);
       actual = ch;
+      anchoActual = w;
     } else {
       actual += ch;
+      anchoActual += w;
     }
   }
   if (actual) {

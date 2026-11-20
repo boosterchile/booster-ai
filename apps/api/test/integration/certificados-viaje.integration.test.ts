@@ -171,7 +171,11 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
 
   test('crearVersion: v1 queda reemplazada por la v2 y metricas_viaje espeja la v2', async () => {
     const { tripId } = await conV1();
-    const nueva = await crearVersion(handle.db as never, v2(tripId));
+    const nueva = await crearVersion(
+      handle.db as never,
+      v2(tripId),
+      'factor_impreso_no_corresponde',
+    );
     const [h1, h2] = await historial(tripId);
     expect(h1).toMatchObject({ version: 1, estado: 'reemplazado', reemplazadoPor: nueva.id });
     expect(h1?.reemplazadoEn).toBeInstanceOf(Date);
@@ -188,7 +192,11 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
   test('crearVersion es atómica: si el INSERT falla, la v1 sigue vigente y nada cambia', async () => {
     const { tripId } = await conV1();
     await expect(
-      crearVersion(handle.db as never, { ...v2(tripId), sha256: 'x'.repeat(65) }),
+      crearVersion(
+        handle.db as never,
+        { ...v2(tripId), sha256: 'x'.repeat(65) },
+        'factor_impreso_no_corresponde',
+      ),
     ).rejects.toThrow();
     const h = await historial(tripId);
     expect(h).toHaveLength(1);
@@ -199,9 +207,9 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
   test('crearVersion sin vigente lanza; la DB no admite dos vigentes', async () => {
     const tracking = `BOO-${randomUUID().slice(0, 6).toUpperCase()}`;
     const tripId = await viajeEmitido(handle.db as never, tracking);
-    await expect(crearVersion(handle.db as never, v2(tripId))).rejects.toThrow(
-      /no tiene versión vigente/,
-    );
+    await expect(
+      crearVersion(handle.db as never, v2(tripId), 'factor_impreso_no_corresponde'),
+    ).rejects.toThrow(/no tiene versión vigente/);
     const { tripId: conUna } = await conV1();
     await expect(
       handle.db
@@ -212,7 +220,7 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
 
   test('revertirVersion: v2 revertida, v1 vigente otra vez; una nueva reemisión es la v3', async () => {
     const { tripId } = await conV1();
-    await crearVersion(handle.db as never, v2(tripId));
+    await crearVersion(handle.db as never, v2(tripId), 'factor_impreso_no_corresponde');
     const vuelta = await revertirVersion(handle.db as never, tripId);
     expect(vuelta).toMatchObject({
       version: 1,
@@ -229,13 +237,17 @@ describe('integration: certificados versionados (HC-001 p3a)', () => {
       certificateIssuedAt: EMITIDO_V1,
     });
     await expect(revertirVersion(handle.db as never, tripId)).rejects.toThrow(/no reemplazó/);
-    const v3 = await crearVersion(handle.db as never, { ...v2(tripId), sha256: sha('d') });
+    const v3 = await crearVersion(
+      handle.db as never,
+      { ...v2(tripId), sha256: sha('d') },
+      'factor_impreso_no_corresponde',
+    );
     expect(v3.version).toBe(3);
   });
 
   test('/verify: reemplazada y revertida responden valid:false; vigente y sin sha256, como hoy', async () => {
     const { tracking, tripId } = await conV1();
-    await crearVersion(handle.db as never, v2(tripId));
+    await crearVersion(handle.db as never, v2(tripId), 'factor_impreso_no_corresponde');
     const noop = () => undefined;
     const app = createCertificatesRoutes({
       db: handle.db as never,

@@ -287,6 +287,42 @@ describe('CostsService', () => {
     expect(capturedSql).toContain('INTERVAL 23 MONTH');
   });
 
+  it('ninguna consulta nombra una subconsulta con una palabra reservada de BigQuery', async () => {
+    // Regresión: `rows AS (...)` en getOverview hacía que BigQuery rechazara
+    // la consulta ("Expected keyword SELECT but got keyword ROWS") y el panel
+    // de costos respondía 502. El fetch simulado no valida SQL, así que el
+    // test revisa el texto que el servicio envía.
+    const reservadas = new Set(
+      `ALL AND ANY ARRAY AS ASC ASSERT_ROWS_MODIFIED AT BETWEEN BY CASE CAST COLLATE CONTAINS
+       CREATE CROSS CUBE CURRENT DEFAULT DEFINE DESC DISTINCT ELSE END ENUM ESCAPE EXCEPT EXCLUDE
+       EXISTS EXTRACT FALSE FETCH FOLLOWING FOR FROM FULL GROUP GROUPING GROUPS HASH HAVING IF
+       IGNORE IN INNER INTERSECT INTERVAL INTO IS JOIN LATERAL LEFT LIKE LIMIT LOOKUP MERGE NATURAL
+       NEW NO NOT NULL NULLS OF ON OR ORDER OUTER OVER PARTITION PRECEDING PROTO QUALIFY RANGE
+       RECURSIVE RESPECT RIGHT ROLLUP ROWS SELECT SET SOME STRUCT TABLESAMPLE THEN TO TREAT TRUE
+       UNBOUNDED UNION UNNEST USING WHEN WHERE WINDOW WITH WITHIN`.split(/\s+/),
+    );
+    const fetchImpl = makeBqFetch([], ['currency']);
+    const svc = buildService(fetchImpl);
+    await svc.getOverview();
+    await svc.getByService(30);
+    await svc.getTrend(30);
+    await svc.getByProject(30);
+    await svc.getMonthlyHistory(12);
+    await svc.getTopSkus(10);
+
+    const llamadas = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(llamadas).toHaveLength(6);
+    const subconsultas: string[] = [];
+    for (const llamada of llamadas) {
+      const sql = JSON.parse((llamada[1] as RequestInit).body as string).query as string;
+      for (const m of sql.matchAll(/(?:\bWITH|,)\s+([A-Za-z_]\w*)\s+AS\s*\(/gi)) {
+        subconsultas.push((m[1] ?? '').toUpperCase());
+      }
+    }
+    expect(subconsultas).toContain('DATES');
+    expect(subconsultas.filter((nombre) => reservadas.has(nombre))).toEqual([]);
+  });
+
   it('runQuery: BQ error response → throw', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: false,

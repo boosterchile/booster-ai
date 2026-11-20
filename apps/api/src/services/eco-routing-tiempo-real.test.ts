@@ -102,6 +102,7 @@ const ruta = (d: number, km: number, l: number | null, p: string) => ({
   fuelL: l,
   polylineEncoded: p,
   startLocation: null,
+  endLocation: null,
 });
 
 function deps(rutas: unknown) {

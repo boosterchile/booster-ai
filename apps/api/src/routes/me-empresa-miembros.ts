@@ -1,19 +1,25 @@
 import type { Logger } from '@booster-ai/logger';
-import { invitarMiembroSchema } from '@booster-ai/shared-schemas';
+import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
+  invitarMiembroSchema,
+} from '@booster-ai/shared-schemas';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { cuentaGestionadaPorBooster } from '../auth/acceso-plataforma.js';
 import {
   ctxDeUserContext,
   puedeAdministrarEmpresa,
   puedeInvitarMiembro,
 } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
-import { esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { correoOcupado } from '../services/correo-de-cuenta.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
@@ -59,6 +65,13 @@ function placeholderFirebaseUid(rut: string): string {
 export function createMeEmpresaMiembrosRoutes(opts: {
   db: Db;
   logger: Logger;
+  /**
+   * Lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`. La empresa no suma a
+   * su equipo una cuenta del personal de Booster ni deja un correo de esta
+   * lista en una cuenta nueva (`.specs/acceso-panel-plataforma` SC7).
+   * Obligatoria: sin ella el chequeo quedaría apagado sin aviso.
+   */
+  platformAdminEmails: readonly string[];
   /**
    * T10-04: el código le llega a la persona invitada por correo. Ausente en
    * tests que no ejercitan el envío; en prod siempre está (con Resend o, sin
@@ -167,11 +180,28 @@ export function createMeEmpresaMiembrosRoutes(opts: {
       // rls-allowlist: lookup global por RUT — una persona puede trabajar en
       // más de una empresa, así que su identidad se reusa en vez de duplicarse.
       const existentes = await tx
-        .select({ id: users.id })
+        .select({ id: users.id, email: users.email, isPlatformAdmin: users.isPlatformAdmin })
         .from(users)
         .where(eq(users.rut, body.rut))
+        // La fila queda bloqueada hasta el commit: el alta del personal en
+        // paralelo espera, y esta lectura ve la marca que dejó (SC7).
+        .for('update')
         .limit(1);
       const existente = existentes[0];
+
+      // Una cuenta del personal de Booster no se gestiona desde una empresa
+      // (SC7), y una cuenta nueva no recibe un correo de la lista de respaldo,
+      // ni el de otra cuenta, sin distinguir mayúsculas, ni uno reservado
+      // (`.specs/correos-solicitudes-panel` SC3): se rechaza como un correo ya
+      // registrado, sin decir cuál de los casos es.
+      if (
+        cuentaGestionadaPorBooster({ cuenta: existente ?? null, lista: opts.platformAdminEmails })
+      ) {
+        return { conflicto: 'cuenta_personal_booster' as const };
+      }
+      if (!existente && (await correoOcupado({ db: tx, email, lista: opts.platformAdminEmails }))) {
+        return { conflicto: 'email_registrado' as const };
+      }
 
       if (existente) {
         const yaMiembro = await tx
@@ -218,6 +248,10 @@ export function createMeEmpresaMiembrosRoutes(opts: {
           if (esRutDuplicado(err)) {
             return { conflicto: 'rut_duplicado' as const };
           }
+          // Otra alta guardó el mismo correo entre la búsqueda y el INSERT.
+          if (esEmailDuplicado(err)) {
+            return { conflicto: 'email_registrado' as const };
+          }
           throw err;
         }
         const creado = insertados[0];
@@ -256,8 +290,25 @@ export function createMeEmpresaMiembrosRoutes(opts: {
     });
 
     if ('conflicto' in resultado) {
+      if (resultado.conflicto === 'cuenta_personal_booster') {
+        opts.logger.info(
+          { empresaId: auth.empresaId, invitadoPor: auth.callerId },
+          'me-empresa-miembros: la cuenta es del personal de Booster; no se suma',
+        );
+        return c.json(
+          {
+            error: 'conflict',
+            code: CODIGO_CUENTA_PERSONAL_BOOSTER,
+            message: MENSAJE_CUENTA_PERSONAL_BOOSTER,
+          },
+          409,
+        );
+      }
       if (resultado.conflicto === 'rut_duplicado') {
         return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+      }
+      if (resultado.conflicto === 'email_registrado') {
+        return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
       }
       return c.json(
         { error: 'conflict', code: 'already_member', membership_id: resultado.membershipId },

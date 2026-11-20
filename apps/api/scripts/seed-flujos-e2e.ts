@@ -9,7 +9,8 @@
  *   Gen F   77777777-7 · clave 482913 · empresa generadora activa
  *   Tra F   78787878-4 · clave 482913 · empresa transportista con zona
  *                        XIII (ambos) y un camión de 20 t activo
- *   Admin   79797979-1 · clave 482913 · email en BOOSTER_PLATFORM_ADMIN_EMAILS
+ *   Admin   79797979-1 · email e2e-admin@boosterchile.invalid · clave Firebase
+ *           E2eAdmin99 (ADR-093: login Booster = correo+clave; allowlist)
  *   Stake   75757575-2 · sin cuenta: el admin la invita en el E2E
  *
  * Además:
@@ -36,6 +37,8 @@ import { hashClaveNumerica } from '../src/services/clave-numerica.js';
 import { requireSafeDatabaseUrl } from './seed-conductor-e2e-cleanup.js';
 
 const CLAVE = '482913';
+/** Clave Firebase del admin E2E (ADR-093; no es clave numérica de 6 dígitos). */
+export const CLAVE_FIREBASE_ADMIN_F = 'E2eAdmin99';
 export const RUT_GEN_F = '77777777-7';
 export const RUT_TRA_F = '78787878-4';
 export const RUT_ADMIN_F = '79797979-1';
@@ -60,17 +63,28 @@ async function upsertFirebaseUser(opts: {
   uid: string;
   email: string;
   displayName: string;
+  /** Si viene, deja email/password usable (login ADR-093 Booster/Stakeholder). */
+  password?: string;
 }): Promise<void> {
   const { getAuth } = await import('firebase-admin/auth');
   const auth = getAuth();
   try {
     await auth.getUser(opts.uid);
+    if (opts.password) {
+      await auth.updateUser(opts.uid, {
+        email: opts.email,
+        displayName: opts.displayName,
+        password: opts.password,
+        disabled: false,
+      });
+    }
   } catch {
     await auth.createUser({
       uid: opts.uid,
       email: opts.email,
       displayName: opts.displayName,
       disabled: false,
+      ...(opts.password ? { password: opts.password } : {}),
     });
   }
 }
@@ -100,7 +114,7 @@ async function limpiarRateLimits(): Promise<number> {
   await redis.connect();
   try {
     let borradas = 0;
-    for (const patron of ['rl:login-rut:*', 'rl:activar-cuenta:*']) {
+    for (const patron of ['rl:login-rut:*', 'rl:activar-cuenta:*', 'rl:activar-cuenta-rut:*']) {
       const claves = await redis.keys(patron);
       if (claves.length > 0) {
         borradas += await redis.del(...claves);
@@ -176,8 +190,14 @@ async function main(): Promise<void> {
       uid: string;
       email: string;
       fullName: string;
+      firebasePassword?: string;
     }): Promise<string> {
-      await upsertFirebaseUser({ uid: opts.uid, email: opts.email, displayName: opts.fullName });
+      await upsertFirebaseUser({
+        uid: opts.uid,
+        email: opts.email,
+        displayName: opts.fullName,
+        ...(opts.firebasePassword ? { password: opts.firebasePassword } : {}),
+      });
       const datos = {
         firebaseUid: opts.uid,
         email: opts.email,
@@ -252,6 +272,7 @@ async function main(): Promise<void> {
       uid: `e2e-admin-${RUT_ADMIN_F}`,
       email: EMAIL_ADMIN_F,
       fullName: 'Admin Plataforma E2E',
+      firebasePassword: CLAVE_FIREBASE_ADMIN_F,
     });
     await db.delete(memberships).where(eq(memberships.userId, adminId));
 

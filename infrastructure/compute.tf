@@ -146,6 +146,10 @@ module "service_api" {
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # Instrucciones de retiro: sin retención y borrado a los 90 días (decisión
+    # del PO, spec instrucciones-retiro). La SA de runtime ya escribe por
+    # roles/storage.objectUser del proyecto (iam.tf).
+    INSTRUCCIONES_RETIRO_BUCKET = google_storage_bucket.uploads_raw.name
     # T10-21 — ranking de matching en matching-engine. Flags en `false` por
     # default: este apply no llama al servicio. MATCHING_ENGINE_URL es el
     # *.run.app. La zona privada lo resuelve a 199.36.153.8/30, un rango
@@ -155,6 +159,13 @@ module "service_api" {
     MATCHING_ENGINE_URL       = local.cloud_run_matching_url
     MATCHING_SHADOW           = tostring(var.matching_shadow)
     MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
+    # ADR-090 — elegibilidad por carga (spec matching-desde-la-carga parte 2).
+    # `sombra`: el matching vigente decide y la regla nueva se compara al lado.
+    MATCHING_ELEGIBILIDAD_MODO = var.matching_elegibilidad_modo
+
+    # ADR-088 — API `/rutas` (spec ruta-parada-servicio). Ver
+    # var.rutas_api_activada. Matching `activa` es un flip aparte.
+    RUTAS_API_ACTIVADA = tostring(var.rutas_api_activada)
 
     # T10-21 — enrutamiento del canal WhatsApp (notification-service). Flags
     # en `false` por default: el apply no cambia el comportamiento.
@@ -200,6 +211,11 @@ module "service_api" {
     # WEB_APP_URL usa el dominio público del frontend para construir el
     # deep-link al dashboard en el template de WhatsApp.
     WEB_APP_URL = "https://app.${var.domain}"
+
+    # Remitente canónico de todos los correos Resend (PO 2026-11-16).
+    # Antes caía al default de config.ts (`no-reply@`); contacto@ es el From
+    # único. El dominio debe estar verificado en Resend (email.tf / DNS).
+    EMAIL_FROM = "Booster <contacto@${var.domain}>"
 
     # KMS key para firmar certificados de huella de carbono (RSA-PSS 4096
     # SHA256). El servicio emitirCertificadoViaje hace asymmetricSign con

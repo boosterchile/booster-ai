@@ -6,10 +6,12 @@ import {
   puedeAceptarOferta,
   puedeAdministrarEmpresa,
   puedeAsignarViaje,
+  puedeEditarCarga,
   puedeGestionarFlota,
   puedeGestionarSucursales,
   puedeInvitarMiembro,
   puedePublicarCarga,
+  puedeResponderCambioCarga,
   puedeVerFinanzas,
   veSoloSuViaje,
 } from '@booster-ai/shared-schemas';
@@ -65,6 +67,36 @@ export function denegarAceptarOferta(c: Context, userContext: unknown): Response
   }
   return c.json(
     { error: 'forbidden', code: 'capability_denied', capability: 'puedeAceptarOferta' },
+    403,
+  );
+}
+
+/** editar-anular-cargas §6. Visualizador: `read_only`; otro rol: `capability_denied`. */
+export function denegarEditarCarga(c: Context, userContext: unknown): Response | null {
+  const ctx = ctxDeUserContext(userContext as Parameters<typeof ctxDeUserContext>[0]);
+  if (ctx && puedeEditarCarga(ctx)) {
+    return null;
+  }
+  if (ctx && esSoloLectura(ctx)) {
+    return c.json({ error: 'forbidden', code: 'read_only' }, 403);
+  }
+  return c.json(
+    { error: 'forbidden', code: 'capability_denied', capability: 'puedeEditarCarga' },
+    403,
+  );
+}
+
+/**
+ * editar-anular-cargas §6: aceptar o rechazar un cambio de carga.
+ * `requireCarrierAuth` no mira el rol, así que este chequeo es obligatorio.
+ */
+export function denegarResponderCambioCarga(c: Context, userContext: unknown): Response | null {
+  const ctx = ctxDeUserContext(userContext as Parameters<typeof ctxDeUserContext>[0]);
+  if (ctx && puedeResponderCambioCarga(ctx)) {
+    return null;
+  }
+  return c.json(
+    { error: 'forbidden', code: 'capability_denied', capability: 'puedeResponderCambioCarga' },
     403,
   );
 }

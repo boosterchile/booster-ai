@@ -37,6 +37,7 @@ import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import { ctxDeUserContext, esSoloLectura, veSoloSuViaje } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
+import { conductorDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, chatMessages, trips, users as usersTable } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { createEphemeralChatSubscription, publishChatMessage } from '../services/chat-pubsub.js';
@@ -172,7 +173,7 @@ export function createChatRoutes(opts: {
         assignmentStatus: assignments.status,
         carrierEmpresaId: assignments.empresaId,
         shipperEmpresaId: trips.generadorCargaEmpresaId,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
       })
       // rls-allowlist: chat valida AMBAS partes (carrier+shipper) explícitamente abajo
       .from(assignments)

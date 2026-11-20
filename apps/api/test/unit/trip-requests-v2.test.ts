@@ -108,6 +108,7 @@ interface UserContextOpts {
   isTransportista?: boolean;
   empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
+  role?: 'dueno' | 'admin' | 'despachador' | 'visualizador';
 }
 
 function buildUserContext(opts: UserContextOpts = {}): {
@@ -127,7 +128,7 @@ function buildUserContext(opts: UserContextOpts = {}): {
     isTransportista: opts.isTransportista ?? false,
     status: opts.empresaStatus ?? 'activa',
   };
-  const membership = { role: 'dueno' as const };
+  const membership = { role: opts.role ?? ('dueno' as const) };
   return {
     user: { id: opts.userId ?? 'user-1' },
     memberships: [{ membership, empresa }],
@@ -412,6 +413,42 @@ describe('POST /trip-requests-v2', () => {
     expect(body.matching.offer_ids).toEqual(['offer-1', 'offer-2']);
   });
 
+  // seguimiento-por-correo SC5: el correo del destinatario se guarda al crear.
+  it('guarda el correo del destinatario normalizado', async () => {
+    const matching = await import('../../src/services/matching.js');
+    vi.mocked(matching.runMatching).mockResolvedValueOnce({
+      tripId: 'trip-mail',
+      candidatesEvaluated: 0,
+      offersCreated: 0,
+      offers: [],
+    });
+    const values = vi.fn(() => ({
+      returning: vi.fn(async () => [{ id: 'trip-mail', trackingCode: 'BOO-MAIL01' }]),
+    }));
+    const db = { insert: vi.fn(() => ({ values })) } as unknown as Db;
+    const app = await buildAppWith({ db, userContext: buildUserContext() });
+    const res = await app.request('/trip-requests-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...validBody,
+        consignee: { name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        consigneeName: 'Bodega La Serena',
+        consigneeEmail: 'recepcion@cliente.cl',
+        // editar-anular-cargas §12-P4: notas y referencia opcionales al crear.
+        notes: 'Andén 4',
+        reference: 'PO-1',
+      }),
+    );
+  });
+
   describe('wire de geocodificación del origen (Task 4 medicion-huella-segmento)', () => {
     async function postTripWith(routesProjectId?: string) {
       const matching = await import('../../src/services/matching.js');
@@ -447,6 +484,7 @@ describe('POST /trip-requests-v2', () => {
           originAddress: validBody.origin.address_raw,
           destinationAddress: validBody.destination.address_raw,
           routesProjectId: 'booster-ai-494222',
+          soloSiOrigenVigente: true,
         }),
       );
     });
@@ -689,9 +727,11 @@ function makeQueryDb(opts: {
     leftJoin: leftJoinFn,
     where: whereFn,
   }));
+  const innerJoinFn = vi.fn(() => ({ where: whereFn }));
   const fromFn = vi.fn(() => ({
     where: whereFn,
     leftJoin: leftJoinFn,
+    innerJoin: innerJoinFn,
   }));
   const selectFn = vi.fn((shape?: unknown) => {
     if (shape !== undefined) {
@@ -836,7 +876,9 @@ describe('GET /trip-requests-v2', () => {
       .map((pred) => sqlDe(pred))
       .find((sql) => sql.params.includes('emp-1'));
     expect(filtro?.texto).toContain('generador_carga_empresa_id');
-    expect(filtro?.params).toEqual(['emp-1']);
+    // Excluye las anuladas: cancelado sin asignación (editar-anular-cargas §8.7).
+    expect(filtro?.texto).toContain('not (estado =  and id is null)');
+    expect(filtro?.params).toEqual(['emp-1', 'cancelado']);
   });
 });
 
@@ -898,7 +940,7 @@ describe('GET /trip-requests-v2/:id', () => {
   it('200 con trip + events + assignment + metrics', async () => {
     const app = await buildAppWith({
       db: makeQueryDb({
-        // limitRows orden: trip lookup, assignment, metrics
+        // limitRows orden: trip lookup, solicitud pendiente, assignment, metrics
         limitRows: [
           [
             {
@@ -918,10 +960,16 @@ describe('GET /trip-requests-v2/:id', () => {
               pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
               pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
               proposedPriceClp: 250_000,
+              consigneeName: 'Bodega',
+              consigneeWhatsappE164: '+56911111111',
+              consigneeEmail: null,
+              notes: 'Andén 4',
+              reference: 'PO-1',
               createdAt: new Date('2026-05-02T15:00:00Z'),
               updatedAt: new Date('2026-05-02T15:00:00Z'),
             },
           ],
+          [],
           [
             {
               id: 'asg-1',
@@ -937,7 +985,9 @@ describe('GET /trip-requests-v2/:id', () => {
             },
           ],
           [], // no metrics
-          // 4to limit: telemetry last point (where + orderBy + limit). Vacío
+          // asignado: ¿el vehículo sirve otro viaje en proceso? (ninguno).
+          [],
+          // telemetry last point (where + orderBy + limit). Vacío
           // → ubicacion_actual será null en la respuesta.
           [],
         ],
@@ -948,15 +998,71 @@ describe('GET /trip-requests-v2/:id', () => {
     const res = await app.request('/trip-requests-v2/trip-1');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      trip_request: { id: string; status: string };
+      trip_request: { id: string; status: string; [k: string]: unknown };
       events: unknown[];
       assignment: { vehicle_plate: string; empresa_legal_name: string } | null;
       metrics: unknown | null;
     };
     expect(body.trip_request.id).toBe('trip-1');
+    // editar-anular-cargas: datos libres y acciones permitidas en el detalle.
+    expect(body.trip_request).toMatchObject({
+      consignee: { name: 'Bodega', phone_e164: '+56911111111', email: null },
+      notes: 'Andén 4',
+      reference: 'PO-1',
+      acciones_permitidas: {
+        editar: false,
+        editar_datos_libres: true,
+        solicitar_cambio: true,
+        retirar_cambio: false,
+        anular: false,
+        cancelar: true,
+      },
+    });
     expect(body.assignment?.vehicle_plate).toBe('AB-CD-12');
     expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
     expect(body.metrics).toBeNull();
+  });
+
+  // editar-anular-cargas §6-8: las acciones combinan el estado con las
+  // capacidades del rol, para que la web no ofrezca lo que el API rechaza.
+  it.each([
+    ['dueno', true],
+    ['visualizador', false],
+  ] as const)('%s en esperando_match → editar y anular = %s', async (role, puede) => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [
+          [
+            {
+              id: 'trip-1',
+              trackingCode: 'BOO-AAA111',
+              status: 'esperando_match',
+              originAddressRaw: 'origen',
+              destinationAddressRaw: 'destino',
+              cargoType: 'carga_seca',
+              cargoWeightKg: 1500,
+              createdAt: new Date('2026-05-02T15:00:00Z'),
+              updatedAt: new Date('2026-05-02T15:00:00Z'),
+            },
+          ],
+          [],
+          [],
+        ],
+        orderByRows: [[]],
+      }),
+      userContext: buildUserContext({ role }),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { acciones_permitidas: unknown } };
+    expect(body.trip_request.acciones_permitidas).toEqual({
+      editar: puede,
+      editar_datos_libres: puede,
+      solicitar_cambio: false,
+      retirar_cambio: false,
+      anular: puede,
+      cancelar: false,
+    });
   });
 
   // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
@@ -1022,8 +1128,12 @@ describe('GET /trip-requests-v2/:id', () => {
       db: makeQueryDb({
         limitRows: [
           [liveTripRow(opts.status)],
+          // asignado: la lectura de la solicitud de cambio pendiente (ninguna).
+          ...(opts.status === 'asignado' ? [[]] : []),
           [LIVE_ASSIGNMENT],
           [],
+          // asignado: ¿el vehículo sirve otro viaje en proceso? (ninguno).
+          ...(opts.status === 'asignado' ? [[]] : []),
           opts.teltonika ?? [],
           opts.mobile ?? [],
         ],
@@ -1157,108 +1267,5 @@ describe('GET /trip-requests-v2/:id', () => {
     expect(body.assignment?.ubicacion_actual).toBeNull();
     expect(body.assignment?.position_source).toBeNull();
     expect(body.assignment?.eta_minutes).toBeNull();
-  });
-});
-
-// =============================================================================
-// PATCH /trip-requests-v2/:id/cancelar
-// =============================================================================
-
-describe('PATCH /trip-requests-v2/:id/cancelar', () => {
-  it('sin userContext → 401', async () => {
-    const app = await buildAppWith({ db: makeQueryDb({}), userContext: null });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it('trip no encontrado → 404', async () => {
-    const app = await buildAppWith({
-      db: makeQueryDb({ limitRows: [[]] }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('trip ya asignado → 409 trip_not_cancellable', async () => {
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'asignado', trackingCode: 'BOO-XXX' }]],
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string; current_status: string };
-    expect(body.code).toBe('trip_not_cancellable');
-    expect(body.current_status).toBe('asignado');
-  });
-
-  it('200 cancela en estado esperando_match + registra evento', async () => {
-    const insertValues = vi.fn().mockResolvedValue([]);
-    const insertSpy = vi.fn(() => ({ values: insertValues }));
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'esperando_match', trackingCode: 'BOO-YYY' }]],
-        updateRows: [{ id: 'trip-1', trackingCode: 'BOO-YYY', status: 'cancelado' }],
-        insertSpy,
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ reason: 'cambio de planes' }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { trip_request: { status: string } };
-    expect(body.trip_request.status).toBe('cancelado');
-    expect(insertSpy).toHaveBeenCalled();
-  });
-
-  it('200 cancela con ofertas pendientes → las invalida y registra invalidated_offers', async () => {
-    const insertValues = vi.fn().mockResolvedValue([]);
-    const insertSpy = vi.fn(() => ({ values: insertValues }));
-    const app = await buildAppWith({
-      db: makeQueryDb({
-        limitRows: [[{ id: 'trip-1', status: 'ofertas_enviadas', trackingCode: 'BOO-ZZZ' }]],
-        updateRowsSeq: [
-          // 1º update: trips → cancelado
-          [{ id: 'trip-1', trackingCode: 'BOO-ZZZ', status: 'cancelado' }],
-          // 2º update: offers pendiente → expirada (2 invalidadas)
-          [{ id: 'offer-1' }, { id: 'offer-2' }],
-        ],
-        insertSpy,
-      }),
-      userContext: buildUserContext(),
-    });
-    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { trip_request: { status: string } };
-    expect(body.trip_request.status).toBe('cancelado');
-
-    // El evento de auditoría registra cuántas ofertas se invalidaron.
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'cancelado',
-        payload: expect.objectContaining({ invalidated_offers: 2 }),
-      }),
-    );
   });
 });

@@ -245,3 +245,43 @@ describe('check-route-default-deny — los 4 mounts verificados (INTENTIONAL-OPE
     expect(ROUTE_CLASSIFICATION[factory]?.category).toBe('INTENTIONAL-OPEN');
   });
 });
+
+// alta-personal-booster SC8 — las rutas del personal de Booster quedan
+// clasificadas y montadas en server.ts con la misma cadena que /admin/empresas.
+describe('check-route-default-deny — alta del personal de Booster (SC8)', () => {
+  it('createAdminPersonalBoosterRoutes está montada en /admin/personal-booster', () => {
+    expect(enumerateRouteMounts(REAL_SERVER_SOURCE)).toContainEqual({
+      path: '/admin/personal-booster',
+      key: 'createAdminPersonalBoosterRoutes',
+    });
+  });
+
+  it('createAdminPersonalBoosterRoutes clasificada ENFORCED', () => {
+    expect(ROUTE_CLASSIFICATION.createAdminPersonalBoosterRoutes?.category).toBe('ENFORCED');
+  });
+
+  it('createAuthActivarRoutes: el rationale describe la activación del personal de Booster', () => {
+    const rationale = ROUTE_CLASSIFICATION.createAuthActivarRoutes?.rationale ?? '';
+    // `.specs/acceso-panel-plataforma` SC6 y SC10: la marca y el código del
+    // panel, sin la lista; nunca una cuenta suspendida o eliminada.
+    expect(rationale).toContain('es_admin_plataforma = true');
+    expect(rationale).toContain('activacion_vence_en');
+    expect(rationale).toContain('`suspendido` o `eliminado`');
+    expect(rationale).not.toContain('BOOSTER_PLATFORM_ADMIN_EMAILS');
+  });
+});
+
+// `.specs/confirmar-acceso-booster` SC12 (T5): la confirmación del acceso al
+// panel la hace la persona desde su sesión. userContext precede el mount.
+describe('check-route-default-deny — confirmación del acceso al panel (SC12)', () => {
+  it('createMeConfirmarAccesoBoosterRoutes está montada en /confirmar-acceso-booster de /me', () => {
+    expect(enumerateRouteMounts(REAL_SERVER_SOURCE)).toContainEqual({
+      path: '/confirmar-acceso-booster',
+      key: 'createMeConfirmarAccesoBoosterRoutes',
+    });
+  });
+
+  it('createMeConfirmarAccesoBoosterRoutes clasificada ENFORCED', () => {
+    expect(ROUTE_CLASSIFICATION.createMeConfirmarAccesoBoosterRoutes?.category).toBe('ENFORCED');
+  });
+});

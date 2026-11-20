@@ -1,5 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
   type MiembroPendienteAdmin,
   crearEmpresaAdminSchema,
   empresaEstadoPatchSchema,
@@ -11,14 +13,16 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { esRutDuplicado } from '../db/pg-error.js';
+import { esEmailDuplicado, esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { correoOcupado } from '../services/correo-de-cuenta.js';
 import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
 import {
@@ -90,7 +94,7 @@ function miembroPendienteDe(row: {
  * `/auth/activar` la pasa a `activa`. La trazabilidad queda en
  * `invitado_por_id` / `invitado_en`.
  *
- * Audiencia: platform-admin (allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`).
+ * Audiencia: platform-admin (`requirePlatformAdmin`).
  */
 export function createAdminEmpresaMiembrosRoutes(opts: {
   db: Db;
@@ -210,7 +214,9 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   // POST /admin/empresas — ficha legal sin persona. Un generador de carga es
   // esta fila con `es_generador_carga`; un transportista, con el otro flag.
   // La credencial de quien entra se emite después, con el código de
-  // activación. La empresa queda en verificación: matching exige `activa`.
+  // activación. La empresa nace `activa`: el admin de Booster que la crea es
+  // la verificación (acceso-usuarios-empresa-panel SC5). El alta por enlace
+  // (`/onboarding-admin`) sigue naciendo en `pendiente_verificacion`.
   app.post('/', zValidator('json', crearEmpresaAdminSchema), async (c) => {
     const admin = requirePlatformAdmin(c);
     if (!admin.ok) {
@@ -275,7 +281,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
                 isGeneradorCarga: body.is_generador_carga,
                 isTransportista: body.is_transportista,
                 planId: plan.id,
-                status: 'pendiente_verificacion',
+                status: 'activa',
                 timezone: 'America/Santiago',
               })
               .returning({
@@ -315,6 +321,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           opts.logger.info(
             {
               empresaId: creada.id,
+              estado: creada.status,
               planSlug: body.plan_slug,
               isGeneradorCarga: creada.isGeneradorCarga,
               isTransportista: creada.isTransportista,
@@ -668,13 +675,18 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           // Persona existente: sin código nuevo y sin revelar el estado de su cuenta.
           vinculo = VINCULO_PERSONA_EXISTENTE;
         } else {
-          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-          const porEmail = await opts.db
-            .select({ id: users.id })
-            .from(users)
-            .where(eq(users.email, email))
-            .limit(1);
-          if (porEmail[0]) {
+          // Una cuenta nueva no recibe un correo de la lista de respaldo del
+          // panel (`.specs/bordes-autenticacion` SC5), ni el de otra cuenta,
+          // sin distinguir mayúsculas, ni uno reservado
+          // (`.specs/correos-solicitudes-panel` SC3): la misma respuesta en
+          // los tres casos.
+          if (
+            await correoOcupado({
+              db: opts.db,
+              email,
+              lista: appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+            })
+          ) {
             record('email_already_registered');
             return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
           }
@@ -700,6 +712,11 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             if (esRutDuplicado(err)) {
               record('rut_already_registered');
               return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+            }
+            // Otra alta guardó el mismo correo entre la búsqueda y el INSERT.
+            if (esEmailDuplicado(err)) {
+              record('email_already_registered');
+              return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
             }
             throw err;
           }
@@ -816,6 +833,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               estado: memberships.status,
               claveNumericaHash: users.claveNumericaHash,
               firebaseUid: users.firebaseUid,
+              isPlatformAdmin: users.isPlatformAdmin,
               email: users.email,
               nombre: users.fullName,
               rut: users.rut,
@@ -832,6 +850,21 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           if (!fila) {
             record('membership_not_found');
             return c.json({ error: 'not_found', code: 'membership_not_found' }, 404);
+          }
+
+          // El código de una cuenta del personal sale solo del panel del
+          // personal: este código se le entrega a la empresa
+          // (`.specs/acceso-panel-plataforma` SC9).
+          if (fila.isPlatformAdmin) {
+            record(CODIGO_CUENTA_PERSONAL_BOOSTER);
+            return c.json(
+              {
+                error: 'conflict',
+                code: CODIGO_CUENTA_PERSONAL_BOOSTER,
+                message: MENSAJE_CUENTA_PERSONAL_BOOSTER,
+              },
+              409,
+            );
           }
 
           const siguePendiente =
@@ -852,7 +885,16 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
             await tx
               .update(users)
-              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: ahora })
+              .set({
+                activationPinHash: hashActivationPin(codigo),
+                // Solo un platform-admin re-emite desde aquí: cuenta como
+                // código del panel y deja su vencimiento
+                // (`.specs/acceso-panel-plataforma` SC9). Una cuenta del
+                // personal no llega hasta acá (ver arriba), y si después la
+                // marcan, el alta del personal le emite un código propio.
+                activacionVenceEn: expiraEn,
+                updatedAt: ahora,
+              })
               .where(eq(users.id, fila.userId));
             // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
             await tx

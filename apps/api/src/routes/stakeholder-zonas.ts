@@ -3,6 +3,7 @@ import { type SQL, and, arrayContains, eq, gte, inArray, isNull, or, sql } from 
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   consents,
@@ -230,7 +231,7 @@ export function createStakeholderZonasRoutes(opts: { db: Db; logger: Logger }) {
       // rls-allowlist: agrega solo empresas con consent de emisiones_carbono (generadorCargaEmpresaId o assignments.empresaId); k-anon ≥ 5 sigue siendo el gate de privacidad.
       .from(trips)
       .innerJoin(assignments, eq(assignments.tripId, trips.id))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
       .where(
         and(

@@ -27,6 +27,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `tripEvents` | `eventos_viaje` | Se inserta y lee dentro de la transacción de un viaje ya validado contra el tenant. |
 | `tripMetrics` | `metricas_viaje` | Se filtra por `trip_id`, ya validado contra el tenant. |
 | `certificadosViaje` | `certificados_viaje` | Versiones del certificado de un viaje (HC-001 p3a). Igual que `tripMetrics`: se filtra por `trip_id`, ya validado contra el tenant; /verify es público por diseño (código de seguimiento). |
+| `tripChangeRequests` | `solicitudes_cambio_viaje` | Solicitudes de cambio de una carga asignada (editar-anular-cargas M3). Se leen y escriben bajo el lock de un viaje ya validado contra la empresa generadora, o por una asignación validada contra la transportista. |
 | `chatMessages` | `mensajes_chat` | Se filtra por `assignment_id`, validado en `resolveChatAccess`. |
 | `pushSubscriptions` | `push_subscriptions` | Se filtra por `userId`. |
 | `telemetryPoints` | `telemetria_puntos` | Se filtra por `vehicleId` o IMEI de un vehículo ya validado contra el tenant. |
@@ -34,6 +35,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `pendingDevices` | `dispositivos_pendientes` | Dispositivos Teltonika aún sin asignar a ninguna empresa (pre-asignación). |
 | `whatsAppIntakeDrafts` | `borradores_whatsapp` | Intake anónimo por WhatsApp antes del binding con una empresa. |
 | `solicitudesRegistro` | `solicitudes_registro` | Signup público gateado por admin: la empresa todavía no existe. |
+| `invitacionesCorreoCuenta` | `invitaciones_correo_cuenta` | Invitación por correo (ADR-093) antes de que exista la cuenta: se resuelve por `token_hash` one-shot, no por empresa. |
 | `matchingBacktestRuns` | `matching_backtest_runs` | Backtest de platform-admin sobre todas las empresas. |
 
 ## Sin columna `empresa_id`, protegidas en cada query
@@ -48,6 +50,10 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `documentosConductor` | `documentos_conductor` | Se filtra por `conductorId` de un conductor validado contra la empresa activa. |
 | `greenDrivingEvents` | `eventos_conduccion_verde` | Se filtra por `vehicleId` / IMEI de un vehículo validado, como la telemetría. |
 | `transportDocuments` | `documentos_transporte` | Se filtra por `viajeId` de un viaje validado contra el generador o el transportista (ADR-070). |
+| `pickupInstructions` | `instrucciones_retiro` | Se filtra por `viajeId` de un viaje validado contra el generador o el transportista con `autorizarSobreViaje` (spec `instrucciones-retiro`); el conductor solo con la asignación a su nombre. |
+| `paradasRuta` | `paradas_ruta` | Paradas de una ruta (ADR-088). Se filtra por `rutaId` de una ruta validada contra la empresa transportista (`rutas.empresa_id`), o por `viajeId` de un viaje validado contra su generador, que solo ve las paradas de su servicio. |
+| `eventosRuta` | `eventos_ruta` | Bitácora de cambios de una ruta (ADR-088). Se filtra por `rutaId` de una ruta validada contra la empresa transportista. |
+| `metricasRuta` | `metricas_ruta` | Huella de una ruta completa (ADR-089). Se filtra por `rutaId` de una ruta validada contra la empresa transportista. Un generador nunca la lee directo: ve la parte de su servicio en `metricas_viaje`, por un viaje validado contra él. |
 | `facturasBoosterClp` | `facturas_booster_clp` | Tiene columna de tenant con otro nombre (`empresaDestinoId`). Las queries filtran por ella con el `empresaId` de la membresía. |
 | `configuracionSitio` | `configuracion_sitio` | Configuración global del sitio público; la edita solo platform-admin. |
 | `bitacoraBackfillDistancia` | `bitacora_backfill_distancia` | Bitácora del job admin de backfill de distancia, por `tripId`. |
@@ -55,3 +61,4 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `configuracionComercial` | `configuracion_comercial` | Configuración comercial global de la plataforma (ADR-079); la publica solo platform-admin. Las queries llevan `rls-allowlist`. |
 | `valoresUf` | `valores_uf` | Caché global del valor UF por fecha (ADR-079 §4), sin datos de empresa. Las queries llevan `rls-allowlist`. |
 | `eventosPagoViaje` | `eventos_pago_viaje` | Mandato de cobro (ADR-080). Se filtra por `asignacionId` de una asignación validada, o por join con `liquidaciones` en la conciliación del job admin. |
+| `confirmacionesAccesoBooster` | `confirmaciones_acceso_booster` | Confirmación del acceso al panel de Booster de una cuenta (`.specs/confirmar-acceso-booster`). Se filtra por `usuarioId`: la persona confirma la suya con el id de su sesión, y el panel del personal (`requirePlatformAdmin`) la emite, la lista y la borra. Las queries llevan `rls-allowlist`. |

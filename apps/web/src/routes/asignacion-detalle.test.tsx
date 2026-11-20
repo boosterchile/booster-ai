@@ -144,6 +144,25 @@ describe('AsignacionDetalleRoute', () => {
     };
   }
 
+  // editar-anular-cargas §12-P4: la transportista ve contacto, notas y referencia.
+  it('muestra el contacto del destinatario y las notas del generador', async () => {
+    const base = assignmentActivo('user-conductor');
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      ...base,
+      trip_request: {
+        ...base.trip_request,
+        consignee: { name: 'Bodega La Serena', phone_e164: '+56911111111' },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+      },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true, { userId: 'user-admin' }) };
+    renderRoute();
+    expect(await screen.findByText('Recibe: Bodega La Serena')).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+    expect(screen.getByText('Referencia: PO-1')).toBeInTheDocument();
+  });
+
   it('el administrador que no conduce el viaje no ve entrega ni incidente', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce(assignmentActivo('user-conductor'));
     providedContext = { kind: 'onboarded', me: makeMe(true, { userId: 'user-admin' }) };
@@ -201,6 +220,88 @@ describe('AsignacionDetalleRoute', () => {
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-readonly', 'true');
     expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
     expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-trip-id', 't1');
+  });
+
+  it('cancelado por el generador → banner con fecha y motivo, sin asignar ni entregar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        tracking_code: 'BST-003',
+        status: 'cancelado',
+        origin: { address_raw: 'A', region_code: 'XIII' },
+        destination: { address_raw: 'B', region_code: 'V' },
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        shipper_legal_name: 'ACME',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'cancelado',
+        driver_user_id: 'user-1',
+        cancelled_at: '2026-11-09T16:00:00.000Z',
+        cancelled_by_actor: 'generador_carga',
+        cancellation_reason: 'El cliente postergó el pedido',
+      } as never,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    const banner = await screen.findByTestId('cancelado-por-generador');
+    expect(banner).toHaveTextContent(
+      /Cancelado por el generador el .*: El cliente postergó el pedido/,
+    );
+    expect(screen.queryByTestId('driver-assignment-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
+    // Un servicio cancelado no recibe documentos.
+    expect(screen.queryByTestId('transport-docs-panel')).not.toBeInTheDocument();
+  });
+
+  // editar-anular-cargas §9: la oficina ve el cambio propuesto arriba.
+  it('con un cambio pendiente (vista de oficina) muestra la tarjeta para responder', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        tracking_code: 'BST-004',
+        status: 'asignado',
+        origin: { address_raw: 'A', region_code: 'XIII' },
+        destination: { address_raw: 'B', region_code: 'V' },
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 1000,
+        shipper_legal_name: 'ACME',
+        cambio_pendiente: {
+          existe: true,
+          id: 'sol-1',
+          cambios: { weight_kg: 2500 },
+          valores_anteriores: { weight_kg: 1000 },
+          creado_en: '2026-11-09T15:00:00.000Z',
+        },
+      },
+      assignment: { id: 'a1', status: 'asignado', driver_user_id: 'user-1' } as never,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    expect(await screen.findByTestId('cambio-propuesto')).toHaveTextContent('2.500 kg');
+    expect(screen.getByRole('button', { name: 'Aceptar cambio' })).toBeInTheDocument();
+  });
+
+  it('el conductor (solo sabe que existe) no ve la tarjeta', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        tracking_code: 'BST-005',
+        status: 'asignado',
+        origin: { address_raw: 'A', region_code: 'XIII' },
+        destination: { address_raw: 'B', region_code: 'V' },
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 1000,
+        shipper_legal_name: 'ACME',
+        cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00.000Z' },
+      },
+      assignment: { id: 'a1', status: 'asignado', driver_user_id: 'user-1' } as never,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true, { role: 'conductor' }) };
+    renderRoute();
+    await waitFor(() => expect(screen.getAllByText(/BST-005/).length).toBeGreaterThan(0));
+    expect(screen.queryByTestId('cambio-propuesto')).not.toBeInTheDocument();
   });
 
   it('shipper_legal_name null → chat title con fallback', async () => {

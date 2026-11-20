@@ -9,7 +9,9 @@
  * datos del transportista (RUT, plate completa) ni precios.
  *
  * **Datos expuestos por design**:
- *   - Trip: tracking_code, status, origen / destino (texto), tipo de carga
+ *   - Trip: tracking_code, status, zona de origen / destino («Comuna, Región»;
+ *     nunca la dirección: `.specs/seguimiento-publico-minimizacion/` §3.4),
+ *     tipo de carga
  *   - Vehículo: tipo + plate parcial (últimos 4 chars) + posición
  *     reciente (lat/lng + speed) si <30 min vieja, de Teltonika o —si no hay
  *     Teltonika fresco— del móvil del conductor (`posicion-en-vivo.ts`)
@@ -28,12 +30,16 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import { regionLabel } from '@booster-ai/notification-fan-out';
+import { comunaPorCodigo } from '@booster-ai/shared-schemas';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import { assignments, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
 import { computeRouteEta } from './compute-route-eta.js';
 import { type LivePositionSource, resolverPosicionEnVivo } from './posicion-en-vivo.js';
+import { contextoDeRuta, minutosPorParadasIntermedias } from './ruta-en-seguimiento.js';
 
 /**
  * Centroides aproximados (capital regional) para las 16 regiones de
@@ -123,10 +129,13 @@ export interface PublicTrackingResponse {
     cargo_type: string;
   };
   vehicle: {
-    /** Tipo del vehículo (e.g. 'camion_3_4'). */
+    /**
+     * Tipo del vehículo (e.g. 'camion_3_4'). Sin vehículo declarado aún
+     * (matching-desde-la-carga §3.7 / §3.11): `'por_asignar'`.
+     */
     type: string;
-    /** Últimos 4 chars de la plate, formato `**** XX12`. Privacy. */
-    plate_partial: string;
+    /** Últimos 4 chars de la plate, formato `**** XX12`. Privacy. Null si por asignar. */
+    plate_partial: string | null;
   };
   /** Posición reciente del vehículo. null si no hay lectura <30min. */
   position: PublicTrackingPosition | null;
@@ -195,6 +204,19 @@ export function computeTokenExpiry(opts: {
   return absolute;
 }
 
+/**
+ * Zona de un extremo del viaje para el público: «Comuna, Región», solo la
+ * región si la carga no tiene comuna (o el código no existe), «—» sin ambas.
+ */
+function zona(comunaCode: string | null, regionCode: string | null): string {
+  const comuna = comunaCode ? comunaPorCodigo(comunaCode)?.name : undefined;
+  if (!regionCode) {
+    return comuna ?? '—';
+  }
+  const region = regionLabel(regionCode);
+  return comuna ? `${comuna}, ${region}` : region;
+}
+
 export async function getPublicTracking(opts: {
   db: Db;
   logger: Logger;
@@ -216,15 +238,20 @@ export async function getPublicTracking(opts: {
   }
 
   // Lookup por token. Index UNIQUE garantiza O(log n).
+  // LEFT JOIN al vehículo: aceptar sin vehículo (§3.7) no debe devolver
+  // not_found con un token válido.
   const rows = await db
     .select({
       assignmentId: assignments.id,
       tripId: trips.id,
       tripStatus: trips.status,
       trackingCode: trips.trackingCode,
-      originAddr: trips.originAddressRaw,
+      originRegionCode: trips.originRegionCode,
+      originComunaCode: trips.originComunaCode,
+      // La dirección de destino solo alimenta la hora estimada; no sale en la respuesta.
       destAddr: trips.destinationAddressRaw,
       destRegionCode: trips.destinationRegionCode,
+      destComunaCode: trips.destinationComunaCode,
       cargoType: trips.cargoType,
       vehicleId: vehicles.id,
       vehicleType: vehicles.vehicleType,
@@ -233,11 +260,14 @@ export async function getPublicTracking(opts: {
       deliveredAt: assignments.deliveredAt,
       cancelledAt: assignments.cancelledAt,
       tokenExpiresAt: assignments.trackingTokenExpiresAt,
+      rutaId: assignments.rutaId,
+      destLat: trips.destinationLatitude,
+      destLng: trips.destinationLongitude,
     })
     // rls-allowlist: tracking público por token, sin tenant de sesión por diseño (censo §2 / rls-viabilidad §3)
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
-    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
     .where(eq(assignments.publicTrackingToken, token))
     .limit(1);
 
@@ -264,32 +294,49 @@ export async function getPublicTracking(opts: {
 
   // Datos vivos (position/progress/eta): una sola lectura, compartida con el
   // detalle del generador. El corte por estado (fix privacidad) vive adentro.
-  const live = await computeLiveTracking({
-    db,
-    logger,
-    assignmentId: row.assignmentId,
-    vehicleId: row.vehicleId,
-    tripId: row.tripId,
-    tripStatus: row.tripStatus,
-    destinationAddress: row.destAddr,
-    destRegionCode: row.destRegionCode,
-    routesProjectId,
-    nowMs: now,
-  });
+  // Sin vehículo no hay telemetría ni GPS móvil que consultar.
+  const live: LiveTracking = row.vehicleId
+    ? await computeLiveTracking({
+        db,
+        logger,
+        assignmentId: row.assignmentId,
+        vehicleId: row.vehicleId,
+        tripId: row.tripId,
+        tripStatus: row.tripStatus,
+        destinationAddress: row.destAddr,
+        destRegionCode: row.destRegionCode,
+        routesProjectId,
+        nowMs: now,
+        rutaId: row.rutaId,
+        destino: coordenadaDe(row.destLat, row.destLng),
+      })
+    : {
+        position: null,
+        positionSource: null,
+        angleDeg: null,
+        progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
+        etaMinutes: null,
+      };
 
   return {
     status: 'found',
     trip: {
       tracking_code: row.trackingCode,
       status: row.tripStatus,
-      origin_address: row.originAddr,
-      destination_address: row.destAddr,
+      origin_address: zona(row.originComunaCode, row.originRegionCode),
+      destination_address: zona(row.destComunaCode, row.destRegionCode),
       cargo_type: row.cargoType,
     },
-    vehicle: {
-      type: row.vehicleType,
-      plate_partial: maskPlate(row.vehiclePlate),
-    },
+    vehicle:
+      row.vehicleId && row.vehicleType && row.vehiclePlate
+        ? {
+            type: row.vehicleType,
+            plate_partial: maskPlate(row.vehiclePlate),
+          }
+        : {
+            type: 'por_asignar',
+            plate_partial: null,
+          },
     position: live.position,
     position_source: live.positionSource,
     progress: live.progress,
@@ -327,8 +374,26 @@ export async function computeLiveTracking(opts: {
   destRegionCode: string | null;
   routesProjectId?: string | undefined;
   nowMs: number;
+  /** Ruta de la asignación; sin ella el servicio se sigue como si viajara solo. */
+  rutaId?: string | null | undefined;
+  /** Coordenadas del destino, para estimar el desvío de las paradas intermedias. */
+  destino?: { lat: number; lng: number } | null | undefined;
 }): Promise<LiveTracking> {
   const { db, logger, tripId, tripStatus, nowMs } = opts;
+
+  // Ruta compartida (spec ruta-parada-servicio §4.7): la posición del camión
+  // solo se entrega entre la recogida y la entrega de ESTE servicio. Antes,
+  // el camión anda con cargas de otros.
+  const ruta = opts.rutaId ? await contextoDeRuta(db, { rutaId: opts.rutaId, tripId }) : null;
+  if (ruta?.compartida && tripStatus !== 'en_proceso') {
+    return {
+      position: null,
+      positionSource: null,
+      angleDeg: null,
+      progress: { avg_speed_kmh_last_15min: null, last_position_age_seconds: null },
+      etaMinutes: null,
+    };
+  }
 
   const live = await resolverPosicionEnVivo({
     db,
@@ -336,6 +401,7 @@ export async function computeLiveTracking(opts: {
     vehicleId: opts.vehicleId,
     tripStatus,
     nowMs,
+    asignacionesDeLaRuta: ruta?.compartida ? ruta.asignacionIds : undefined,
   });
 
   // La última posición es el primer elemento (DESC). avg_speed usa la
@@ -386,6 +452,17 @@ export async function computeLiveTracking(opts: {
     );
   }
 
+  // La hora estimada suma las paradas intermedias que quedan antes de la
+  // entrega de este servicio (§4.7). No dice cuántas son ni dónde quedan.
+  if (etaMinutes !== null && ruta && ruta.paradasIntermedias.length > 0) {
+    etaMinutes += minutosPorParadasIntermedias({
+      posicion: position ? { lat: position.latitude, lng: position.longitude } : null,
+      destino: opts.destino ?? null,
+      paradas: ruta.paradasIntermedias,
+      avgSpeedKmh: progress.avg_speed_kmh_last_15min,
+    });
+  }
+
   return {
     position,
     positionSource: live.source,
@@ -393,6 +470,19 @@ export async function computeLiveTracking(opts: {
     progress,
     etaMinutes,
   };
+}
+
+/** Coordenadas guardadas como `numeric` (texto) → números, o null si faltan. */
+export function coordenadaDe(
+  lat: string | null | undefined,
+  lng: string | null | undefined,
+): { lat: number; lng: number } | null {
+  if (lat == null || lng == null) {
+    return null;
+  }
+  const a = Number(lat);
+  const b = Number(lng);
+  return Number.isFinite(a) && Number.isFinite(b) ? { lat: a, lng: b } : null;
 }
 
 /**
