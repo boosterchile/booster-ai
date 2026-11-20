@@ -27,6 +27,50 @@ const REQ_PIN_MALO: RequestInit = {
 const logger = createLogger({ service: 't8', version: '0', level: 'silent', pretty: false });
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+const INITIAL_CONNECT_ATTEMPTS = 10;
+const INITIAL_CONNECT_BACKOFF_MS = 100;
+
+/**
+ * Conecta al Redis recién levantado, reintentando la conexión inicial.
+ *
+ * El contenedor avisa «Ready to accept connections» antes de que el puerto
+ * publicado en el host acepte conexiones: con runtimes que redirigen puertos
+ * desde una VM (colima, Docker Desktop) el primer intento puede recibir
+ * ECONNREFUSED durante unas decenas de ms. Con `lazyConnect`, `connect()`
+ * rechaza al primer cierre sin aplicar `retryStrategy`, así que el reintento
+ * va acá. Cada intento usa un cliente nuevo; si se agotan, se propaga el
+ * último error. Los escenarios siguen usando el cliente con las mismas
+ * opciones de siempre.
+ */
+async function connectToFreshContainer(host: string, port: number): Promise<Redis> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= INITIAL_CONNECT_ATTEMPTS; attempt += 1) {
+    const client = new Redis({
+      host,
+      port,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      commandTimeout: 1500,
+      lazyConnect: true,
+      retryStrategy: (n) => Math.min(n * 100, 1000),
+    });
+    client.on('error', () => undefined);
+    try {
+      await client.connect();
+      await client.ping();
+      return client;
+    } catch (err) {
+      lastError = err;
+      client.disconnect();
+      await wait(INITIAL_CONNECT_BACKOFF_MS);
+    }
+  }
+  throw new Error(
+    `No se pudo conectar al Redis de prueba en ${host}:${port} tras ${INITIAL_CONNECT_ATTEMPTS} intentos`,
+    { cause: lastError },
+  );
+}
+
 function buildApp(redis: Redis): Hono {
   const app = new Hono();
   app.use(
@@ -59,18 +103,7 @@ describe('T8 SEC-001 — rate-limit-pin contra Redis REAL via testcontainers', (
 
   beforeEach(async () => {
     container = await new RedisContainer('redis:7-alpine').start();
-    redis = new Redis({
-      host: container.getHost(),
-      port: container.getMappedPort(6379),
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-      commandTimeout: 1500,
-      lazyConnect: true,
-      retryStrategy: (n) => Math.min(n * 100, 1000),
-    });
-    redis.on('error', () => undefined);
-    await redis.connect();
-    await redis.ping();
+    redis = await connectToFreshContainer(container.getHost(), container.getMappedPort(6379));
     app = buildApp(redis);
   }, 60_000);
 
