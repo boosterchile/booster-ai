@@ -104,7 +104,7 @@ Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas a
 
 ## Programa TRL 10
 
-Línea base re-verificada el 2026-11-20 (repo, GitHub Actions y GCP en solo lectura; sin acceso a la BD): [`2026-11-20-plan-trl10.md`](./2026-11-20-plan-trl10.md), con el estado de los 30 criterios y el plan de trabajo. Marcado solo T10-06; con evidencia y a la espera del PO: T10-07, 08, 09, 10, 13, 15, 17 y 18. #748 (T10-03) está en `main` (`e7ad3c6c`) sin desplegar: la migración 0088 sale en el próximo release y falta el `terraform apply`. Plazos: decisión del mandato el 2026-11-30 y Ley 21.719 el 2026-12-01.
+Línea base re-verificada el 2026-11-20 (repo, GitHub Actions y GCP en solo lectura; sin acceso a la BD): [`2026-11-20-plan-trl10.md`](./2026-11-20-plan-trl10.md), con el estado de los 30 criterios y el plan de trabajo. Marcados 9 de 30: T10-06, y por decisión del PO del 2026-11-20, T10-07, 08, 09, 10, 13, 15, 17 y 18. #748 (T10-03) está en `main` (`e7ad3c6c`) sin desplegar: la migración 0088 sale en el próximo release y falta el `terraform apply`. Plazos: decisión del mandato el 2026-11-30 y Ley 21.719 el 2026-12-01.
 
 ## Agente
 
