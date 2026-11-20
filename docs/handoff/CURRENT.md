@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-19 · America/Santiago (Booster Fleet en prod con el rediseño, la lectura completa de 7 días y la lectura sin espera; falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
-**Prod**: `2e6e2c67` (Release [44436488143](https://github.com/boosterchile/booster-ai/actions/runs/44436488143) SUCCESS, terminó el 2026-11-18 a las 23:18) — api `booster-ai-api-00491-q9d` @ **100 %**, web `00433-7pj` @ 100 %; los 8 servicios en esa imagen. Quinto release del día: 09:53 (`cbe37242`, rediseño y lectura completa), 12:13 (`5eaf4d38`, corrección de memoria #1023), 15:12 (`43df7972`, registro por fases #1025), 17:50 (`21532312`, lectura sin espera #1027 y #1028) y este, con la reemisión por distancia no plausible (#1031), el corte lineal de palabras largas del certificado (#876) y el límite de 90 s de sus tests (#1030). Migración 0087 aplicada.  
-**`main`**: tip `2e6e2c67` (#1031), igual a prod salvo este handoff. Nada pendiente de deploy.  
+**Última actualización**: 2026-11-20 · America/Santiago (certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
+**Prod**: `93f084f1` (Release [44758377706](https://github.com/boosterchile/booster-ai/actions/runs/44758377706) SUCCESS, terminó el 2026-11-20 a las 12:37) — api `booster-ai-api-00492-tz7` @ **100 %**, web `00434-t8f` @ 100 %; los 8 servicios en esa imagen. Lleva el certificado con factores versionados (#877) y un test con fecha fija (#1033). Sin migraciones. El release anterior fue el quinto del 2026-11-18 (`2e6e2c67`, 23:18: reemisión por distancia no plausible #1031 con la migración 0087, corte lineal de palabras #876).  
+**`main`**: tip `93f084f1` (#877), igual a prod salvo este handoff. Nada pendiente de deploy.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,11 +15,11 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `2e6e2c67` | Igual a prod salvo este handoff |
-| Prod | `2e6e2c67` | Release 44436488143; los 8 servicios al 100 % en su última revisión |
+| `main` | `93f084f1` | Igual a prod salvo este handoff |
+| Prod | `93f084f1` | Release 44758377706; los 8 servicios al 100 % en su última revisión |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
-**Smoke (2026-11-18, tras el quinto release):** sin errores del api desde el deploy; `/health` y `/ready` 200. Migración 0087 verificada en solo lectura: `ck_certificados_viaje_motivo` admite `distancia_medida_no_plausible` y los 10 certificados siguen en versión 1 sin motivo. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con el corte de palabras de #876.
+**Smoke (2026-11-20, tras el release):** sin errores del api desde el deploy; `/health` y `/ready` 200; flags conservados. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
 **Registros:** `Drizzle migrate() complete` en `00486-brt` @ 13:15:11Z (America/Santiago 10:15).  
 **Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`.
 
@@ -97,6 +97,10 @@ Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 | BOO-YWKZWR | factor impreso no corresponde | 590,746 sin cambio; el factor impreso pasa de 3,25 a 3,24 |
 
 Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas apuntan al certificado nuevo, evento `certificado_reemitido` con el usuario del PO, y el PDF con su firma en el bucket con el mismo sha256 que la base. Sin pendientes de esta serie. Observado y sin tocar: los certificados imprimen «—» en la fecha del viaje, y el destino de BOO-KY7G69 trae una región que no corresponde a la dirección; ambos vienen del dato del viaje y ya estaban en la versión 1.
+
+## Certificado: factores versionados (HC-004 T2-B)
+
+**En prod desde el 2026-11-20** ([#877](https://github.com/boosterchile/booster-ai/pull/877)). El certificado ya no imprime «Factor de emisión usado» ni «SEC Chile 2024»: imprime «Factores: WTW · TTW · WTT» con su fuente cuando la fuente guardada está en la tabla versionada (`carbon-calculator/src/factores/factores-certificado.ts`; el sufijo «(defaults para tipo: …)» del modo por defecto se ignora), y «Factor: WTW X kg CO₂e/L» sin desglose cuando no está (decisión del PO, 2026-11-20: el factor se imprime siempre). Suma la referencia HuellaChile 2025 si la fila la tiene guardada. La versión GLEC es la guardada, sin default: un viaje sin ella no se certifica ni se reemite (`version_glec_missing`); los 10 certificados de prod tienen `v3.0`. El armado vive en `armarDatosEmision`, que comparten emisión y reemisión. En prod al 2026-11-20: 3 certificados con fuente en la tabla (por el sufijo) y 7 con fuente nula y factor 3,25, que al reemitirse saldrían con la línea sin desglose. Los PDF ya firmados no cambian. **Falta:** ver un certificado emitido en prod con la plantilla nueva.
 
 ## Agente
 
