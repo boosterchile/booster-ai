@@ -4,8 +4,13 @@
  * emisión (0068): si mañana cambia el factor, cambia la fuente y hace falta
  * una fila nueva; los certificados viejos siguen resolviendo la suya.
  *
- * Si la fuente no está o el factor WTW guardado no calza con la fila, no se
- * imprime la línea (el emisor lo loguea). Criterio 13: TTW + WTT = WTW.
+ * El modo por defecto guarda la fuente con un sufijo que nombra el tipo de
+ * vehículo («… (defaults para tipo: camion_mediano)»). Los factores por litro
+ * son los mismos, así que el sufijo se ignora al buscar la fila.
+ *
+ * Si la fuente no está o el factor WTW guardado no calza con la fila, no hay
+ * desglose: el certificado imprime solo el factor guardado (el emisor lo
+ * loguea). Criterio 13: TTW + WTT = WTW.
  */
 
 export interface FactoresLineaCertificado {
@@ -31,6 +36,9 @@ export const TABLA_FACTORES_CERTIFICADO: readonly FactoresLineaCertificado[] = [
   },
 ];
 
+/** Lo que agrega `modos/por-defecto.ts` a la fuente de los factores. */
+const SUFIJO_MODO_POR_DEFECTO = / \(defaults para tipo: [^()]+\)$/;
+
 /** Tolerancia: emission_factor_usado se guarda con 5 decimales. */
 const TOLERANCIA = 0.0005;
 
@@ -38,7 +46,8 @@ export function factoresLineaCertificado(
   fuente: string | null,
   factorWtwUsado: number,
 ): FactoresLineaCertificado | null {
-  const fila = TABLA_FACTORES_CERTIFICADO.find((f) => f.fuente === fuente);
+  const base = fuente?.replace(SUFIJO_MODO_POR_DEFECTO, '') ?? null;
+  const fila = TABLA_FACTORES_CERTIFICADO.find((f) => f.fuente === base);
   if (!fila || Math.abs(fila.wtw - factorWtwUsado) > TOLERANCIA) {
     return null;
   }

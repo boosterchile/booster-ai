@@ -139,7 +139,7 @@ describe('certificado reemitido — criterio 5: la cifra se explica con lo impre
 
   it('imprime el factor corregido, y litros × factor dan las emisiones impresas', async () => {
     const todo = await texto({ ...viaje, version: REEMPLAZO });
-    const factor = numero(todo.match(/Factor de emisión usado\s+([\d.,]+) kg CO₂e/)?.[1]);
+    const factor = numero(todo.match(/Factor(?:es)?: WTW ([\d.,]+) kg CO₂e\/L/)?.[1]);
     const litros = numero(todo.match(/Combustible: ([\d.,]+) L/)?.[1]);
     const emisiones = numero(todo.match(/Emisiones totales WTW\s+([\d.,]+)/)?.[1]);
 
@@ -152,7 +152,7 @@ describe('certificado reemitido — criterio 5: la cifra se explica con lo impre
 
   it('con el factor viejo la cuenta no cierra (es el defecto que se corrige)', async () => {
     const todo = await texto(viaje, { ...corregido, emissionFactorUsado: 3.25 });
-    const factor = numero(todo.match(/Factor de emisión usado\s+([\d.,]+) kg CO₂e/)?.[1]);
+    const factor = numero(todo.match(/Factor(?:es)?: WTW ([\d.,]+) kg CO₂e\/L/)?.[1]);
     expect(Math.abs(182.33 * factor - 590.75)).toBeGreaterThan(0.005 * factor + 0.005);
   });
 });

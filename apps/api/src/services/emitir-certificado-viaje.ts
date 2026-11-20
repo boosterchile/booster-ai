@@ -241,13 +241,14 @@ export async function armarDatosEmision(opts: {
   }
 
   // HC-004 (opción d): factores por litro desde la tabla versionada por
-  // factores_fuente. Si no calza, la línea no se imprime y queda en el log.
+  // factores_fuente. Si no calza, el PDF imprime solo el factor guardado, sin
+  // desglose, y queda en el log.
   const factorUsado = numOrNull(metrics.emissionFactorUsed) ?? 0;
   const factoresLinea = factoresLineaCertificado(metrics.factoresFuente, factorUsado);
   if (!factoresLinea) {
     logger.warn(
       { tripId, factoresFuente: metrics.factoresFuente, emissionFactorUsed: factorUsado },
-      'emitirCertificadoViaje: línea de factores omitida (fuente fuera de la tabla o factor no calza)',
+      'emitirCertificadoViaje: factores sin desglose (fuente fuera de la tabla o factor no calza)',
     );
   }
   const ttwRef = numOrNull(metrics.ttwRef);

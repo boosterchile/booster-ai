@@ -315,6 +315,25 @@ export async function generarPdfConCajas(
     );
     c.texto(`Fuente de factores: ${fl.etiqueta}`, MX, c.y - 13, 8.5, f.regular, GRIS);
     c.y -= 40;
+  } else if (m.emissionFactorUsado > 0) {
+    // Sin fila en la tabla no hay desglose TTW/WTT, pero el factor guardado se
+    // imprime igual: la cifra tiene que poder explicarse con lo impreso
+    // (`.specs/reemision-certificado/`, criterio 5).
+    // Una fuente sin fila se cita como se guardó y puede ser larga: se parte.
+    const fuente = m.fuenteFactores
+      ? partir(`Fuente de factores: ${m.fuenteFactores}`, f.regular, 8.5, MX2 - MX)
+      : [];
+    c.asegurar(27 + fuente.length * 13);
+    c.texto(
+      `Factor: WTW ${numeroEsCl(m.emissionFactorUsado)} kg CO\u2082e/L`,
+      MX,
+      c.y,
+      9.5,
+      f.semibold,
+      TEXTO,
+    );
+    fuente.forEach((l, i) => c.texto(l, MX, c.y - 13 - i * 13, 8.5, f.regular, GRIS));
+    c.y -= 27 + fuente.length * 13;
   }
   // ADR-028 — origen del polyline; solo si el campo está presente.
   if (m.routeDataSource) {

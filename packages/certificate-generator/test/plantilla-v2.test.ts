@@ -238,6 +238,36 @@ describe('PR-B — factores, referencia HuellaChile y versión (criterios 7, 11,
     expect(todo).not.toContain('GLEC Framework v3.0');
   });
 
+  it('sin fila en la tabla imprime igual el factor guardado, sin desglose', async () => {
+    const { todo } = await texto({
+      ...conFactores,
+      fuenteFactores: null,
+      factoresLinea: null,
+      emissionFactorUsado: 3.25,
+    });
+    expect(todo).toContain('Factor: WTW 3,25 kg CO\u2082e/L');
+    expect(todo).not.toContain('Factores:');
+    expect(todo).not.toContain('TTW 2,67');
+    expect(todo).not.toContain('Fuente de factores');
+  });
+
+  it('sin fila en la tabla y con fuente guardada, la cita tal como se guardó', async () => {
+    const { todo } = await texto({
+      ...conFactores,
+      fuenteFactores: 'Fuente sin fila',
+      factoresLinea: null,
+      emissionFactorUsado: 3.1,
+    });
+    expect(todo).toContain('Factor: WTW 3,10 kg CO\u2082e/L');
+    expect(todo).toContain('Fuente de factores: Fuente sin fila');
+  });
+
+  it('sin fila en la tabla y sin factor guardado no imprime un factor', async () => {
+    const { todo } = await texto({ ...conFactores, factoresLinea: null, emissionFactorUsado: 0 });
+    expect(todo).not.toContain('Factor: WTW');
+    expect(todo).not.toContain('Factores:');
+  });
+
   it('criterios 12 y 15: sin SEC Chile ni «certificado/verificado HuellaChile»', async () => {
     const { todo } = await texto({ ...conFactores, fuenteFactores: null, factoresLinea: null });
     expect(todo).not.toContain('SEC Chile');

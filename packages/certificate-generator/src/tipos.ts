@@ -61,7 +61,8 @@ export interface DatosMetricasCertificado {
   fuenteFactores: string | null;
   /**
    * HC-004 — factores por litro resueltos desde la tabla versionada por
-   * `fuenteFactores` (carbon-calculator). Null o ausente → no se imprime la línea.
+   * `fuenteFactores` (carbon-calculator). Null o ausente → se imprime solo
+   * `emissionFactorUsado`, sin desglose TTW/WTT.
    */
   factoresLinea?: { etiqueta: string; ttw: number; wtt: number; wtw: number } | null;
   /** HC-004 — referencia HuellaChile guardada en la emisión (0068). Null → sin línea. */

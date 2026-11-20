@@ -33,6 +33,23 @@ describe('tabla versionada de factores del certificado (HC-004, opción d)', () 
     expect(factoresLineaCertificado(obtenerFactorEmision('diesel').fuente, 3.25)).toBeNull();
   });
 
+  it('la fuente del modo por defecto trae un sufijo con el tipo de vehículo y resuelve igual', () => {
+    for (const c of ['diesel', 'hibrido_diesel'] as const) {
+      const base = obtenerFactorEmision(c).fuente;
+      const guardada = `${base} (defaults para tipo: camion_mediano)`;
+      expect(factoresLineaCertificado(guardada, factorWtw(c)), c).toEqual(
+        factoresLineaCertificado(base, factorWtw(c)),
+      );
+    }
+    const diesel = obtenerFactorEmision('diesel').fuente;
+    // El sufijo no relaja el resto: el factor tiene que calzar y la base tiene que estar.
+    expect(
+      factoresLineaCertificado(`${diesel} (defaults para tipo: camion_pesado)`, 3.25),
+    ).toBeNull();
+    expect(factoresLineaCertificado(`${diesel} (otra cosa)`, 3.24)).toBeNull();
+    expect(factoresLineaCertificado('X (defaults para tipo: camion_pesado)', 3.24)).toBeNull();
+  });
+
   it('fuente desconocida o ausente → null', () => {
     expect(factoresLineaCertificado('SEC Chile 2024 + GLEC v3.0', 3.25)).toBeNull();
     expect(factoresLineaCertificado(null, 3.24)).toBeNull();
