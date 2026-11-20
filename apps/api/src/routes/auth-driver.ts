@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { claveNumericaSchema, rutSchema } from '@booster-ai/shared-schemas';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
@@ -9,7 +9,12 @@ import { conductores, memberships, users } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
-import { cuentaYaActivada } from '../services/vinculo-persona.js';
+import {
+  type ResultadoReutilizacion,
+  cuentaProveedorReutilizable,
+} from '../services/cuenta-proveedor-reutilizable.js';
+import { codigoError } from '../services/identidad-firebase-conductor.js';
+import { codigoPersonalVigente, cuentaYaActivada } from '../services/vinculo-persona.js';
 
 /**
  * Genera el email sintético usado por los users-conductores en Firebase
@@ -24,6 +29,38 @@ function driverSyntheticEmail(rut: string): string {
   return `drivers+${rut.replace(/[.\-]/g, '')}@boosterchile.invalid`;
 }
 
+/** La cuenta del proveedor que recién se creó, o la que ya existía con el correo sintético. */
+type CuentaConductor = { tipo: 'creada'; uid: string } | { tipo: 'existente'; cuenta: unknown };
+
+/**
+ * Crea la cuenta Firebase del conductor. Si otro pedido de la misma primera
+ * activación la creó entre la lectura y la creación, Firebase rechaza el
+ * correo repetido: se vuelve a leer esa cuenta, que pasa por la misma regla
+ * que una cuenta encontrada (SC5), y la escritura con predicado decide cuál de
+ * los dos pedidos activa (`.specs/correos-solicitudes-panel` SC2). Cualquier
+ * otro error sube.
+ */
+async function crearCuentaFirebaseConductor(
+  auth: Auth,
+  syntheticEmail: string,
+  rut: string,
+): Promise<CuentaConductor> {
+  try {
+    const created = await auth.createUser({
+      email: syntheticEmail,
+      emailVerified: false,
+      displayName: `Conductor ${rut}`,
+      disabled: false,
+    });
+    return { tipo: 'creada', uid: created.uid };
+  } catch (err) {
+    if (codigoError(err) !== 'auth/email-already-exists') {
+      throw err;
+    }
+    return { tipo: 'existente', cuenta: await auth.getUserByEmail(syntheticEmail) };
+  }
+}
+
 /**
  * Endpoint `POST /auth/driver-activate` — primera activación de un
  * conductor por RUT + PIN.
@@ -35,9 +72,10 @@ function driverSyntheticEmail(rut: string): string {
  *      - Verifica que tenga activacion_pin_hash setado (sino → 410 ya
  *        activado, fall through a Firebase email/password login).
  *      - Verifica el PIN con scrypt timing-safe.
- *      - Crea (o actualiza) Firebase Auth user con email sintético +
- *        password = PIN. Si ya existe el Firebase user con ese email
- *        (e.g. retry del mismo activate), reusa.
+ *      - Crea la cuenta Firebase con el email sintético, sin contraseña.
+ *        Si ya existe una con ese email (e.g. retry del mismo activate), la
+ *        reusa solo si ya es de esta fila o está libre
+ *        (`.specs/correos-solicitudes-panel` SC5).
  *      - UPDATE usuarios: firebase_uid=real, email=sintético,
  *        activacion_pin_hash=NULL, status='activo'.
  *      - Mint custom token para que el cliente haga signInWithCustomToken.
@@ -46,10 +84,33 @@ function driverSyntheticEmail(rut: string): string {
  *   - 200 { custom_token, synthetic_email } → cliente firma in.
  *   - 401 invalid_credentials → RUT o PIN no matchean (no distinguir
  *     cuál falló para no filtrar la existencia del RUT).
- *   - 410 already_activated → user ya tiene firebase_uid real. El cliente
- *     debe usar Firebase email/password con el email sintético.
+ *   - 410 already_activated → la cuenta ya está activada; la persona entra
+ *     por el login principal con RUT y clave. El cuerpo no trae datos de la
+ *     cuenta (`.specs/bordes-autenticacion` SC1).
  *   - 503 not_a_driver → user existe pero no tiene fila conductores activa.
+ *
+ * Personal de Booster (`.specs/alta-personal-booster` §6.6): una cuenta con
+ * `es_admin_plataforma = true` se activa solo con un código del panel vigente
+ * según `activacion_vence_en`, la misma regla que `/auth/activar`. Si no, la
+ * respuesta es la misma 401 de un PIN incorrecto.
+ *
+ * Estado de la cuenta (`.specs/acceso-panel-plataforma` SC10): una cuenta
+ * `suspendido` o `eliminado` no se activa. Responde la misma 401 de un PIN
+ * incorrecto, y la escritura exige que siga sin estar en esos estados.
+ *
+ * Primera activación simultánea (`.specs/correos-solicitudes-panel` SC2): si
+ * dos pedidos crean a la vez la cuenta Firebase, el que recibe
+ * `auth/email-already-exists` usa la que creó el otro y sigue a la escritura
+ * con predicado. Uno solo entra; el otro recibe la misma 401.
+ *
+ * Cuenta Firebase que ya existe (`.specs/correos-solicitudes-panel` SC5): se
+ * reutiliza si su uid ya es el de esta fila, o si está libre (ninguna fila
+ * tiene su uid, sin proveedor propio y sin ser de una solicitud), con sus
+ * sesiones revocadas antes. Si no, 502 `firebase_error` y nada escrito.
+ * Vale también para la cuenta que se vuelve a leer en SC2.
  */
+const ESTADOS_SIN_ACTIVACION = ['suspendido', 'eliminado'] as const;
+
 const activateBodySchema = z.object({
   rut: z.string().min(1),
   pin: z.string().regex(/^\d{6}$/, 'PIN debe ser 6 dígitos'),
@@ -104,6 +165,9 @@ export function createDriverAuthRoutes(opts: {
         rut: users.rut,
         activationPinHash: users.activationPinHash,
         claveNumericaHash: users.claveNumericaHash,
+        isPlatformAdmin: users.isPlatformAdmin,
+        activacionVenceEn: users.activacionVenceEn,
+        status: users.status,
       })
       .from(users)
       .where(eq(users.rut, rut))
@@ -118,14 +182,7 @@ export function createDriverAuthRoutes(opts: {
     // 2. Si ya está activado (firebase_uid real o clave elegida), no podemos
     //    activar de nuevo. Un pin ajeno no reescribe la credencial.
     if (cuentaYaActivada(user)) {
-      return c.json(
-        {
-          error: 'already_activated',
-          code: 'already_activated',
-          synthetic_email: user.email,
-        },
-        410,
-      );
+      return c.json({ error: 'already_activated', code: 'already_activated' }, 410);
     }
 
     // 3. Verificar PIN.
@@ -134,8 +191,27 @@ export function createDriverAuthRoutes(opts: {
       // borrado manualmente). Tratar como invalid_credentials.
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
-    const pinOk = verifyActivationPin(body.pin, user.activationPinHash);
+    const hashVerificado = user.activationPinHash;
+    const pinOk = verifyActivationPin(body.pin, hashVerificado);
     if (!pinOk) {
+      return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
+    }
+
+    // 3a. Una cuenta suspendida o eliminada no se activa. Va después del PIN:
+    //     la respuesta y el costo son los de un PIN incorrecto.
+    if ((ESTADOS_SIN_ACTIVACION as readonly string[]).includes(user.status)) {
+      opts.logger.info({ userId: user.id }, 'driver-activate: cuenta suspendida o eliminada');
+      return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
+    }
+
+    // 3b. Una cuenta marcada como personal activa solo con el código del
+    //     panel, igual que en `/auth/activar`. Va antes de buscar la fila de
+    //     conductor: la respuesta no depende de si es conductor.
+    if (user.isPlatformAdmin && !codigoPersonalVigente(user.activacionVenceEn)) {
+      opts.logger.info(
+        { userId: user.id },
+        'driver-activate: cuenta del personal sin código vigente del panel',
+      );
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
 
@@ -165,29 +241,60 @@ export function createDriverAuthRoutes(opts: {
     // hasheada en nuestra BD y verifica `login-rut`. La cuenta Firebase es solo
     // el vehículo del custom token.
     const syntheticEmail = driverSyntheticEmail(rut);
-    let firebaseUid: string;
+    let cuenta: CuentaConductor;
     try {
       const existing = await opts.firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);
-      if (existing) {
-        // Caso retry (e.g. la primera vez el UPDATE de la DB falló post-Firebase).
-        firebaseUid = existing.uid;
-      } else {
-        const created = await opts.firebaseAuth.createUser({
-          email: syntheticEmail,
-          emailVerified: false,
-          displayName: `Conductor ${rut}`,
-          disabled: false,
-        });
-        firebaseUid = created.uid;
-      }
+      // Con una cuenta ya existente (p. ej. un retry tras un UPDATE fallido),
+      // la regla de SC5 decide abajo si se reutiliza.
+      cuenta = existing
+        ? { tipo: 'existente', cuenta: existing }
+        : await crearCuentaFirebaseConductor(opts.firebaseAuth, syntheticEmail, rut);
     } catch (err) {
       opts.logger.error({ err, rut }, 'Firebase user create/update failed in driver-activate');
       return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
     }
 
-    // 6. UPDATE local DB.
+    // 5b. Una cuenta que ya existía, también la que se vuelve a leer en SC2,
+    //     se reutiliza solo si ya es de esta fila o está libre
+    //     (`.specs/correos-solicitudes-panel` SC5). Si no, nada se escribe.
+    let firebaseUid: string;
+    if (cuenta.tipo === 'creada') {
+      firebaseUid = cuenta.uid;
+    } else {
+      let veredicto: ResultadoReutilizacion;
+      try {
+        veredicto = await cuentaProveedorReutilizable({
+          db: opts.db,
+          auth: opts.firebaseAuth,
+          cuenta: cuenta.cuenta,
+          usuarioId: user.id,
+        });
+      } catch (err) {
+        // La revisión lee la base y revoca sesiones en el proveedor: si falla,
+        // la misma 502 de una falla del proveedor y nada escrito.
+        opts.logger.error(
+          { err, userId: user.id },
+          'driver-activate: no se pudo revisar la cuenta del proveedor encontrada',
+        );
+        return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+      }
+      if (!veredicto.reutilizable) {
+        opts.logger.error(
+          { userId: user.id, motivo: veredicto.motivo },
+          'driver-activate: la cuenta del proveedor encontrada no se reutiliza',
+        );
+        return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+      }
+      firebaseUid = veredicto.uid;
+    }
+
+    // 6. UPDATE local DB. Exige que el código siga siendo el verificado, que
+    //    la cuenta siga sin clave y que no esté suspendida ni eliminada: si
+    //    otra activación o una re-emisión llegó primero, no se activa ni hay
+    //    sesión (`.specs/bordes-autenticacion` SC3).
+    let escritas: { id: string }[];
     try {
-      await opts.db
+      escritas = await opts.db
         .update(users)
         .set({
           firebaseUid,
@@ -200,11 +307,20 @@ export function createDriverAuthRoutes(opts: {
           // comunicación con la plataforma. El sintético existe solo como
           // identificador interno de Firebase.
           activationPinHash: null,
+          activacionVenceEn: null,
           status: 'activo',
           lastLoginAt: sql`now()`,
           updatedAt: sql`now()`,
         })
-        .where(eq(users.id, user.id));
+        .where(
+          and(
+            eq(users.id, user.id),
+            eq(users.activationPinHash, hashVerificado),
+            isNull(users.claveNumericaHash),
+            notInArray(users.status, [...ESTADOS_SIN_ACTIVACION]),
+          ),
+        )
+        .returning({ id: users.id });
     } catch (err) {
       // Si el UPDATE falla pero Firebase quedó creado, no rollback — el
       // próximo retry pasará por la rama getUserByEmail() y completará.
@@ -213,6 +329,13 @@ export function createDriverAuthRoutes(opts: {
         'DB update failed after Firebase user created',
       );
       return c.json({ error: 'db_error', code: 'db_error' }, 502);
+    }
+    if (escritas.length === 0) {
+      opts.logger.info(
+        { userId: user.id },
+        'driver-activate: la cuenta cambió antes de escribir; no se activa',
+      );
+      return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
 
     // 6b. Promover membership de 'pendiente_invitacion' → 'activa' para

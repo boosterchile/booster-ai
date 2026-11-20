@@ -17,7 +17,7 @@ import { evaluateImpersonationTarget } from '../services/impersonation.js';
  *
  * Airtight por diseño:
  *   - `requirePlatformAdmin` (featureFlag IMPERSONATION_V1_ACTIVATED + auth
- *     presente + allowlist BOOSTER_PLATFORM_ADMIN_EMAILS): solo un
+ *     presente + regla única de acceso al panel): solo un
  *     platform-admin activa esto; con el flag OFF responde 503.
  *   - `evaluateImpersonationTarget` (target-side): sin admin→admin, sin self,
  *     target debe existir y estar activado (Firebase UID real).
@@ -110,7 +110,7 @@ export function createAuthImpersonateRoutes(opts: {
   });
 
   app.post('/impersonate', zValidator('json', impersonateBodySchema), async (c) => {
-    // Caller-side: feature flag + auth + allowlist platform-admin.
+    // Caller-side: feature flag + auth + acceso al panel.
     const auth = requirePlatformAdmin(c, {
       featureFlag: appConfig.IMPERSONATION_V1_ACTIVATED,
     });

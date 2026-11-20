@@ -15,6 +15,8 @@ T10-05 exige al menos un viaje real con CAN + Teltonika y cobertura ≥ 95 % que
 
 ## 2. Entradas
 
+> **Enmienda del 2026-11-12 (`.specs/huella-lee-can-por-datos`):** la huella lee el 83 cuando el equipo lo envía. Ya no hace falta que el vehículo tenga `fuente_combustible_can = '83'`, ni aquí ni en la sección 6.
+
 - Cierre del viaje (`recalcularNivelPostEntrega`), con huella activa, distancia reconstruida, cobertura de posición ≥ umbral (80 %) y peso declarado. Es la rama que hoy termina en `medida`.
 - Vehículo del assignment con `fuente_combustible_can = '83'`, combustible `diesel` o `gasolina` (el contador mide litros) y fuente de posición `teltonika_gps`.
 - Lecturas de `telemetria_puntos` en la ventana del segmento (`recogido_en → entregado_en`) que traen el IO 83.

@@ -104,7 +104,10 @@ describe('integration: detalle de conductor con licencia_vencimiento DATE', () =
       });
       await next();
     });
-    app.route('/conductores', createConductoresRoutes({ db: handle.db, logger }));
+    app.route(
+      '/conductores',
+      createConductoresRoutes({ db: handle.db, logger, platformAdminEmails: [] }),
+    );
     return app;
   }
 

@@ -1,3 +1,8 @@
+import {
+  type CambioPendienteOficina,
+  CambioPropuestoCard,
+} from '../components/cambios/CambioPropuestoCard.js';
+import { DatosLibresViaje } from '../components/viaje/DatosLibresViaje.js';
 /**
  * /app/asignaciones/:id — pantalla carrier-side de un assignment activo.
  *
@@ -29,8 +34,8 @@ import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js'
 import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { esConductorDelViaje } from '../lib/es-conductor-del-viaje.js';
-import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
 interface AssignmentDetail {
   trip_request: {
@@ -42,6 +47,17 @@ interface AssignmentDetail {
     cargo_type: string;
     cargo_weight_kg: number;
     shipper_legal_name: string | null;
+    /** editar-anular-cargas §12-P4 — datos libres que fija el generador. */
+    consignee?: { name: string | null; phone_e164: string | null } | null;
+    notes?: string | null;
+    reference?: string | null;
+    /**
+     * editar-anular-cargas §6.11: la oficina recibe el diff completo; el
+     * conductor solo `{ existe, creado_en }`.
+     */
+    cambio_pendiente?:
+      | (Partial<CambioPendienteOficina> & { existe: true; creado_en: string })
+      | null;
   };
   assignment: {
     id: string;
@@ -52,8 +68,12 @@ interface AssignmentDetail {
     vehicle_plate: string | null;
     vehicle_status?: string | null;
     vehicle_type: string | null;
+    vehicle_capacity_kg?: number | null;
     driver_user_id: string | null;
     driver_name: string | null;
+    cancelled_at?: string | null;
+    cancelled_by_actor?: string | null;
+    cancellation_reason?: string | null;
   };
 }
 
@@ -80,8 +100,16 @@ export function AsignacionDetalleRoute() {
             </div>
           );
         }
-        const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
-        return <AsignacionDetallePage canWriteDocs={canWriteDocs} viewerUserId={ctx.me.user.id} />;
+        const flags = flagsDe(ctx.me);
+        return (
+          <AsignacionDetallePage
+            canWriteDocs={flags.documentos}
+            puedeAsignar={flags.asignar}
+            puedeCobraHoy={flags.pedirCobraHoy}
+            puedeResponderCambio={flags.responderCambioCarga}
+            viewerUserId={ctx.me.user.id}
+          />
+        );
       }}
     </ProtectedRoute>
   );
@@ -89,9 +117,15 @@ export function AsignacionDetalleRoute() {
 
 function AsignacionDetallePage({
   canWriteDocs,
+  puedeAsignar,
+  puedeCobraHoy,
+  puedeResponderCambio,
   viewerUserId,
 }: {
   canWriteDocs: boolean;
+  puedeAsignar: boolean;
+  puedeCobraHoy: boolean;
+  puedeResponderCambio: boolean;
   viewerUserId: string;
 }) {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
@@ -163,7 +197,43 @@ function AsignacionDetallePage({
           driver_user_id=NULL y no había forma de setearlo después.
           Sin conductor asignado, el endpoint /assignments/:id/driver-position
           rechaza con 403 y el conductor no puede reportar GPS. */}
-      {assignment && (
+      {/* editar-anular-cargas §9: el cambio propuesto va arriba de todo. */}
+      {trip?.cambio_pendiente?.id &&
+        trip.cambio_pendiente.cambios &&
+        trip.cambio_pendiente.valores_anteriores && (
+          <CambioPropuestoCard
+            assignmentId={assignmentId}
+            cambio={{
+              id: trip.cambio_pendiente.id,
+              cambios: trip.cambio_pendiente.cambios,
+              valores_anteriores: trip.cambio_pendiente.valores_anteriores,
+              creado_en: trip.cambio_pendiente.creado_en,
+            }}
+            puedeResponder={puedeResponderCambio}
+            vehiclePlate={assignment?.vehicle_plate ?? null}
+            vehicleCapacityKg={assignment?.vehicle_capacity_kg ?? null}
+          />
+        )}
+
+      {assignment?.status === 'cancelado' &&
+        assignment.cancelled_by_actor === 'generador_carga' &&
+        assignment.cancelled_at && (
+          <output
+            data-testid="cancelado-por-generador"
+            className="block border-danger-200 border-b bg-danger-50 px-4 py-3 text-danger-900 text-sm"
+          >
+            Cancelado por el generador el{' '}
+            {new Date(assignment.cancelled_at).toLocaleString('es-CL', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+              timeZone: 'America/Santiago',
+            })}
+            {assignment.cancellation_reason ? `: ${assignment.cancellation_reason}` : ''}
+          </output>
+        )}
+
+      {/* Una asignación cancelada ya no se reasigna (editar-anular-cargas §9). */}
+      {assignment && puedeAsignar && assignment.status !== 'cancelado' && (
         <DriverAssignmentCard
           assignmentId={assignmentId}
           currentDriverName={assignment.driver_name}
@@ -177,6 +247,15 @@ function AsignacionDetallePage({
 
       {mostrarEjecucion && (
         <div data-testid="asignacion-ejecucion" className="flex min-h-0 flex-1 flex-col">
+          {/* editar-anular-cargas §12-P4: contacto, notas y referencia del generador. */}
+          {!isClosed && tripQ.data && (
+            <DatosLibresViaje
+              consignee={tripQ.data.trip_request.consignee ?? null}
+              notes={tripQ.data.trip_request.notes ?? null}
+              reference={tripQ.data.trip_request.reference ?? null}
+            />
+          )}
+
           {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
           Collapsed por default; el driver expande on-tap para ver la
           polyline de Routes API sobre el mapa. Cierra el loop
@@ -211,7 +290,7 @@ function AsignacionDetallePage({
           vez que el viaje fue entregado. El service backend valida
           flag + liquidación + shipper credit; si el flag está off
           (entornos no-prod por default), el modal lo comunica. */}
-          {isDelivered && (
+          {isDelivered && puedeCobraHoy && (
             <div className="border-neutral-200 border-b bg-white px-4 py-3">
               <div className="flex flex-col gap-1">
                 <span className="font-medium text-neutral-700 text-sm">Pronto pago disponible</span>
@@ -225,8 +304,11 @@ function AsignacionDetallePage({
             </div>
           )}
 
-          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment. */}
-          {trip?.id && <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />}
+          {/* Gestor documental F4-4a — tripId es el viaje, no el assignment.
+              Un servicio cancelado ya no recibe documentos (editar-anular-cargas §9). */}
+          {trip?.id && assignment?.status !== 'cancelado' && (
+            <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />
+          )}
 
           {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
           <div className="flex-1 overflow-hidden">

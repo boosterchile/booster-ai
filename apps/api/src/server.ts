@@ -33,18 +33,22 @@ import { createAdminConfiguracionComercialRoutes } from './routes/admin-configur
 import { createAdminDispositivosPlataformaRoutes } from './routes/admin-dispositivos-plataforma.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
+import { createAdminFlotaPlataformaRoutes } from './routes/admin-flota-plataforma.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
+import { createAdminPersonalBoosterRoutes } from './routes/admin-personal-booster.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createAuthActivarRoutes } from './routes/auth-activar.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createAuthImpersonateRoutes } from './routes/auth-impersonate.js';
+import { createAuthInvitarCuentaRoutes } from './routes/auth-invitar-cuenta.js';
 import { createAuthUniversalRoutes } from './routes/auth-universal.js';
+import { createBoosterFleetRoutes } from './routes/booster-fleet.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
@@ -54,8 +58,11 @@ import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
 import { createHealthSignupFlowRouter } from './routes/health-signup-flow.js';
 import { createHealthRouter } from './routes/health.js';
+import { createPickupInstructionsRoutes } from './routes/instrucciones-retiro.js';
 import { createInternalSafetyEventsRoutes } from './routes/internal-safety-events.js';
+import { createMarketplaceReclamarRoutes } from './routes/marketplace-reclamar.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
+import { createMeConfirmarAccesoBoosterRoutes } from './routes/me-confirmar-acceso-booster.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeEmpresaMiembrosRoutes } from './routes/me-empresa-miembros.js';
 import { createMeEmpresaRoutes } from './routes/me-empresa.js';
@@ -66,6 +73,7 @@ import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicPreciosRoutes } from './routes/public-precios.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
+import { createRutasRoutes } from './routes/rutas.js';
 import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
   MAX_ASSET_BYTES,
@@ -82,6 +90,7 @@ import { createTrayectosTeltonikaRoutes } from './routes/trayectos-teltonika.js'
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
+import { createViajesPropiosRoutes } from './routes/viajes-propios.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
 import {
   cargarCandidatosBackfill,
@@ -223,6 +232,11 @@ export function createServer(opts: CreateServerOptions): Hono {
         {
           method: 'POST',
           path: /^\/transport-orders\/[^/]+\/documents$/,
+          maxBytes: MAX_DOCUMENT_BYTES + MULTIPART_ENVELOPE_BYTES,
+        },
+        {
+          method: 'PUT',
+          path: /^\/viajes\/[^/]+\/instrucciones-retiro$/,
           maxBytes: MAX_DOCUMENT_BYTES + MULTIPART_ENVELOPE_BYTES,
         },
         {
@@ -390,7 +404,11 @@ export function createServer(opts: CreateServerOptions): Hono {
     // userContext (autoriza solo empresas de prueba). En grupos sin userContext
     // (/me raíz, /empresas onboarding) fail-closea toda mutación impersonada.
     // Cobertura: check-impersonation-wire-completeness.ts.
-    const impersonationWriteGuardMiddleware = createImpersonationWriteGuardMiddleware({ logger });
+    const impersonationWriteGuardMiddleware = createImpersonationWriteGuardMiddleware({
+      logger,
+      db: opts.db,
+      platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+    });
     app.use('/me', firebaseAuthMiddleware);
     app.use('/me/*', firebaseAuthMiddleware);
     // /me raíz + sub-paths: sin userContext acá → el guard fail-closea las
@@ -459,6 +477,23 @@ export function createServer(opts: CreateServerOptions): Hono {
       createMeEmpresaMiembrosRoutes({
         db: opts.db,
         logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
+    // confirmar-acceso-booster — POST /me/confirmar-acceso-booster: la persona
+    // confirma desde su sesión el código que el admin de Booster le entregó en
+    // persona. userContext precede el mount; el guard de `/me/*` corre antes
+    // que él y bloquea toda escritura impersonada (el handler también la
+    // rechaza).
+    app.use('/me/confirmar-acceso-booster', userContextMiddlewareForMe);
+    meRouter.route(
+      '/confirmar-acceso-booster',
+      createMeConfirmarAccesoBoosterRoutes({
+        db: opts.db,
+        logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
       }),
@@ -555,6 +590,14 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // Enlace de seguimiento vigente al destinatario cuando cambia su contacto.
+        ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+        notifyTrackingLinkEmail: {
+          db: opts.db,
+          logger,
+          emailSender,
+          webAppUrl: config.WEB_APP_URL,
+        },
         // T10-21 — ranking local, en sombra o en matching-engine (flags).
         ranking: crearRankeadorMatching({
           modo: modoMatching({
@@ -587,6 +630,33 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+        // seguimiento-por-correo: sin RESEND_API_KEY el sender registra el
+        // intento y la marca queda libre para cuando exista el secreto.
+        notifyTrackingLinkEmail: {
+          db: opts.db,
+          logger,
+          emailSender,
+          webAppUrl: config.WEB_APP_URL,
+        },
+      }),
+    );
+
+    // BARH-23 — reclamar cargas sin oferta (matching intacto).
+    app.use('/marketplace/*', guardiaVisibilidadTransportista);
+    app.use('/marketplace/*', firebaseAuthMiddleware);
+    app.use('/marketplace/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/marketplace',
+      createMarketplaceReclamarRoutes({
+        db: opts.db,
+        logger,
+        ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+        notifyTrackingLinkEmail: {
+          db: opts.db,
+          logger,
+          emailSender,
+          webAppUrl: config.WEB_APP_URL,
+        },
       }),
     );
 
@@ -621,6 +691,21 @@ export function createServer(opts: CreateServerOptions): Hono {
       app.use(prefix, userContextMiddleware, impersonationWriteGuardMiddleware);
     }
     app.route('/', transportDocsRouter);
+
+    // Instrucciones de retiro (spec instrucciones-retiro): el QR o comprobante
+    // del lugar de retiro. Mismo borde que el repositorio documental:
+    // firebaseAuth + rate-limit de escrituras + userContext + guard de
+    // impersonación, y la autorización por viaje la resuelve el handler con
+    // autorizarSobreViaje. Comparte la cuota de escrituras de documentos.
+    const pickupInstructionsRouter = createPickupInstructionsRoutes({
+      db: opts.db,
+      logger,
+      ...(config.INSTRUCCIONES_RETIRO_BUCKET ? { bucket: config.INSTRUCCIONES_RETIRO_BUCKET } : {}),
+    });
+    app.use('/viajes/*', firebaseAuthMiddleware);
+    app.use('/viajes/*', rateLimitTransportDocs);
+    app.use('/viajes/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/', pickupInstructionsRouter);
 
     // Admin jobs — endpoints internos disparados por Cloud Scheduler
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del
@@ -776,15 +861,23 @@ export function createServer(opts: CreateServerOptions): Hono {
       createAdminDispositivosPlataformaRoutes({ db: opts.db, logger }),
     );
 
+    // Platform-admin: la flota de todas las empresas, solo lectura
+    // (`.specs/flota-plataforma`). Mismo chain que dispositivos.
+    app.use('/admin/plataforma/flota', firebaseAuthMiddleware);
+    app.use('/admin/plataforma/flota/*', firebaseAuthMiddleware);
+    app.use('/admin/plataforma/flota', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/plataforma/flota/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/admin/plataforma/flota', createAdminFlotaPlataformaRoutes({ db: opts.db, logger }));
+
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
-    // ADR-032). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist dentro
-    // del handler (no por role de empresa).
+    // ADR-032). Auth con requirePlatformAdmin dentro del handler (regla
+    // única de acceso al panel; no por rol de empresa).
     app.use('/admin/cobra-hoy/*', firebaseAuthMiddleware);
     app.use('/admin/cobra-hoy/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: CRUD de organizaciones stakeholder (ADR-034).
-    // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
+    // Auth con requirePlatformAdmin en el handler.
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -797,8 +890,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       }),
     );
 
-    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth vía
-    // allowlist BOOSTER_PLATFORM_ADMIN_EMAILS en el handler.
+    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth con
+    // requirePlatformAdmin en el handler.
     app.use('/admin/observatorio/*', firebaseAuthMiddleware);
     app.use('/admin/observatorio/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -835,6 +928,26 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         auth: opts.firebaseAuth,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
+
+    // alta-personal-booster — el platform-admin da de alta a otra persona de
+    // Booster con acceso al panel. Mismo chain que /admin/empresas; la
+    // autorización real la da `requirePlatformAdmin` dentro de cada handler.
+    // La lista de Terraform sigue decidiendo quién entra: se pasa para marcar
+    // `en_lista` y decidir si el código sale por correo.
+    app.use('/admin/personal-booster', firebaseAuthMiddleware);
+    app.use('/admin/personal-booster/*', firebaseAuthMiddleware);
+    app.use('/admin/personal-booster', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/personal-booster/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/personal-booster',
+      createAdminPersonalBoosterRoutes({
+        db: opts.db,
+        logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
       }),
@@ -921,13 +1034,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
     // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).
 
-    // ADR-033 §8 — Admin matching backtest. Misma allowlist platform-admin.
+    // ADR-033 §8 — Admin matching backtest. Mismo guard platform-admin.
     app.use('/admin/matching/*', firebaseAuthMiddleware);
     app.use('/admin/matching/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
 
     // F0-0 paso 1 — backfill de re-derivación de distancia real. Gate
-    // platform-admin (allowlist), NO /admin/jobs (SA de cron) ni JWT genérico:
+    // platform-admin (requirePlatformAdmin), NO /admin/jobs (SA de cron) ni JWT genérico:
     // reescribe la huella de toda la flota. Default dry-run; escritura exige
     // confirmación explícita + conteo que coincide.
     app.use('/admin/backfill-distancia/*', firebaseAuthMiddleware);
@@ -1014,6 +1127,49 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/trayectos-teltonika', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/trayectos-teltonika', createTrayectosTeltonikaRoutes({ db: opts.db, logger }));
 
+    // Booster Fleet — control del dueño. firebaseAuth + userContext preceden el mount.
+    app.use('/booster-fleet/*', firebaseAuthMiddleware);
+    app.use('/booster-fleet/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/booster-fleet', firebaseAuthMiddleware);
+    app.use('/booster-fleet', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/booster-fleet',
+      createBoosterFleetRoutes({
+        db: opts.db,
+        logger,
+        presupuestoPuntos: config.BOOSTER_FLEET_PRESUPUESTO_PUNTOS,
+        redis: redisForRateLimit,
+      }),
+    );
+
+    // BARH-24 — alta de viaje propio (fuera del matching).
+    app.use('/viajes-propios/*', guardiaVisibilidadTransportista);
+    app.use('/viajes-propios/*', firebaseAuthMiddleware);
+    app.use('/viajes-propios/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/viajes-propios', guardiaVisibilidadTransportista);
+    app.use('/viajes-propios', firebaseAuthMiddleware);
+    app.use('/viajes-propios', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/viajes-propios', createViajesPropiosRoutes({ db: opts.db, logger }));
+
+    // Rutas con varias paradas (ADR-088): API del transportista, detrás de
+    // RUTAS_API_ACTIVADA. Mismos middlewares que /assignments, incluida la
+    // guardia de visibilidad: la ruta expone datos de cargas.
+    app.use('/rutas/*', guardiaVisibilidadTransportista);
+    app.use('/rutas/*', firebaseAuthMiddleware);
+    app.use('/rutas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/rutas', guardiaVisibilidadTransportista);
+    app.use('/rutas', firebaseAuthMiddleware);
+    app.use('/rutas', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/rutas',
+      createRutasRoutes({
+        db: opts.db,
+        logger,
+        activada: config.RUTAS_API_ACTIVADA,
+        routesProjectId: config.GOOGLE_CLOUD_PROJECT,
+      }),
+    );
+
     app.route(
       '/vehiculos',
       createVehiculosRoutes({
@@ -1037,6 +1193,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       createConductoresRoutes({
         db: opts.db,
         logger,
+        platformAdminEmails: config.BOOSTER_PLATFORM_ADMIN_EMAILS,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
         ...(opts.firebaseAuth ? { firebaseAuth: opts.firebaseAuth } : {}),
@@ -1100,8 +1257,9 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // equipo-de-la-empresa — POST /auth/activar. Pre-auth por diseño: lo usa
     // alguien que todavía no tiene credencial (la está creando en este acto).
-    // Rate limit propio y fail-closed, igual que login-rut: el código es de 6
-    // dígitos y sin límite sería fuerza bruta trivial.
+    // Límites de intentos propios y fail-closed, igual que login-rut: el
+    // código es de 6 dígitos. Dos cubos: el de la IP (arriba) y el del RUT
+    // (dentro de la ruta), con prefijos que no comparte ningún otro endpoint.
     app.use(
       '/auth/activar',
       createRateLimitSignupMiddleware({
@@ -1110,12 +1268,35 @@ export function createServer(opts: CreateServerOptions): Hono {
         keyPrefix: 'rl:activar-cuenta:',
       }),
     );
+    const rateLimitActivarPorRut = createRateLimitPinMiddleware({
+      redis: redisForRateLimit,
+      logger,
+      keyPrefix: 'rl:activar-cuenta-rut:',
+      ipKeyPrefix: 'rl:activar-cuenta-rut:ip:',
+    });
     app.route(
       '/auth',
       createAuthActivarRoutes({
         db: opts.db,
         logger,
         firebaseAuth: opts.firebaseAuth,
+        rateLimitPerRut: rateLimitActivarPorRut,
+      }),
+    );
+
+    // ADR-093 — GET/POST /auth/invitar-cuenta. Pre-auth: token de invitación
+    // one-shot; la persona crea correo+clave en la UI /crear-cuenta.
+    app.route(
+      '/auth',
+      createAuthInvitarCuentaRoutes({
+        db: opts.db,
+        logger,
+        firebaseAuth: opts.firebaseAuth,
+        rateLimit: createRateLimitSignupMiddleware({
+          redis: redisForRateLimit,
+          logger,
+          keyPrefix: 'rl:invitar-cuenta:',
+        }),
       }),
     );
 

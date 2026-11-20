@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailSender } from '../services/notifications/email-sender.js';
@@ -32,22 +34,42 @@ const noopLogger = {
 interface DbOpts {
   userByRut?: unknown[];
   membresiaExistente?: unknown[];
+  /** Cuentas que devuelve la búsqueda por correo de una persona nueva. */
+  cuentaConCorreo?: unknown[];
   listaEquipo?: unknown[];
   insertUserError?: unknown;
 }
 
 function makeDb(opts: DbOpts = {}) {
-  const cola = [opts.userByRut ?? [], opts.membresiaExistente ?? []];
+  // Persona existente: la segunda lectura es su membresía en la empresa.
+  // Persona nueva: es la búsqueda de una cuenta con su correo.
+  const porRut = opts.userByRut ?? [];
+  const cola = [
+    porRut,
+    porRut.length > 0 ? (opts.membresiaExistente ?? []) : (opts.cuentaConCorreo ?? []),
+  ];
   const insertedUsers: Record<string, unknown>[] = [];
   const insertedMemberships: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
 
+  /** Bloqueos de fila pedidos con `.for(...)`, en orden. */
+  const locks: string[] = [];
+  /** Predicados de cada `select().from().where(...)`, en orden. */
+  const wheres: unknown[] = [];
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        limit: vi.fn(async () => cola.shift() ?? []),
-        orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
-      })),
+      where: vi.fn((predicado: unknown) => {
+        wheres.push(predicado);
+        const limit = vi.fn(async () => cola.shift() ?? []);
+        return {
+          limit,
+          for: vi.fn((fuerza: string) => {
+            locks.push(fuerza);
+            return { limit };
+          }),
+          orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
+        };
+      }),
       innerJoin: vi.fn(() => ({
         where: vi.fn(() => ({
           orderBy: vi.fn(() => ({ limit: vi.fn(async () => opts.listaEquipo ?? []) })),
@@ -90,6 +112,8 @@ function makeDb(opts: DbOpts = {}) {
     insertedUsers,
     insertedMemberships,
     updates,
+    locks,
+    wheres,
   };
 }
 
@@ -123,6 +147,7 @@ function buildApp(
     createMeEmpresaMiembrosRoutes({
       db,
       logger: noopLogger,
+      platformAdminEmails: ['respaldo@boosterchile.com'],
       ...(emailSender ? { emailSender, webAppUrl: 'https://app.boosterchile.com' } : {}),
     }),
   );
@@ -453,5 +478,139 @@ describe('correo de activación del equipo de la empresa', () => {
       (noopLogger.error as ReturnType<typeof vi.fn>).mock.calls,
     ]);
     expect(logs).not.toContain(json.codigo_activacion);
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC7 — la empresa no suma a su equipo una
+ * cuenta del personal de Booster ni deja en una cuenta un correo de la lista
+ * de respaldo.
+ */
+describe('POST /me/empresa/miembros — cuenta del personal de Booster (SC7)', () => {
+  const RESPUESTA = {
+    code: 'cuenta_personal_booster',
+    message: 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+  };
+
+  function invitar(app: Hono, body: Record<string, unknown> = {}) {
+    return app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        full_name: 'Ana Soto',
+        rut: '12345678-5',
+        email: 'ana.soto@empresa.cl',
+        rol: 'despachador',
+        ...body,
+      }),
+    });
+  }
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true, email: 'ana.soto@boosterchile.com' }],
+    [
+      'con un correo de la lista de respaldo',
+      { isPlatformAdmin: false, email: 'RESPALDO@boosterchile.com' },
+    ],
+  ])('RUT de una cuenta %s → 409 y no escribe', async (_caso, cuenta) => {
+    const d = makeDb({ userByRut: [{ id: 'user-ana', ...cuenta }] });
+
+    const res = await invitar(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(d.insertedUsers).toEqual([]);
+    expect(d.insertedMemberships).toEqual([]);
+  });
+
+  // La respuesta no le dice a la empresa qué correos están en la lista.
+  it('persona nueva con un correo de la lista de respaldo → 409 email_already_registered y no inserta', async () => {
+    const d = makeDb();
+
+    const res = await invitar(buildApp(d.db), { email: 'respaldo@boosterchile.com' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('email_already_registered');
+    expect(JSON.stringify(body)).not.toContain('personal de Booster');
+    expect(d.insertedUsers).toEqual([]);
+    expect(d.insertedMemberships).toEqual([]);
+  });
+
+  it('la lectura de la persona por RUT bloquea su fila hasta el commit', async () => {
+    const d = makeDb();
+
+    await invitar(buildApp(d.db));
+
+    expect(d.locks).toEqual(['update']);
+  });
+
+  it('una persona de la empresa con su correo de la empresa se suma igual', async () => {
+    const d = makeDb();
+
+    const res = await invitar(buildApp(d.db));
+
+    expect(res.status).toBe(201);
+  });
+});
+
+/**
+ * `.specs/correos-solicitudes-panel` SC3 — el correo de la persona nueva se
+ * compara con las cuentas existentes sin distinguir mayúsculas, y una alta
+ * simultánea con el mismo correo responde el mismo 409.
+ */
+describe('POST /me/empresa/miembros — correo sin distinguir mayúsculas (correos-solicitudes-panel SC3)', () => {
+  const YA_REGISTRADO = { error: 'conflict', code: 'email_already_registered' };
+
+  it('persona nueva: la búsqueda de una cuenta con ese correo compara en minúsculas', async () => {
+    const d = makeDb();
+
+    const res = await post(buildApp(d.db), { ...BODY, email: 'Gobe00@Gmail.com' });
+
+    expect(res.status).toBe(201);
+    // 0 = persona por RUT, 1 = cuenta por correo.
+    const predicado = d.wheres[1];
+    if (!(predicado instanceof SQL)) {
+      throw new Error('la búsqueda por correo no recibió un predicado SQL');
+    }
+    const consulta = new PgDialect().sqlToQuery(predicado);
+    expect(consulta.sql).toBe('lower("usuarios"."email") = lower($1)');
+    expect(consulta.params).toEqual(['gobe00@gmail.com']);
+    // La búsqueda por correo no bloquea filas: solo la lectura por RUT.
+    expect(d.locks).toEqual(['update']);
+  });
+
+  it('el correo es de otra cuenta guardada con otras mayúsculas → 409 sin crear cuenta ni membresía', async () => {
+    const d = makeDb({ cuentaConCorreo: [{ id: 'u-mayus' }] });
+
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.insertedUsers).toHaveLength(0);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
+
+  it('el UNIQUE del correo en el INSERT (alta simultánea) → el mismo 409, sin membresía', async () => {
+    const d = makeDb({
+      insertUserError: { code: '23505', constraint: 'usuarios_email_key' },
+    });
+
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual(YA_REGISTRADO);
+    expect(d.insertedMemberships).toHaveLength(0);
+  });
+
+  it('otro error del INSERT de la persona no se traduce a 409: sube', async () => {
+    const d = makeDb({
+      insertUserError: Object.assign(new Error('otra restricción'), { code: '23514' }),
+    });
+
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(500);
+    expect(d.insertedMemberships).toHaveLength(0);
   });
 });

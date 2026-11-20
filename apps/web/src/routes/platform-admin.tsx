@@ -36,7 +36,9 @@ const ACCESOS: ReadonlyArray<{
   to:
     | '/app/platform-admin/signup-requests'
     | '/app/platform-admin/empresas'
+    | '/app/platform-admin/personal'
     | '/app/platform-admin/teltonika'
+    | '/app/platform-admin/flota'
     | '/app/platform-admin/stakeholders'
     | '/app/platform-admin/matching'
     | '/app/platform-admin/observability'
@@ -58,14 +60,26 @@ const ACCESOS: ReadonlyArray<{
   {
     to: '/app/platform-admin/empresas',
     title: 'Empresas',
-    desc: 'Crea una empresa, actívala e invita a quien la va a operar.',
+    desc: 'Crea una empresa, que queda activa, e invita a quien la va a operar.',
     testId: 'empresas-link',
+  },
+  {
+    to: '/app/platform-admin/personal',
+    title: 'Personal de Booster',
+    desc: 'Da de alta a otra persona de Booster con acceso a este panel y genera su código de activación.',
+    testId: 'personal-booster-link',
   },
   {
     to: '/app/platform-admin/teltonika',
     title: 'Teltonika',
     desc: 'Carga el vehículo de una empresa de transportes o escribe el IMEI si ella ya lo cargó.',
     testId: 'teltonika-link',
+  },
+  {
+    to: '/app/platform-admin/flota',
+    title: 'Flota',
+    desc: 'Los vehículos de todas las empresas en el mapa, con su equipo, lo que leen por CAN y sus certificados.',
+    testId: 'flota-link',
   },
   {
     to: '/app/platform-admin/stakeholders',

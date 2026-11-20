@@ -1,3 +1,5 @@
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyActivationPin } from '../../src/services/activation-pin.js';
@@ -15,6 +17,9 @@ beforeAll(() => {
   process.env.API_AUDIENCE = 'https://api.boosterchile.com';
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
+
+/** Lista de respaldo de los tests (`.specs/acceso-panel-plataforma`). */
+const LISTA_RESPALDO = ['respaldo@boosterchile.com'];
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -94,6 +99,10 @@ function makeDbStub(opts: {
   const insertQueue = [...(opts.insertReturning ?? [])];
   const updateQueue = [...(opts.updateReturning ?? [])];
 
+  /** Bloqueos de fila pedidos con `.for(...)`, en orden. */
+  const locks: string[] = [];
+  /** Predicado de cada `update().set().where(...)`, en orden. */
+  const updateWheres: unknown[] = [];
   const nextSelect = () => selectQueue.shift() ?? [];
   const nextInsert = () => insertQueue.shift() ?? [];
   const nextUpdate = () => updateQueue.shift() ?? [];
@@ -105,6 +114,10 @@ function makeDbStub(opts: {
     const where = vi.fn(() => ({
       orderBy,
       limit,
+      for: vi.fn((fuerza: string) => {
+        locks.push(fuerza);
+        return { limit };
+      }),
       then(
         onFulfilled: (rows: Record<string, unknown>[]) => unknown,
         onRejected?: (err: unknown) => unknown,
@@ -135,7 +148,10 @@ function makeDbStub(opts: {
       }
       return Promise.resolve(nextUpdate());
     });
-    const where = vi.fn(() => ({ returning }));
+    const where = vi.fn((predicado: unknown) => {
+      updateWheres.push(predicado);
+      return { returning };
+    });
     const set = vi.fn(() => ({ where }));
     return vi.fn(() => ({ set }));
   }
@@ -155,6 +171,8 @@ function makeDbStub(opts: {
       typeof import('../../src/routes/conductores.js').createConductoresRoutes
     >[0]['db'],
     spies: { select, insert, update, transaction },
+    locks,
+    updateWheres,
   };
 }
 
@@ -175,6 +193,7 @@ async function buildApp(
       typeof import('../../src/routes/conductores.js').createConductoresRoutes
     >[0]['whatsappClient'];
     activacionContentSid?: string;
+    platformAdminEmails?: readonly string[];
   } = {
     role: 'dueno',
   },
@@ -192,7 +211,7 @@ async function buildApp(
       memberships: [],
       activeMembership: {
         membership: { id: 'm-1', role },
-        empresa: { id: EMPRESA_ID, legalName: 'Test SA' },
+        empresa: { id: EMPRESA_ID, legalName: 'Test SA', isTransportista: true },
       },
     });
     await next();
@@ -202,6 +221,7 @@ async function buildApp(
     createConductoresRoutes({
       db,
       logger: opts.logger ?? noopLogger,
+      platformAdminEmails: opts.platformAdminEmails ?? LISTA_RESPALDO,
       ...(opts.firebaseAuth ? { firebaseAuth: opts.firebaseAuth } : {}),
       ...(opts.emailSender ? { emailSender: opts.emailSender } : {}),
       ...(opts.whatsappClient ? { whatsappClient: opts.whatsappClient } : {}),
@@ -659,6 +679,20 @@ describe('conductores routes', () => {
       expect(res.status).toBe(403);
     });
 
+    it('despachador no borra; dueño y admin sí pueden', async () => {
+      const bloqueado = await buildApp(makeDbStub({}).db, { role: 'despachador' });
+      const no = await bloqueado.request(`/conductores/${CONDUCTOR_ID}`, { method: 'DELETE' });
+      expect(no.status).toBe(403);
+      expect(await no.json()).toMatchObject({ code: 'admin_required' });
+
+      const stub = makeDbStub({
+        updateReturning: [[{ id: CONDUCTOR_ID }]],
+      });
+      const admin = await buildApp(stub.db, { role: 'admin' });
+      const si = await admin.request(`/conductores/${CONDUCTOR_ID}`, { method: 'DELETE' });
+      expect(si.status).toBe(200);
+    });
+
     it('soft delete exitoso', async () => {
       const stub = makeDbStub({
         updateReturning: [
@@ -1112,6 +1146,9 @@ describe('POST /conductores/:id/email', () => {
       expect(mensaje.text).toContain(body.activation_pin);
       expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
       expect(firebase.updateUser).not.toHaveBeenCalled();
+      expect(
+        payloadsDeUpdate(stub.spies.update).find((payload) => 'activationPinHash' in payload),
+      ).toHaveProperty('activacionVenceEn', null);
     },
   );
 
@@ -1457,7 +1494,82 @@ describe('POST /conductores — RUT existente guarda phone si estaba vacío', ()
 describe('POST /conductores/:id/telefono', () => {
   const TELEFONO_NUEVO = '+56987654321';
 
-  it('pendiente: guarda el número, regenera el PIN y avisa por WhatsApp', async () => {
+  it.each([
+    ['sin reenviar_invitacion', { phone: TELEFONO_NUEVO }],
+    ['con reenviar_invitacion: false', { phone: TELEFONO_NUEVO, reenviar_invitacion: false }],
+  ])('pendiente %s: guarda el número y conserva el PIN, sin WhatsApp', async (_caso, payload) => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      phone: string;
+      invitacion_reenviada: boolean;
+      cuenta_activa: boolean;
+      activation_pin?: string;
+    };
+    expect(body.phone).toBe(TELEFONO_NUEVO);
+    expect(body.invitacion_reenviada).toBe(false);
+    expect(body.cuenta_activa).toBe(false);
+    expect(body.activation_pin).toBeUndefined();
+    const payloads = payloadsDeUpdate(stub.spies.update);
+    expect(payloads.some((p) => p.phone === TELEFONO_NUEVO)).toBe(true);
+    expect(payloads.some((p) => 'activationPinHash' in p)).toBe(false);
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
+  it('reenviar_invitacion que no es booleano → 400 y no escribe', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO, reenviar_invitacion: 'si' }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('cuenta activa con reenviar_invitacion: true → solo guarda el número', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor({ firebaseUid: 'fb-real-uid', claveNumericaHash: 'hash-clave' })],
+      ],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO, reenviar_invitacion: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invitacion_reenviada: boolean; activation_pin?: string };
+    expect(body.invitacion_reenviada).toBe(false);
+    expect(body.activation_pin).toBeUndefined();
+    expect(payloadsDeUpdate(stub.spies.update).some((p) => 'activationPinHash' in p)).toBe(false);
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
+  it('pendiente con reenviar_invitacion: true: guarda, regenera el PIN y avisa por WhatsApp', async () => {
     const stub = makeDbStub({
       selectQueueRows: [[filaConductor({ phone: '+56911111111' })]],
       updateReturning: [[{ id: USER_ID }]],
@@ -1473,7 +1585,7 @@ describe('POST /conductores/:id/telefono', () => {
     const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+      body: JSON.stringify({ phone: TELEFONO_NUEVO, reenviar_invitacion: true }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -1491,6 +1603,9 @@ describe('POST /conductores/:id/telefono', () => {
     expect(
       payloadsDeUpdate(stub.spies.update).some((payload) => payload.phone === TELEFONO_NUEVO),
     ).toBe(true);
+    expect(
+      payloadsDeUpdate(stub.spies.update).find((payload) => 'activationPinHash' in payload),
+    ).toHaveProperty('activacionVenceEn', null);
     expect(sendContent).toHaveBeenCalledTimes(1);
     expect(sendContent.mock.calls[0]?.[0]).toMatchObject({ to: TELEFONO_NUEVO });
     expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
@@ -1706,6 +1821,7 @@ describe('POST /conductores — reactivación de un conductor retirado', () => {
     const fila = payloads.find((payload) => 'driverStatus' in payload);
     expect(usuario?.phone).toBe('+56957790379');
     expect(usuario?.activationPinHash).not.toBe('hash-previo');
+    expect(usuario).toHaveProperty('activacionVenceEn', null);
     expect(verifyActivationPin(body.activation_pin ?? '', String(usuario?.activationPinHash))).toBe(
       true,
     );
@@ -1759,6 +1875,9 @@ describe('POST /conductores — reactivación de un conductor retirado', () => {
         (payload) => payload.email === EMAIL_REAL && payload.phone === '+56957790379',
       ),
     ).toBe(true);
+    expect(
+      payloadsDeUpdate(stub.spies.update).find((payload) => 'activationPinHash' in payload),
+    ).toHaveProperty('activacionVenceEn', null);
     expect(stub.spies.insert).toHaveBeenCalledTimes(1);
     expect(sendContent).toHaveBeenCalledTimes(1);
   });
@@ -1968,5 +2087,191 @@ describe('conductores — contrato de los 400 de teléfono (TRK-003)', () => {
         "status": 400,
       }
     `);
+  });
+});
+
+/**
+ * `.specs/acceso-panel-plataforma` SC7 — las cuentas del personal de Booster
+ * se gestionan solo desde Booster. Los flujos de la empresa responden 409
+ * `cuenta_personal_booster` sin escribir.
+ */
+describe('conductores — cuenta del personal de Booster (SC7)', () => {
+  const RESPUESTA = {
+    code: 'cuenta_personal_booster',
+    message: 'Esta persona es del personal de Booster; su cuenta se gestiona desde Booster.',
+  };
+  const ALTA = {
+    rut: VALID_RUT,
+    full_name: 'Ana Soto',
+    phone: '+56957790379',
+    email: 'ana.soto@empresa.cl',
+    license_class: 'A5',
+    license_number: 'LIC-1',
+    license_expiry: '2028-06-28',
+  };
+
+  function post(app: Hono, ruta: string, body: unknown) {
+    return app.request(ruta, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true, email: 'ana.soto@boosterchile.com' }],
+    [
+      'con un correo de la lista de respaldo',
+      { isPlatformAdmin: false, email: 'Respaldo@BoosterChile.com' },
+    ],
+  ])('alta con el RUT de una cuenta %s → 409 y no escribe', async (_caso, cuenta) => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Ana Soto',
+            firebaseUid: 'fb-ana',
+            claveNumericaHash: 'h',
+            ...cuenta,
+          },
+        ],
+        [],
+      ],
+    });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, '/conductores', ALTA);
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  // Un correo nuevo de la lista se rechaza como un correo ya registrado: la
+  // respuesta no le dice a la empresa qué correos están en la lista.
+  it('alta de una persona nueva con un correo de la lista de respaldo → 409 email_already_registered y no inserta', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[], []] });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, '/conductores', { ...ALTA, email: 'respaldo@boosterchile.com' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; message?: string };
+    expect(body.code).toBe('email_already_registered');
+    expect(JSON.stringify(body)).not.toContain('personal de Booster');
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('el alta bloquea la fila de la persona hasta el commit', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[], []] });
+    const app = await buildApp(stub.db);
+
+    await post(app, '/conductores', ALTA);
+
+    expect(stub.locks[0]).toBe('update');
+  });
+
+  it('POST /:id/email con un correo nuevo de la lista → 409 email_already_registered, sin escribir', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+      updateReturning: [[{ id: USER_ID }]],
+      insertReturning: [[{ id: 'audit-1' }]],
+    });
+    const app = await buildApp(stub.db, { firebaseAuth: firebaseSinCuentas() });
+
+    const res = await post(app, `/conductores/${CONDUCTOR_ID}/email`, {
+      email: 'respaldo@boosterchile.com',
+    });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['email', 'telefono'] as const)(
+    'POST /:id/%s: el UPDATE exige que la cuenta siga sin marca; si la marcaron antes → 409, sin auditoría',
+    async (campo) => {
+      const stub = makeDbStub({
+        selectQueueRows: [[filaConductor()], []],
+        updateReturning: [[]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const app = await buildApp(stub.db, { firebaseAuth: firebaseSinCuentas() });
+
+      const res = await post(
+        app,
+        `/conductores/${CONDUCTOR_ID}/${campo}`,
+        campo === 'email' ? { email: EMAIL_REAL } : { phone: '+56987654321' },
+      );
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject(RESPUESTA);
+      expect(stub.spies.insert).not.toHaveBeenCalled();
+      const predicado = stub.updateWheres[0];
+      if (!(predicado instanceof SQL)) {
+        throw new Error('el UPDATE no recibió un predicado SQL');
+      }
+      const consulta = new PgDialect().sqlToQuery(predicado);
+      expect(consulta.sql).toContain('"usuarios"."es_admin_plataforma" = ');
+      expect(consulta.params).toContain(false);
+    },
+  );
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true }, EMAIL_REAL],
+    ['con un correo de la lista de respaldo', { email: 'respaldo@boosterchile.com' }, EMAIL_REAL],
+  ])(
+    'POST /:id/email de una cuenta %s → 409, sin escribir ni tocar Firebase',
+    async (_caso, overrides, email) => {
+      const stub = makeDbStub({
+        selectQueueRows: [[filaConductor(overrides)], []],
+        updateReturning: [[{ id: USER_ID }]],
+        insertReturning: [[{ id: 'audit-1' }]],
+      });
+      const firebase = firebaseSinCuentas();
+      const app = await buildApp(stub.db, { firebaseAuth: firebase });
+
+      const res = await post(app, `/conductores/${CONDUCTOR_ID}/email`, { email });
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject(RESPUESTA);
+      expect(stub.spies.update).not.toHaveBeenCalled();
+      expect(stub.spies.insert).not.toHaveBeenCalled();
+      expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['marcada como personal', { isPlatformAdmin: true }],
+    ['con un correo de la lista de respaldo', { email: 'respaldo@boosterchile.com' }],
+  ])('POST /:id/telefono de una cuenta %s → 409 y no escribe', async (_caso, overrides) => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor(overrides)], []],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, `/conductores/${CONDUCTOR_ID}/telefono`, {
+      phone: '+56987654321',
+      reenviar_invitacion: true,
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject(RESPUESTA);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('una cuenta de la empresa con su correo de la empresa sigue igual', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor({ isPlatformAdmin: false })], []],
+      updateReturning: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(stub.db);
+
+    const res = await post(app, `/conductores/${CONDUCTOR_ID}/telefono`, { phone: '+56987654321' });
+
+    expect(res.status).toBe(200);
   });
 });

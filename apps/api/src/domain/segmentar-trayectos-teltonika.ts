@@ -203,6 +203,30 @@ export interface ResumenCombustibleVehiculo {
   combustible: CombustibleVehiculo;
 }
 
+/**
+ * Los AVL de `io_data` que lee este módulo, y solo esos. La lectura de
+ * telemetría proyecta estas claves para no traer el `io_data` entero. Si el
+ * segmentador empieza a leer otro AVL hay que agregarlo acá: un test falla
+ * si lee uno que no está en la lista.
+ *
+ * 1 y 239: ignición · 24 y 81: velocidad · 240: movimiento · 250: viaje ·
+ * 83: consumo acumulado · 84: nivel en litros · 89: nivel en % · 85: rpm ·
+ * 87: odómetro CAN.
+ */
+export const AVL_LEIDOS_POR_SEGMENTADOR = [
+  '1',
+  '24',
+  '81',
+  '83',
+  '84',
+  '85',
+  '87',
+  '89',
+  '239',
+  '240',
+  '250',
+] as const;
+
 export interface PuntoSegmentacion {
   vehiculoId: string;
   empresaId: string;
@@ -274,6 +298,16 @@ export interface TrayectoTeltonika {
    */
   eventLat: number | null;
   eventLon: number | null;
+  /**
+   * Ventana de la baja que marcó el aviso, en ISO. Null sin aviso. En la baja
+   * de golpe es la ventana de la caída. En la gradual va desde la primera
+   * baja que cuenta hasta la última. Si el trayecto tiene las dos, manda el
+   * golpe, igual que el pin.
+   */
+  eventoDesde: string | null;
+  eventoHasta: string | null;
+  /** Litros que bajaron en esa ventana: la caída del golpe o la suma de la gradual. */
+  eventoLitros: number | null;
   sensorCombustible: SensorCombustible;
   ctaSensor: boolean;
   /** Hay porcentaje usable del 84 y falta la capacidad para pasarlo a litros. */
@@ -358,24 +392,31 @@ export function segmentarTrayectosTeltonika(
     trayectos.push(...segmentarVehiculo(delVehiculo, config));
   }
 
-  trayectos.sort((a, b) => {
-    const fin = Date.parse(b.fin) - Date.parse(a.fin);
-    if (fin !== 0) {
-      return fin;
-    }
-    const inicio = Date.parse(b.inicio) - Date.parse(a.inicio);
-    if (inicio !== 0) {
-      return inicio;
-    }
-    if (a.vehiculoId < b.vehiculoId) {
-      return -1;
-    }
-    if (a.vehiculoId > b.vehiculoId) {
-      return 1;
-    }
-    return 0;
-  });
+  trayectos.sort(compararTrayectos);
   return trayectos;
+}
+
+/**
+ * Orden del listado: el que terminó más tarde primero; a igual fin, el que
+ * empezó más tarde; a igual todo, por vehículo. Quien segmenta por tandas
+ * ordena el total con esta misma regla.
+ */
+export function compararTrayectos(a: TrayectoTeltonika, b: TrayectoTeltonika): number {
+  const fin = Date.parse(b.fin) - Date.parse(a.fin);
+  if (fin !== 0) {
+    return fin;
+  }
+  const inicio = Date.parse(b.inicio) - Date.parse(a.inicio);
+  if (inicio !== 0) {
+    return inicio;
+  }
+  if (a.vehiculoId < b.vehiculoId) {
+    return -1;
+  }
+  if (a.vehiculoId > b.vehiculoId) {
+    return 1;
+  }
+  return 0;
 }
 
 const RANGO_COMBUSTIBLE: Record<CombustibleVehiculo, number> = {
@@ -527,7 +568,13 @@ function segmentarVehiculo(
     finMs: number;
     trayecto: Omit<
       TrayectoTeltonika,
-      'posibleRoboCombustible' | 'posibleRoboHormiga' | 'eventLat' | 'eventLon'
+      | 'posibleRoboCombustible'
+      | 'posibleRoboHormiga'
+      | 'eventLat'
+      | 'eventLon'
+      | 'eventoDesde'
+      | 'eventoHasta'
+      | 'eventoLitros'
     >;
   }> = [];
 
@@ -562,6 +609,7 @@ function segmentarVehiculo(
 
   const marcados = new Set<number>();
   const geoEvento = new Map<number, { lat: number; lon: number }>();
+  const ventanaEvento = new Map<number, { desdeMs: number; hastaMs: number; litros: number }>();
   if (sensor === 'presente') {
     for (const robo of robos) {
       for (const indice of indicesDelRobo(crudos, robo)) {
@@ -570,6 +618,13 @@ function segmentarVehiculo(
           continue;
         }
         marcados.add(indice);
+        if (!ventanaEvento.has(indice)) {
+          ventanaEvento.set(indice, {
+            desdeMs: robo.desdeMs,
+            hastaMs: robo.hastaMs,
+            litros: robo.deltaL,
+          });
+        }
         if (!geoEvento.has(indice) && robo.eventLat != null && robo.eventLon != null) {
           geoEvento.set(indice, { lat: robo.eventLat, lon: robo.eventLon });
         }
@@ -601,6 +656,15 @@ function segmentarVehiculo(
         continue;
       }
       marcadosHormiga.add(indice);
+      const primera = califica[0];
+      const ultima = califica[califica.length - 1];
+      if (!ventanaEvento.has(indice) && primera && ultima) {
+        ventanaEvento.set(indice, {
+          desdeMs: primera.desdeMs,
+          hastaMs: ultima.hastaMs,
+          litros: califica.reduce((total, episodio) => total + episodio.deltaL, 0),
+        });
+      }
       if (!geoEvento.has(indice)) {
         const geo = primerGeoEpisodio(califica);
         if (geo) {
@@ -612,12 +676,16 @@ function segmentarVehiculo(
 
   return crudos.map((c, i) => {
     const geo = geoEvento.get(i);
+    const ventana = ventanaEvento.get(i);
     return {
       ...c.trayecto,
       posibleRoboCombustible: marcados.has(i),
       posibleRoboHormiga: marcadosHormiga.has(i),
       eventLat: geo?.lat ?? null,
       eventLon: geo?.lon ?? null,
+      eventoDesde: ventana ? new Date(ventana.desdeMs).toISOString() : null,
+      eventoHasta: ventana ? new Date(ventana.hastaMs).toISOString() : null,
+      eventoLitros: ventana ? Math.round(ventana.litros * 10) / 10 : null,
     };
   });
 }
@@ -1197,6 +1265,8 @@ function consumoCubierto(
 interface VentanaRobo {
   desdeMs: number;
   hastaMs: number;
+  /** Litros que bajaron entre el inicio y el fin de la ventana. */
+  deltaL: number;
   eventLat: number | null;
   eventLon: number | null;
 }
@@ -1244,6 +1314,7 @@ function detectarRobos(
       robos.push({
         desdeMs: inicio.tMs,
         hastaMs: fin.tMs,
+        deltaL: caida,
         eventLat: geo?.lat ?? null,
         eventLon: geo?.lon ?? null,
       });
@@ -1253,9 +1324,7 @@ function detectarRobos(
   return robos;
 }
 
-interface Episodio extends VentanaRobo {
-  deltaL: number;
-}
+type Episodio = VentanaRobo;
 
 /**
  * Caídas de al menos 2 L en ≤5 min con v ≤ 5. Los fines a menos de 10 min

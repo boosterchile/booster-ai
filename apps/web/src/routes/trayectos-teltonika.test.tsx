@@ -189,7 +189,7 @@ describe('TrayectosTeltonikaRoute', () => {
     renderPage();
     expect(await screen.findByRole('table')).toBeInTheDocument();
     expect(screen.getByText('ABCD12')).toBeInTheDocument();
-    expect(screen.getByText('posible robo combustible')).toBeInTheDocument();
+    expect(screen.getByText('desviación de combustible')).toBeInTheDocument();
     expect(screen.getByText('80,0 L')).toBeInTheDocument();
     expect(screen.getByText('70,0 L')).toBeInTheDocument();
     expect(screen.getByText('4,25 km/L')).toBeInTheDocument();
@@ -247,7 +247,7 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.getAllByText(/costo de operación/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/\d[\d.,]* L\/100 km/)).not.toBeInTheDocument();
     expect(screen.getByText('ABCD12')).toBeInTheDocument();
-    expect(screen.queryByText('posible robo combustible')).not.toBeInTheDocument();
+    expect(screen.queryByText('desviación de combustible')).not.toBeInTheDocument();
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
@@ -304,7 +304,7 @@ describe('TrayectosTeltonikaRoute', () => {
     const mapa = await screen.findByTestId('mapa-evento');
     expect(mapa).toHaveAttribute('data-lat', '-33.4');
     expect(mapa).toHaveAttribute('data-lng', '-70.6');
-    expect(screen.getByText('posible robo combustible')).toBeInTheDocument();
+    expect(screen.getByText('desviación de combustible')).toBeInTheDocument();
     expect(screen.queryByText('sin ubicación')).not.toBeInTheDocument();
   });
 
@@ -312,7 +312,7 @@ describe('TrayectosTeltonikaRoute', () => {
     vi.spyOn(api, 'get').mockResolvedValue({ ...listadoConRobo, total: 1 });
     routerState.search = { detalle: 't-1' };
     renderPage();
-    expect(await screen.findByText('posible robo combustible')).toBeInTheDocument();
+    expect(await screen.findByText('desviación de combustible')).toBeInTheDocument();
     expect(screen.getByText('sin ubicación')).toBeInTheDocument();
     expect(screen.getByText(/no marcamos un pin/)).toBeInTheDocument();
     expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
@@ -359,7 +359,7 @@ describe('TrayectosTeltonikaRoute', () => {
     routerState.search = { detalle: 't-1' };
     renderPage();
     expect(
-      await screen.findByText(/no tiene un aviso de posible robo de combustible/),
+      await screen.findByText(/no tiene un aviso de desviación de combustible/),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
     expect(screen.queryByText('sin ubicación')).not.toBeInTheDocument();
@@ -408,8 +408,8 @@ describe('TrayectosTeltonikaRoute', () => {
       ],
     });
     const view = renderPage();
-    expect(await screen.findByText('posible robo hormiga')).toBeInTheDocument();
-    expect(screen.queryByText('posible robo combustible')).not.toBeInTheDocument();
+    expect(await screen.findByText('desviación gradual')).toBeInTheDocument();
+    expect(screen.queryByText('desviación de combustible')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ver en el mapa' })).toHaveAttribute(
       'href',
       '/app/trayectos?detalle=t-1',
@@ -423,8 +423,8 @@ describe('TrayectosTeltonikaRoute', () => {
     const mapa = await screen.findByTestId('mapa-evento');
     expect(mapa).toHaveAttribute('data-lat', '-33.41');
     expect(mapa).toHaveAttribute('data-lng', '-70.61');
-    expect(screen.getByText('posible robo hormiga')).toBeInTheDocument();
-    expect(screen.queryByText(/no tiene un aviso de posible robo/)).not.toBeInTheDocument();
+    expect(screen.getByText('desviación gradual')).toBeInTheDocument();
+    expect(screen.queryByText(/no tiene un aviso de desviación/)).not.toBeInTheDocument();
   });
 
   it('pagina hacia los trayectos más viejos', async () => {
@@ -559,10 +559,10 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     renderPage();
     const leyenda = await screen.findByRole('region', { name: 'Qué informa cada camión' });
     expect(leyenda).toHaveTextContent(
-      'JLKT54 informa el nivel del estanque en litros: ves litros, km/L y el aviso de posible robo.',
+      'JLKT54 informa el nivel del estanque en litros: ves litros, km/L y el aviso de desviación.',
     );
     expect(leyenda).toHaveTextContent(
-      'KFKW23, PLFL57 y RCPC20 informan los litros consumidos: ves litros y km/L. El aviso de posible robo necesita el nivel en litros.',
+      'KFKW23, PLFL57 y RCPC20 informan los litros consumidos: ves litros y km/L. El aviso de desviación necesita el nivel en litros.',
     );
     expect(leyenda).toHaveTextContent(
       'JWTH77 informa el nivel en %, no en litros: sin la capacidad del estanque no calculamos litros ni km/L.',

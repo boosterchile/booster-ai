@@ -69,7 +69,7 @@ const CHILE_LNG_MAX = -66;
  * el pin, la sugerencia o el link las llenan. Sin ellas el viaje se crea
  * igual y, en el origen, Routes API sigue como respaldo.
  */
-const lugarSchema = z
+export const lugarSchema = z
   .object({
     address_raw: addressSchema,
     region_code: regionRequeridaSchema,
@@ -122,78 +122,25 @@ const lugarSchema = z
     }
   });
 
-export const tripRequestCreateInputSchema = z
+/**
+ * Ventana de recogida. El bot WhatsApp manda raw text; aquí esperamos ISO
+ * 8601 datetimes parseados por el cliente. Si solo hay fecha, ambos campos
+ * comparten valor (rango = día completo). Reglas:
+ *   - `start_at` debe ser futuro con margen (`MIN_PICKUP_LEAD_MS`).
+ *   - `end_at` debe ser estrictamente posterior a `start_at`.
+ *   - El rango total no puede exceder `MAX_PICKUP_WINDOW_MS` (30 días).
+ * Se reutiliza en la propuesta de cambio (`cambio-carga`).
+ */
+export const pickupWindowSchema = z
   .object({
-    /** Origen — donde se recoge la carga. */
-    origin: lugarSchema,
-    /** Destino — donde se entrega. */
-    destination: lugarSchema,
-    cargo: z.object({
-      cargo_type: cargoTypeSchema,
-      /** Peso en kg. Filtra vehículos con capacidad menor. */
-      weight_kg: z
-        .number({ message: 'Ingresa el peso en kg' })
-        .int('Ingresa el peso en kg')
-        .positive('El peso tiene que ser mayor a 0')
-        .max(100_000, 'El peso máximo es 100.000 kg'),
-      volume_m3: z.number().int().positive().max(200).optional(),
-      description: z.string().max(1_000).optional(),
-    }),
-    /**
-     * Ventana de pickup. El bot WhatsApp manda raw text; aquí esperamos ISO
-     * 8601 datetimes parseados por el cliente. Si solo hay fecha, ambos
-     * campos comparten valor (rango = día completo).
-     *
-     * Reglas adicionales (`superRefine` abajo):
-     *   - `start_at` debe ser futuro con margen (`MIN_PICKUP_LEAD_MS`).
-     *   - `end_at` debe ser estrictamente posterior a `start_at`.
-     *   - El rango total no puede exceder `MAX_PICKUP_WINDOW_MS` (30 días).
-     */
-    pickup_window: z.object({
-      start_at: z.string().datetime(),
-      end_at: z.string().datetime(),
-    }),
-    /** Precio sugerido por shipper en CLP. Null = pricing-engine sugiere. */
-    proposed_price_clp: z.number().int().nonnegative().nullable(),
-    /**
-     * ADR-079 §2 — modalidad comercial (define la tasa de comisión).
-     * `programada` exige contrato programado habilitado; default `spot`.
-     */
-    modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
-    /**
-     * Phase 5 PR-L3b — Datos opcionales del consignee (destinatario en
-     * el lugar de entrega). Si están presentes:
-     *   - El link público de tracking se envía DIRECTAMENTE al
-     *     consignee vía WhatsApp al asignar (vs forwarding manual del
-     *     shipper).
-     *   - El destinatario aparece como rol abstracto en el chat
-     *     conductor↔destinatario (futuro PR-L5).
-     *
-     * Opt-in deliberado: el shipper típico tiene la relación con el
-     * consignee y prefiere NO compartir su número con plataforma —
-     * solo quien quiere la experiencia "Uber-like" para su recipient
-     * llena estos campos.
-     */
-    consignee: z
-      .object({
-        /** Nombre legible del destinatario. Para mostrar en saludo del template. */
-        name: z.string().trim().min(1).max(100).optional(),
-        /**
-         * Phone E.164 (con +). Validamos formato pero NO carrier-side —
-         * Twilio rechazará al envío si el número no tiene WhatsApp.
-         */
-        phone_e164: z
-          .string()
-          .regex(/^\+\d{8,15}$/, 'Debe estar en formato E.164 (+56912345678)')
-          .optional(),
-      })
-      .optional(),
+    start_at: z.string().datetime(),
+    end_at: z.string().datetime(),
   })
-  .superRefine((data, ctx) => {
-    const startMs = Date.parse(data.pickup_window.start_at);
-    const endMs = Date.parse(data.pickup_window.end_at);
+  .superRefine((ventana, ctx) => {
+    const startMs = Date.parse(ventana.start_at);
+    const endMs = Date.parse(ventana.end_at);
 
-    // Z.string().datetime() ya validó formato; parseInt no debería fallar.
+    // Z.string().datetime() ya validó formato; Date.parse no debería fallar.
     if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
       return;
     }
@@ -201,7 +148,7 @@ export const tripRequestCreateInputSchema = z
     if (startMs <= Date.now() + MIN_PICKUP_LEAD_MS - 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['pickup_window', 'start_at'],
+        path: ['start_at'],
         message: 'La ventana debe empezar al menos 30 minutos en el futuro',
       });
     }
@@ -209,19 +156,120 @@ export const tripRequestCreateInputSchema = z
     if (endMs <= startMs) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['pickup_window', 'end_at'],
+        path: ['end_at'],
         message: '"Hasta" debe ser estrictamente posterior a "Desde"',
       });
     } else if (endMs - startMs > MAX_PICKUP_WINDOW_MS) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['pickup_window', 'end_at'],
+        path: ['end_at'],
         message: 'La ventana de pickup no puede exceder 30 días',
       });
     }
   });
 
+/** Carga: tipo, peso, volumen y descripción. Se reutiliza en `cambio-carga`. */
+export const cargoWeightKgSchema = z
+  .number({ message: 'Ingresa el peso en kg' })
+  .int('Ingresa el peso en kg')
+  .positive('El peso tiene que ser mayor a 0')
+  .max(100_000, 'El peso máximo es 100.000 kg');
+export const cargoVolumeM3Schema = z.number().int().positive().max(200);
+export const cargoDescriptionSchema = z.string().max(1_000);
+
+/** editar-anular-cargas §12-P4 — topes de los datos libres de la carga. */
+export const NOTAS_MAX = 1000;
+export const REFERENCIA_MAX = 100;
+
+/** Texto opcional al crear: sin espacios; vacío cuenta como ausente. */
+function textoOpcionalCreacion(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max, `Hasta ${max} caracteres`)
+    .optional()
+    .transform((v) => (v ? v : undefined));
+}
+
+/**
+ * Datos opcionales del destinatario. Se reutiliza en la edición de datos
+ * libres (`cambio-carga`).
+ */
+export const consigneeSchema = z.object({
+  /** Nombre legible del destinatario. Para mostrar en saludo del template. */
+  name: z.string().trim().min(1).max(100).optional(),
+  /**
+   * Phone E.164 (con +). Validamos formato pero NO carrier-side —
+   * Twilio rechazará al envío si el número no tiene WhatsApp.
+   */
+  phone_e164: z
+    .string()
+    .regex(/^\+\d{8,15}$/, 'Debe estar en formato E.164 (+56912345678)')
+    .optional(),
+  /**
+   * seguimiento-por-correo — correo opcional. Si está, el link de
+   * tracking también le llega por correo al asignar. Se guarda sin
+   * espacios y en minúsculas.
+   */
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email('Ingresa un correo válido, como nombre@empresa.cl')
+    .max(254)
+    .optional(),
+});
+
+export const tripRequestCreateInputSchema = z.object({
+  /** Origen — donde se recoge la carga. */
+  origin: lugarSchema,
+  /** Destino — donde se entrega. */
+  destination: lugarSchema,
+  cargo: z.object({
+    cargo_type: cargoTypeSchema,
+    /** Peso en kg. Filtra vehículos con capacidad menor. */
+    weight_kg: cargoWeightKgSchema,
+    volume_m3: cargoVolumeM3Schema.optional(),
+    description: cargoDescriptionSchema.optional(),
+  }),
+  /** Ventana de recogida (reglas en `pickupWindowSchema`). */
+  pickup_window: pickupWindowSchema,
+  /** Precio sugerido por shipper en CLP. Null = pricing-engine sugiere. */
+  proposed_price_clp: z.number().int().nonnegative().nullable(),
+  /**
+   * ADR-079 §2 — modalidad comercial (define la tasa de comisión).
+   * `programada` exige contrato programado habilitado; default `spot`.
+   */
+  modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+  /**
+   * Phase 5 PR-L3b — Datos opcionales del consignee (destinatario en
+   * el lugar de entrega). Si están presentes:
+   *   - El link público de tracking se envía DIRECTAMENTE al
+   *     consignee vía WhatsApp al asignar (vs forwarding manual del
+   *     shipper).
+   *   - El destinatario aparece como rol abstracto en el chat
+   *     conductor↔destinatario (futuro PR-L5).
+   *
+   * Opt-in deliberado: el shipper típico tiene la relación con el
+   * consignee y prefiere NO compartir su número con plataforma —
+   * solo quien quiere la experiencia "Uber-like" para su recipient
+   * llena estos campos.
+   */
+  consignee: consigneeSchema.optional(),
+  /** editar-anular-cargas §12-P4 — notas para el transportista y el conductor. */
+  notes: textoOpcionalCreacion(NOTAS_MAX),
+  /** editar-anular-cargas §12-P4 — referencia del generador (p. ej. su número de pedido). */
+  reference: textoOpcionalCreacion(REFERENCIA_MAX),
+});
+
 export type TripRequestCreateInput = z.infer<typeof tripRequestCreateInputSchema>;
+
+/**
+ * Body de `PUT /trip-requests-v2/:id` (editar-anular-cargas §6.1): el mismo
+ * formulario de creación, con sus reglas, incluidas notas y referencia.
+ */
+export const tripRequestEditInputSchema = tripRequestCreateInputSchema;
+export type TripRequestEditInput = TripRequestCreateInput;
 
 /**
  * Constantes exportadas para que el cliente (form) muestre el mismo

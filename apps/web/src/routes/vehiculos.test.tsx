@@ -378,7 +378,41 @@ describe('VehicleForm — validación de rangos y 400 legible', () => {
     fireEvent.change(screen.getByLabelText(/Capacidad \(kg\)/), {
       target: { value: capacityKg },
     });
+    // matching-desde-la-carga §11-1: carrocería obligatoria en alta/edición.
+    fireEvent.change(screen.getByLabelText(/Carrocería/), { target: { value: 'plano' } });
   }
+
+  // matching-desde-la-carga parte 6 / §11-1 y §3.10.
+  it('sin carrocería → error de campo, sin llamar al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
+    renderNuevo();
+    fireEvent.change(screen.getByLabelText(/Patente/), { target: { value: 'JLKT54' } });
+    fireEvent.change(screen.getByLabelText(/Capacidad \(kg\)/), { target: { value: '10000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Elige la carrocería del vehículo')).toBeInTheDocument(),
+    );
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('con carrocería y unidad de tercero → el body manda body_type y es_de_tercero', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      vehicle: { id: 'v-nuevo', plate: 'JLKT54' },
+    });
+    renderNuevo();
+    fillBase();
+    fireEvent.click(screen.getByLabelText(/Unidad de un tercero/));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    const body = postSpy.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      plate: 'JLKT54',
+      body_type: 'plano',
+      es_de_tercero: true,
+    });
+  });
 
   it('capacity_m3 fuera de rango → error de campo, sin llamar al API', async () => {
     const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
@@ -513,12 +547,16 @@ function makeVehicleRow(
     status: 'activo' | 'mantenimiento' | 'retirado';
     capacidad_estanque_l: number | null;
     fuente_combustible_can: '84' | '83' | '89' | 'sin_sensor';
+    body_type: string | null;
+    es_de_tercero: boolean;
   }> = {},
 ) {
   return {
     id: 'veh-1',
     plate: 'ABCD12',
     type: 'camion_pequeno',
+    body_type: 'plano',
+    es_de_tercero: false,
     capacity_kg: 5000,
     capacity_m3: null,
     year: 2020,
@@ -1045,8 +1083,8 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.getAllByText(/42,5 km/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/10,0 L/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Combustible').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Hormiga').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/posible robo/i)).toBeNull();
+    expect(screen.getAllByText('Gradual').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/robo/i)).toBeNull();
     expect(screen.getByText(/1 alerta en 30 días/)).toBeInTheDocument();
     expect(screen.getByTestId('hub-tarjeta-alertas').className).toContain('border-amber-200');
 
@@ -1411,6 +1449,55 @@ describe('VehiculoDetallePage — hub', () => {
       },
     });
     await waitFor(() => expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull());
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+  });
+
+  it('si la ubicación falla, el mapa dice error y no «sin GPS»', async () => {
+    let fallar = true;
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        if (fallar) {
+          throw new ApiError(500, 'internal', null);
+        }
+        return {
+          ubicacion: {
+            timestamp_device: new Date().toISOString(),
+            latitude: -33.4,
+            longitude: -70.6,
+            speed_kmh: 0,
+          },
+        };
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByTestId('hub-mapa-error')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos cargar la posición.');
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+    expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull();
+    fallar = false;
+    fireEvent.click(
+      within(screen.getByTestId('hub-mapa-error')).getByRole('button', { name: /^reintentar$/i }),
+    );
+    await waitFor(() => expect(screen.queryByTestId('hub-mapa-error')).toBeNull());
     expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
   });
 

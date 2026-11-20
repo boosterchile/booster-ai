@@ -139,10 +139,13 @@ export function abrirBucketLocal(bucket: string): BucketCertificados {
   return {
     file(path: string): ArchivoBucket {
       return {
-        async save(data) {
+        async save(data, options) {
           const destino = rutaDe(path);
           await mkdir(dirname(destino), { recursive: true });
-          await writeFile(destino, data);
+          // Imita la precondición de GCS: con ifGenerationMatch 0 el objeto
+          // no debe existir, y si existe falla con EEXIST sin pisarlo.
+          const soloSiNoExiste = options?.preconditionOpts?.ifGenerationMatch === 0;
+          await writeFile(destino, data, soloSiNoExiste ? { flag: 'wx' } : undefined);
         },
         async exists() {
           try {

@@ -10,7 +10,14 @@ import { fileURLToPath } from 'node:url';
 export const CREDENCIAL_F = {
   gen: { rut: '77777777-7', clave: '482913', tipo: 'carga' },
   tra: { rut: '78787878-4', clave: '482913', tipo: 'transporte' },
-  admin: { rut: '79797979-1', clave: '482913', tipo: 'booster' },
+  /** ADR-093: Booster entra con correo + clave Firebase (no RUT). */
+  admin: {
+    email: 'e2e-admin@boosterchile.invalid',
+    password: 'E2eAdmin99',
+    tipo: 'booster' as const,
+    /** Conservado para asserts / invitaciones que aún piden RUT. */
+    rut: '79797979-1',
+  },
   stake: { rut: '75757575-2', clave: '864209', tipo: 'stakeholder' },
 } as const;
 

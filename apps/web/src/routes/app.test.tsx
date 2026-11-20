@@ -48,6 +48,7 @@ vi.mock('../lib/api-client.js', async () => {
 });
 
 const { AppRoute } = await import('./app.js');
+const { elegirVistaEmpresa } = await import('../lib/vista-admin.js');
 
 function respuestaVacia(path: string): unknown {
   if (path.startsWith('/offers/mine')) {
@@ -81,6 +82,12 @@ function respuestaVacia(path: string): unknown {
   }
   if (path === '/conductores') {
     return { conductores: [{ id: 'c1' }] };
+  }
+  if (path.startsWith('/trip-requests-v2')) {
+    return { trip_requests: [] };
+  }
+  if (path.startsWith('/certificates')) {
+    return { certificates: [] };
   }
   return {};
 }
@@ -119,6 +126,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  window.sessionStorage.clear();
 });
 
 describe('AppRoute', () => {
@@ -127,15 +135,18 @@ describe('AppRoute', () => {
     expect(container.querySelector('h1')).toBeNull();
   });
 
-  it('transportista y generador → saludo nuevo y la sección de generador debajo', async () => {
+  it('transportista y generador → el inicio mixto, sin neto ni la card vieja', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     renderWithQueryClient(<AppRoute />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/Felipe/);
     expect(screen.queryByRole('heading', { name: 'Bienvenido a Booster' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('Booster SpA').length).toBeGreaterThan(0);
-    expect(screen.getByText('· Transportista')).toBeInTheDocument();
-    expect(await screen.findByText(/Origen, destino, tipo de carga/)).toBeInTheDocument();
-    expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
+    expect(await screen.findByTestId('inicio-mixta')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Todo' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Ofertas para tu flota')).toBeInTheDocument();
+    expect(screen.getByText('Mis cargas publicadas')).toBeInTheDocument();
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/neto/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
   it('carrier → el acceso Ofertas conserva el destino', () => {
@@ -171,18 +182,37 @@ describe('AppRoute', () => {
     expect(screen.getByTestId('inicio-accesos')).toHaveClass('md:hidden');
   });
 
-  it('shipper → muestra card "Crear carga"', () => {
+  it('empresa dual ve en un solo inicio las ofertas de su flota y sus cargas', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, true) };
+    renderWithQueryClient(<AppRoute />);
+    expect(await screen.findByTestId('inicio-mixta')).toBeInTheDocument();
+    expect(screen.getByText('Ofertas para tu flota')).toBeInTheDocument();
+    expect(screen.getByText('Mis cargas publicadas')).toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
+  });
+
+  it('transportista puro no ve las cards de generador', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('dashboard-link-ofertas')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Como generador de carga' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
+  });
+
+  it('shipper → muestra el inicio del generador y la CTA de publicar', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);
-    // "Crear carga" también aparece en el sidebar; apuntamos a la descripción
-    // única de la CARD del dashboard.
-    expect(screen.getByText(/Origen, destino, tipo de carga/)).toBeInTheDocument();
+    expect(await screen.findByTestId('inicio-generador')).toBeInTheDocument();
+    expect(screen.getAllByText('Publicar carga').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
   });
 
   it('el shell + dashboard operador no tiene violaciones de a11y (vitest-axe)', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, true) };
     const { baseElement } = renderWithQueryClient(<AppRoute />);
-    await screen.findByText('Nada pendiente por ahora');
+    await screen.findByText('Sin ofertas nuevas');
     // color-contrast off: jsdom no computa layout/canvas (lo cubre ui-tokens).
     const results = await axe(baseElement, { rules: { 'color-contrast': { enabled: false } } });
     // Sin matcher (el .d.ts de vitest-axe exporta el matcher type-only): axe cubre
@@ -232,10 +262,11 @@ describe('AppRoute', () => {
     expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
   });
 
-  it('generador puro conserva Bienvenido a Booster', () => {
+  it('generador puro saluda por nombre y no monta el inicio del transportista', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);
-    expect(screen.getByRole('heading', { name: 'Bienvenido a Booster' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Felipe/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bienvenido a Booster' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
   });
@@ -281,7 +312,7 @@ describe('AppRoute', () => {
   it('click Salir (vía menú mobile) → signOutUser', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     renderWithQueryClient(<AppRoute />);
-    await screen.findByText('Nada pendiente por ahora');
+    await screen.findByText('Sin ofertas nuevas');
     // En mobile, el botón Salir vive dentro del panel del menú
     // hamburguesa. Abrir menú primero.
     const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
@@ -295,7 +326,8 @@ describe('AppRoute', () => {
   it('conteo 0 no muestra la fila y el estado queda calmo', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
     renderWithQueryClient(<AppRoute />);
-    expect(await screen.findByText('Nada pendiente por ahora')).toBeInTheDocument();
+    expect(await screen.findByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(screen.getByText('Sin retiros próximos')).toBeInTheDocument();
     expect(screen.queryByText(/ofertas por responder/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sin conductor/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/documento vencido/i)).not.toBeInTheDocument();
@@ -320,7 +352,8 @@ describe('AppRoute', () => {
     expect(screen.getByText('Dejemos tu empresa lista para recibir cargas')).toBeInTheDocument();
     expect(screen.getByText('1 de 4')).toBeInTheDocument();
     expect(screen.queryByText(/10 minutos/)).not.toBeInTheDocument();
-    expect(screen.getByText('Nada pendiente por ahora')).toBeInTheDocument();
+    expect(screen.getByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(screen.getByText('Tu negocio hoy')).toBeInTheDocument();
     expect(screen.queryByText('Tu operación hoy')).not.toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Agrega tu primer vehículo/ })).toHaveAttribute(
@@ -354,7 +387,7 @@ describe('AppRoute', () => {
     renderWithQueryClient(<AppRoute />);
     expect(await screen.findByText('No cargó Cumplimiento')).toBeInTheDocument();
     expect(screen.getByText('El resto del Inicio sigue funcionando')).toBeInTheDocument();
-    expect(await screen.findByText('1 oferta por responder')).toBeInTheDocument();
+    expect(await screen.findByText('1 oferta nueva')).toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
     const antes = apiGetSpy.mock.calls.filter((call) => call[0] === '/cumplimiento').length;
     screen.getByTestId('reintentar-cumplimiento').click();
@@ -418,13 +451,12 @@ describe('AppRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
     renderWithQueryClient(<AppRoute />);
-    expect(await screen.findByText('1 oferta por responder')).toBeInTheDocument();
-    expect(screen.getByText('1 servicio sin conductor')).toBeInTheDocument();
-    expect(screen.getByText(/Quilicura/)).toBeInTheDocument();
-    expect(screen.getByText('1 documento vencido')).toBeInTheDocument();
-    expect(screen.getByText(/\+2 por vencer en 30 días/)).toBeInTheDocument();
-    expect(screen.getByText('1 vehículo sin señal')).toBeInTheDocument();
-    expect(screen.getByText('1 por retirar')).toBeInTheDocument();
+    expect(await screen.findByText('1 oferta nueva')).toBeInTheDocument();
+    expect(screen.getAllByText('Sin conductor').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Quilicura/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 documento vencido').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\+2 por vencer en 30 días/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 sin señal').length).toBeGreaterThan(0);
     expect(screen.getByText(/sin GPS/)).toBeInTheDocument();
     expect(screen.getByTestId('dashboard-link-ofertas')).toHaveTextContent('1');
     expect(screen.getByTestId('dashboard-link-servicios')).toHaveTextContent('1');
@@ -451,7 +483,7 @@ describe('AppRoute', () => {
     expect(screen.getAllByText('No cargó Flota').length).toBeGreaterThan(0);
     expect(screen.getByText('No cargó Cumplimiento')).toBeInTheDocument();
     expect(screen.getAllByText('El resto del Inicio sigue funcionando').length).toBeGreaterThan(0);
-    screen.getByTestId('reintentar-kpi-servicios').click();
+    screen.getByTestId('reintentar-servicios').click();
     expect((await screen.findAllByText('No cargó Servicios')).length).toBeGreaterThan(0);
   });
 
@@ -495,5 +527,61 @@ describe('AppRoute', () => {
     await screen.findByText('No cargó Vehículos');
     const despues = apiGetSpy.mock.calls.filter((call) => call[0] === '/vehiculos').length;
     expect(despues).toBeGreaterThan(antes);
+  });
+});
+
+/**
+ * acceso-usuarios-empresa-panel SC9 — la persona de Booster que también es de
+ * una empresa puede usar la web de su empresa. Al entrar a `/app` sigue yendo
+ * al panel, salvo que en esta pestaña haya elegido «Ir a mi empresa».
+ */
+describe('AppRoute — persona de Booster con empresa (SC9)', () => {
+  function adminConEmpresa(): MeOnboarded {
+    const me = makeMe('admin', false, true);
+    me.user = { ...me.user, is_platform_admin: true };
+    return me;
+  }
+
+  it('sin elección → redirige al panel, como hoy', () => {
+    providedContext = { kind: 'onboarded', me: adminConEmpresa() };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
+  it('con «Ir a mi empresa» elegido → muestra la web de su empresa', () => {
+    elegirVistaEmpresa();
+    providedContext = { kind: 'onboarded', me: adminConEmpresa() };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    // El inicio de su empresa (generadora pura), no el panel.
+    expect(screen.getByTestId('inicio-generador')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Felipe/ })).toBeInTheDocument();
+  });
+
+  it('con una membresía de conductor → redirige al panel, no al shell del conductor', () => {
+    const me = makeMe('conductor', true, false);
+    me.user = { ...me.user, is_platform_admin: true };
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
+  it('con la elección pero sin empresa activa → redirige al panel', () => {
+    elegirVistaEmpresa();
+    const me = adminConEmpresa();
+    me.active_membership = null;
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
+  it('si sessionStorage lanza → redirige al panel, como hoy', () => {
+    elegirVistaEmpresa();
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    providedContext = { kind: 'onboarded', me: adminConEmpresa() };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
   });
 });

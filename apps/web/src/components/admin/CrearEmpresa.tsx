@@ -9,7 +9,8 @@ import { REGIONS_CHILE } from '../../lib/regions-chile.js';
  *
  * Un generador de carga y un transportista son la misma fila `empresas`,
  * con uno u otro rol (o los dos). No crea la persona ni su clave: eso queda
- * en «Agregar persona a una empresa». La ficha nace en verificación.
+ * en «Agregar persona a una empresa». La ficha nace activa: el admin de Booster
+ * que la crea es la verificación (acceso-usuarios-empresa-panel SC5).
  */
 
 interface EmpresaCreada {
@@ -107,9 +108,9 @@ export function CrearEmpresa({ onCreated }: { onCreated: (empresaId: string) => 
           <h2 className="font-semibold text-neutral-900">Crear empresa</h2>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
             Da de alta la ficha legal. Un generador de carga publica cargas; un transportista las
-            mueve. Puedes marcar los dos. La empresa queda pendiente de verificación y no entra al
-            matching hasta que la actives. La persona se agrega aparte, con su código: aquí no se
-            crea ninguna clave.
+            mueve. Puedes marcar los dos. La empresa queda activa: apenas su gente active la cuenta,
+            puede crear cargas o recibir ofertas. La persona se agrega aparte, con su código: aquí
+            no se crea ninguna clave.
           </p>
         </div>
       </div>
@@ -236,9 +237,10 @@ export function CrearEmpresa({ onCreated }: { onCreated: (empresaId: string) => 
 
       {creada && (
         <p className="mt-3 text-neutral-800 text-sm" data-testid="empresa-creada">
-          {creada.razon_social} ({creada.rut}) quedó en verificación
-          {roles.length > 0 ? ` como ${roles.join(' y ')}` : ''}. Actívala cuando corresponda y
-          agrega a la primera persona en el formulario de abajo.
+          {creada.razon_social} ({creada.rut}){' '}
+          {creada.estado === 'activa' ? 'quedó activa' : 'quedó en verificación'}
+          {roles.length > 0 ? ` como ${roles.join(' y ')}` : ''}. Agrega a la primera persona en el
+          formulario de abajo, donde la empresa ya quedó elegida.
         </p>
       )}
     </section>

@@ -1,4 +1,6 @@
 import {
+  CODIGO_CUENTA_PERSONAL_BOOSTER,
+  MENSAJE_CUENTA_PERSONAL_BOOSTER,
   MENSAJE_TELEFONO_CONDUCTOR,
   conductorContactEmailSchema,
   ensureRutHasDash,
@@ -37,6 +39,7 @@ import { SolicitudRegistrada } from '../components/SolicitudRegistrada.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -137,8 +140,8 @@ export function ConductoresListRoute() {
 
 function ConductoresListPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
+  // CHEQUEOS_REEMPLAZADOS conductores-ui: antes dueno|admin|despachador.
+  const canWrite = flagsDe(me).gestionarFlota;
 
   const scope = useEmpresaScope();
   const conductoresQ = useQuery({
@@ -436,6 +439,10 @@ function codigoDeError(err: Error): string {
 
 function mensajeErrorAltaConductor(err: Error): string {
   const codigo = codigoDeError(err);
+  // `.specs/acceso-panel-plataforma` SC8.
+  if (codigo.includes(CODIGO_CUENTA_PERSONAL_BOOSTER)) {
+    return MENSAJE_CUENTA_PERSONAL_BOOSTER;
+  }
   if (codigo.includes('user_already_driver')) {
     return 'Ese RUT ya está asociado a un conductor activo. Si dejó la empresa, primero retíralo desde su perfil.';
   }
@@ -878,15 +885,16 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
   const [telefonoContacto, setTelefonoContacto] = useState('');
   const [telefonoError, setTelefonoError] = useState<string | null>(null);
   const [pinTelefono, setPinTelefono] = useState<string | null>(null);
+  const [telefonoGuardado, setTelefonoGuardado] = useState(false);
   const telefonoNormalizado = telefonoContacto.trim();
   const telefonoValido = telefonoMovilConductorSchema.safeParse(telefonoNormalizado).success;
   const telefonoMensaje =
     telefonoError ??
     (telefonoNormalizado.length > 0 && !telefonoValido ? MENSAJE_TELEFONO_CONDUCTOR : undefined);
 
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
-  const canDelete = role === 'dueno' || role === 'admin';
+  const flags = flagsDe(me);
+  const canWrite = flags.gestionarFlota;
+  const canDelete = flags.borrarFlota;
 
   const conductorQ = useQuery({
     queryKey: ['conductores', id],
@@ -927,7 +935,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     },
     onError: (err: Error) => {
       setPinReenviado(null);
-      if (err.message.includes('email_already_registered')) {
+      if (codigoDeError(err).includes(CODIGO_CUENTA_PERSONAL_BOOSTER)) {
+        setEmailError(MENSAJE_CUENTA_PERSONAL_BOOSTER);
+      } else if (err.message.includes('email_already_registered')) {
         setEmailError('Ese email ya está registrado en otra persona.');
       } else if (err.message.includes('identidad_vinculada')) {
         setEmailError(
@@ -944,14 +954,17 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
   });
 
   const telefonoM = useMutation({
-    mutationFn: async (phone: string) => {
+    mutationFn: async (input: { phone: string; reenviarInvitacion: boolean }) => {
       return await api.post<{
         phone: string;
         email: string;
         invitacion_reenviada: boolean;
         cuenta_activa: boolean;
         activation_pin?: string;
-      }>(`/conductores/${id}/telefono`, { phone });
+      }>(`/conductores/${id}/telefono`, {
+        phone: input.phone,
+        reenviar_invitacion: input.reenviarInvitacion,
+      });
     },
     onSuccess: (res) => {
       queryClient.setQueryData<Conductor>(['conductores', id], (current) => {
@@ -969,14 +982,21 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       });
       queryClient.invalidateQueries({ queryKey: ['conductores'], exact: true });
       setPinTelefono(res.activation_pin ?? null);
+      setTelefonoGuardado(!res.invitacion_reenviada);
       setTelefonoError(null);
       setTelefonoContacto(res.phone);
     },
     onError: (err: Error) => {
       setPinTelefono(null);
-      setTelefonoError(err.message);
+      setTelefonoGuardado(false);
+      setTelefonoError(
+        codigoDeError(err).includes(CODIGO_CUENTA_PERSONAL_BOOSTER)
+          ? MENSAJE_CUENTA_PERSONAL_BOOSTER
+          : err.message,
+      );
     },
   });
+  const reenviandoInvitacion = telefonoM.isPending && telefonoM.variables?.reenviarInvitacion;
 
   const deleteM = useMutation({
     mutationFn: async () => await api.delete<{ ok: boolean }>(`/conductores/${id}`),
@@ -1025,13 +1045,14 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     emailM.mutate(parsed.data);
   }
 
-  function guardarTelefono() {
+  function guardarTelefono(reenviarInvitacion: boolean) {
     if (!telefonoValido) {
       setTelefonoError(MENSAJE_TELEFONO_CONDUCTOR);
       return;
     }
     setTelefonoError(null);
-    telefonoM.mutate(telefonoNormalizado);
+    setTelefonoGuardado(false);
+    telefonoM.mutate({ phone: telefonoNormalizado, reenviarInvitacion });
   }
 
   return (
@@ -1199,7 +1220,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
               <h2 className="font-semibold text-neutral-900">Teléfono (WhatsApp)</h2>
               <p className="mt-1 text-neutral-600 text-sm">
                 {conductorQ.data.user.is_pending
-                  ? 'Por este WhatsApp le llega el enlace de activación. Si sigue pendiente, al guardar se reenvía la invitación y el PIN anterior deja de servir.'
+                  ? 'Por este WhatsApp le llega el enlace de activación. «Guardar teléfono» solo cambia el número: el PIN que ya tiene sigue sirviendo. «Guardar y reenviar invitación» le manda el enlace con un PIN nuevo, y el anterior deja de servir.'
                   : 'Este conductor ya activó su acceso. Cambiar el teléfono actualiza el contacto: no cambia su RUT ni su clave.'}
               </p>
             </div>
@@ -1217,6 +1238,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
                   onChange={(event) => {
                     setTelefonoContacto(event.target.value);
                     setTelefonoError(null);
+                    setTelefonoGuardado(false);
                   }}
                   disabled={!canWrite || conductorQ.data.deleted_at != null || telefonoM.isPending}
                   className={fieldInputClass(!!telefonoMensaje)}
@@ -1226,14 +1248,27 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
               )}
             />
             {canWrite && conductorQ.data.deleted_at == null && (
-              <div className="flex justify-end">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {telefonoGuardado && (
+                  <output className="mr-auto text-sm text-success-700">Teléfono guardado.</output>
+                )}
+                {conductorQ.data.user.is_pending && (
+                  <button
+                    type="button"
+                    onClick={() => guardarTelefono(true)}
+                    disabled={!telefonoValido || telefonoM.isPending}
+                    className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-100 disabled:opacity-50"
+                  >
+                    {reenviandoInvitacion ? 'Reenviando…' : 'Guardar y reenviar invitación'}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={guardarTelefono}
+                  onClick={() => guardarTelefono(false)}
                   disabled={!telefonoValido || telefonoM.isPending}
                   className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {telefonoM.isPending ? 'Guardando…' : 'Guardar teléfono y reenviar invitación'}
+                  {telefonoM.isPending && !reenviandoInvitacion ? 'Guardando…' : 'Guardar teléfono'}
                 </button>
               </div>
             )}

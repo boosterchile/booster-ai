@@ -5,6 +5,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -38,8 +39,8 @@ export function EmpresaRoute() {
 
 function EmpresaPage({ me }: { me: MeOnboarded }) {
   const empresa = me.active_membership?.empresa;
-  const role = me.active_membership?.role;
-  const canManage = Boolean(empresa) && (role === 'dueno' || role === 'admin');
+  // CHEQUEOS_REEMPLAZADOS empresa: antes role === dueno || role === admin.
+  const canManage = Boolean(empresa) && flagsDe(me).administrar;
 
   const [huella, setHuella] = useState<EmpresaHuella | null>(null);
   const [loading, setLoading] = useState(canManage);
@@ -261,7 +262,7 @@ function UmbralesCombustible({
                 Umbral de golpe único
               </label>
               <p id="umbral-golpe-help" className="mt-1 text-neutral-600 text-sm">
-                Si el combustible baja de una, con el vehículo quieto, marcamos «posible robo
+                Si el combustible baja de una, con el vehículo quieto, marcamos «desviación de
                 combustible». Menos de 5 L no se ofrece: el sensor hace ruido. Si no eliges nada,
                 usamos 8 L (o el 2 % del estanque, si lo conocemos).
               </p>
@@ -283,10 +284,10 @@ function UmbralesCombustible({
             </div>
             <div>
               <label htmlFor="umbral-hormiga" className="font-medium text-neutral-900 text-sm">
-                Umbral de robo hormiga
+                Umbral de desviación gradual
               </label>
               <p id="umbral-hormiga-help" className="mt-1 text-neutral-600 text-sm">
-                Varias bajas chicas, separadas, suman este umbral y marcamos «posible robo hormiga».
+                Varias bajas chicas, separadas, suman este umbral y marcamos «desviación gradual».
                 Es otro aviso, distinto del golpe. Si no eliges nada, usamos 10 L.
               </p>
               <select

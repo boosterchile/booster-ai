@@ -37,6 +37,11 @@ COPY packages/transport-documents/package.json ./packages/transport-documents/
 #       packages/eco-routing ("Could not resolve"). Igual que los de arriba.
 COPY packages/eco-routing/package.json ./packages/eco-routing/
 COPY packages/carbon-calculator/package.json ./packages/carbon-calculator/
+# Rutas 5a — apps/api importa @booster-ai/route-planner, que ahora importa
+#       matching-algorithm. Sin estos COPY, esbuild no resuelve
+#       matching-algorithm desde packages/route-planner. Igual que los de arriba.
+COPY packages/route-planner/package.json ./packages/route-planner/
+COPY packages/matching-algorithm/package.json ./packages/matching-algorithm/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage ---

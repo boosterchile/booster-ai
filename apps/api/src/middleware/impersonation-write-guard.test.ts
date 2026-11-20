@@ -37,7 +37,8 @@ const noopLogger = {
   child: () => noopLogger,
 } as unknown as Logger;
 
-const ADMIN_ID = 'admin-uuid-1';
+const ADMIN_ID = '0b5f6e2a-4c1d-4e8f-9a3b-7c6d5e4f3a2b';
+const LISTA_RESPALDO = ['respaldo@boosterchile.com'];
 
 const IMPERSONATED_CLAIMS: FirebaseClaims = {
   uid: 'target-firebase-uid',
@@ -78,6 +79,22 @@ function userContextWith(flags: { isDemo?: boolean; isTestUser?: boolean }): Use
 }
 
 /**
+ * BD mínima para la lectura de quien impersona (`.specs/bordes-autenticacion`
+ * SC4). Por defecto, un admin marcado y activo.
+ */
+function dbConAdmin(fila: Record<string, unknown> | null = ADMIN_CON_ACCESO) {
+  const limit = vi.fn(async () => (fila ? [fila] : []));
+  const select = vi.fn(() => ({ from: () => ({ where: () => ({ limit }) }) }));
+  return { db: { select } as never, select };
+}
+
+const ADMIN_CON_ACCESO = {
+  email: 'ana@boosterchile.com',
+  isPlatformAdmin: true,
+  status: 'activo',
+};
+
+/**
  * Arma una app Hono que opcionalmente setea firebaseClaims + userContext,
  * aplica el guard bajo test y expone handlers por método.
  */
@@ -85,6 +102,7 @@ function makeApp(opts: {
   claims: FirebaseClaims | null;
   userContext?: UserContext | null;
   logger?: Logger;
+  db?: ReturnType<typeof dbConAdmin>['db'];
 }) {
   const app = new Hono();
   app.use('*', async (c, next) => {
@@ -96,7 +114,14 @@ function makeApp(opts: {
     }
     await next();
   });
-  app.use('*', createImpersonationWriteGuardMiddleware({ logger: opts.logger ?? noopLogger }));
+  app.use(
+    '*',
+    createImpersonationWriteGuardMiddleware({
+      logger: opts.logger ?? noopLogger,
+      db: opts.db ?? dbConAdmin().db,
+      platformAdminEmails: LISTA_RESPALDO,
+    }),
+  );
   app.get('/x', (c) => c.json({ ok: true }));
   app.on('HEAD', '/x', (c) => c.body(null, 200));
   app.post('/x', (c) => c.json({ ok: true }));
@@ -308,8 +333,77 @@ describe('impersonation-write-guard middleware', () => {
 
   describe('factory contract', () => {
     it('createImpersonationWriteGuardMiddleware retorna un MiddlewareHandler', () => {
-      const mw = createImpersonationWriteGuardMiddleware({ logger: noopLogger });
+      const mw = createImpersonationWriteGuardMiddleware({
+        logger: noopLogger,
+        db: dbConAdmin().db,
+        platformAdminEmails: LISTA_RESPALDO,
+      });
       expect(typeof mw).toBe('function');
     });
+  });
+});
+
+/**
+ * `.specs/bordes-autenticacion` SC4 — la impersonación vale mientras quien
+ * impersona tenga acceso al panel, con la regla única de acceso.
+ */
+describe('impersonation-write-guard — quien impersona sigue con acceso (SC4)', () => {
+  const REVOCADA = { error: 'unauthorized', code: 'impersonation_revoked' };
+
+  it.each([
+    [
+      'sin la marca y fuera de la lista',
+      { email: 'ana@boosterchile.com', isPlatformAdmin: false, status: 'activo' },
+    ],
+    [
+      'marcado pero suspendido',
+      { email: 'ana@boosterchile.com', isPlatformAdmin: true, status: 'suspendido' },
+    ],
+    ['inexistente', null],
+  ])('quien impersona %s → 401 impersonation_revoked, también en lecturas', async (_caso, fila) => {
+    const app = makeApp({
+      claims: IMPERSONATED_CLAIMS,
+      userContext: userContextWith({ isTestUser: true }),
+      db: dbConAdmin(fila).db,
+    });
+    for (const method of ['GET', 'POST'] as const) {
+      const res = await app.request('/x', { method });
+      expect(res.status, method).toBe(401);
+      expect(await res.json()).toEqual(REVOCADA);
+    }
+  });
+
+  it('quien impersona con acceso por la lista de respaldo sigue igual', async () => {
+    const app = makeApp({
+      claims: IMPERSONATED_CLAIMS,
+      userContext: userContextWith({ isTestUser: true }),
+      db: dbConAdmin({
+        email: 'Respaldo@BoosterChile.com',
+        isPlatformAdmin: false,
+        status: 'activo',
+      }).db,
+    });
+    expect((await app.request('/x', { method: 'GET' })).status).toBe(200);
+    expect((await app.request('/x', { method: 'POST' })).status).toBe(200);
+  });
+
+  it('un claim que no es un id válido → 401 sin consultar la base', async () => {
+    const d = dbConAdmin();
+    const app = makeApp({
+      claims: { ...IMPERSONATED_CLAIMS, custom: { impersonated_by: 'no-es-un-uuid' } },
+      userContext: userContextWith({ isTestUser: true }),
+      db: d.db,
+    });
+    const res = await app.request('/x', { method: 'GET' });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(REVOCADA);
+    expect(d.select).not.toHaveBeenCalled();
+  });
+
+  it('una sesión normal no consulta a nadie', async () => {
+    const d = dbConAdmin();
+    const app = makeApp({ claims: NORMAL_CLAIMS, userContext: userContextWith({}), db: d.db });
+    expect((await app.request('/x', { method: 'POST' })).status).toBe(200);
+    expect(d.select).not.toHaveBeenCalled();
   });
 });

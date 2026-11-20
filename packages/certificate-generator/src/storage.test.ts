@@ -30,9 +30,14 @@ vi.mock('@google-cloud/storage', () => ({
   },
 }));
 
-const { subirArtefactosCertificado, generarSignedUrlPdf, descargarSidecar } = await import(
-  './storage.js'
-);
+const {
+  ArtefactoYaSubidoError,
+  subirArtefactosCertificado,
+  generarSignedUrlPdf,
+  descargarSidecar,
+  rutaPdfCertificado,
+  versionDePdf,
+} = await import('./storage.js');
 
 const baseUpload = {
   bucket: 'bucket-cert',
@@ -201,5 +206,133 @@ describe('bucket file: local (E2E, T10-02)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('ruta por versión del certificado (reemision-certificado parte 3)', () => {
+  beforeEach(() => {
+    saveMock.mockReset();
+    fileMock.mockReset();
+    getSignedUrlMock.mockReset();
+    existsMock.mockReset();
+    downloadMock.mockReset();
+    saveMock.mockResolvedValue(undefined);
+    getSignedUrlMock.mockResolvedValue(['https://signed']);
+    existsMock.mockResolvedValue([true]);
+    downloadMock.mockResolvedValue([Buffer.from('{"trackingCode":"TC456"}')]);
+  });
+
+  it('la versión 1 conserva la ruta de siempre', async () => {
+    const out = await subirArtefactosCertificado({ ...baseUpload, version: 1 } as any);
+    expect(out.pdfGcsUri).toBe('gs://bucket-cert/certificates/emp-123/TC456.pdf');
+    expect(out.sigGcsUri).toBe('gs://bucket-cert/certificates/emp-123/TC456.pdf.sig');
+  });
+
+  it('una versión posterior sube a su propia ruta y no pisa la anterior', async () => {
+    const out = await subirArtefactosCertificado({ ...baseUpload, version: 2 } as any);
+    expect(out.pdfGcsUri).toBe('gs://bucket-cert/certificates/emp-123/TC456.v2.pdf');
+    expect(out.sigGcsUri).toBe('gs://bucket-cert/certificates/emp-123/TC456.v2.pdf.sig');
+    expect(fileMock.mock.calls.map((c) => c[0])).toEqual([
+      'certificates/emp-123/TC456.v2.pdf',
+      'certificates/emp-123/TC456.v2.pdf.sig',
+    ]);
+  });
+
+  it('la URL firmada y la firma se leen de la versión pedida', async () => {
+    await generarSignedUrlPdf({
+      bucket: 'bucket-cert',
+      empresaId: 'emp-123',
+      trackingCode: 'TC456',
+      version: 3,
+    });
+    await descargarSidecar({
+      bucket: 'bucket-cert',
+      empresaId: 'emp-123',
+      trackingCode: 'TC456',
+      version: 3,
+    });
+    expect(fileMock.mock.calls.map((c) => c[0])).toEqual([
+      'certificates/emp-123/TC456.v3.pdf',
+      'certificates/emp-123/TC456.v3.pdf.sig',
+    ]);
+  });
+
+  it('sin versión, la URL firmada y la firma son las de la versión 1', async () => {
+    await generarSignedUrlPdf({
+      bucket: 'bucket-cert',
+      empresaId: 'emp-123',
+      trackingCode: 'TC456',
+    });
+    await descargarSidecar({ bucket: 'bucket-cert', empresaId: 'emp-123', trackingCode: 'TC456' });
+    expect(fileMock.mock.calls.map((c) => c[0])).toEqual([
+      'certificates/emp-123/TC456.pdf',
+      'certificates/emp-123/TC456.pdf.sig',
+    ]);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])('rechaza la versión %s', async (version) => {
+    await expect(subirArtefactosCertificado({ ...baseUpload, version } as any)).rejects.toThrow(
+      /versión/,
+    );
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('versionDePdf', () => {
+  it.each([
+    ['gs://b/certificates/e/TC456.pdf', 1],
+    ['gs://b/certificates/e/TC456.v2.pdf', 2],
+    ['gs://b/certificates/e/TC456.v12.pdf', 12],
+    ['file:/tmp/b/certificates/e/TC456.v3.pdf', 3],
+    [null, 1],
+    [undefined, 1],
+    ['', 1],
+  ])('%s → versión %s', (uri, version) => {
+    expect(versionDePdf(uri)).toBe(version);
+  });
+
+  it('es la inversa de la ruta de cada versión', () => {
+    for (const version of [1, 2, 7]) {
+      const ruta = rutaPdfCertificado({ empresaId: 'e', trackingCode: 'TC', version });
+      expect(versionDePdf(`gs://b/${ruta}`)).toBe(version);
+    }
+  });
+});
+
+describe('una versión posterior nunca pisa un objeto existente', () => {
+  beforeEach(() => {
+    saveMock.mockReset();
+    fileMock.mockReset();
+    saveMock.mockResolvedValue(undefined);
+  });
+
+  it('desde la versión 2 sube con la precondición de que el objeto no exista', async () => {
+    await subirArtefactosCertificado({ ...baseUpload, version: 2 } as any);
+    for (const [, opciones] of saveMock.mock.calls) {
+      expect(opciones.preconditionOpts).toEqual({ ifGenerationMatch: 0 });
+    }
+    expect(saveMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('la versión 1 sube como siempre', async () => {
+    await subirArtefactosCertificado({ ...baseUpload, version: 1 } as any);
+    for (const [, opciones] of saveMock.mock.calls) {
+      expect(opciones.preconditionOpts).toBeUndefined();
+    }
+  });
+
+  it('si el PDF de la versión ya existe, falla con un error propio y no sube la firma', async () => {
+    saveMock.mockRejectedValueOnce(Object.assign(new Error('conditionNotMet'), { code: 412 }));
+    await expect(
+      subirArtefactosCertificado({ ...baseUpload, version: 2 } as any),
+    ).rejects.toBeInstanceOf(ArtefactoYaSubidoError);
+    expect(saveMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('otros errores de la subida se propagan tal cual', async () => {
+    saveMock.mockRejectedValueOnce(Object.assign(new Error('red'), { code: 503 }));
+    await expect(subirArtefactosCertificado({ ...baseUpload, version: 2 } as any)).rejects.toThrow(
+      'red',
+    );
   });
 });

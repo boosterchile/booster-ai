@@ -79,6 +79,12 @@ export interface RouteSuggestion {
    * geofence de recogida (plan medicion-huella-segmento, Task 4).
    */
   startLocation: RouteLatLng | null;
+  /**
+   * Punto de llegada real (`endLocation` del último leg): el destino textual
+   * geocodificado. Lo usa la propuesta de cambio de carga (editar-anular-cargas
+   * §6.3). Null si la respuesta no lo trae.
+   */
+  endLocation: RouteLatLng | null;
 }
 
 export interface ComputeRoutesParams {
@@ -184,6 +190,7 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
     'routes.duration',
     'routes.polyline.encodedPolyline',
     'routes.legs.startLocation',
+    'routes.legs.endLocation',
     emissionType ? 'routes.travelAdvisory.fuelConsumptionMicroliters' : null,
   ]
     .filter(Boolean)
@@ -286,6 +293,7 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
       };
       legs?: Array<{
         startLocation?: { latLng?: { latitude?: unknown; longitude?: unknown } };
+        endLocation?: { latLng?: { latitude?: unknown; longitude?: unknown } };
       }>;
     }>;
   };
@@ -304,6 +312,7 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
       fuelL: fuelMicroL != null ? Number(fuelMicroL) / 1_000_000 : null,
       polylineEncoded: r.polyline?.encodedPolyline ?? '',
       startLocation: parseLatLng(r.legs?.[0]?.startLocation?.latLng),
+      endLocation: parseLatLng(r.legs?.[(r.legs?.length ?? 1) - 1]?.endLocation?.latLng),
     };
   });
 }

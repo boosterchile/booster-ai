@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   type EntradaDecisionFuente,
   MOTIVOS_FALLBACK,
+  PLAUSIBILIDAD_MIN_PCT,
   type Reconstruccion,
   decidirFuenteHuella,
+  esDistanciaPlausible,
 } from './decidir-fuente-huella.js';
 
 type E = EntradaDecisionFuente;
@@ -19,6 +21,8 @@ const base: E = {
   consumoBasePor100km: null,
   perfilEnergetico: 'consumo_base',
   pesoDeclarado: true,
+  // Referencia baja a propósito: las filas de abajo miden entre 9,99 y 469 km.
+  distanciaReferenciaKm: 10,
 };
 const con = (o: Partial<E>) => decidirFuenteHuella({ ...base, ...o });
 const can = (o: C): Partial<E> => ({ can83: { ...(base.can83 as NonNullable<E['can83']>), ...o } });
@@ -39,7 +43,7 @@ describe('decidirFuenteHuella (HC-001)', () => {
       alertas: [],
       completitud: 'final',
       nivel: 'primario_verificable',
-      decisionVersion: 2,
+      decisionVersion: 3,
     });
   });
 
@@ -170,5 +174,82 @@ describe('decidirFuenteHuella (HC-001)', () => {
       fuenteEnergia: 'modelo_perfil',
       motivoFallback: 'ventana_excede_tope',
     });
+  });
+});
+
+describe('distancia medida plausible (spec distancia-medida-plausible, A con 50 %)', () => {
+  const REF = { distanciaReferenciaKm: 100 };
+
+  it('el umbral es 50 % de la distancia de referencia', () => {
+    expect(PLAUSIBILIDAD_MIN_PCT).toBe(50);
+  });
+
+  // biome-ignore format: tabla de verdad, una fila por caso
+  it.each([
+    ['49,9 km de 100', 49.9, 100, false],
+    ['50 km de 100 (borde)', 50, 100, true],
+    ['108 km de 100 (sin tope superior)', 108, 100, true],
+    ['0,03 km de 37,75 (ruta de prueba)', 0.03, 37.75, false],
+    ['2,51 km de 500 (BOO-BKAXIK)', 2.51, 500, false],
+    ['195,95 km de 471,6 (BOO-KY7G69)', 195.95, 471.6, false],
+    ['504,72 km de 464,85 (BOO-YWKZWR)', 504.72, 464.85, true],
+    ['sin referencia', 50, null, false],
+    ['referencia 0', 50, 0, false],
+    ['referencia NaN', 50, Number.NaN, false],
+    ['medida NaN', Number.NaN, 100, false],
+  ] as const)('esDistanciaPlausible: %s → %s', (_c, medida, referencia, esperado) => {
+    expect(esDistanciaPlausible(medida, referencia)).toBe(esperado);
+  });
+
+  it('criterio 1 — Teltonika 100 % con distancia bajo el 50 % → estimación con su motivo', () => {
+    expect(con({ ...rec(ok(100, 49.9)), ...REF })).toMatchObject({
+      fuenteDistancia: 'routes_estimada',
+      fuenteEnergia: 'modelo_perfil',
+      litrosCan: null,
+      motivoFallback: 'distancia_no_plausible',
+      nivel: 'secundario_modeled',
+    });
+  });
+
+  it('criterio 1 — móvil 100 % con distancia bajo el 50 % → estimación con su motivo', () => {
+    expect(con({ ...mv(ok(100, 0.03)), distanciaReferenciaKm: 37.75 })).toMatchObject({
+      fuenteDistancia: 'routes_estimada',
+      motivoFallback: 'distancia_no_plausible',
+    });
+  });
+
+  it('criterio 2 — borde: 50,0 % sigue medida', () => {
+    expect(con({ ...rec(ok(100, 50)), ...REF }).fuenteDistancia).toBe('teltonika_gps');
+    expect(con({ ...mv(ok(100, 50)), ...REF }).fuenteDistancia).toBe('movil_gps');
+  });
+
+  it('criterio 3 — sobre el umbral no cambia fuente, nivel ni cifras', () => {
+    const { decisionVersion: _v, ...sobreElUmbral } = con(REF);
+    const { decisionVersion: _w, ...conReferenciaBaja } = decidirFuenteHuella(base);
+    expect(sobreElUmbral).toEqual(conReferenciaBaja);
+    expect(sobreElUmbral.fuenteDistancia).toBe('teltonika_gps');
+  });
+
+  it('criterio 4 — sin distancia de referencia la distancia no cuenta como medida', () => {
+    for (const distanciaReferenciaKm of [null, 0, -3, Number.NaN]) {
+      expect(con({ distanciaReferenciaKm })).toMatchObject({
+        fuenteDistancia: 'routes_estimada',
+        motivoFallback: 'distancia_no_plausible',
+      });
+    }
+    const { distanciaReferenciaKm: _omitida, ...sinCampo } = base;
+    expect(decidirFuenteHuella(sinCampo as E).fuenteDistancia).toBe('routes_estimada');
+  });
+
+  it('Teltonika no plausible + móvil plausible → móvil, con el motivo del Teltonika', () => {
+    expect(con({ ...rec(ok(100, 10)), gpsMovil: ok(100, 90), ...REF })).toMatchObject({
+      fuenteDistancia: 'movil_gps',
+      motivoFallback: 'distancia_no_plausible',
+    });
+  });
+
+  it('la cobertura baja y la distancia inválida conservan su motivo propio', () => {
+    expect(con({ ...rec(ok(70, 10)), ...REF }).motivoFallback).toBe('cobertura_bajo_umbral');
+    expect(con({ ...rec(ok(100, 0)), ...REF }).motivoFallback).toBe('distancia_invalida');
   });
 });

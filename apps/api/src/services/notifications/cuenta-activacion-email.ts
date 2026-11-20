@@ -95,3 +95,85 @@ export async function enviarCorreoActivacionCuenta(opts: {
     );
   }
 }
+
+/**
+ * El correo con el que una persona del personal de Booster activa su acceso al
+ * panel de administración (`.specs/alta-personal-booster`, SC9). Hermano de
+ * `enviarCorreoActivacionCuenta`: mismo remitente, texto propio, sin empresa
+ * ni rol.
+ *
+ * Quien llama decide cuándo sale: solo si el correo ya está en la lista de
+ * Terraform. Antes de eso la persona todavía no podría activar.
+ *
+ * **Nunca lanza.** Cuando esto corre la cuenta ya existe. Un proveedor caído
+ * no puede deshacerla; el fallo queda registrado sin el código.
+ */
+export async function enviarCorreoActivacionPersonalBooster(opts: {
+  sender: EmailSender;
+  logger: Logger;
+  /** Solo para trazar el envío en los logs. */
+  userId: string;
+  email: string;
+  nombre: string;
+  rut: string;
+  /** Código en claro. NUNCA debe entrar a un log. */
+  codigo: string;
+  webAppUrl: string;
+}): Promise<void> {
+  const { sender, logger, userId, email, nombre, rut, codigo, webAppUrl } = opts;
+  const base = webAppUrl.replace(/\/$/, '');
+  const enlace = `${base}/activar`;
+  const login = `${base}/login`;
+
+  const text = [
+    `Hola ${nombre},`,
+    '',
+    'Booster te dio acceso a su panel de administración.',
+    '',
+    'Para entrar por primera vez, activa tu acceso aquí:',
+    enlace,
+    '',
+    `Tu RUT: ${rut}`,
+    `Tu código de activación: ${codigo}`,
+    '',
+    'El código sirve una sola vez y vence en 7 días. Al usarlo vas a crear tu',
+    'propia clave de 6 dígitos, que solo sabes tú: nadie en Booster puede verla.',
+    `De ahí en adelante entras en ${login} con el tipo «Booster», tu RUT y esa clave.`,
+    '',
+    'Si no esperabas este correo, ignóralo y avísanos a soporte@boosterchile.com.',
+    '',
+    'Booster',
+  ].join('\n');
+
+  const html = [
+    `<p>Hola ${escaparHtml(nombre)},</p>`,
+    '<p>Booster te dio acceso a su panel de administración.</p>',
+    `<p><a href="${escaparHtml(enlace)}">Activa tu acceso aquí</a></p>`,
+    `<p>Tu RUT: <strong>${escaparHtml(rut)}</strong><br>Tu código de activación: <strong>${escaparHtml(codigo)}</strong></p>`,
+    '<p>El código sirve una sola vez y vence en 7 días. Al usarlo vas a crear <strong>tu propia clave</strong> de 6 dígitos, que solo sabes tú: nadie en Booster puede verla.</p>',
+    `<p>De ahí en adelante entras en <a href="${escaparHtml(login)}">${escaparHtml(login)}</a> con el tipo «Booster», tu RUT y esa clave.</p>`,
+    '<p>Si no esperabas este correo, ignóralo y avísanos a soporte@boosterchile.com.</p>',
+    '<p>Booster</p>',
+  ].join('');
+
+  try {
+    const r = await sender.send({
+      to: email,
+      subject: 'Activa tu acceso al panel de Booster',
+      text,
+      html,
+    });
+    if (!r.enviado) {
+      logger.warn(
+        { userId, motivo: r.motivo },
+        'correo de activación del personal de Booster no salió — el admin deberá entregar el código a mano',
+      );
+    }
+  } catch (err) {
+    // Solo el tipo del error: el mensaje de un proveedor podría citar el cuerpo.
+    logger.error(
+      { userId, error: err instanceof Error ? err.name : 'desconocido' },
+      'fallo inesperado enviando el correo de activación del personal de Booster',
+    );
+  }
+}

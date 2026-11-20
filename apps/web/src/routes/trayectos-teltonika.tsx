@@ -7,6 +7,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { EventoCombustibleMap } from '../components/map/EventoCombustibleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -84,9 +85,9 @@ export function TrayectosTeltonikaRoute() {
 }
 
 function puedeVer(me: MeOnboarded): boolean {
-  const role = me.active_membership?.role;
   const empresa = me.active_membership?.empresa;
-  return Boolean(empresa?.is_transportista && (role === 'dueno' || role === 'admin'));
+  // CHEQUEOS_REEMPLAZADOS trayectos: antes is_transportista && (dueno|admin).
+  return Boolean(empresa?.is_transportista && flagsDe(me).administrar);
 }
 
 export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
@@ -264,7 +265,7 @@ function ListadoTrayectos({
       {data.cta_sensor ? (
         <p className="mb-4 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 text-sm">
           Tus Teltonika no reportan sensor de combustible. Conecta el sensor para ver litros, km/L y
-          L/100 km —con eso armas el costo de operación por tu cuenta— y el aviso de posible robo.
+          L/100 km —con eso armas el costo de operación por tu cuenta— y el aviso de desviación.
         </p>
       ) : null}
       {data.truncado ? (
@@ -391,13 +392,13 @@ function LeyendaFuentes({ vehiculos }: { vehiculos: VehiculoCombustible[] }) {
       {nivel.length > 0 ? (
         <p>
           {listaPatentes(nivel)} {verbo(nivel, 'informa', 'informan')} el nivel del estanque en
-          litros: ves litros, km/L y el aviso de posible robo.
+          litros: ves litros, km/L y el aviso de desviación.
         </p>
       ) : null}
       {consumo.length > 0 ? (
         <p>
           {listaPatentes(consumo)} {verbo(consumo, 'informa', 'informan')} los litros consumidos:
-          ves litros y km/L. El aviso de posible robo necesita el nivel en litros.
+          ves litros y km/L. El aviso de desviación necesita el nivel en litros.
         </p>
       ) : null}
       {porcentaje.length > 0 ? (
@@ -661,7 +662,7 @@ function DetalleEncontrado({ trayecto }: { trayecto: Trayecto }) {
         </div>
       ) : (
         <p className="mt-3 text-neutral-700">
-          Este trayecto no tiene un aviso de posible robo de combustible.
+          Este trayecto no tiene un aviso de desviación de combustible.
         </p>
       )}
       {tieneAviso(trayecto) && lat != null && lon != null ? (
@@ -691,12 +692,12 @@ function Avisos({ trayecto }: { trayecto: Trayecto }) {
     <>
       {trayecto.posible_robo_combustible ? (
         <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
-          posible robo combustible
+          desviación de combustible
         </span>
       ) : null}
       {trayecto.posible_robo_hormiga ? (
         <span className="inline-flex rounded bg-orange-100 px-1.5 py-0.5 text-orange-950 text-xs">
-          posible robo hormiga
+          desviación gradual
         </span>
       ) : null}
     </>

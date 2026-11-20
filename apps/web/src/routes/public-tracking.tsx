@@ -241,7 +241,10 @@ const VEHICLE_TYPE_LABELS: Record<string, string> = {
 };
 
 function VehicleCard({ data }: { data: PublicTrackingFoundResponse }) {
-  const label = VEHICLE_TYPE_LABELS[data.vehicle.type] ?? data.vehicle.type;
+  const porAsignar = data.vehicle.type === 'por_asignar' || data.vehicle.plate_partial == null;
+  const label = porAsignar
+    ? 'Vehículo por asignar'
+    : (VEHICLE_TYPE_LABELS[data.vehicle.type] ?? data.vehicle.type);
   return (
     <section
       className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm"
@@ -252,7 +255,7 @@ function VehicleCard({ data }: { data: PublicTrackingFoundResponse }) {
         <div>
           <p className="font-semibold text-neutral-500 text-xs uppercase tracking-wide">Vehículo</p>
           <p className="text-neutral-900 text-sm">
-            {label} · Placa {data.vehicle.plate_partial}
+            {porAsignar ? label : `${label} · Placa ${data.vehicle.plate_partial}`}
           </p>
         </div>
       </div>
@@ -393,6 +396,12 @@ function Footer() {
         </a>
         {' · '}
         Logística sostenible certificada
+      </p>
+      <p className="mt-1 text-neutral-600 text-xs">
+        Servicio operado por Booster Chile SpA ·{' '}
+        <a href="/legal/terminos" className="text-primary-700 underline">
+          Términos del servicio
+        </a>
       </p>
     </footer>
   );

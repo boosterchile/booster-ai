@@ -1,9 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
-import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { mismoRut, profileUpdateInputSchema } from '@booster-ai/shared-schemas';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { correoEnListaRespaldo, tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { asignacionConConductor, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
 import {
   assignments,
   carrierMemberships,
@@ -11,6 +13,9 @@ import {
   empresas,
   memberships,
   organizacionesStakeholder,
+  paradasRuta,
+  rutas,
+  tripChangeRequests,
   trips,
   users,
   vehicles,
@@ -18,6 +23,7 @@ import {
 import { zValidator } from '../lib/validation.js';
 import { extractClientIp } from '../middleware/client-ip.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
+import { cuentaCreadaPorSolicitud } from '../services/cuenta-proveedor-reutilizable.js';
 
 /**
  * GET /me — endpoint que el cliente web llama post-login con Firebase.
@@ -60,7 +66,27 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     // Nota: si en el futuro permitimos email/password sin verificación,
     // habría que NO linkear desde provider verificado a email/password no
     // verificado para prevenir hijack.
+    //
+    // Una cuenta del proveedor creada al aprobar una solicitud entra solo por
+    // el onboarding (`.specs/correos-solicitudes-panel` SC6): ni este vínculo
+    // ni la cuenta de la lista de abajo. Se reconoce porque su uid es el
+    // `firebase_uid` de una solicitud, y se consulta solo cuando /me está por
+    // vincular o por crear la cuenta de la lista.
     // ---------------------------------------------------------------------
+    let deSolicitud: boolean | undefined;
+    const esCuentaDeSolicitud = async (): Promise<boolean> => {
+      if (deSolicitud === undefined) {
+        deSolicitud = await cuentaCreadaPorSolicitud(opts.db, claims.uid);
+        if (deSolicitud) {
+          opts.logger.info(
+            { firebaseUid: claims.uid },
+            '/me: cuenta creada por una aprobación; entra por el onboarding',
+          );
+        }
+      }
+      return deSolicitud;
+    };
+
     if (!user && claims.email && claims.emailVerified) {
       const byEmail = await opts.db
         .select()
@@ -68,7 +94,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         .where(eq(users.email, claims.email))
         .limit(1);
       const existing = byEmail[0];
-      if (existing) {
+      if (existing && !(await esCuentaDeSolicitud())) {
         opts.logger.info(
           {
             userId: existing.id,
@@ -88,23 +114,20 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     // ---------------------------------------------------------------------
-    // Platform admin auto-provisioning. Si el email Firebase está en la
-    // allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`, el user opera como admin
-    // de plataforma — no tiene empresa propia, su único hub es
-    // /app/platform-admin. Auto-creamos el row en `usuarios` la primera
-    // vez para que `/me` devuelva `needs_onboarding=false` y no quede
-    // bloqueado en el flow tenant de /onboarding.
-    //
-    // Trust boundary: la allowlist (env var) es la fuente de autoridad;
-    // mismo patrón que `requirePlatformAdmin` en admin-seed.ts. Si el
-    // email cambia o sale de la allowlist, el `is_platform_admin=true`
-    // queda como caché en BD (no se revoca automáticamente — eso
-    // requiere intervención manual o un job periódico).
+    // Primer admin (`.specs/acceso-panel-plataforma` SC2). Si el correo de
+    // Firebase está en la lista de respaldo `BOOSTER_PLATFORM_ADMIN_EMAILS`
+    // y no hay cuenta, se crea marcada y activa para que `/me` devuelva
+    // `needs_onboarding=false` y no quede en el flujo de /onboarding. Es solo
+    // para la lista de respaldo: el resto del personal se da de alta en el
+    // panel y activa en /activar. Exige que el proveedor haya verificado el
+    // correo (`.specs/bordes-autenticacion` SC2), igual que el account linking
+    // de arriba, y que la cuenta no venga de una aprobación (SC6).
     // ---------------------------------------------------------------------
-    if (!user && claims.email) {
-      const adminAllowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-      const isAdminEmail = adminAllowlist.includes(claims.email.toLowerCase());
-      if (isAdminEmail) {
+    if (!user && claims.email && claims.emailVerified) {
+      if (
+        correoEnListaRespaldo(claims.email, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS) &&
+        !(await esCuentaDeSolicitud())
+      ) {
         const fullName = claims.name?.trim() ?? claims.email.split('@')[0] ?? 'Platform Admin';
         const inserted = await opts.db
           .insert(users)
@@ -166,6 +189,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     type MembershipPayload = {
       id: string;
       role: (typeof memberships.role.enumValues)[number];
+      puede_aceptar_ofertas: boolean;
       status: (typeof memberships.status.enumValues)[number];
       joined_at: Date | null;
       empresa: {
@@ -188,6 +212,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const empresaMemberships: MembershipPayload[] = empresaRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
+      puede_aceptar_ofertas: r.membership.puedeAceptarOfertas === true,
       status: r.membership.status,
       joined_at: r.membership.joinedAt,
       empresa: {
@@ -204,6 +229,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const stakeholderMemberships: MembershipPayload[] = stakeholderOrgRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
+      puede_aceptar_ofertas: r.membership.puedeAceptarOfertas === true,
       status: r.membership.status,
       joined_at: r.membership.joinedAt,
       empresa: null,
@@ -245,14 +271,15 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       active = activeMembershipsList[0] ?? null;
     }
 
-    // Ficha propia en `conductores` de la empresa activa (alta «Soy yo el
-    // conductor»). No cambia quién puede aceptar: el cliente la combina
-    // con el rol `dueno` solo para mostrar la tarjeta de voz.
-    let tieneFichaConductor = false;
+    // La ficha es la del propio usuario (como #814: usuario_id + LIMIT 1),
+    // viva y de la empresa activa. El RUT se compara recién sobre esa fila,
+    // no contra las demás fichas de la empresa.
+    let fichaConductorMismoRut = false;
     if (active?.empresa) {
       const fichaRows = await opts.db
-        .select({ id: conductores.id })
+        .select({ rut: users.rut })
         .from(conductores)
+        .innerJoin(users, eq(conductores.userId, users.id))
         .where(
           and(
             eq(conductores.userId, user.id),
@@ -261,15 +288,13 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           ),
         )
         .limit(1);
-      tieneFichaConductor = fichaRows.length > 0;
+      const ficha = fichaRows[0];
+      fichaConductorMismoRut = ficha != null && mismoRut(ficha.rut, user.rut);
     }
 
-    // La allowlist env-var es la fuente de autoridad para platform admin
-    // (mismo patrón que requirePlatformAdmin). Si el email está en la
-    // allowlist, lo devolvemos true aunque el column en BD sea stale.
-    const adminAllowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    const isPlatformAdmin =
-      user.isPlatformAdmin || adminAllowlist.includes(user.email.toLowerCase());
+    // La misma regla que `requirePlatformAdmin` (`.specs/acceso-panel-plataforma`
+    // SC1): la web muestra el panel solo a quien el API deja entrar.
+    const isPlatformAdmin = tieneAccesoPlataforma(user, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS);
 
     return c.json({
       needs_onboarding: false,
@@ -290,7 +315,10 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       },
       memberships: membershipsPayload,
       active_membership: active,
-      tiene_ficha_conductor: tieneFichaConductor,
+      ficha_conductor_mismo_rut: fichaConductorMismoRut,
+      // Mismo booleano, con el nombre de #814, para clientes que todavía
+      // leen ese campo. La tarjeta de voz usa `esOwnerOperator`.
+      tiene_ficha_conductor: fichaConductorMismoRut,
     });
   });
 
@@ -353,17 +381,29 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         cargoWeightKg: trips.cargoWeightKg,
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
-        vehicleId: assignments.vehicleId,
+        // editar-anular-cargas §12-P4: el conductor ve contacto, notas y referencia.
+        consigneeName: trips.consigneeName,
+        consigneeWhatsappE164: trips.consigneeWhatsappE164,
+        notes: trips.notes,
+        reference: trips.reference,
+        // editar-anular-cargas §12-P7: el conductor solo sabe que hay un cambio
+        // pendiente, nunca los datos propuestos.
+        cambioPendienteEn: sql<Date | string | null>`(
+          select ${tripChangeRequests.createdAt} from ${tripChangeRequests}
+          where ${tripChangeRequests.tripId} = ${trips.id}
+            and ${tripChangeRequests.status} = 'pendiente'
+          limit 1
+        )`,
+        vehicleId: vehiculoDeAsignacion,
         vehiclePlate: vehicles.plate,
         vehicleTeltonikaImei: vehicles.teltonikaImei,
+        rutaId: assignments.rutaId,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(empresas, eq(empresas.id, assignments.empresaId))
-      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
-      .where(
-        and(eq(assignments.driverUserId, user.id), inArray(assignments.status, ACTIVE_STATUSES)),
-      )
+      .leftJoin(vehicles, eq(vehicles.id, vehiculoDeAsignacion))
+      .where(and(asignacionConConductor(user.id), inArray(assignments.status, ACTIVE_STATUSES)))
       .orderBy(desc(assignments.acceptedAt));
 
     // Helper: serializar Dates de Drizzle de forma defensiva — un Date
@@ -381,9 +421,91 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       return typeof d === 'string' ? d : null;
     };
 
+    // Hoja de ruta (spec ruta-parada-servicio §4.8): las paradas de cada ruta
+    // del conductor, en orden. Incluye las ya resueltas y las de servicios
+    // entregados o cancelados, para que el orden se entienda completo.
+    const rutaIds = [...new Set(rows.map((r) => r.rutaId).filter((id): id is string => !!id))];
+    const paradas =
+      rutaIds.length === 0
+        ? []
+        : await opts.db
+            .select({
+              rutaId: paradasRuta.rutaId,
+              rutaEstado: rutas.status,
+              orden: paradasRuta.orden,
+              tipo: paradasRuta.tipo,
+              resolvedAt: paradasRuta.resolvedAt,
+              assignmentId: assignments.id,
+              assignmentStatus: assignments.status,
+              trackingCode: trips.trackingCode,
+              originAddressRaw: trips.originAddressRaw,
+              destinationAddressRaw: trips.destinationAddressRaw,
+              pickupWindowStart: trips.pickupWindowStart,
+              pickupWindowEnd: trips.pickupWindowEnd,
+              consigneeName: trips.consigneeName,
+              consigneeWhatsappE164: trips.consigneeWhatsappE164,
+              notes: trips.notes,
+              reference: trips.reference,
+              cargoType: trips.cargoType,
+              cargoWeightKg: trips.cargoWeightKg,
+            })
+            // rls-allowlist: scope por conductor (rutas.conductor_id = user.id), como el SELECT de arriba
+            .from(paradasRuta)
+            .innerJoin(rutas, eq(rutas.id, paradasRuta.rutaId))
+            .innerJoin(trips, eq(trips.id, paradasRuta.tripId))
+            .innerJoin(
+              assignments,
+              and(
+                eq(assignments.tripId, paradasRuta.tripId),
+                eq(assignments.rutaId, paradasRuta.rutaId),
+              ),
+            )
+            // Solo rutas donde este usuario es el conductor declarado.
+            .where(and(inArray(paradasRuta.rutaId, rutaIds), eq(rutas.driverUserId, user.id)))
+            .orderBy(asc(paradasRuta.rutaId), asc(paradasRuta.orden));
+    const hojas = rutaIds.flatMap((id) => {
+      const suyas = paradas.filter((p) => p.rutaId === id);
+      const [primera] = suyas;
+      if (!primera) {
+        return [];
+      }
+      return [
+        {
+          id,
+          estado: primera.rutaEstado,
+          paradas: suyas.map((p) => {
+            const esEntrega = p.tipo === 'entrega';
+            return {
+              orden: p.orden,
+              tipo: p.tipo,
+              resuelta_en: safeIso(p.resolvedAt),
+              asignacion_id: p.assignmentId,
+              cancelado: p.assignmentStatus === 'cancelado',
+              codigo_seguimiento: p.trackingCode,
+              direccion: esEntrega ? p.destinationAddressRaw : p.originAddressRaw,
+              ventana: esEntrega
+                ? null
+                : { desde: safeIso(p.pickupWindowStart), hasta: safeIso(p.pickupWindowEnd) },
+              // El contacto de la entrega es el destinatario (§12-P4 de editar-anular-cargas).
+              contacto:
+                esEntrega && (p.consigneeName || p.consigneeWhatsappE164)
+                  ? { nombre: p.consigneeName, telefono_e164: p.consigneeWhatsappE164 }
+                  : null,
+              notas: p.notes,
+              referencia: p.reference,
+              tipo_carga: p.cargoType,
+              peso_kg: p.cargoWeightKg,
+            };
+          }),
+        },
+      ];
+    });
+
     return c.json({
+      rutas: hojas,
       assignments: rows.map((r) => ({
         id: r.assignmentId,
+        ruta_id: r.rutaId ?? null,
         status: r.assignmentStatus,
         accepted_at: safeIso(r.acceptedAt),
         picked_up_at: safeIso(r.pickedUpAt),
@@ -417,6 +539,12 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           cargo_weight_kg: r.cargoWeightKg,
           pickup_window_start: safeIso(r.pickupWindowStart),
           pickup_window_end: safeIso(r.pickupWindowEnd),
+          consignee: { name: r.consigneeName, phone_e164: r.consigneeWhatsappE164 },
+          notes: r.notes,
+          reference: r.reference,
+          cambio_pendiente: r.cambioPendienteEn
+            ? { existe: true, creado_en: safeIso(r.cambioPendienteEn) }
+            : null,
         },
       })),
     });
@@ -490,7 +618,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         phone: updated.phone,
         whatsapp_e164: updated.whatsappE164,
         rut: updated.rut,
-        is_platform_admin: updated.isPlatformAdmin,
+        is_platform_admin: tieneAccesoPlataforma(updated, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS),
         status: updated.status,
       },
     });

@@ -27,13 +27,27 @@
  */
 
 import { factoresLineaCertificado } from '@booster-ai/carbon-calculator';
-import { emitirCertificado } from '@booster-ai/certificate-generator';
+import {
+  type ParametrosEmisionCertificado,
+  emitirCertificado,
+} from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
+import {
+  assignments,
+  empresas,
+  metricasRuta,
+  tripEvents,
+  tripMetrics,
+  trips,
+  vehicles,
+} from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { registrarPrimeraVersion } from './certificados-versionados.js';
+import { rutaCompartidaDelViaje } from './ruta-compartida.js';
 
 /**
  * Métrica de negocio T10-15 (ADR-082): certificados por resultado.
@@ -65,7 +79,11 @@ export type EmitirResult =
         | 'metrics_missing'
         | 'version_glec_missing'
         | 'already_issued'
-        | 'no_shipper';
+        | 'no_shipper'
+        /** Carga consolidada cuya ruta no tiene huella guardada: no hay total que imprimir. */
+        | 'ruta_sin_huella'
+        /** La carga viaja con otras y su ruta sigue abierta (huella-consolidada §3.9). */
+        | 'ruta_no_cerrada';
     }
   | {
       skipped: false;
@@ -76,6 +94,246 @@ export type EmitirResult =
       issuedAt: Date;
       pdfBytes: number;
     };
+
+/** Lo que el PDF necesita del viaje, sin la infraestructura de firma. */
+export type DatosEmisionCertificado = Omit<
+  ParametrosEmisionCertificado,
+  'infra' | 'verifyBaseUrl' | 'version'
+>;
+
+type TripRow = typeof trips.$inferSelect;
+type MetricsRow = typeof tripMetrics.$inferSelect;
+
+/**
+ * Arma los datos del certificado de un viaje desde la base. Lo usan la
+ * emisión y la reemisión (`.specs/reemision-certificado/`), para que las dos
+ * generen el PDF igual. `metrics` puede venir corregida en memoria.
+ */
+export async function armarDatosEmision(opts: {
+  db: Pick<Db, 'select'>;
+  logger: Logger;
+  trip: TripRow;
+  metrics: MetricsRow;
+}): Promise<
+  | { ok: true; datos: DatosEmisionCertificado }
+  | {
+      ok: false;
+      reason: 'no_shipper' | 'trip_not_found' | 'ruta_sin_huella' | 'version_glec_missing';
+    }
+> {
+  const { db, logger, trip, metrics } = opts;
+  const tripId = trip.id;
+  // HC-004: se imprime la versión GLEC real del cálculo, sin default 'v3.0'.
+  // Sin versión guardada no se firma un certificado, ni nuevo ni reemitido.
+  const glecVersion = metrics.glecVersion;
+  if (!glecVersion) {
+    logger.error({ tripId }, 'emitirCertificadoViaje skipped: métricas sin version_glec');
+    return { ok: false, reason: 'version_glec_missing' };
+  }
+  // generadorCargaEmpresaId es nullable en el schema — los trips de
+  // WhatsApp anonymous (pre-binding) lo tienen null. El cert necesita la
+  // identidad del shipper para incluirlo en el PDF y firmar, así que
+  // skippeamos defensivamente. En el lifecycle actual esto no debería
+  // ocurrir post-entrega (el binding ya está hecho), pero el guard cuesta
+  // poco y deja el invariante explícito.
+  if (!trip.generadorCargaEmpresaId) {
+    logger.warn(
+      { tripId },
+      'emitirCertificadoViaje skipped: trip sin shipper (anonymous WhatsApp pre-binding)',
+    );
+    return { ok: false, reason: 'no_shipper' };
+  }
+
+  // Empresa shipper (siempre existe — el trip lo creó).
+  const shipperRows = await db
+    .select({
+      id: empresas.id,
+      legalName: empresas.legalName,
+      rut: empresas.rut,
+    })
+    .from(empresas)
+    .where(eq(empresas.id, trip.generadorCargaEmpresaId))
+    .limit(1);
+  const shipper = shipperRows[0];
+  if (!shipper) {
+    // No debería pasar — FK garantiza referencia. Si pasa, log error y
+    // skip (el cert no se puede emitir sin identidad del shipper).
+    logger.error(
+      { tripId, generadorCargaEmpresaId: trip.generadorCargaEmpresaId },
+      'emitirCertificadoViaje: empresa shipper no encontrada (FK rota?)',
+    );
+    return { ok: false, reason: 'trip_not_found' };
+  }
+
+  // Assignment + transportista + vehicle (opcionales — el cert puede
+  // emitirse sin transportista en escenarios de prueba, pero
+  // normalmente está presente cuando trip='entregado').
+  const assignmentRows = await db
+    .select({
+      empresaId: assignments.empresaId,
+      vehicleId: vehiculoDeAsignacion,
+    })
+    .from(assignments)
+    .where(eq(assignments.tripId, tripId))
+    .limit(1);
+  const assignment = assignmentRows[0];
+
+  let transportistaLegalName: string | null = null;
+  let transportistaRut: string | null = null;
+  let vehiclePlate: string | null = null;
+
+  if (assignment) {
+    const carrierRows = await db
+      .select({
+        legalName: empresas.legalName,
+        rut: empresas.rut,
+      })
+      .from(empresas)
+      .where(eq(empresas.id, assignment.empresaId))
+      .limit(1);
+    const carrier = carrierRows[0];
+    if (carrier) {
+      transportistaLegalName = carrier.legalName;
+      transportistaRut = carrier.rut;
+    }
+    if (assignment.vehicleId) {
+      const vehRows = await db
+        .select({ plate: vehicles.plate })
+        .from(vehicles)
+        .where(eq(vehicles.id, assignment.vehicleId))
+        .limit(1);
+      vehiclePlate = vehRows[0]?.plate ?? null;
+    }
+  }
+
+  // Carga consolidada (ADR-089, spec huella-consolidada §3.10): el certificado
+  // dice qué parte de la ruta es de esta carga y cuánto fue el total. El total
+  // es del mismo tipo que la cifra de la carga: medido si la carga publica su
+  // cifra medida, estimado si publica la estimada.
+  const participacion = numOrNull(metrics.participacion ?? null);
+  let consolidacion: DatosEmisionCertificado['metricas']['consolidacion'];
+  if (participacion !== null && participacion > 0 && participacion < 100 && metrics.rutaId) {
+    // rls-allowlist: huella de la ruta del viaje ya validado por quien llama (emisión de plataforma)
+    const [deRuta] = await db
+      .select({
+        real: metricasRuta.carbonEmissionsKgco2eActual,
+        estimada: metricasRuta.carbonEmissionsKgco2eEstimated,
+      })
+      .from(metricasRuta)
+      .where(eq(metricasRuta.rutaId, metrics.rutaId))
+      .limit(1);
+    const total =
+      metrics.carbonEmissionsKgco2eActual !== null
+        ? numOrNull(deRuta?.real ?? null)
+        : numOrNull(deRuta?.estimada ?? null);
+    if (total === null || !metrics.versionMetodoReparto) {
+      logger.error(
+        { tripId, rutaId: metrics.rutaId },
+        'emitirCertificadoViaje: carga consolidada sin la huella de su ruta o sin versión del método',
+      );
+      return { ok: false, reason: 'ruta_sin_huella' };
+    }
+    consolidacion = {
+      participacionPct: participacion,
+      kgco2eWtwRuta: total,
+      versionMetodo: metrics.versionMetodoReparto,
+    };
+  }
+
+  // HC-004 (opción d): factores por litro desde la tabla versionada por
+  // factores_fuente. Si no calza, la línea no se imprime y queda en el log.
+  const factorUsado = numOrNull(metrics.emissionFactorUsed) ?? 0;
+  const factoresLinea = factoresLineaCertificado(metrics.factoresFuente, factorUsado);
+  if (!factoresLinea) {
+    logger.warn(
+      { tripId, factoresFuente: metrics.factoresFuente, emissionFactorUsed: factorUsado },
+      'emitirCertificadoViaje: línea de factores omitida (fuente fuera de la tabla o factor no calza)',
+    );
+  }
+  const ttwRef = numOrNull(metrics.ttwRef);
+  const wttRef = numOrNull(metrics.wttRef);
+  const referencia =
+    ttwRef !== null && wttRef !== null && metrics.fuenteRef
+      ? { ttw: ttwRef, wtt: wttRef, fuente: metrics.fuenteRef }
+      : null;
+
+  return {
+    ok: true,
+    datos: {
+      viaje: {
+        trackingCode: trip.trackingCode,
+        origenDireccion: trip.originAddressRaw,
+        origenRegionCode: trip.originRegionCode,
+        destinoDireccion: trip.destinationAddressRaw,
+        destinoRegionCode: trip.destinationRegionCode,
+        cargoTipo: trip.cargoType,
+        cargoPesoKg: trip.cargoWeightKg,
+        pickupAt: trip.pickupWindowStart,
+        // deliveredAt vive en assignments, no en trips. Si no hay
+        // assignment, dejamos null (el PDF lo omite).
+        deliveredAt: null,
+      },
+      metricas: {
+        distanciaKmEstimated: numOrNull(metrics.distanceKmEstimated),
+        distanciaKmActual: numOrNull(metrics.distanceKmActual),
+        kgco2eWtwEstimated: numOrNull(metrics.carbonEmissionsKgco2eEstimated),
+        kgco2eWtwActual: numOrNull(metrics.carbonEmissionsKgco2eActual),
+        // HC-003 T1 (0068). NULL en filas previas a la migración (sin backfill).
+        kgco2eTtw: numOrNull(metrics.emisionesKgco2eTtw),
+        kgco2eWtt: numOrNull(metrics.emisionesKgco2eWtt),
+        combustibleConsumido:
+          numOrNull(metrics.fuelConsumedLActual) ?? numOrNull(metrics.fuelConsumedLEstimated),
+        combustibleUnidad: 'L', // hoy solo soportamos diésel/gasolina
+        intensidadGco2ePorTonKm: numOrNull(metrics.intensidadGco2ePorTkm),
+        precisionMethod:
+          (metrics.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
+          'por_defecto',
+        glecVersion,
+        emissionFactorUsado: factorUsado,
+        // Filas previas a 0068 quedan en null: no se imprime «SEC Chile 2024» (criterio 12).
+        fuenteFactores: metrics.factoresFuente,
+        factoresLinea,
+        referencia,
+        calculatedAt: metrics.calculatedAt ?? new Date(),
+        // ADR-028 — dual-source data fields. Si están NULL (trips legacy
+        // pre-migración 0009 que no fueron recalculados), el cert-generator
+        // cae al path legacy sin disclaimer. Una vez que el cron de recálculo
+        // pase sobre todos los trips, estos campos siempre estarán presentes.
+        ...(metrics.routeDataSource ? { routeDataSource: metrics.routeDataSource } : {}),
+        ...(metrics.coveragePct !== null
+          ? { coveragePct: numOrNull(metrics.coveragePct) ?? 0 }
+          : {}),
+        ...(metrics.certificationLevel ? { certificationLevel: metrics.certificationLevel } : {}),
+        ...(metrics.uncertaintyFactor !== null
+          ? { uncertaintyFactor: numOrNull(metrics.uncertaintyFactor) ?? 0 }
+          : {}),
+        // ADR-021 §6.4 — empty backhaul allocation. Si los 3 campos están
+        // poblados (trip con perfil energético + matching evaluado post-entrega),
+        // el cert renderiza la sección "Ahorro CO₂e via matching de retorno"
+        // cuando el ahorro > 0. Si están null (legacy pre-ADR-021 o modo
+        // por_defecto), el cert no muestra esa sección.
+        factorMatchingAplicado: numOrNull(metrics.factorMatchingAplicado),
+        emisionesEmptyBackhaulKgco2eWtw: numOrNull(metrics.emisionesEmptyBackhaulKgco2eWtw),
+        ahorroCo2eVsSinMatchingKgco2eWtw: numOrNull(metrics.ahorroCo2eVsSinMatchingKgco2e),
+        ...(consolidacion ? { consolidacion } : {}),
+      },
+      empresaShipper: {
+        id: shipper.id,
+        legalName: shipper.legalName,
+        rut: shipper.rut,
+      },
+      ...(transportistaLegalName
+        ? {
+            transportista: {
+              legalName: transportistaLegalName,
+              rut: transportistaRut,
+              vehiclePlate,
+            },
+          }
+        : {}),
+    },
+  };
+}
 
 interface EmitirCertificadoViajeOptions {
   db: Db;
@@ -126,6 +384,7 @@ async function emitirCertificadoViajeInner(
   // (2) Cargar trip + métricas + assignment + vehicle + empresas en una
   // sola tx read-only. El UPDATE final va en una tx separada para
   // mantener el read-side rápido y permitir retry idempotente.
+  // rls-allowlist: emisión de plataforma scoped por tripId (cierre del viaje)
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
   const trip = tripRows[0];
   if (!trip) {
@@ -144,13 +403,6 @@ async function emitirCertificadoViajeInner(
   if (!metrics) {
     return { skipped: true, reason: 'metrics_missing' };
   }
-  // HC-004 (Felipe 14:50): se imprime la versión GLEC real de la emisión; sin
-  // default 'v3.0'. Sin versión guardada no se firma un certificado.
-  const glecVersion = metrics.glecVersion;
-  if (!glecVersion) {
-    logger.error({ tripId }, 'emitirCertificadoViaje skipped: métricas sin version_glec');
-    return { skipped: true, reason: 'version_glec_missing' };
-  }
   if (metrics.certificateIssuedAt) {
     // Ya emitido. Idempotente: retornamos como skipped pero loggeamos
     // info (no warn) porque es esperado en escenarios de double-trigger.
@@ -161,169 +413,26 @@ async function emitirCertificadoViajeInner(
     return { skipped: true, reason: 'already_issued' };
   }
 
-  // generadorCargaEmpresaId es nullable en el schema — los trips de
-  // WhatsApp anonymous (pre-binding) lo tienen null. El cert necesita la
-  // identidad del shipper para incluirlo en el PDF y firmar, así que
-  // skippeamos defensivamente. En el lifecycle actual esto no debería
-  // ocurrir post-entrega (el binding ya está hecho), pero el guard cuesta
-  // poco y deja el invariante explícito.
-  if (!trip.generadorCargaEmpresaId) {
-    logger.warn(
-      { tripId },
-      'emitirCertificadoViaje skipped: trip sin shipper (anonymous WhatsApp pre-binding)',
+  // Una carga consolidada recibe su certificado cuando la ruta se cierra: hasta
+  // entonces la huella de la ruta no está medida ni repartida (ADR-089). Vale
+  // para cualquier camino que llegue aquí, también el job de relleno.
+  const compartida = await rutaCompartidaDelViaje(db, tripId);
+  if (compartida && !compartida.cerrada) {
+    logger.info(
+      { tripId, rutaId: compartida.rutaId },
+      'emitirCertificadoViaje skipped: la ruta de la carga sigue abierta',
     );
-    return { skipped: true, reason: 'no_shipper' };
+    return { skipped: true, reason: 'ruta_no_cerrada' };
   }
 
-  // Empresa shipper (siempre existe — el trip lo creó).
-  const shipperRows = await db
-    .select({
-      id: empresas.id,
-      legalName: empresas.legalName,
-      rut: empresas.rut,
-    })
-    .from(empresas)
-    .where(eq(empresas.id, trip.generadorCargaEmpresaId))
-    .limit(1);
-  const shipper = shipperRows[0];
-  if (!shipper) {
-    // No debería pasar — FK garantiza referencia. Si pasa, log error y
-    // skip (el cert no se puede emitir sin identidad del shipper).
-    logger.error(
-      { tripId, generadorCargaEmpresaId: trip.generadorCargaEmpresaId },
-      'emitirCertificadoViaje: empresa shipper no encontrada (FK rota?)',
-    );
-    return { skipped: true, reason: 'trip_not_found' };
+  const armado = await armarDatosEmision({ db, logger, trip, metrics });
+  if (!armado.ok) {
+    return { skipped: true, reason: armado.reason };
   }
-
-  // Assignment + transportista + vehicle (opcionales — el cert puede
-  // emitirse sin transportista en escenarios de prueba, pero
-  // normalmente está presente cuando trip='entregado').
-  const assignmentRows = await db
-    .select({
-      empresaId: assignments.empresaId,
-      vehicleId: assignments.vehicleId,
-    })
-    .from(assignments)
-    .where(eq(assignments.tripId, tripId))
-    .limit(1);
-  const assignment = assignmentRows[0];
-
-  let transportistaLegalName: string | null = null;
-  let transportistaRut: string | null = null;
-  let vehiclePlate: string | null = null;
-
-  if (assignment) {
-    const carrierRows = await db
-      .select({
-        legalName: empresas.legalName,
-        rut: empresas.rut,
-      })
-      .from(empresas)
-      .where(eq(empresas.id, assignment.empresaId))
-      .limit(1);
-    const carrier = carrierRows[0];
-    if (carrier) {
-      transportistaLegalName = carrier.legalName;
-      transportistaRut = carrier.rut;
-    }
-    if (assignment.vehicleId) {
-      const vehRows = await db
-        .select({ plate: vehicles.plate })
-        .from(vehicles)
-        .where(eq(vehicles.id, assignment.vehicleId))
-        .limit(1);
-      vehiclePlate = vehRows[0]?.plate ?? null;
-    }
-  }
-
-  // HC-004 (opción d): factores por litro desde la tabla versionada por
-  // factores_fuente. Si no calza, la línea no se imprime y queda en el log.
-  const factorUsado = numOrNull(metrics.emissionFactorUsed) ?? 0;
-  const factoresLinea = factoresLineaCertificado(metrics.factoresFuente, factorUsado);
-  if (!factoresLinea) {
-    logger.warn(
-      { tripId, factoresFuente: metrics.factoresFuente, emissionFactorUsed: factorUsado },
-      'emitirCertificadoViaje: línea de factores omitida (fuente fuera de la tabla o factor no calza)',
-    );
-  }
-  const ttwRef = numOrNull(metrics.ttwRef);
-  const wttRef = numOrNull(metrics.wttRef);
-  const referencia =
-    ttwRef !== null && wttRef !== null && metrics.fuenteRef
-      ? { ttw: ttwRef, wtt: wttRef, fuente: metrics.fuenteRef }
-      : null;
 
   // (3) Llamar al package — la única función con I/O hacia KMS + GCS.
   const result = await emitirCertificado({
-    viaje: {
-      trackingCode: trip.trackingCode,
-      origenDireccion: trip.originAddressRaw,
-      origenRegionCode: trip.originRegionCode,
-      destinoDireccion: trip.destinationAddressRaw,
-      destinoRegionCode: trip.destinationRegionCode,
-      cargoTipo: trip.cargoType,
-      cargoPesoKg: trip.cargoWeightKg,
-      pickupAt: trip.pickupWindowStart,
-      // deliveredAt vive en assignments, no en trips. Si no hay
-      // assignment, dejamos null (el PDF lo omite).
-      deliveredAt: null,
-    },
-    metricas: {
-      distanciaKmEstimated: numOrNull(metrics.distanceKmEstimated),
-      distanciaKmActual: numOrNull(metrics.distanceKmActual),
-      kgco2eWtwEstimated: numOrNull(metrics.carbonEmissionsKgco2eEstimated),
-      kgco2eWtwActual: numOrNull(metrics.carbonEmissionsKgco2eActual),
-      // HC-003 T1 (0068). NULL en filas previas a la migración (sin backfill).
-      kgco2eTtw: numOrNull(metrics.emisionesKgco2eTtw),
-      kgco2eWtt: numOrNull(metrics.emisionesKgco2eWtt),
-      combustibleConsumido:
-        numOrNull(metrics.fuelConsumedLActual) ?? numOrNull(metrics.fuelConsumedLEstimated),
-      combustibleUnidad: 'L', // hoy solo soportamos diésel/gasolina
-      intensidadGco2ePorTonKm: numOrNull(metrics.intensidadGco2ePorTkm),
-      precisionMethod:
-        (metrics.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
-        'por_defecto',
-      glecVersion,
-      emissionFactorUsado: factorUsado,
-      // Filas previas a 0068 quedan en null: no se imprime «SEC Chile 2024» (criterio 12).
-      fuenteFactores: metrics.factoresFuente,
-      factoresLinea,
-      referencia,
-      calculatedAt: metrics.calculatedAt ?? new Date(),
-      // ADR-028 — dual-source data fields. Si están NULL (trips legacy
-      // pre-migración 0009 que no fueron recalculados), el cert-generator
-      // cae al path legacy sin disclaimer. Una vez que el cron de recálculo
-      // pase sobre todos los trips, estos campos siempre estarán presentes.
-      ...(metrics.routeDataSource ? { routeDataSource: metrics.routeDataSource } : {}),
-      ...(metrics.coveragePct !== null ? { coveragePct: numOrNull(metrics.coveragePct) ?? 0 } : {}),
-      ...(metrics.certificationLevel ? { certificationLevel: metrics.certificationLevel } : {}),
-      ...(metrics.uncertaintyFactor !== null
-        ? { uncertaintyFactor: numOrNull(metrics.uncertaintyFactor) ?? 0 }
-        : {}),
-      // ADR-021 §6.4 — empty backhaul allocation. Si los 3 campos están
-      // poblados (trip con perfil energético + matching evaluado post-entrega),
-      // el cert renderiza la sección "Ahorro CO₂e via matching de retorno"
-      // cuando el ahorro > 0. Si están null (legacy pre-ADR-021 o modo
-      // por_defecto), el cert no muestra esa sección.
-      factorMatchingAplicado: numOrNull(metrics.factorMatchingAplicado),
-      emisionesEmptyBackhaulKgco2eWtw: numOrNull(metrics.emisionesEmptyBackhaulKgco2eWtw),
-      ahorroCo2eVsSinMatchingKgco2eWtw: numOrNull(metrics.ahorroCo2eVsSinMatchingKgco2e),
-    },
-    empresaShipper: {
-      id: shipper.id,
-      legalName: shipper.legalName,
-      rut: shipper.rut,
-    },
-    ...(transportistaLegalName
-      ? {
-          transportista: {
-            legalName: transportistaLegalName,
-            rut: transportistaRut,
-            vehiclePlate,
-          },
-        }
-      : {}),
+    ...armado.datos,
     infra: {
       kmsKeyId: config.kmsKeyId,
       certificatesBucket: config.certificatesBucket,
@@ -335,9 +444,22 @@ async function emitirCertificadoViajeInner(
   // queden o ninguno (si crashea entre el UPDATE y el INSERT, el próximo
   // re-disparo encuentra certificateIssuedAt=null y reintenta).
   await db.transaction(async (tx) => {
+    // Toda emisión queda versionada (`.specs/reemision-certificado/` §3.1):
+    // sin la versión 1 no se puede reemitir.
+    const version = await registrarPrimeraVersion(tx, {
+      tripId,
+      sha256: result.pdfSha256,
+      pdfUrl: result.pdfGcsUri,
+      kmsVersion: result.kmsKeyVersion,
+      emitidoEn: result.issuedAt,
+      fuenteDistancia: metrics.fuenteDistancia ?? null,
+      motivoFallback: metrics.motivoFallback ?? null,
+      decisionVersion: metrics.decisionVersion ?? null,
+    });
     await tx
       .update(tripMetrics)
       .set({
+        certificadoVigenteId: version.id,
         certificatePdfUrl: result.pdfGcsUri,
         certificateSha256: result.pdfSha256,
         certificateKmsKeyVersion: result.kmsKeyVersion,

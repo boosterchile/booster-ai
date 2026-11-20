@@ -99,10 +99,14 @@ describe('getPublicTracking', () => {
       originAddr: string;
       destAddr: string;
       destRegionCode?: string | null;
+      originRegionCode?: string | null;
+      originComunaCode?: string | null;
+      destComunaCode?: string | null;
       cargoType: string;
-      vehicleId: string;
-      vehicleType: string;
-      vehiclePlate: string;
+      /** Null = asignación aceptada sin vehículo (matching-desde-la-carga §3.7). */
+      vehicleId: string | null;
+      vehicleType: string | null;
+      vehiclePlate: string | null;
       /** Nuevos (fix privacidad): default aceptado=ahora, resto null → no expira. */
       acceptedAt?: Date;
       deliveredAt?: Date | null;
@@ -133,11 +137,18 @@ describe('getPublicTracking', () => {
           deliveredAt: null,
           cancelledAt: null,
           tokenExpiresAt: null,
+          destRegionCode: null,
+          originRegionCode: null,
+          originComunaCode: null,
+          destComunaCode: null,
           ...opts.assignmentRow,
         }
       : null;
     const responses: Array<unknown[]> = [
       row ? [row] : [],
+      // En `asignado` el resolutor pregunta primero si el vehículo tiene otra
+      // asignación en curso (seguimiento-publico-minimizacion §3.2): ninguna.
+      ...(row?.tripStatus === 'asignado' ? [[]] : []),
       opts.pings ?? [],
       opts.mobilePings ?? [],
     ];
@@ -146,12 +157,19 @@ describe('getPublicTracking', () => {
     const limitFn = vi.fn(() => Promise.resolve(responses[callIdx++] ?? []));
     const orderByFn = vi.fn(() => ({ limit: limitFn }));
     const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+    // Lookup: assignments ⋈ trips (INNER) ⟕ vehicles (LEFT) — sin vehículo
+    // la fila del token sigue existiendo.
+    const leftJoinFn = vi.fn(() => ({ where: whereFn }));
     const innerJoin2 = vi.fn(() => ({ where: whereFn, innerJoin: () => ({ where: whereFn }) }));
-    const innerJoin1 = vi.fn(() => ({ innerJoin: innerJoin2, where: whereFn }));
-    const fromFn = vi.fn(() => ({ innerJoin: innerJoin1, where: whereFn }));
+    const innerJoin1 = vi.fn(() => ({
+      innerJoin: innerJoin2,
+      leftJoin: leftJoinFn,
+      where: whereFn,
+    }));
+    const fromFn = vi.fn(() => ({ innerJoin: innerJoin1, leftJoin: leftJoinFn, where: whereFn }));
     const selectFn = vi.fn(() => ({ from: fromFn }));
 
-    return { db: { select: selectFn } as never, selectFn };
+    return { db: { select: selectFn } as never, selectFn, leftJoinFn, innerJoin1 };
   }
 
   beforeEach(() => {
@@ -181,6 +199,34 @@ describe('getPublicTracking', () => {
     const { db } = makeDbStub({ assignmentRow: null });
     const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
     expect(result.status).toBe('not_found');
+  });
+
+  it('token válido sin vehículo → found con vehículo por asignar (LEFT JOIN)', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const { db, leftJoinFn, innerJoin1 } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a-sin-veh',
+        tripStatus: 'asignado',
+        trackingCode: 'BOO-PEND01',
+        originAddr: 'origen',
+        destAddr: 'destino',
+        cargoType: 'carga_seca',
+        vehicleId: null,
+        vehicleType: null,
+        vehiclePlate: null,
+      },
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.trip.tracking_code).toBe('BOO-PEND01');
+      expect(result.vehicle).toEqual({ type: 'por_asignar', plate_partial: null });
+      expect(result.position).toBeNull();
+      expect(result.position_source).toBeNull();
+      expect(result.eta_minutes).toBeNull();
+    }
+    expect(innerJoin1).toHaveBeenCalled();
+    expect(leftJoinFn).toHaveBeenCalled();
   });
 
   it('found sin pings → position null + progress null', async () => {
@@ -285,6 +331,66 @@ describe('getPublicTracking', () => {
       // 11 chars TOPSECRET99 → 7 estrellas + ET99 (últimos 4)
       expect(result.vehicle.plate_partial).toBe('*******ET99');
       expect(result.vehicle.plate_partial).not.toContain('TOPSECRET');
+    }
+  });
+
+  // ---- `.specs/seguimiento-publico-minimizacion/` §3.4 ----
+
+  it('origen y destino salen como «Comuna, Región», nunca la dirección de la carga', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const { db } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a1',
+        tripStatus: 'entregado',
+        trackingCode: 'BOO-ZONA01',
+        originAddr: 'Av. Apoquindo 123, depto 45',
+        destAddr: 'Calle Coquimbo 45, bodega 3',
+        originRegionCode: 'XIII',
+        originComunaCode: '13114',
+        destRegionCode: 'IV',
+        destComunaCode: '04101',
+        cargoType: 'carga_seca',
+        vehicleId: 'v1',
+        vehicleType: 'camion_3_4',
+        vehiclePlate: 'GR-AS12',
+        deliveredAt: new Date(),
+      },
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.trip.origin_address).toBe('Las Condes, Metropolitana');
+      expect(result.trip.destination_address).toBe('La Serena, Coquimbo');
+      const cuerpo = JSON.stringify(result);
+      expect(cuerpo).not.toContain('Apoquindo');
+      expect(cuerpo).not.toContain('bodega 3');
+    }
+  });
+
+  it('carga sin comuna → solo la región', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const { db } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a1',
+        tripStatus: 'entregado',
+        trackingCode: 'BOO-ZONA02',
+        originAddr: 'Av. Apoquindo 123',
+        destAddr: 'Calle Coquimbo 45',
+        originRegionCode: 'XIII',
+        destRegionCode: 'IV',
+        destComunaCode: 'no-existe',
+        cargoType: 'carga_seca',
+        vehicleId: 'v1',
+        vehicleType: 'camion_3_4',
+        vehiclePlate: 'GR-AS12',
+        deliveredAt: new Date(),
+      },
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.trip.origin_address).toBe('Metropolitana');
+      expect(result.trip.destination_address).toBe('Coquimbo');
     }
   });
 
@@ -476,8 +582,9 @@ describe('getPublicTracking', () => {
       // Pero el destinatario SÍ ve que se entregó + ruta + vehículo.
       expect(result.trip.status).toBe('entregado');
       expect(result.trip.tracking_code).toBe('BOO-DELIV1');
-      expect(result.trip.origin_address).toBe('Origen X');
-      expect(result.trip.destination_address).toBe('Destino Y');
+      // Sin comuna ni región en la carga: no hay zona que mostrar.
+      expect(result.trip.origin_address).toBe('—');
+      expect(result.trip.destination_address).toBe('—');
       expect(result.vehicle.plate_partial).toBe('***AS12');
     }
   });

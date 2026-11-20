@@ -11,6 +11,7 @@ import {
 } from '../hooks/use-liquidaciones.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -32,8 +33,7 @@ export function LiquidacionesRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        const isCarrier = ctx.me.active_membership?.empresa?.is_transportista ?? false;
-        if (!isCarrier) {
+        if (!flagsDe(ctx.me).verFinanzas) {
           return <NoCarrierPermission />;
         }
         return <LiquidacionesPage me={ctx.me} />;
@@ -184,7 +184,7 @@ function NoCarrierPermission() {
       <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
         <h2 className="font-semibold text-neutral-900 text-xl">Sin permisos</h2>
         <p className="mt-2 text-neutral-600 text-sm">
-          Las liquidaciones son exclusivas de empresas transportistas.
+          Las liquidaciones las ven el dueño y el administrador de una empresa transportista.
         </p>
         <Link to="/app" className="mt-4 inline-block text-primary-600 underline">
           Volver al inicio

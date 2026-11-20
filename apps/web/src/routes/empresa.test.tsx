@@ -128,7 +128,7 @@ describe('/app/empresa', () => {
     expect(textos).toContain('5 L');
     expect(textos).toContain('20 L');
     expect(textos).not.toContain('4 L');
-    expect(screen.getByLabelText('Umbral de robo hormiga')).toHaveValue('12');
+    expect(screen.getByLabelText('Umbral de desviación gradual')).toHaveValue('12');
 
     fireEvent.change(golpe, { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar umbrales' }));

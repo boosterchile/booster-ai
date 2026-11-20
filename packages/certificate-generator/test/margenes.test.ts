@@ -46,7 +46,8 @@ async function revisar(params: (typeof CASOS)['normal']): Promise<ItemPdf[]> {
   const { bytes, cajas, textos } = await generarPdfConCajas(params);
   const items = await itemsPorPagina(bytes);
   const paginas = (await textoPorPagina(bytes)).map(sinEspacios);
-  expect(cajas.length).toBeGreaterThan(5);
+  // Sin sello ni caja de disclaimer (primario y medido con Teltonika) quedan 5.
+  expect(cajas.length).toBeGreaterThanOrEqual(5);
   expect(textos.length).toBeGreaterThan(40);
   for (const c of cajas) {
     dentro(c, `caja p${c.pagina + 1} ${JSON.stringify(c)}`, c.pie ? AREA_UTIL.y0 : TOPE_PIE);
@@ -90,8 +91,8 @@ describe.each(Object.keys(CASOS))('márgenes — caso %s', (caso) => {
 });
 
 describe('contenido hasta el pie', () => {
-  // Un test por caso: con coverage en CI cada PDF tarda 1–2 s y los 16 en un
-  // solo test pasaban el timeout de 30 s.
+  // Un test por caso: con coverage en CI los 16 PDF en un solo test pasaban
+  // el límite por test (ver `LIMITE_TEST_PDF_MS`).
   let minimo = Number.POSITIVE_INFINITY;
   it.each(casosLlenos().map((p, k) => [k, p] as const))(
     'origen con %i bloques extra: ningún bloque baja de TOPE_PIE',

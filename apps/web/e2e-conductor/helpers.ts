@@ -70,3 +70,24 @@ export async function loginRutClave(
   await page.getByTestId('login-clave-input').fill(cred.clave);
   await page.getByTestId('login-submit').click();
 }
+
+/**
+ * ADR-093 — login Booster/Stakeholder: correo + clave Firebase.
+ * Con `?tipo=` preseleccionado la UI muestra el form email (no RUT).
+ */
+export async function loginCorreoClave(
+  page: Page,
+  cred: { email: string; password: string; tipo: 'booster' | 'stakeholder' },
+): Promise<void> {
+  await page.goto(`/login?tipo=${cred.tipo}`);
+  const form = page.getByTestId('login-universal-email-form');
+  const tipoBtn = page.getByTestId(`login-tipo-${cred.tipo}`);
+  await expect(form.or(tipoBtn)).toBeVisible();
+  if (await tipoBtn.isVisible()) {
+    await tipoBtn.click();
+  }
+  await expect(form).toBeVisible();
+  await page.getByTestId('login-email-input').fill(cred.email);
+  await page.getByTestId('login-password-input').fill(cred.password);
+  await page.getByTestId('login-submit').click();
+}

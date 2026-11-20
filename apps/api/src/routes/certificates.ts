@@ -20,7 +20,7 @@
  * naturalmente pertenece al namespace shipper-owned.
  */
 
-import { descargarSidecar } from '@booster-ai/certificate-generator';
+import { descargarSidecar, versionDePdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -197,6 +197,7 @@ export function createCertificatesRoutes(opts: {
         empresaId: trips.generadorCargaEmpresaId,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
         certificateSha256: tripMetrics.certificateSha256,
+        certificatePdfUrl: tripMetrics.certificatePdfUrl,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
@@ -261,6 +262,8 @@ export function createCertificatesRoutes(opts: {
       bucket: opts.certConfig.certificatesBucket,
       empresaId: trip.empresaId,
       trackingCode,
+      // La firma de la versión vigente (reemision-certificado).
+      version: versionDePdf(trip.certificatePdfUrl),
     });
     if (!sidecar) {
       // Inconsistencia: DB dice emitido pero el archivo no está en GCS.

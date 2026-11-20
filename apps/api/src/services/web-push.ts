@@ -85,7 +85,24 @@ export interface RutaSugeridaPushPayload {
   actions: { action: 'aceptar' | 'seguir'; title: string }[];
 }
 
-export type PushPayload = ChatPushPayload | RutaSugeridaPushPayload;
+/**
+ * Aviso sobre una carga (editar-anular-cargas §8): cambios de datos,
+ * solicitudes de cambio, cancelación. El service worker abre `data.url`.
+ */
+export interface AvisoCargaPushPayload {
+  title: string;
+  body: string;
+  /** `viaje:<id>:<evento>`: un aviso nuevo del mismo tipo reemplaza al anterior. */
+  tag: string;
+  data: {
+    tipo: 'aviso_carga';
+    trip_id: string;
+    assignment_id: string;
+    url: string;
+  };
+}
+
+export type PushPayload = ChatPushPayload | RutaSugeridaPushPayload | AvisoCargaPushPayload;
 
 export interface SendPushResult {
   sent: number;

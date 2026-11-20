@@ -48,6 +48,11 @@ export function createPublicTrackingRoutes(opts: {
       ...(opts.routesProjectId ? { routesProjectId: opts.routesProjectId } : {}),
     });
 
+    // Un enlace de seguimiento es personal: los buscadores no lo indexan y el
+    // navegador no lo manda como referente a otro sitio. Va en 200 y en 404.
+    c.header('X-Robots-Tag', 'noindex, nofollow');
+    c.header('Referrer-Policy', 'no-referrer');
+
     if (result.status === 'not_found') {
       // 404 con mensaje neutro — no leak de "el token tiene formato
       // inválido" vs "el token no existe en DB".

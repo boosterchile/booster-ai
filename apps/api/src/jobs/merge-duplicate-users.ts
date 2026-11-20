@@ -48,6 +48,8 @@ const FK_REFS: FkRef[] = [
   { table: 'membresias', col: 'invitado_por_id' },
   { table: 'viajes', col: 'creado_por_id' },
   { table: 'asignaciones', col: 'conductor_id' },
+  { table: 'rutas', col: 'conductor_id' },
+  { table: 'eventos_ruta', col: 'registrado_por_id' },
   { table: 'eventos_viaje', col: 'registrado_por_id' },
   { table: 'stakeholders', col: 'usuario_id' },
   { table: 'consentimientos', col: 'otorgado_por_id' },

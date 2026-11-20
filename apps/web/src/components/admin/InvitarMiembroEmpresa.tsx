@@ -1,7 +1,9 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { urlActivar } from '../../lib/activar-url.js';
 import { ApiError, api } from '../../lib/api-client.js';
+import { logger } from '../../lib/logger.js';
 import { SolicitudRegistrada } from '../SolicitudRegistrada.js';
 
 /**
@@ -13,9 +15,11 @@ import { SolicitudRegistrada } from '../SolicitudRegistrada.js';
  * camino de producto: se resolvía con INSERT a mano en producción. Caso que lo
  * motivó: el gestor de Transportes Van Oosterwyk.
  *
- * El código de un solo uso se muestra para entregarlo. La persona lo usa en
- * Activar cuenta, junto con su RUT, y elige su clave. El código no es la
- * contraseña. `refreshToken` recarga la lista cuando el panel crea una empresa.
+ * El código de un solo uso se muestra para entregarlo, junto a la dirección de
+ * `/activar` y el RUT. La persona lo usa ahí y elige su clave. El código no es
+ * la contraseña. `refreshToken` recarga la lista cuando el panel crea una
+ * empresa; `preferEmpresaId` la deja elegida con el rol dueño; `onInvitado`
+ * avisa al panel para que refresque las invitaciones pendientes.
  */
 
 interface EmpresaOption {
@@ -48,9 +52,11 @@ const ROLES = [
 export function InvitarMiembroEmpresa({
   refreshToken = 0,
   preferEmpresaId,
+  onInvitado,
 }: {
   refreshToken?: number;
   preferEmpresaId?: string | undefined;
+  onInvitado?: () => void;
 }) {
   const [empresas, setEmpresas] = useState<EmpresaOption[]>([]);
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
@@ -61,8 +67,22 @@ export function InvitarMiembroEmpresa({
   const [rol, setRol] = useState<string>('admin');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<InvitarResponse | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<(InvitarResponse & { rut: string }) | null>(null);
+  const [copied, setCopied] = useState<'codigo' | 'direccion' | null>(null);
+  // La empresa recién creada se elige con rol dueño una sola vez: una recarga
+  // posterior de la lista no pisa el rol que eligió el admin.
+  const preferAplicada = useRef<string | undefined>(undefined);
+  // true mientras el rol «dueno» es el que puso el panel para la empresa recién
+  // creada, y no uno que eligió el admin. Vale para la primera invitación a esa
+  // empresa: después de invitar, o al elegir otra empresa, vuelve a admin.
+  const duenoPorDefecto = useRef(false);
+
+  function volverAlRolPorDefecto() {
+    if (duenoPorDefecto.current) {
+      duenoPorDefecto.current = false;
+      setRol('admin');
+    }
+  }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshToken solo invalida la lista
   useEffect(() => {
@@ -75,6 +95,11 @@ export function InvitarMiembroEmpresa({
           setEmpresas(res.empresas);
           if (preferEmpresaId && res.empresas.some((e) => e.id === preferEmpresaId)) {
             setEmpresaId(preferEmpresaId);
+            if (preferAplicada.current !== preferEmpresaId) {
+              preferAplicada.current = preferEmpresaId;
+              duenoPorDefecto.current = true;
+              setRol('dueno');
+            }
           }
         }
       })
@@ -110,10 +135,12 @@ export function InvitarMiembroEmpresa({
         rut: rutNormalizado,
         rol,
       });
-      setResult(res);
+      setResult({ ...res, rut: rutNormalizado });
       setFullName('');
       setRut('');
       setEmail('');
+      volverAlRolPorDefecto();
+      onInvitado?.();
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
       if (code === 'already_member') {
@@ -128,15 +155,16 @@ export function InvitarMiembroEmpresa({
     }
   }
 
-  async function handleCopy(link: string) {
+  async function handleCopy(texto: string, que: 'codigo' | 'direccion') {
     try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Sin clipboard (http, permiso denegado): el link igual está en pantalla
-      // y es seleccionable.
-      setCopied(false);
+      await navigator.clipboard.writeText(texto);
+      setCopied(que);
+      window.setTimeout(() => setCopied(null), 2500);
+    } catch (err) {
+      // Sin clipboard (http, permiso denegado): el texto igual está en
+      // pantalla y es seleccionable.
+      logger.warn({ err, que }, 'invitar-miembro: no se pudo copiar al portapapeles');
+      setCopied(null);
     }
   }
 
@@ -166,7 +194,10 @@ export function InvitarMiembroEmpresa({
           <span className="font-medium text-neutral-700 text-sm">Empresa</span>
           <select
             value={empresaId}
-            onChange={(e) => setEmpresaId(e.target.value)}
+            onChange={(e) => {
+              setEmpresaId(e.target.value);
+              volverAlRolPorDefecto();
+            }}
             disabled={loadingEmpresas}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           >
@@ -217,7 +248,10 @@ export function InvitarMiembroEmpresa({
           <span className="font-medium text-neutral-700 text-sm">Rol</span>
           <select
             value={rol}
-            onChange={(e) => setRol(e.target.value)}
+            onChange={(e) => {
+              duenoPorDefecto.current = false;
+              setRol(e.target.value);
+            }}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           >
             {ROLES.map((r) => (
@@ -263,29 +297,46 @@ export function InvitarMiembroEmpresa({
       )}
 
       {result?.codigo_activacion && (
-        <div className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+        <div
+          className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4"
+          data-testid="invitar-entrega"
+        >
           <div className="font-semibold text-amber-900">
             Código de activación — quedó como {result.rol}, pendiente de activar
           </div>
           <p className="mt-1 text-amber-800 text-sm">
-            Entrégaselo por tu canal habitual. En Activar cuenta escribe su RUT, este código y elige
-            su clave de 6 dígitos. El código sirve una sola vez y no es su contraseña.
+            Entrégale a la persona estos datos por tu canal habitual. En la dirección de abajo, la
+            persona escribe su RUT ({result.rut}) y este código, y elige su propia clave de 6
+            dígitos. El código sirve una sola vez y no es su contraseña.
           </p>
           <p className="mt-1 text-amber-700 text-xs">
             Vence el{' '}
             {result.expira_en ? new Date(result.expira_en).toLocaleDateString('es-CL') : '—'}.
           </p>
           <div className="mt-3 flex items-center gap-2">
+            <div className="min-w-0 flex-1 select-all break-all rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-sm">
+              {urlActivar()}
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCopy(urlActivar(), 'direccion')}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+            >
+              <Copy className="h-3 w-3" aria-hidden />
+              {copied === 'direccion' ? 'Copiada ✓' : 'Copiar dirección'}
+            </button>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
             <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
               {result.codigo_activacion}
             </div>
             <button
               type="button"
-              onClick={() => void handleCopy(result.codigo_activacion ?? '')}
+              onClick={() => void handleCopy(result.codigo_activacion ?? '', 'codigo')}
               className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
             >
               <Copy className="h-3 w-3" aria-hidden />
-              {copied ? 'Copiado ✓' : 'Copiar código'}
+              {copied === 'codigo' ? 'Copiado ✓' : 'Copiar código'}
             </button>
           </div>
         </div>

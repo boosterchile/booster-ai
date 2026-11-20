@@ -39,7 +39,16 @@ vi.mock('../components/map/VehicleMap.js', () => ({
   VehicleMap: () => <div data-testid="vehicle-map" />,
 }));
 
-const { CargasListRoute, CargasNuevoRoute, CargasDetalleRoute } = await import('./cargas.js');
+const {
+  CargasListRoute,
+  CargasNuevoRoute,
+  CargasDetalleRoute,
+  CargasEditarRoute,
+  cambiaAlgoMaterial,
+  formDesdeDetalle,
+  mensajeErrorEdicion,
+} = await import('./cargas.js');
+const { ApiError } = await import('../lib/api-client.js');
 
 // jsdom no implementa scrollIntoView. useScrollToFirstError lo llama al
 // submit con errores y, sin stub, desmonta el árbol del test.
@@ -216,6 +225,84 @@ describe('CargasNuevoRoute', () => {
   });
 });
 
+// seguimiento-por-correo: correo opcional del destinatario en el formulario.
+describe('CargasNuevoRoute — correo del destinatario', () => {
+  /**
+   * Clic + pegar en vez de `user.type`: el formulario se re-renderiza entero en
+   * cada tecla (`watch()`) y, tecla a tecla, este caso pasaba de los 5 s bajo
+   * cobertura en CI. Pegar dispara un solo input con el texto completo.
+   */
+  async function escribir(
+    user: ReturnType<typeof userEvent.setup>,
+    campo: HTMLElement,
+    texto: string,
+  ) {
+    await user.click(campo);
+    await user.paste(texto);
+  }
+
+  async function llenarCargaValida(user: ReturnType<typeof userEvent.setup>) {
+    await escribir(user, screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
+    await escribir(user, screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
+    const [origen, destino] = screen.getAllByLabelText(/Región/);
+    if (!origen || !destino) {
+      throw new Error('faltan los selectores de región');
+    }
+    await user.selectOptions(origen, 'XIII');
+    await user.selectOptions(destino, 'VIII');
+    await escribir(user, screen.getByLabelText(/Peso/), '8000');
+    const local = (fecha: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+    };
+    fireEvent.change(screen.getByLabelText(/Desde/), {
+      target: { value: local(new Date(Date.now() + 2 * 60 * 60 * 1000)) },
+    });
+    fireEvent.change(screen.getByLabelText(/Hasta/), {
+      target: { value: local(new Date(Date.now() + 6 * 60 * 60 * 1000)) },
+    });
+  }
+
+  it('manda el correo del destinatario junto al nombre', async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      trip_request: { id: '11111111-1111-4111-8111-111111111111' },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await llenarCargaValida(user);
+    await escribir(user, screen.getByLabelText(/Nombre del destinatario/), 'Bodega La Serena');
+    await escribir(user, screen.getByLabelText(/Correo del destinatario/), 'Recepcion@Cliente.CL');
+    await escribir(user, screen.getByLabelText(/Notas para el transportista/), 'Andén 4');
+    await escribir(user, screen.getByLabelText(/^Referencia/), 'PO-1');
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    const [, body] = post.mock.calls[0] as [
+      string,
+      { consignee?: unknown; notes?: string; reference?: string },
+    ];
+    // editar-anular-cargas §12-P4: notas y referencia al crear.
+    expect(body.notes).toBe('Andén 4');
+    expect(body.reference).toBe('PO-1');
+    // El API lo guarda en minúsculas (schema compartido); la web lo manda tal cual, sin espacios.
+    expect(body.consignee).toEqual({ name: 'Bodega La Serena', email: 'Recepcion@Cliente.CL' });
+  });
+
+  it('un correo inválido muestra el mensaje bajo el campo y no publica', async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await llenarCargaValida(user);
+    await escribir(user, screen.getByLabelText(/Correo del destinatario/), 'no-es-correo');
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(
+      await screen.findByText('Ingresa un correo válido, como nombre@empresa.cl'),
+    ).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
 describe('CargasDetalleRoute', () => {
   it('no onboarded → no renderiza', () => {
     const { container } = wrap(<CargasDetalleRoute />);
@@ -246,6 +333,220 @@ describe('CargasDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasDetalleRoute />);
     await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
+  });
+
+  // editar-anular-cargas §9: «Contacto y notas» en el detalle.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('datos libres permitidos=%s → botón Editar visible=%s', async (permitido, visible) => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 'trip-1',
+        tracking_code: 'BST-999',
+        status: permitido ? 'asignado' : 'entregado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        cargo_volume_m3: null,
+        pickup_window_start: null,
+        pickup_window_end: null,
+        created_at: '2026-05-10T10:00:00Z',
+        consignee: { name: 'Bodega', phone_e164: null, email: null },
+        notes: 'Andén 4',
+        reference: 'PO-1',
+        acciones_permitidas: { editar_datos_libres: permitido },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText('Contacto y notas')).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+    expect(screen.getByText('PO-1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar' }) !== null).toBe(visible);
+  });
+
+  // editar-anular-cargas §9: anular antes del match, cancelar después.
+  const tripBase = {
+    id: 'trip-1',
+    tracking_code: 'BST-999',
+    origin_address_raw: 'A',
+    origin_region_code: 'XIII',
+    destination_address_raw: 'B',
+    destination_region_code: 'V',
+    cargo_type: 'carga_seca',
+    cargo_weight_kg: 5000,
+    cargo_volume_m3: null,
+    pickup_window_start: null,
+    pickup_window_end: null,
+    created_at: '2026-05-10T10:00:00Z',
+  };
+
+  it('antes del match ofrece «Anular carga» y no «Cancelar servicio»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'ofertas_enviadas',
+        acciones_permitidas: { editar_datos_libres: true, anular: true, cancelar: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByRole('button', { name: 'Anular carga' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
+  });
+
+  it('asignado ofrece «Cancelar servicio» con el teléfono del conductor', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: null,
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_user_id: 'u-c',
+        driver_name: 'Conductor Uno',
+        conductor_telefono_e164: '+56977777777',
+        ubicacion_actual: null,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar servicio' }));
+    expect(screen.getByText(/llama al conductor: \+56977777777/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Anular carga' })).not.toBeInTheDocument();
+  });
+
+  it('sin acciones de baja (en_proceso) no ofrece anular ni cancelar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'en_proceso',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
+    expect(screen.queryByRole('button', { name: 'Anular carga' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar servicio' })).not.toBeInTheDocument();
+  });
+
+  // editar-anular-cargas §9: cambios después del match.
+  it('asignado sin cambio pendiente ofrece «Solicitar cambio» y abre el formulario', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: {
+          editar_datos_libres: true,
+          solicitar_cambio: true,
+          retirar_cambio: false,
+          anular: false,
+          cancelar: true,
+        },
+        cambio_pendiente: null,
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Solicitar cambio' }));
+    expect(screen.getByRole('form', { name: 'Solicitar cambio' })).toBeInTheDocument();
+  });
+
+  it('con un cambio pendiente muestra el aviso con «Retirar solicitud» y no ofrece otro', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: {
+          editar_datos_libres: true,
+          solicitar_cambio: false,
+          retirar_cambio: true,
+          anular: false,
+          cancelar: true,
+        },
+        cambio_pendiente: {
+          id: 'sol-1',
+          cambios: { weight_kg: 2500 },
+          valores_anteriores: { weight_kg: 5000 },
+          creado_en: '2026-11-09T15:00:00.000Z',
+        },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(
+      await screen.findByText('Cambio pendiente de aprobación del transportista'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retirar solicitud' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Solicitar cambio' })).not.toBeInTheDocument();
+  });
+
+  it('en proceso explica que la carga ya fue recogida', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'en_proceso',
+        acciones_permitidas: { editar_datos_libres: true, solicitar_cambio: false },
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/La carga ya fue recogida/)).toBeInTheDocument();
+  });
+
+  it('una carga anulada muestra quién y cuándo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'cancelado',
+        acciones_permitidas: { editar_datos_libres: false, anular: false, cancelar: false },
+        anulacion: { en: '2026-11-09T16:00:00Z', por_nombre: 'Ana Pérez', razon: null },
+        cancelacion: null,
+      },
+      events: [],
+      assignment: null,
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/Anulada el .* por Ana Pérez\./)).toBeInTheDocument();
   });
 
   it('en_proceso sin destinatario y con token → muestra el enlace público', async () => {
@@ -336,5 +637,225 @@ describe('CargasDetalleRoute', () => {
     expect(
       screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/parte de tu carga/)).toBeNull();
+  });
+
+  it('carga consolidada → dice que la cifra es su parte y cuándo sale el certificado', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 'trip-1',
+        tracking_code: 'BST-999',
+        status: 'entregado',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        cargo_volume_m3: null,
+        pickup_window_start: null,
+        pickup_window_end: null,
+        created_at: '2026-05-10T10:00:00Z',
+      },
+      events: [],
+      assignment: null,
+      metrics: {
+        distance_km_estimated: '120.00',
+        distance_km_actual: null,
+        carbon_emissions_kgco2e_estimated: '40.000',
+        carbon_emissions_kgco2e_actual: null,
+        precision_method: 'modelado',
+        glec_version: 'v3.0',
+        route_data_source: 'teltonika_gps',
+        coverage_pct: '100.00',
+        certification_level: 'secundario_modeled',
+        linea_metodo: 'Consumo modelado según GLEC v3.0',
+        certificate_pdf_url: null,
+        certificate_sha256: null,
+        certificate_kms_key_version: null,
+        certificate_issued_at: null,
+        consolidacion: { participacion_pct: '42.50' },
+      },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText(/parte de tu carga en la ruta/)).toBeInTheDocument();
+    expect(screen.getByText('42,50 %')).toBeInTheDocument();
+    expect(screen.getByText(/cuando termina la ruta/)).toBeInTheDocument();
+    expect(screen.queryByText(/Generando certificado/)).toBeNull();
+  });
+
+  // matching-desde-la-carga §3.11 / §11-4: sin patente → «Vehículo por asignar»;
+  // el generador no ve si la unidad es de un tercero.
+  it('asignado sin patente → «Vehículo por asignar», sin rastro de tercero', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: null,
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_user_id: null,
+        driver_name: null,
+        ubicacion_actual: null,
+        es_de_tercero: true,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    const vehiculo = await screen.findByText('Vehículo por asignar');
+    expect(vehiculo).toBeInTheDocument();
+    expect(vehiculo).not.toHaveTextContent('—');
+    expect(screen.queryByText(/tercero/i)).not.toBeInTheDocument();
+  });
+
+  it('asignado con patente → muestra la patente, no «por asignar»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        ...tripBase,
+        status: 'asignado',
+        acciones_permitidas: { editar_datos_libres: true, anular: false, cancelar: true },
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'asignado',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Transportes Sur',
+        vehicle_id: 'v1',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: 'camion_mediano',
+        driver_user_id: null,
+        driver_name: null,
+        ubicacion_actual: null,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    expect(await screen.findByText('ABCD12')).toBeInTheDocument();
+    expect(screen.queryByText('Vehículo por asignar')).not.toBeInTheDocument();
+  });
+});
+
+// editar-anular-cargas §9: edición total antes del match.
+describe('CargasEditarRoute', () => {
+  const futuro = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+  const detalle = (status: string, extra: Record<string, unknown> = {}) => ({
+    trip_request: {
+      id: 'trip-1',
+      tracking_code: 'BST-777',
+      status,
+      origin_address_raw: 'Av. Apoquindo 4500, Las Condes',
+      origin_region_code: 'XIII',
+      origin_comuna_code: null,
+      destination_address_raw: 'Av. Libertad 100, Viña del Mar',
+      destination_region_code: 'V',
+      destination_comuna_code: null,
+      cargo_type: 'carga_seca',
+      cargo_weight_kg: 1000,
+      cargo_volume_m3: null,
+      cargo_description: null,
+      pickup_window_start: futuro(24),
+      pickup_window_end: futuro(27),
+      proposed_price_clp: null,
+      modalidad_carga: 'spot',
+      created_at: '2026-11-01T00:00:00Z',
+      notes: null,
+      reference: null,
+      consignee: { name: null, phone_e164: null, email: null },
+      acciones_permitidas: { editar: true, editar_datos_libres: true },
+      ofertas_pendientes: 3,
+      ...extra,
+    },
+    events: [],
+    assignment: null,
+    metrics: null,
+  });
+
+  it('formDesdeDetalle precarga el formulario y cambiaAlgoMaterial distingue notas de peso', () => {
+    const f = formDesdeDetalle(detalle('ofertas_enviadas').trip_request as never);
+    expect(f).toMatchObject({
+      origin_address_raw: 'Av. Apoquindo 4500, Las Condes',
+      cargo_weight_kg: '1000',
+      modalidad_carga: 'spot',
+    });
+    expect(cambiaAlgoMaterial(f, { ...f, notes: 'Andén 4' })).toBe(false);
+    expect(cambiaAlgoMaterial(f, { ...f, cargo_weight_kg: '2500' })).toBe(true);
+  });
+
+  it('mensajeErrorEdicion explica el 409 de una carga que ya tiene transportista', () => {
+    expect(mensajeErrorEdicion(new ApiError(409, 'trip_not_editable', null))).toMatch(
+      /ya tiene transportista/,
+    );
+    expect(mensajeErrorEdicion(new ApiError(409, 'trip_busy', null))).toMatch(/unos segundos/);
+  });
+
+  it('con ofertas vivas, un cambio material pide confirmación antes de guardar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(detalle('ofertas_enviadas'));
+    const put = vi.spyOn(api, 'put').mockResolvedValue({});
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasEditarRoute />);
+    const peso = await screen.findByLabelText(/Peso/);
+    fireEvent.change(peso, { target: { value: '2500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(
+      await screen.findByText(/Hay 3 transportistas evaluando esta carga/),
+    ).toBeInTheDocument();
+    expect(put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, guardar cambios' }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/trip-requests-v2/trip-1',
+        expect.objectContaining({ cargo: expect.objectContaining({ weight_kg: 2500 }) }),
+      ),
+    );
+  });
+
+  it('solo notas: guarda sin preguntar', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(detalle('ofertas_enviadas'));
+    const put = vi.spyOn(api, 'put').mockResolvedValue({});
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasEditarRoute />);
+    fireEvent.change(await screen.findByLabelText(/Notas para el transportista/), {
+      target: { value: 'Andén 4' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/trip-requests-v2/trip-1',
+        expect.objectContaining({ notes: 'Andén 4' }),
+      ),
+    );
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('una carga que ya no se edita no muestra el formulario', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(
+      detalle('asignado', { acciones_permitidas: { editar: false, editar_datos_libres: true } }),
+    );
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasEditarRoute />);
+    expect(await screen.findByText(/ya no se edita directamente/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
   });
 });

@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
+import { InstruccionesRetiroPanel } from '../components/instrucciones-retiro/InstruccionesRetiroPanel.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { useRefetchWhenVisible } from '../hooks/use-refetch-when-visible.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import {
   LIVE_TRACKING_FETCH,
   LIVE_TRACKING_QUERY,
@@ -60,6 +62,8 @@ interface TripDetailResponse {
     eta_minutes?: number | null;
     /** UUID del seguimiento público. Null en asignaciones anteriores a la columna. */
     public_tracking_token?: string | null;
+    /** La ruta lleva otras cargas (ruta-parada-servicio §4.6). Ausente en un API anterior. */
+    viaja_consolidada?: boolean;
   } | null;
 }
 
@@ -71,13 +75,21 @@ export function CargaTrackRoute() {
           return null;
         }
         const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
-        return <CargaTrackPage canWriteDocs={canWriteDocs} />;
+        // instrucciones-retiro: las carga quien puede publicar cargas.
+        const canWriteRetiro = flagsDe(ctx.me).publicarCarga;
+        return <CargaTrackPage canWriteDocs={canWriteDocs} canWriteRetiro={canWriteRetiro} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
+function CargaTrackPage({
+  canWriteDocs,
+  canWriteRetiro,
+}: {
+  canWriteDocs: boolean;
+  canWriteRetiro: boolean;
+}) {
   const { id } = useParams({ strict: false }) as { id: string };
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -107,8 +119,10 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
     <>
       <LiveTrackingScreen
         title={
-          assignment?.vehicle_plate
-            ? `Carga · ${assignment.vehicle_plate}`
+          assignment
+            ? assignment.vehicle_plate
+              ? `Carga · ${assignment.vehicle_plate}`
+              : 'Carga · Vehículo por asignar'
             : trip
               ? `Carga ${trip.id.slice(0, 8)}…`
               : 'Carga en vivo'
@@ -127,6 +141,14 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
           <div className="space-y-3">
             {assignment ? (
               <div className="space-y-2">
+                {assignment.viaja_consolidada && (
+                  <div className="rounded-md border border-neutral-200 bg-neutral-50 p-2">
+                    <p className="font-medium text-neutral-900 text-sm">Viaja con otras cargas</p>
+                    <p className="text-neutral-600 text-xs">
+                      La ubicación se muestra entre la recogida y la entrega de tu carga.
+                    </p>
+                  </div>
+                )}
                 {hasPos && (
                   <div>
                     <p className="font-semibold text-neutral-900 text-sm">
@@ -162,6 +184,7 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
               </div>
             )}
             {shareUrl && <PublicTrackingShare url={shareUrl} />}
+            <InstruccionesRetiroPanel tripId={id} canWrite={canWriteRetiro} />
             <TransportDocumentsPanel tripId={id} canWrite={canWriteDocs} compact />
           </div>
         }

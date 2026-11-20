@@ -76,7 +76,7 @@ describe('EventoCombustibleMap', () => {
     const pin = screen.getByTestId('marker');
     expect(pin).toHaveAttribute('data-lat', '-33.4');
     expect(pin).toHaveAttribute('data-lng', '-70.6');
-    expect(pin).toHaveAttribute('data-title', 'Posible robo de combustible');
+    expect(pin).toHaveAttribute('data-title', 'Desviación de combustible por analizar');
     expect(screen.getByTestId('pin')).toBeInTheDocument();
   });
 });

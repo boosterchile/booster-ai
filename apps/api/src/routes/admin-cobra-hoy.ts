@@ -1,19 +1,18 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { adelantosCarrier, shipperCreditDecisions } from '../db/schema.js';
-import type { UserContext } from '../services/user-context.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 
 /**
  * Endpoints admin de "Booster Cobra Hoy" (ADR-029 + ADR-032).
  *
  * Audiencia: operadores de Booster Chile SpA, NO admins de empresa
- * carrier. Auth se hace contra `BOOSTER_PLATFORM_ADMIN_EMAILS` (allowlist
- * por email — ver config.ts).
+ * carrier. Auth con `requirePlatformAdmin` (regla única de acceso al panel,
+ * `auth/acceso-plataforma.ts`) y el kill-switch `FACTORING_V1_ACTIVATED`.
  *
  *   GET  /admin/cobra-hoy/adelantos?status=...&empresa_carrier_id=...
  *   POST /admin/cobra-hoy/adelantos/:id/transicionar
@@ -74,31 +73,9 @@ const statusQuerySchema = z.enum([
 export function createAdminCobraHoyRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  function requirePlatformAdmin(c: Context) {
-    if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'feature_disabled' }, 503),
-      };
-    }
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    const allowlist = appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS;
-    if (!email || !allowlist.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, userContext, adminEmail: email };
-  }
-
   // GET /admin/cobra-hoy/adelantos
   app.get('/adelantos', async (c) => {
-    const auth = requirePlatformAdmin(c);
+    const auth = requirePlatformAdmin(c, { featureFlag: appConfig.FACTORING_V1_ACTIVATED });
     if (!auth.ok) {
       return auth.response;
     }
@@ -156,7 +133,7 @@ export function createAdminCobraHoyRoutes(opts: { db: Db; logger: Logger }) {
 
   // POST /admin/cobra-hoy/adelantos/:id/transicionar
   app.post('/adelantos/:id/transicionar', async (c) => {
-    const auth = requirePlatformAdmin(c);
+    const auth = requirePlatformAdmin(c, { featureFlag: appConfig.FACTORING_V1_ACTIVATED });
     if (!auth.ok) {
       return auth.response;
     }

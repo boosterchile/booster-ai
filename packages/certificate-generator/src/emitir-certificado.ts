@@ -14,7 +14,8 @@
 import { obtenerOEmitirCertSelfSigned } from './ca-self-signed.js';
 import { firmarPades } from './firmar-pades.js';
 import { generarPdfBase } from './generar-pdf-base.js';
-import { subirArtefactosCertificado } from './storage.js';
+import { validarVersion } from './reemision.js';
+import { rutaPdfCertificado, subirArtefactosCertificado } from './storage.js';
 import type {
   ConfigInfra,
   DatosEmpresaCertificado,
@@ -35,11 +36,32 @@ export interface ParametrosEmisionCertificado {
    * sidecar. Ejemplo: 'https://api.boosterchile.com'. Sin slash final.
    */
   verifyBaseUrl: string;
+  /**
+   * Versión del certificado (`.specs/reemision-certificado/`). Sin ella, la
+   * 1. Una reemisión sube a la ruta de su versión y no pisa la anterior.
+   */
+  version?: number | undefined;
 }
 
 export async function emitirCertificado(
   params: ParametrosEmisionCertificado,
 ): Promise<ResultadoEmisionCertificado> {
+  // (0) La ruta se valida antes de firmar: una versión inválida no gasta una
+  // firma de KMS ni sube nada.
+  rutaPdfCertificado({
+    empresaId: params.empresaShipper.id,
+    trackingCode: params.viaje.trackingCode,
+    version: params.version,
+  });
+  // La versión de la ruta y la impresa son la misma: un PDF subido como v2
+  // que diga «Versión 1», sin decir qué reemplaza, no resiste una auditoría.
+  const impresa = validarVersion(params.viaje.version).numero;
+  if ((params.version ?? 1) !== impresa) {
+    throw new Error(
+      `la versión de la ruta (${params.version ?? 1}) no es la impresa en el certificado (${impresa})`,
+    );
+  }
+
   // (1) Cert X.509 — barato si está cacheado en GCS, ~150ms si hay que
   // emitirlo (1 sign de KMS).
   const cert = await obtenerOEmitirCertSelfSigned({
@@ -73,6 +95,7 @@ export async function emitirCertificado(
     cert,
     kmsKeyId: params.infra.kmsKeyId,
     verifyBaseUrl: params.verifyBaseUrl,
+    version: params.version,
   });
 
   return {

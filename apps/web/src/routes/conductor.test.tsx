@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -24,6 +24,14 @@ type ProtectedContext =
   | { kind: 'unmanaged' };
 
 let providedContext: ProtectedContext = { kind: 'unmanaged' };
+
+// Las instrucciones de retiro tienen sus propios tests
+// (components/instrucciones-retiro); acá solo importa que la tarjeta las monte.
+vi.mock('../components/instrucciones-retiro/InstruccionesRetiroConductor.js', () => ({
+  InstruccionesRetiroConductor: ({ tripId }: { tripId: string }) => (
+    <div data-testid="instrucciones-retiro-conductor" data-trip-id={tripId} />
+  ),
+}));
 
 vi.mock('../components/ProtectedRoute.js', () => ({
   ProtectedRoute: ({ children }: { children: (ctx: ProtectedContext) => ReactNode }) => (
@@ -256,13 +264,23 @@ describe('ConductorDashboardRoute', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('dueño con ficha del mismo RUT sí ve el panel', () => {
+    const me = makeMe();
+    (me as unknown as { active_membership: { role: string } }).active_membership.role = 'dueno';
+    me.ficha_conductor_mismo_rut = true;
+    providedContext = { kind: 'onboarded', me };
+    render(<ConductorDashboardRoute />);
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(screen.getByText('Pedro Conductor')).toBeInTheDocument();
+  });
+
   it('gate por rol: un dueño onboarded NO ve el panel del conductor, va a /app', () => {
     const me = makeMe();
     (me as unknown as { active_membership: { role: string } }).active_membership.role = 'dueno';
     providedContext = { kind: 'onboarded', me };
     render(<ConductorDashboardRoute />);
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
-    expect(screen.queryByText('Tu próximo servicio')).toBeNull();
+    expect(screen.queryByText('Tu próximo viaje')).toBeNull();
   });
 
   it('header muestra full_name del usuario y link a configuración', async () => {
@@ -304,11 +322,59 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    expect(await screen.findByText('Tu próximo servicio')).toBeInTheDocument();
+    expect(await screen.findByText('Tu próximo viaje')).toBeInTheDocument();
     expect(screen.getByText('BOO-ABC123')).toBeInTheDocument();
     expect(screen.getByText(/Av\. Pajaritos 1234, Maipú/)).toBeInTheDocument();
     expect(screen.getByText(/Av\. Brasil 2345, Valparaíso/)).toBeInTheDocument();
     expect(screen.getByText('DEMO01')).toBeInTheDocument();
+    // instrucciones-retiro: por recoger, la tarjeta monta las instrucciones del viaje.
+    expect(screen.getByTestId('instrucciones-retiro-conductor')).toHaveAttribute(
+      'data-trip-id',
+      sampleAssignment.trip.id,
+    );
+  });
+
+  // editar-anular-cargas §12-P4: contacto, notas y referencia del generador.
+  it('muestra el contacto del destinatario y las notas del viaje', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            consignee: { name: 'Bodega La Serena', phone_e164: '+56911111111' },
+            notes: 'Andén 4',
+            reference: 'PO-1',
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText('Recibe: Bodega La Serena')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Llamar \+56911111111/ })).toBeInTheDocument();
+    expect(screen.getByText('Andén 4')).toBeInTheDocument();
+  });
+
+  it('sin ventana no inventa hora', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            pickup_window_start: null,
+            pickup_window_end: null,
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText('Tu próximo viaje')).toBeInTheDocument();
+    expect(screen.getByText('Maipú → Valparaíso')).toBeInTheDocument();
+    expect(screen.queryByText(/Ventana/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d{1,2}:\d{2}/)).not.toBeInTheDocument();
   });
 
   it('múltiples servicios → muestra "Tus servicios asignados" (plural)', async () => {
@@ -324,7 +390,7 @@ describe('ConductorDashboardRoute', () => {
       ],
     });
     render(<ConductorDashboardRoute />);
-    expect(await screen.findByText('Tus servicios asignados')).toBeInTheDocument();
+    expect(await screen.findByText('Después')).toBeInTheDocument();
     expect(screen.getByText('BOO-ABC123')).toBeInTheDocument();
     expect(screen.getByText('BOO-XYZ789')).toBeInTheDocument();
   });
@@ -415,6 +481,27 @@ describe('ConductorDashboardRoute', () => {
     fireEvent.click(await screen.findByTestId('confirmar-recogida'));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() => expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id));
+  });
+
+  // editar-anular-cargas §9: con un cambio pendiente no se recoge; el conductor no ve qué cambia.
+  it('con un cambio pendiente muestra el aviso y deshabilita iniciar el viaje', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            cambio_pendiente: { existe: true, creado_en: '2026-11-09T15:00:00.000Z' },
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByTestId('cambio-pendiente-conductor')).toHaveTextContent(
+      'Hay un cambio pendiente. Espera la respuesta de tu transportista antes de recoger.',
+    );
+    expect(screen.getByTestId('confirmar-recogida')).toBeDisabled();
   });
 
   it('en ruta sin posición: avisa y ofrece reintentar la ubicación', async () => {
@@ -593,7 +680,7 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    await screen.findByText('Tu próximo servicio');
+    await screen.findByText('Tu próximo viaje');
     // El driver no negocia ofertas — la palabra "oferta" no debería aparecer en su superficie.
     expect(screen.queryByText(/\boferta(s)?\b/i)).not.toBeInTheDocument();
   });
@@ -845,6 +932,48 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     expect(alerta.textContent ?? '').toMatch(/señal|conexión/i);
   });
 
+  it('403 not_assigned_driver → solo el conductor asignado, sin volver a ofrecer confirmar', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          status: 'recogido',
+          vehicle: { id: 'veh-1', plate: 'TEST01', has_teltonika: true },
+        },
+      ],
+    });
+    apiPatchSpy.mockRejectedValue(
+      new ApiError(403, 'not_assigned_driver', { code: 'not_assigned_driver' }),
+    );
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
+
+    const alerta = await screen.findByText(/solo el conductor asignado puede confirmar/i);
+    expect(alerta.textContent ?? '').not.toMatch(/reintent|intenta de nuevo|señal/i);
+    expect(screen.queryByRole('button', { name: /^Confirmar entrega$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reintentar/i })).not.toBeInTheDocument();
+  });
+
+  it('403 not_assigned_driver en por recoger no deja el enlace de entrega', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(
+      new ApiError(403, 'not_assigned_driver', { code: 'not_assigned_driver' }),
+    );
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByTestId('entrega-sin-recogida'));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/solo el conductor asignado puede confirmar/i);
+    expect(screen.queryByTestId('entrega-sin-recogida')).not.toBeInTheDocument();
+    expect(screen.getByTestId('confirmar-recogida')).toBeInTheDocument();
+  });
+
   it('ya entregada (409 invalid_status) no queda como error del conductor', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
@@ -870,7 +999,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
 
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
@@ -884,7 +1013,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i })); // sin confirmar
+    fireEvent.click(await screen.findByRole('button', { name: /Iniciar viaje/i })); // sin confirmar
     const franja = await screen.findByTestId('confirmacion-inline');
     expect(franja).toHaveTextContent(/¿Confirmas que ya cargaste esta carga en el camión\?/);
     expect(apiPatchSpy).not.toHaveBeenCalled();
@@ -901,7 +1030,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     render(<ConductorDashboardRoute />);
     await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
 
-    expect(screen.queryByRole('button', { name: /Confirmar recogida/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Iniciar viaje/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Confirmar entrega/i })).toBeInTheDocument();
   });
 
@@ -946,7 +1075,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
 
     const sugerencia = await screen.findByTestId('sugerencia-recogida');
     expect(sugerencia.textContent ?? '').toMatch(/punto de recogida/i);
-    fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
@@ -971,7 +1100,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
 
     expect(screen.queryByTestId('sugerencia-recogida')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
@@ -986,7 +1115,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     apiPatchSpy.mockRejectedValue(new ApiError(409, 'invalid_status', {}));
 
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Iniciar viaje/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
@@ -1131,5 +1260,125 @@ describe('ConductorDashboardRoute — accesibilidad', () => {
     // color-contrast off: jsdom no computa layout/canvas (lo cubre ui-tokens).
     const results = await axe(baseElement, { rules: { 'color-contrast': { enabled: false } } });
     expect(results.violations).toEqual([]);
+  });
+});
+
+// ruta-parada-servicio parte 6 (spec §4.8): la hoja de ruta del conductor.
+describe('ConductorDashboardRoute — hoja de ruta', () => {
+  const parada = (
+    orden: number,
+    tipo: 'recogida' | 'entrega',
+    asignacionId: string,
+    codigo: string,
+    cambios: Record<string, unknown> = {},
+  ) => ({
+    orden,
+    tipo,
+    resuelta_en: null,
+    asignacion_id: asignacionId,
+    cancelado: false,
+    codigo_seguimiento: codigo,
+    direccion: tipo === 'recogida' ? `Bodega ${codigo}` : `Cliente ${codigo}`,
+    ventana: tipo === 'recogida' ? { desde: null, hasta: null } : null,
+    contacto:
+      tipo === 'entrega' ? { nombre: `Recibe ${codigo}`, telefono_e164: '+56911111111' } : null,
+    notas: null,
+    referencia: null,
+    tipo_carga: 'carga_seca',
+    peso_kg: 1000,
+    ...cambios,
+  });
+  const otro = {
+    ...sampleAssignment,
+    id: 'asg-999',
+    ruta_id: 'ruta-1',
+    trip: { ...sampleAssignment.trip, id: 'trip-999', tracking_code: 'BOO-XYZ789' },
+  };
+  const primero = { ...sampleAssignment, ruta_id: 'ruta-1' };
+  const A = sampleAssignment.id;
+  const HOJA = {
+    id: 'ruta-1',
+    estado: 'en_curso',
+    paradas: [
+      parada(0, 'recogida', 'asg-999', 'BOO-XYZ789', { resuelta_en: '2026-11-12T13:00:00.000Z' }),
+      parada(1, 'recogida', A, 'BOO-ABC123'),
+      parada(2, 'entrega', 'asg-999', 'BOO-XYZ789'),
+      parada(3, 'entrega', A, 'BOO-ABC123'),
+    ],
+  };
+
+  it('con varias cargas en la ruta, muestra las paradas en orden y cuál sigue', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [primero, otro], rutas: [HOJA] });
+    render(<ConductorDashboardRoute />);
+
+    const hoja = await screen.findByRole('region', { name: 'Hoja de ruta' });
+    const items = within(hoja).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/^1.*Recoger.*BOO-XYZ789.*Bodega BOO-XYZ789.*Hecha/),
+      expect.stringMatching(/^2.*Recoger.*BOO-ABC123.*Bodega BOO-ABC123.*Sigue/),
+      expect.stringMatching(/^3.*Entregar.*BOO-XYZ789.*Cliente BOO-XYZ789.*Recibe BOO-XYZ789/),
+      expect.stringMatching(/^4.*Entregar.*BOO-ABC123/),
+    ]);
+    expect(within(hoja).getByText('4 paradas · 1 hecha')).toBeInTheDocument();
+    expect(items[1]).toHaveAttribute('aria-current', 'step');
+    expect(items[0]).not.toHaveAttribute('aria-current');
+  });
+
+  it('la tarjeta destacada es la carga de la parada que sigue, no la más reciente', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    // La API entrega primero la más reciente (asg-999); en la ruta sigue la otra.
+    apiGetSpy.mockResolvedValue({ assignments: [otro, primero], rutas: [HOJA] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByRole('region', { name: 'Hoja de ruta' });
+    const tarjetas = screen.getAllByTestId(/^assignment-card-/);
+    expect(tarjetas.map((t) => t.getAttribute('data-testid'))).toEqual([
+      `assignment-card-${A}`,
+      'assignment-card-asg-999',
+    ]);
+  });
+
+  it('una parada de una carga cancelada se muestra tachada y no cuenta como la que sigue', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    const hoja = {
+      ...HOJA,
+      paradas: [
+        parada(0, 'recogida', 'asg-999', 'BOO-XYZ789', { cancelado: true }),
+        parada(1, 'recogida', A, 'BOO-ABC123'),
+        parada(2, 'entrega', 'asg-999', 'BOO-XYZ789', { cancelado: true }),
+        parada(3, 'entrega', A, 'BOO-ABC123'),
+      ],
+    };
+    apiGetSpy.mockResolvedValue({ assignments: [primero], rutas: [hoja] });
+    render(<ConductorDashboardRoute />);
+    const region = await screen.findByRole('region', { name: 'Hoja de ruta' });
+    const items = within(region).getAllByRole('listitem');
+    expect(items[0]?.textContent).toMatch(/Cancelada/);
+    expect(items[1]).toHaveAttribute('aria-current', 'step');
+    expect(within(region).getByText('2 paradas · 0 hechas')).toBeInTheDocument();
+  });
+
+  it('con una sola carga en la ruta no hay hoja de ruta: la pantalla queda como siempre', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [primero],
+      rutas: [
+        {
+          ...HOJA,
+          paradas: [parada(0, 'recogida', A, 'BOO-ABC123'), parada(1, 'entrega', A, 'BOO-ABC123')],
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${A}`);
+    expect(screen.queryByRole('region', { name: 'Hoja de ruta' })).toBeNull();
+  });
+
+  it('una respuesta sin rutas (API anterior) no rompe la pantalla', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${A}`);
+    expect(screen.queryByRole('region', { name: 'Hoja de ruta' })).toBeNull();
   });
 });

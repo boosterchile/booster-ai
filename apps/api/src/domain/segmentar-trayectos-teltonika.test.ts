@@ -6,6 +6,7 @@ import {
   kmPorLitroMaxConfiable,
 } from './combustible/rendimiento.js';
 import {
+  AVL_LEIDOS_POR_SEGMENTADOR,
   COBERTURA_TELEMETRIA_MINIMA_PCT,
   DISTANCIA_MINIMA_AVISO_ROBO_KM,
   GAP_CORTE_MS,
@@ -1831,4 +1832,133 @@ describe('guardrail de km/L', () => {
     expect(trayectos[2]?.notaCombustible).toBeNull();
     expect(trayectos[0]?.notaCombustible).toBe(NOTA_SIN_BAJA);
   }, 30_000);
+});
+
+describe('ventana y litros del evento', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it('la baja de golpe trae cuándo empezó, cuándo terminó y cuántos litros', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 800),
+      ...caida(T0 + 10 * 60_000, 800, 590, -33.41, -70.61),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventoDesde: iso(T0 + 10 * 60_000),
+      eventoHasta: iso(T0 + 12 * 60_000),
+      eventoLitros: 21,
+    });
+  });
+
+  it('la baja gradual va desde la primera baja hasta la última y suma los litros', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 24 * 60_000, 940, 900, -33.49, -70.69),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: true,
+      eventoDesde: iso(T0 + 10 * 60_000),
+      eventoHasta: iso(T0 + 26 * 60_000),
+      eventoLitros: 10,
+    });
+  });
+
+  it('sin aviso no trae ventana ni litros', () => {
+    const trayectos = segmentarTrayectosTeltonika([...movimiento(T0, 800)]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventoDesde: null,
+      eventoHasta: null,
+      eventoLitros: null,
+    });
+  });
+});
+
+describe('AVL que lee el segmentador', () => {
+  const RUIDO = { '66': 12_800, '199': 44, '16': 123_456, '21': 4 };
+
+  function conExtras(puntos: PuntoSegmentacion[], extra: Partial<PuntoSegmentacion> = {}) {
+    return puntos.map((p, i) => ({
+      ...p,
+      ...extra,
+      io: { ...RUIDO, '1': 1, '24': 60, '81': 61, '85': 1_200, '250': i === 0 ? 1 : 0, ...p.io },
+    }));
+  }
+
+  function escenarios(): PuntoSegmentacion[][] {
+    const golpe = [...movimiento(T0, 800), ...caida(T0 + 10 * 60_000, 800, 590, -33.41, -70.61)];
+    const gradual = [
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 24 * 60_000, 940, 900, -33.49, -70.69),
+    ];
+    const consumo = movimiento(T0, 800).map((p, i) => ({
+      ...p,
+      io: { '239': 1, '240': 1, '83': 5_000 + i * 80, '89': 70 - i },
+    }));
+    return [
+      conExtras(golpe),
+      conExtras(gradual),
+      conExtras(golpe, { fuenteCombustibleCan: '84', capacidadEstanqueL: 400 }),
+      conExtras(consumo, { fuenteCombustibleCan: '83', capacidadEstanqueL: 400 }),
+      conExtras(consumo, { fuenteCombustibleCan: '89', capacidadEstanqueL: 400 }),
+      conExtras(golpe, { fuenteCombustibleCan: 'sin_sensor' }),
+      conExtras(movimiento(T0, 800).map((p) => ({ ...p, io: { '240': 1 } }))),
+    ];
+  }
+
+  it('no lee ningún AVL que no esté en la lista', () => {
+    const leidas = new Set<string>();
+    const anotar = (clave: string | symbol) => {
+      if (typeof clave === 'string') {
+        leidas.add(clave);
+      }
+    };
+    const espiar = (io: Record<string, number>) =>
+      new Proxy(io, {
+        get(objeto, clave, receptor) {
+          anotar(clave);
+          return Reflect.get(objeto, clave, receptor);
+        },
+        has(objeto, clave) {
+          anotar(clave);
+          return Reflect.has(objeto, clave);
+        },
+        getOwnPropertyDescriptor(objeto, clave) {
+          anotar(clave);
+          return Reflect.getOwnPropertyDescriptor(objeto, clave);
+        },
+        ownKeys(objeto) {
+          leidas.add('(todas las claves)');
+          return Reflect.ownKeys(objeto);
+        },
+      });
+    for (const puntos of escenarios()) {
+      segmentarTrayectosTeltonika(puntos.map((p) => ({ ...p, io: espiar(p.io) })));
+    }
+    const permitidas = new Set<string>(AVL_LEIDOS_POR_SEGMENTADOR);
+    expect([...leidas].filter((clave) => !permitidas.has(clave))).toEqual([]);
+    expect(leidas.size).toBeGreaterThan(5);
+  });
+
+  it('da el mismo resultado con solo los AVL de la lista que con el io completo', () => {
+    const proyectar = (io: Record<string, number>) =>
+      Object.fromEntries(
+        AVL_LEIDOS_POR_SEGMENTADOR.filter((clave) => clave in io).map((clave) => [
+          clave,
+          io[clave],
+        ]),
+      ) as Record<string, number>;
+    for (const puntos of escenarios()) {
+      const completo = segmentarTrayectosTeltonika(puntos);
+      const proyectado = segmentarTrayectosTeltonika(
+        puntos.map((p) => ({ ...p, io: proyectar(p.io) })),
+      );
+      expect(proyectado).toEqual(completo);
+      expect(completo.length).toBeGreaterThan(0);
+    }
+  });
 });

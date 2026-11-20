@@ -1,8 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { assertTransicion } from '@booster-ai/trip-state-machine';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, tripEvents, trips } from '../db/schema.js';
+import { conductorDeAsignacion, vehiculoDeAsignacion } from '../db/configuracion-de-asignacion.js';
+import { assignments, tripChangeRequests, tripEvents, trips } from '../db/schema.js';
+import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 
 /**
  * Confirmar recogida — el paso que la máquina de estados modelaba y nadie
@@ -41,9 +43,19 @@ export type ConfirmarRecogidaResult =
   | { ok: true; alreadyPickedUp: boolean; pickedUpAt: Date; tripId: string }
   | {
       ok: false;
-      code: 'assignment_not_found' | 'forbidden' | 'invalid_status' | 'invalid_picked_up_at';
+      code:
+        | 'assignment_not_found'
+        | 'forbidden'
+        | 'invalid_status'
+        | 'invalid_picked_up_at'
+        /** matching-desde-la-carga §3.8: la ruta aún no declara vehículo. */
+        | 'ruta_sin_vehiculo'
+        /** matching-desde-la-carga §3.8: la ruta aún no declara conductor. */
+        | 'ruta_sin_conductor';
       currentStatus?: string;
-    };
+    }
+  /** editar-anular-cargas §6.12: hay un cambio sin responder; no se recoge. */
+  | { ok: false; code: 'cambio_pendiente'; solicitudId: string };
 
 /**
  * Tolerancia hacia el futuro para un `pickedUpAt` provisto por el cliente:
@@ -69,11 +81,28 @@ export async function confirmarRecogidaViaje(opts: {
   const { db, logger, assignmentId, actor, pickedUpAt: pickedUpAtProvisto } = opts;
 
   return await db.transaction(async (tx) => {
+    // Lock del viaje ANTES de leer: una solicitud de cambio creada en paralelo
+    // toma el mismo lock, así que o la vemos aquí o espera a esta recogida
+    // (editar-anular-cargas §6.12). Mismo orden que cancelar-carga.
+    // rls-allowlist: el viaje se busca por su asignación; la empresa se valida abajo contra la fila.
+    await tx
+      .select({ id: trips.id })
+      .from(trips)
+      .where(
+        eq(
+          trips.id,
+          sql`(select ${assignments.tripId} from ${assignments} where ${assignments.id} = ${assignmentId})`,
+        ),
+      )
+      .for('update')
+      .limit(1);
+
     const rows = await tx
       .select({
         assignmentId: assignments.id,
         assignmentStatus: assignments.status,
-        driverUserId: assignments.driverUserId,
+        driverUserId: conductorDeAsignacion,
+        vehicleId: vehiculoDeAsignacion,
         pickedUpAt: assignments.pickedUpAt,
         acceptedAt: assignments.acceptedAt,
         empresaId: assignments.empresaId,
@@ -120,6 +149,39 @@ export async function confirmarRecogidaViaje(opts: {
         code: 'invalid_status' as const,
         currentStatus: row.assignmentStatus,
       };
+    }
+
+    // matching-desde-la-carga §3.8: no se confirma la recogida sin vehículo y
+    // conductor declarados en la ruta.
+    if (row.vehicleId == null) {
+      logger.info(
+        { assignmentId, tripId: row.tripId },
+        'confirmar-recogida bloqueada: ruta sin vehículo',
+      );
+      return { ok: false as const, code: 'ruta_sin_vehiculo' as const };
+    }
+    if (row.driverUserId == null) {
+      logger.info(
+        { assignmentId, tripId: row.tripId },
+        'confirmar-recogida bloqueada: ruta sin conductor',
+      );
+      return { ok: false as const, code: 'ruta_sin_conductor' as const };
+    }
+
+    // rls-allowlist: solicitud del viaje de una asignación ya autorizada arriba (empresaId o conductor).
+    const [pendiente] = await tx
+      .select({ id: tripChangeRequests.id })
+      .from(tripChangeRequests)
+      .where(
+        and(eq(tripChangeRequests.tripId, row.tripId), eq(tripChangeRequests.status, 'pendiente')),
+      )
+      .limit(1);
+    if (pendiente) {
+      logger.info(
+        { assignmentId, tripId: row.tripId, solicitudId: pendiente.id },
+        'confirmar-recogida bloqueada: cambio de carga pendiente',
+      );
+      return { ok: false as const, code: 'cambio_pendiente' as const, solicitudId: pendiente.id };
     }
 
     // La legalidad la decide la tabla del trip-state-machine (ADR-061); este
@@ -196,6 +258,15 @@ export async function confirmarRecogidaViaje(opts: {
         // 'servidor' = tap manual, now del API.
         picked_up_at_source: pickedUpAtSource,
       },
+    });
+
+    // La ruta sigue a la asignación (ADR-088): pasa a `en_curso` con su
+    // parada de recogida resuelta.
+    await sincronizarRutaDeAsignacion(tx, {
+      asignacionId: row.assignmentId,
+      origen: 'recogida_confirmada',
+      userId: actor.userId,
+      logger,
     });
 
     logger.info(

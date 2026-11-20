@@ -1,143 +1,107 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-09-22 · `main` = `cf76ea8` al verificar (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`; luego entró #710, `80c2682`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 3 PRs detrás de `main`**: #706 y #707, con la migración 0056, y #710 (trayectos: litros del CAN, sin migración; mergeado el 2026-09-22 después del corte de esta verificación), sin desplegar. Horas en UTC; Santiago = UTC−3.
-**Después de este corte (2026-09-27):** entraron a `main` #708 (Routes API), #709 (este handoff), #711 (retiro de código demo), #712, #723, #724 (alta admin, Corfo y Teltonika) y #725. Las tablas de abajo no se re-verificaron contra ese `main`.
-**Programa TRL 10 (2026-10-10, prod sin re-verificar):** `main` = `c1a1683`. Están mergeados 38 de los 39 PRs del programa (#742–#780); falta #748 (migración contract, espera visto del PO y sus precondiciones). Nada de esto llegó a prod: el release desde `main`, los `terraform apply`, los secretos y los flags son del PO. Detalle, desvíos y pendientes en [`2026-10-10-trl10-plan-de-merge.md`](2026-10-10-trl10-plan-de-merge.md#resultado-del-merge-2026-10-10). Lo único observado de prod desde el corte de abajo: el Drift Check del 2026-10-09 ve el api en `booster-ai-api-00657-xeq`, no en `00610-qaw`. Hubo releases o promociones después del 09-22 que estas tablas no recogen.
-**Anterior**: 2026-07-25, archivado en [`2026-09-22-snapshot-current-2026-07.md`](2026-09-22-snapshot-current-2026-07.md). Dos afirmaciones de ese CURRENT ya no valen (se marcan con «corrige»).
-**Método**: solo lectura. GCP por REST con token ADC y `X-Goog-User-Project: booster-ai-494222`; BD con `scripts/db/agent-query.sh` (solo SELECT, sin `-y`). Lo que no se verificó se dice explícitamente.
-**Documento vivo**: el detalle histórico está en los snapshots fechados (ver §Snapshots archivados). Contrato de trabajo: `CLAUDE.md`. Slots de trabajo: `docs/frentes-vivos.md`.
+**Última actualización**: 2026-11-19 · America/Santiago (Booster Fleet en prod con el rediseño, la lectura completa de 7 días y la lectura sin espera; falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
+**Prod**: `2e6e2c67` (Release [44436488143](https://github.com/boosterchile/booster-ai/actions/runs/44436488143) SUCCESS, terminó el 2026-11-18 a las 23:18) — api `booster-ai-api-00491-q9d` @ **100 %**, web `00433-7pj` @ 100 %; los 8 servicios en esa imagen. Quinto release del día: 09:53 (`cbe37242`, rediseño y lectura completa), 12:13 (`5eaf4d38`, corrección de memoria #1023), 15:12 (`43df7972`, registro por fases #1025), 17:50 (`21532312`, lectura sin espera #1027 y #1028) y este, con la reemisión por distancia no plausible (#1031), el corte lineal de palabras largas del certificado (#876) y el límite de 90 s de sus tests (#1030). Migración 0087 aplicada.  
+**`main`**: tip `2e6e2c67` (#1031), igual a prod salvo este handoff. Nada pendiente de deploy.  
+**Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
-## Tablero
+## Score producto (P)
 
-## Estado de prod (verificado 2026-09-22)
+- **P ≈ 3.2–3.5/5** tras **E1** (BARH-23/24 en prod). Meta 5: E2–E8 en oneshot.
+- **C (comercial/legal)** aparte — no mezcla con funcionamiento.
+- Oneshot: [`2026-11-16-score-p5-barh2324-oneshot.md`](./2026-11-16-score-p5-barh2324-oneshot.md).
 
-| Componente | Estado | Fuente |
+## Estado de prod vs main
+
+| | Commit | Notas |
 |---|---|---|
-| `booster-ai-api` | 100 % en `00610-qaw`, imagen `api:428ff514698b…` (digest `sha256:7101c3ee…`, creada 2026-09-22T00:12:19Z). **Promovida a mano** por `dev@boosterchile.com` (ReplaceService 2026-09-22T00:55:44Z = 21:55 del 21-09 en Santiago). **El tráfico no está mixto.** El 100 % se asigna por `REVISION` (tag `canary-signup-428ff514698b`), no por `LATEST`; **corrige** el CURRENT anterior (líneas 76-80). Quedan 13 tags `canary-signup-*` (de `00571-goc` a `00610-qaw`) sin porcentaje | Cloud Run v2 REST `trafficStatuses`; Audit Log `Services.ReplaceService` |
-| web · whatsapp-bot · telemetry-processor · sms-fallback-gateway | 100 % en `LATEST` (`00381-rgv`, `00426-fn2`, `00380-64b`, `00364-bqp`), imagen `:428ff514698b…`, updateTime 2026-09-22T00:11:41Z | Cloud Run v2 REST |
-| matching-engine · document-service · notification-service | `gcr.io/cloudrun/placeholder` (`00005-nwf`, `00007-8ts`, `00007-pnt`) desde 2026-07-12T20:34:16Z | idem |
-| Salud Cloud Run | 8/8 servicios con latestCreated = latestReady y `CONDITION_SUCCEEDED`. No hay servicios en otras regiones (`locations/-`) ni jobs en southamerica-west1 | idem + `GET …/jobs` → vacío |
-| telemetry-tcp-gateway (GKE `booster-ai-telemetry`) | Imagen `33d179d0d347…`, último pull 2026-09-21T15:05:37Z. Desde `33d179d` hay 0 commits en el gateway, codec8-parser, config, logger y otel-bootstrap, y 4 en shared-schemas. **El impacto de esos 4 no está verificado** (kubectl no alcanza el control plane) | Cloud Logging `k8s_pod`; `git log 33d179d0d347..origin/main -- …` |
-| Migraciones | Prod tiene **56** (última: `0055_fuente_dato_ruta_movil_gps`, created_at 1780876800019, max id 108). `main` tiene **57** (`0056_empresas_umbrales_robo_combustible`, #707). Hay 0 columnas `empresas.umbral_robo_%` en prod. El api corre con `STRICT_MIGRATION_ORDERING=false` | agent-query.sh sobre `drizzle.__drizzle_migrations` e `information_schema.columns`; `_journal.json`; env del api |
-| En `main` y no en prod | #706 (`f7aee3a`, pin del posible robo, merge 2026-09-22T00:20Z) y #707 (`cf76ea8`, umbral de golpe/robo hormiga + migr 0056, 00:42Z). `428ff51` es ancestro de main; el diff son 24 archivos (13 api, 7 web, 2 shared-schemas, 2 `.specs`) | `git log 428ff514698b..origin/main`; `git merge-base --is-ancestor` |
-| Env del api | **No tiene** `CONTENT_SID_ACTIVACION_CONDUCTOR`, `RESEND_API_KEY`, `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` ni `OTEL_*`. Tiene `DEMO_MODE_ACTIVATED=false` + 5 `DEMO_*` | Cloud Run REST |
+| `main` | `2e6e2c67` | Igual a prod salvo este handoff |
+| Prod | `2e6e2c67` | Release 44436488143; los 8 servicios al 100 % en su última revisión |
 
-### Datos de prod (agent-query.sh, 2026-09-22 ~18:47–18:50Z)
-- **Viajes entregados: 6.** 1 es sintético (`SYN-PLFL5701`, sin métricas ni certificado). De los 5 reales, solo `BOO-BKAXIK` es de un generador que no es de prueba (Fuera de la Caja, `es_usuario_prueba=f`). Los 4 del 21-09 (`BOO-KJHITL`, `LCTSE5`, `PMGQWN`, `83ND2C`) son de «Prueba Generador SpA» (`es_usuario_prueba=t`). Ninguno es de una empresa `es_demo`.
-- **Certificados: 5**, todos `secundario_modeled`. El primero es del 2026-09-14 21:40:40Z (BKAXIK) y el último del 2026-09-21 19:39:12Z (83ND2C). BKAXIK: `teltonika_gps`, cobertura 100,00, distancia_km_real 2,51, emisiones_kgco2e_reales 2,691. Los 4 del 21-09: `maps_directions`, cobertura 0,00, `distancia_km_real` y `emisiones_kgco2e_reales` en NULL.
-- **Conductores: 7** no eliminados, todos `activo` y ninguno de una empresa de prueba o demo. **Solo 1 está activado** (último login 2026-09-21 16:03:49Z). Los otros 6 tienen `pending-rut:*` con PIN vigente. La activación no sale por ningún canal: el api no tiene `CONTENT_SID_ACTIVACION_CONDUCTOR` ni `RESEND_API_KEY`, y el secreto `resend-api-key` da 404 (Secret Manager REST).
-- **Opt-in de huella**: 1 empresa con `carbon_measurement_enabled` (Transportes Van Oosterwyk, activa, ni de prueba ni demo).
-- **Salud CAN** (`check-salud-can.sql`, idéntico al de origin/main) sobre 8 vehículos con Teltonika. OK 3: KFKW23, KZXB64 y RCPC20. DEGRADADO sin ID 83, 2: JLKT54 y JWTH77. INTERMITENTE 1: PLFL57, con 1372/5214 pings con CAN en 24 h y 3706 en movimiento sin CAN. SIN CAPACIDAD CAN 2: KZBB26 y VFZH-68. **Corrige** el CURRENT anterior (línea 11), que decía «flota hoy: 0 vehículos con CAN».
-- **Otros**: `bitacora_backfill_distancia` = 0 filas; `documentos_transporte` = 0; la última posición móvil es del 2026-09-21 19:39:05Z; hay 1 asignación activa (asignado/recogido) y 0 empresas `es_demo`.
-- **Observabilidad**: Monitoring tiene 0 descriptores `custom.`, `workload.` y `external.googleapis.com`, y 14 métricas basadas en logs, ninguna de huella ni de viajes_entregados. `git grep -i metric` en `packages/otel-bootstrap/src` no da resultados.
+**Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
+**Smoke (2026-11-18, tras el quinto release):** sin errores del api desde el deploy; `/health` y `/ready` 200. Migración 0087 verificada en solo lectura: `ck_certificados_viaje_motivo` admite `distancia_medida_no_plausible` y los 10 certificados siguen en versión 1 sin motivo. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con el corte de palabras de #876.
+**Registros:** `Drizzle migrate() complete` en `00486-brt` @ 13:15:11Z (America/Santiago 10:15).  
+**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`.
 
-## CI y deploy
+## Evidencia Score P
 
-- **Release manual**: `gh workflow run release.yml --ref main`, luego el gate `production` y después Cloud Build canary. **Los últimos 5 runs fallaron**:
-  - `35669315935` (428ff51, 2026-09-21T23:49Z, build `b4db3e8f`): canary-verify «FAIL muestra insuficiente (5 < 30)».
-  - `35546721224` (a0e98fa, 09-21T00:08Z, `d858403b`): 3 < 30. `34974710808` (71e1d7f, 09-15T13:23Z, `d8cc45ec`): 3 < 30. `34921795377` (726c6d8, 09-15T02:35Z, `2bd5f1b9`): 8 < 30.
-  - `34921232199` (726c6d8, 09-15T02:27Z) falló antes, en «Esperar CI Success del mismo SHA», porque CI Success había terminado en failure.
-  - Umbrales: ventana de 30 min, error_rate < 1 %, p95 < 500 ms, **min_requests = 30** (`gh run view --log-failed`; Cloud Build REST; Cloud Logging `textPayload:"canary-verify"`).
-- **Qué pasa cuando aborta**: en los 4 builds que abortaron en canary-verify (step 17), `deploy-api` (18), `gke-deploy` (23) y `smoke-api-health` (24) quedaron QUEUED. whatsapp-bot, web, telemetry-processor y sms-fallback sí se desplegaron. El api se promueve a mano (así llegó `00610-qaw`). **El último release en success es `30926973385` (2026-08-04T15:59Z, 33d179d).** Desde entonces hubo 14 runs: 13 failure y 1 cancelled (`gh run list --workflow release.yml --limit 40`).
-- **CI en `main`** (cf76ea8): CI `35673050480` success y Security `35673050413` success (2026-09-22T00:42Z). La protección de rama exige `CI Success` y `E2E conductor (Auth emulator + API local)` (`gh api …/branches/main/protection`).
-- **E2E nightly** (`e2e-staging.yml`, contra prod): 7/7 verdes; la última corrida es `35707173708` (2026-09-22T08:52Z, cf76ea8).
-- **Terraform Drift Check**: el último verde es `31944649898` (2026-08-16T11:33Z) y las 8 corridas del 15 al 22-09 dieron failure. `35747885290` (09-22T15:30Z) muestra «Plan: 1 to add, 1 to change, 0 to destroy»:
-  - Crea `google_kms_crypto_key_iam_member.cloud_run_certificate_version_viewer`. **El binding ya existe en GCP**: viewer, publicKeyViewer y signerVerifier para `booster-cloudrun-sa` sobre `certificate-carbono-signing`. Es drift solo de state (KMS `getIamPolicy`).
-  - En `module.service_api` pasa `revision "booster-ai-api-00610-qaw" → null` y agrega la env `CONTENT_SID_ACTIVACION_CONDUCTOR` (el secreto tiene las versiones 1 y 2 ENABLED desde 2026-08-05; valor no leído).
-- **Gitleaks semanal** (Security, cron lunes 03:00 UTC): rojo en las 20 corridas programadas desde 2026-05-04; la última es `35578328272` (2026-09-21T08:31Z). El hallazgo es `generic-api-key` en `cloudbuild.production.yaml`, commit `9b4a44c` (2026-06-03, #401 App Check reCAPTCHA v3), verificado en los logs del 06-29, 07-27 y 09-21. La causa de las corridas de mayo no es verificable (logs expirados; son anteriores a 9b4a44c). `.gitleaks.toml` solo allowlistea por valor la key Web de Firebase y la de Maps, y no existe `.gitleaksignore`. Los scans de push siguen verdes.
-- **Hueco del E2E en PRs**: el filtro `conductor` de `e2e-pr.yml:49-60` no incluye `apps/api/src/**`. El agregador required (`if: always()`, `exit 0` con skip documentado) deja pasar sin Playwright un PR que solo toca el API; así pasó en #708.
+| # | Estado | Nota |
+|---|---|---|
+| **E1** | **Hecho** | Release BARH-23/24 en prod (`00483-ppx` / `00427-z4w`) |
+| E2 | Pendiente | Invitados `/crear-cuenta` + login |
+| E3 | Pendiente | Activación conductor solo por canal |
+| E4 | Pendiente | Viaje E2E sin intervención PO → cert |
+| E5 | Pendiente | Matching real o reclamo documentado |
+| E6 | Pendiente | Viaje propio (`origen_alta=propio_transportista`) |
+| E7 | Pendiente | Viaje sin FMC150 + DQ |
+| E8 | Pendiente | Ciclo cobro técnico |
 
-## Frentes vivos (`docs/frentes-vivos.md`)
+Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura). Migración **0086** (`mantenciones_vehiculo`): aplicada al startup de `00486-brt` el 2026-11-17 (`migrate()` complete; sin acceso SELECT del agente a Secret Manager para contar filas en `__drizzle_migrations`).
 
-`frentes-vivos.md` se cambió por última vez en `2388bb4` (#682, 2026-09-14). Su encabezado dice «verificado contra 623ee2b (2026-08-16)», con una actualización del 2026-09-13 contra `7e99dc0`. La línea 45 dice «lo siguiente es T11», pero `.specs/medicion-huella-segmento/plan.md` tiene 50 `[x]` y ninguna tarea pendiente. **Aquí no se declara cerrado ningún slot: el cierre lo declara el PO.**
+## Staging
 
-- **Slot 1 — huella medida** (criterio en frentes-vivos.md:24: 2 viajes reales, uno con FMC150 y otro sin él, con `*Actual` poblado o con degradación explícita).
-  - Con Teltonika: BKAXIK tiene emisiones reales 2,691 y certificado.
-  - Sin Teltonika: los 4 del 21-09 tienen `*Actual` = null y certificado `secundario_modeled`, **pero** (a) la degradación la causa el bug de Routes que corrige #708 (no mergeado ni desplegado), (b) el generador es de prueba y (c) no hay métrica data-quality en Monitoring.
-  - **Falta**: merge y release de #708 (§6 ya decidida), la decisión ADR-077 estricta vs híbrida (`plan.md:207`) y la decisión sobre la métrica OTel.
-- **Slot 2 — retiro del subsistema demo**.
-  - El grep del criterio literal (frentes-vivos.md:64) da **52 archivos**, de los que 3 son migraciones históricas en `apps/api/drizzle` y 8 tienen «imperson» en la ruta. La línea 66 todavía dice «40».
-  - `demo.boosterchile.com` sigue vivo (A `34.36.187.195`, HTTPS 200).
-  - #698 (`d7d799a`) retiró el enforcement `es_demo` del request path.
-  - **#711** (abierto) retira el código demo sin lector: `demo-expires`, `isDemo` del ticket SSE, `DemoBanner`/`useIsDemo` y la excepción demo del modal. El grep baja de 52 a 45.
-  - Las **4 cuentas de `cuentas_demo` siguen habilitadas** en Identity Platform (`is_demo: true`, `expires_at` vencido el 2026-06-24, sin login). Desde #698 el API no rechaza el vencimiento; deshabilitarlas es acción del PO.
-  - **Todo lo que queda necesita permiso del PO**: jobs de `security.yml`, schema/endpoints/UI, y Terraform/DNS/IAM (pendientes 13-15).
-- **Slot 3 — flujo del conductor punta a punta**.
-  - La query (frentes-vivos.md:100-107) devuelve 5 filas con conductor, recogida, entrega y certificado.
-  - Los pasos 1-6 están mergeados y en prod (428ff51): #674 D1a, #692 UI documental, #686/#696 GPS, #687 vista, #688 higiene y #693/#694 E2E. «E2E conductor» es required.
-  - **Dudas abiertas sobre el criterio**: «sin intervención manual del PO» (según el inventario, la oferta la aceptó la cuenta piloto que opera el PO, y el generador es de prueba); el E2E no ejercita la activación (según el inventario, el seed crea al conductor activo); en prod la activación no sale (1 de 7 conductores activados); `documentos_transporte` tiene 0 filas, y `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` no está ni en el env ni en `infrastructure/`.
+**No existe** (revisado el 2026-11-17, solo lectura). Lo que pide [ADR-083](../adr/083-staging-gemelo-y-extraccion-con-shadow.md) está sin crear:
 
-## PRs abiertos
+- El proyecto `booster-ai-stg-494222` no aparece entre los proyectos visibles para la cuenta del PO; no se descarta uno creado bajo otra cuenta.
+- `staging.boosterchile.com` no tiene delegación NS y `api.staging.boosterchile.com` no resuelve.
+- El repo no tiene entorno `staging` en GitHub ni ninguna variable `STAGING_*`.
+- «Deploy staging» corre en cada push a `main` y se omite siempre (sus últimos 100 runs): el job exige la variable `STAGING_PROJECT_ID`. BARH-23/24 llegaron a prod sin pasar por staging.
+- Solo existe la preparación en `infrastructure/environments/staging/`. Crear el proyecto, vincular la facturación, el `terraform apply` y el registro NS en prod son pasos del PO.
 
-**#708** `fix/routes-api-body-invalido` (abierto 2026-09-22T18:44:13Z). Al redactar este documento era el único PR abierto además de #709 (`gh pr list --state open`).
-- **Estado** (2026-09-22): MERGEABLE/CLEAN, 25 checks en verde y 0 en rojo. Tiene 6 commits sobre main: spec, dos rojos (`e93548a`, `23d72c7`) con sus fixes, y docs. El required «E2E conductor (Auth emulator + API local)» pasó; el job «E2E conductor Playwright» quedó SKIPPED por el filtro de paths.
-- **Defectos que corrige** (spec §1-§5, `git show 4f239e8:.specs/fix-routes-api-body-invalido/spec.md`):
-  - (A) Una coordenada viaja como `address`.
-  - (B) `vehicleInfo` va en la raíz del body y no en `routeModifiers`.
-  - (C) La tabla de respaldo usa `RM` y no `XIII`, así que XIII→otra región cae a 500 km: KJHITL y BKAXIK tienen `distancia_km_estimada = 500,00`.
-- **Alcance**: no cambia contratos, schema ni fórmulas GLEC, y los 5 certificados emitidos no se tocan. Con este PR, el camino híbrido de #624 se activa por primera vez en prod.
-- **Criterio de prod abierto**: cero logs «Address Waypoint» y «Unknown name vehicleInfo» tras el deploy.
-- **§6 (hueco con el vehículo detenido)**: el PO la decidió el 2026-09-22 con la opción (a). Extremos idénticos valen 0 km, no llaman a Routes y no cuentan para el tope. Implementada en #708 y registrada como enmienda en `.specs/distancia-real-hibrida/spec.md`. Falta: merge y release.
+## BARH-21
 
-## Pendientes del PO (priorizados)
+Invites enviados; **cuentas no confirmadas** (`gerencia@`, `sandoval.felipe@`).
 
-> Orden: prioridad del inventario. El ítem 1 y el plazo del 30-09 (ítem 2) los adelantó el agente por criterio propio. Merge, apply y DML los ejecuta el PO; el release lo dispara el orquestador.
+## Pendientes del PO (Score P)
 
-1. **Merge de #708** (§6 ya decidida: opción (a), implementada). El release lo dispara el orquestador. Después, verificar cero logs «Address Waypoint» y «Unknown name vehicleInfo», y ningún `routes_error` en el próximo viaje con huecos.
-2. **Plazo 2026-09-30: backfill F0-0.**
-   - Hecho: «Backstop: 2026-09-30» con retiro de `bitacora_backfill_distancia` (hoy 0 filas; `0053_bitacora_backfill_distancia.sql:14-17`). Es una fecha de revisión documentada, sin enforcement en tests, workflows ni scripts.
-   - Decidir: retirar la tabla (migración contract, con TDD) o hacer un dry-run y extender el plazo; y qué hacer con `SYN-PLFL5701` (entregado sin certificado).
-3. **Release de `cf76ea8`** (#706, #707 y migr 0056), más #708 si se mergea. Hay que dispararlo y aprobar `production`. Por el patrón de los últimos releases, lo esperable es un abort de canary-verify y una promoción manual. Después: verificar count = 57 y las columnas `umbral_robo_*`.
-4. **Gate del canary irrealizable**: `_CANARY_MIN_REQUESTS=30` contra 3-8 requests reales (`cloudbuild.production.yaml:645`). Opciones: bajar el umbral, condicionarlo al tráfico, generar tráfico sintético o desacoplar gke-deploy y smoke. Es un quality gate y el frente de Infra está congelado. Opcional: limpiar los 13 tags.
-5. **Cierre de los Slots 1 y 3**: decidir si los viajes del 21-09 cuentan o si hace falta un viaje con un generador y un transportista que no opere el PO; en el Slot 1, además, un viaje sin Teltonika después del fix de Routes.
-6. **Viaje real sin Teltonika** sobre los fixes: GPS (#696/#699/#701/#703), tracking (#697), cobertura ≥ 80 % con `movil_gps` y ETA real. Mejor después del deploy de #708.
-7. **Apply del drift de Terraform**: import/apply del `iam_member` KMS (ya existe) y montaje de `CONTENT_SID_ACTIVACION_CONDUCTOR`, que destraba la activación por WhatsApp. Coordinarlo con el release (crea una revisión) y decidir cómo tratar `revision → null`, que reaparece con cada canary.
-8. **ADR-077 estricta vs distancia híbrida** (#624/#676), sin decidir. #708 vuelve alcanzable el caso «reconstruida con cobertura < 80 %» (spec §3.4).
-9. **Métricas de negocio OTel sin exportar**, lo que bloquea la «métrica data-quality» del Slot 1. Opciones: exporter de Cloud Monitoring en otel-bootstrap + `metricWriter` (IAM), o aceptar el log estructurado o una log-based metric y enmendar el criterio.
-10. **Enmendar `frentes-vivos.md`**: excepciones sin registrar (#689, #690, #691, #700, #704 y #705-#707); avance sin marcar (T11-13 y los pasos 3-6 del Slot 3); el conteo «40» (hoy 52) y la redacción del criterio del Slot 2, que incluye migraciones históricas.
-11. **Gestor documental (#692) sin uso en prod** (0 documentos), con el guard inerte porque `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` no está fijada. Falta subir un PDF real y fijar la fecha de corte (PR de Terraform; el apply es del PO).
-12. **Alcance del E2E del conductor**: no ejercita la activación, acepta «Sin dato» como certificado y no corre en PRs que solo tocan el API. Aceptarlo o autorizar ampliarlo (toca un quality gate).
-13. **Slot 2**: permiso para retirar los jobs `is-demo` y `demo-seed-password` de `security.yml` (líneas 154-203, 212, 237 y 314).
-14. **Slot 2**: decidir sobre `empresas.es_demo` (0 filas en true; dropearla es una migración destructiva), el campo público `demo_mode_activated`, el endpoint `/api/v1/demo/cache-warm` (sigue montado) y el job `demo-account-ttl-alert`.
-15. **Slot 2**: el orden del retiro de `demo.boosterchile.com` en Terraform: `cert_domain`, DNS/host_rule, secretos `DEMO_*`, env/CORS y scheduler/alerta (incluye IAM/SA).
-16. **Smokes humanos post-deploy** sin ejecutar: #695 (opt-in de huella), #690 (chat), #691 (zonas / activar empresa) y #705-#707 (trayectos; #706 y #707 después del release).
-17. **Gitleaks semanal en rojo** desde 2026-05-04 (site key reCAPTCHA en `9b4a44c`). Pide permiso para allowlistear por valor exacto en `.gitleaks.toml` o por fingerprint (toca un gate de seguridad).
-18. **Scorecard GPS de #704**: `cargarScorecardMedioPlazo` no tiene llamadores (solo la definición en `cargar-gps-scorecard.ts:108`). Definir cómo y cuándo se invoca.
-19. **Runbook T2 «piso sembrado»**: `origin/chore/t2-piso-sembrado` (`eb1435f`) no tiene PR, usa la región `'13'` en vez de `'XIII'`, y hay un `.sql` local sin trackear con un hash real. Decidir entre versionar o descartar.
-20. **Deudas del tracking de #689**: prioridad de Teltonika < 30 min, ETA móvil sin `coords.speed`, `teltonika_imei_espejo`, `GET /assignments/:id` solo con Teltonika, y el copy post-entrega. Priorizar o descartar después del fix de Routes.
-21. **Selector de conductor**: filtra `c.status !== 'baja'`, valor que no existe en el enum `estado_conductor`, así que ese filtro no hace nada (`DriverAssignmentCard.tsx:79-81`). El backend no valida el estado al asignar; arreglarlo cambia el contrato (409/422).
-22. **Contratos**: `/me/assignments` solo lista `asignado` y `recogido` (`me.ts:314`), no hay lote de driver-positions ni ventana post-entrega. Son cambios de contrato público.
-23. **Ratificar los endpoints del conductor de #687** (`/resultado` y `/certificate/download`). #687 tiene 0 reviews y 0 comentarios, y #702 ya agregó `cobertura` a `/resultado`.
-24. **Geocodificación del destino** al crear el viaje (columnas de lat/lng de destino, migración expand-only): aprobar o rechazar.
-25. **`RESEND_API_KEY`**: el secreto no existe (404), así que el correo de activación no sale. Crear la cuenta y el secreto, o descartar el canal email.
-26. **Safe-area de iOS en la PWA instalada** (#679/#680): no verificada en un iPhone (`.specs/fix-safe-area-ios-pwa/spec.md:40`).
-27. **Ramas remotas**: hoy hay 88 heads (`git ls-remote --heads origin | wc -l`). Borrarlas es acción del PO; `feat/eco-routing-realtime-spec` se conserva.
-28. **Login por RUT como generador sobre la cuenta real (vía B)**, sin decidir. Es DML en prod y lo ejecuta el PO. El dato viene del inventario y no se re-verificó.
+1. Confirmar `/crear-cuenta` de invitados (E2).
+2. 1 activación conductor por canal (E3).
+3. 1 viaje E2E sin parche → cert (E4).
+4. 1 reclamo o matching real + 1 viaje propio (E5–E6).
+5. Viaje sin FMC150 + DQ (E7); luego cobro técnico (E8).
 
-## Deuda e infra congelada relevante
+## Booster Fleet
 
-- **Deploy**: `gke-deploy` y `smoke-api-health` no corren desde 2026-08-04 porque el canary aborta siempre (pendiente 4).
-- **Placeholders**: matching-engine, document-service y notification-service corren `gcr.io/cloudrun/placeholder` desde 2026-07-12.
-- **Gateway GKE**: sigue en `33d179d`; hay 4 commits de shared-schemas posteriores sin evaluar.
-- **Terraform drift**: en rojo desde 2026-08-16, con un binding KMS que solo falta en el state y la env de activación sin montar (pendiente 7).
-- **Métricas OTel**: sin exporter; hay 0 métricas custom en Monitoring (pendiente 9).
-- **Gitleaks semanal**: en rojo desde 2026-05-04 (pendiente 17).
-- **E2E**: el filtro de paths de `e2e-pr.yml` deja fuera `apps/api/src/**` (pendiente 12).
-- **Referencia de migración**: `adr-028-ext-movil-gps-propuesta.md:84-88` cita «forward 0051» para `bitacora_backfill_distancia`; la migración real es la 0053.
-- **README desactualizado**: «FMS150» en la línea 24 (el equipo es FMC150, frentes-vivos.md:148); rango «(001..065)» en la línea 116 (hoy 001..080); las líneas 115 y 125 presentan los plugins superpowers/booster-skills (ADR-049/060), en tensión con ADR-078.
-- **`docs/adr/`**: 81 archivos y 78 números distintos (001-080). Faltan 003 y 067, y 028, 034 y 035 están duplicados (`git ls-tree origin/main docs/adr/`).
+**En prod** (2026-11-17). Spec `.specs/booster-fleet/spec.md`. PRs [#1002](https://github.com/boosterchile/booster-ai/pull/1002) (feature) + [#1003](https://github.com/boosterchile/booster-ai/pull/1003) (release-on-request). Panel `/app/booster-fleet`, API `/booster-fleet`, migración **0086** `mantenciones_vehiculo` (expand-only; `migrate()` OK en el arranque de `00486-brt`). El cobro sigue en la bandera de gestión de flota. Oneshot: [`2026-11-17-booster-fleet-release-oneshot.md`](./2026-11-17-booster-fleet-release-oneshot.md). Queda smoke con sesión dueño/admin transportista (criterio de término en `frentes-vivos.md`).
 
-## ADRs recientes (todos Vigentes; `git show origin/main:docs/adr/07{6..9}-*.md, 080-*.md`)
+**Lenguaje del aviso de combustible** (decisión del PO, 2026-11-17): la interfaz no dice «robo». [#1008](https://github.com/boosterchile/booster-ai/pull/1008), en prod desde el 2026-11-18, cambia los textos en Booster Fleet, trayectos Teltonika, el mapa del evento, los umbrales de la empresa y la ficha del vehículo: «desviación de combustible» (por analizar) para la baja de golpe y «desviación gradual» para las bajas chicas repetidas. Los nombres del contrato (`posible_robo`, `posible_robo_combustible`, `umbral_robo_hormiga_l`) no cambian. La regla quedó en la spec. No se revisaron notificaciones ni plantillas de WhatsApp.
 
-- **ADR-076** (2026-08-16): gobernanza para operador único, con estados de vigencia y protección de rama por checks.
-- **ADR-077** (2026-08-17): nivel de certificación GLEC por fuente de posición (CAN vs GPS del vehículo vs GPS del móvil).
-- **ADR-078** (2026-09-05): el repo deja de activar plugins y hooks de Claude Code; esa configuración es del operador.
-- **ADR-079** (2026-09-09): modelo comercial v3, con comisión al generador por tipo de carga y tarifas y costos configurables desde admin.
-- **ADR-080** (2026-09-09): flujo de dinero bajo mandato de cobro. La activación en prod está sujeta a las precondiciones de su §6.
+**Rediseño** (spec aceptada el 2026-11-17, `.specs/booster-fleet-rediseno/`; plan en `plan.md`): dirección A, triage por severidad, con el detalle de vehículo sobre un eje de tiempo. Tres PRs, en prod desde el 2026-11-18:
 
-## Snapshots archivados
+- [#1011](https://github.com/boosterchile/booster-ai/pull/1011), en `main`: el API entrega por trayecto el inicio, el fin y los litros de la baja, y el panel trae la desviación más reciente de cada camión con su trayecto y sus coordenadas. Solo agrega campos.
+- [#1012](https://github.com/boosterchile/booster-ai/pull/1012), en `main`: `/app/booster-fleet` pasa a ser el panel de triage (frase de estado, barra de severidad, combustible agrupado por tono, riel de documentos y mantenciones, modales para programar y cancelar).
+- [#1013](https://github.com/boosterchile/booster-ai/pull/1013), en `main`: detalle del vehículo en `/app/booster-fleet/vehiculos/$id`.
 
-- [`2026-09-22-snapshot-current-2026-07.md`](2026-09-22-snapshot-current-2026-07.md): el CURRENT del 2026-07-25 (sesiones de julio: telemetría en vivo, triage de 8 PRs, deploy de #624).
-- [`2026-07-25-snapshot-sesiones-07-01-y-07-18.md`](2026-07-25-snapshot-sesiones-07-01-y-07-18.md): sesiones del 2026-07-01 y 07-18.
-- [`2026-07-24-snapshot-current-2026-05-a-06.md`](2026-07-24-snapshot-current-2026-05-a-06.md): CURRENT de mayo a junio de 2026.
-- El resto de los snapshots fechados está en `docs/handoff/YYYY-MM-DD-*.md`.
+**Visto en local con una desviación sembrada** (2026-11-17): se cargaron en la base de desarrollo puntos de telemetría del camión del seed E2E con una baja de nivel con el camión detenido, y la desviación pasó por el segmentador del API hasta el overview y el detalle, con su hora, sus litros y sus coordenadas. Al verla aparecieron tres fallas que corrigió [#1015](https://github.com/boosterchile/booster-ai/pull/1015), en `main`: el detalle no mostraba los trayectos sin dato de combustible, la fila de la desviación se partía en dos líneas y el nivel de estanque se leía mal. **Falta ver:** el mapa del evento (el entorno local no tiene clave de Google Maps), un camión sin lectura y con trayectos en el detalle (solo cubierto por test) y todo el rediseño con telemetría de producción. El nombre del lugar en palabras (C3 de la spec) no entra: se muestran coordenadas y el mapa.
+
+**Lectura completa de 7 días** (spec aceptada el 2026-11-17, `.specs/booster-fleet-ventana-completa/`; plan en `plan.md`). El panel decía «últimos 7 días» y leía los 20.000 puntos más recientes de toda la flota. Medido en prod en solo lectura: las dos flotas con telemetría superan ese tope, y en la más grande (8 camiones, unos 198.000 puntos por semana) el panel alcanzaba a leer unas 6,4 horas. Tres PRs, en prod desde el 2026-11-18: [#1018](https://github.com/boosterchile/booster-ai/pull/1018) lee por vehículo solo los AVL que usa el segmentador, con un presupuesto de 400.000 puntos (`BOOSTER_FLEET_PRESUPUESTO_PUNTOS`) y el campo nuevo `combustible.cobertura_desde`; [#1019](https://github.com/boosterchile/booster-ai/pull/1019) guarda esa lectura en Redis por 10 minutos y lee de la base si Redis falla; [#1020](https://github.com/boosterchile/booster-ai/pull/1020) hace que el aviso de recorte diga desde cuándo son las cifras. **Para mirar en prod:** el histograma `booster_fleet_lectura_combustible_ms`; en local, con 200.000 puntos sintéticos, la lectura de la base tomó unos 3 s contra un objetivo de 4 s, y desde la caché entre 1 y 4 ms. **Decisión del PO (2026-11-18):** `cobertura_desde` queda como está, informando el punto más antiguo leído de toda la flota; solo importa cuando una flota supera el presupuesto.
+
+**Incidente del 2026-11-18** (unos 100 minutos con el panel de la flota más grande sin cargar; resuelto). Con el primer release, abrir ese panel agotaba la memoria del API: la lectura traía los puntos por vehículo pero los juntaba todos antes de segmentar, y el heap de Node es de unos 500 MB. El contenedor se cayó tres veces entre las 10:32 y las 10:34, y cada caída cortó las demás peticiones que atendía. [#1023](https://github.com/boosterchile/booster-ai/pull/1023) segmenta cada vehículo al leerlo, pide las filas por tandas de 5.000, limita a 40.000 los puntos por vehículo y hace que dos consultas simultáneas de la misma flota compartan una lectura. En prod desde las 12:13. **Lección:** la medición de tiempos de #1019 se hizo sin el tope de memoria de prod; las mediciones de lectura se corren con `--max-old-space-size=512`. Medido así, el arreglo pasa con 256 MB y cae con 160: el margen es de dos veces. La mitigación por variable (`BOOSTER_FLEET_PRESUPUESTO_PUNTOS`) no se aplicó; rige el valor por defecto.
+
+**Lectura sin espera** (spec aceptada el 2026-11-18, `.specs/booster-fleet-lectura-sin-espera/`; plan en `plan.md`; en prod). La lectura completa de la flota más grande toma 8 a 10 s en prod, contra el objetivo de 4 s de la spec anterior: el registro por fases de [#1025](https://github.com/boosterchile/booster-ai/pull/1025) mostró el tiempo repartido (unos 4 s leyendo de la base, 2,4 s convirtiendo y 1,4 s segmentando, para unos 204.000 puntos), sin una fase culpable; la base responde cada tanda en 27 ms y el resto es CPU del API. En vez de perseguir ese tiempo, el PO aceptó que el dueño no lo espere: [#1027](https://github.com/boosterchile/booster-ai/pull/1027) guarda cada lectura con su hora por 24 horas y la entrega con `?combustible=guardada` (campos nuevos `combustible.leido_en` y `combustible.al_dia`; sin el parámetro el API responde al día, como antes), y [#1028](https://github.com/boosterchile/booster-ai/pull/1028) hace que la pantalla muestre la guardada con «Combustible leído a las HH:MM», pida la nueva y reemplace las cifras. **Medido en prod el 2026-11-18:** con una lectura guardada de 57 minutos, el panel respondió en 0,75 s (criterio 9 de la spec: menos de 1 s) y la lectura nueva llegó 8,8 s después; la primera apertura, sin lectura guardada, tardó 9,2 s. **Queda:** la primera apertura del día sigue esperando la lectura completa; una tarea programada que lea por adelantado es decisión del PO con datos de uso (spec §7.3). El objetivo de 4 s quedó reemplazado por el criterio 9.
+
+**Configuración de la flota más grande** (prod, solo lectura, 2026-11-17): de sus 12 vehículos activos, 4 no tienen Teltonika y 6 están configurados sin sensor de combustible, aunque 3 de esos envían nivel o consumo. Solo 2 tienen fuente y capacidad de estanque, y usan consumo acumulado, que no sirve para detectar una baja con el camión detenido. Con esa configuración el panel no puede mostrarle una desviación a esa flota. Se corrige configurando la fuente y la capacidad de cada camión, no con código.
+
+## Reemisión por distancia no plausible
+
+**En prod desde el 2026-11-18** ([#1031](https://github.com/boosterchile/booster-ai/pull/1031), spec `.specs/reemision-distancia-no-plausible/`): esquema (migración 0087 amplía `ck_certificados_viaje_motivo`), certificado (motivo nuevo, la cifra pasa a la estimación) y escritura en prod. Cuatro certificados emitidos antes de la regla de distancia plausible publican cifras «reales» sobre distancias que no cubren el recorrido: BOO-BKAXIK (2,51 km de 500), BOO-KY7G69 (195,95 de 471,60) y la ruta de prueba BOO-4FF3XA + BOO-VZYIN2 (0,03 de 37,75; imprimen 0,02 y 0,01 kg). Dos pasos, los dos jobs en seco por defecto y los corre el PO: `corregir-distancia-no-plausible.ts` deja la huella guardada como la dejaría hoy el cierre (unidad = ruta compartida o viaje solo), y `reemitir-certificado.ts` con `MOTIVO=distancia_medida_no_plausible` emite la versión siguiente con la línea de reemplazo, un viaje por corrida. **Paso 1 ya corrido en prod por el PO (2026-11-18 23:28Z) sobre la ruta de prueba**, verificado en solo lectura: `metricas_ruta` y las dos `metricas_viaje` sin cifras reales, `maps_directions`, cobertura 0, `distancia_no_plausible`, un evento por carga; las dos v1 siguen vigentes y publican 0,02 y 0,01 kg hasta el paso 2, que ya se puede correr: la migración 0087 está en prod. BOO-BKAXIK y BOO-KY7G69 sin corregir. Muestras generadas en local el 2026-11-18 con el generador de `main`: BOO-YWKZWR v2 (Teltonika, sin sello) y BOO-4FF3XA como saldría corregido, en `.tmp-data-ops/` del checkout principal (sin versionar).
+
+**Cierre (2026-11-19, corrido por el agente con la instrucción del PO, cada viaje en seco y luego real):** los cinco certificados quedaron reemitidos en versión 2, firmados con KMS, con la versión 1 en `reemplazado`.
+
+| Viaje | Motivo | Cifra publicada (kg CO₂e) |
+|---|---|---|
+| BOO-4FF3XA | distancia medida no plausible | 0,02 → 20,864 |
+| BOO-VZYIN2 | distancia medida no plausible | 0,01 → 8,127 |
+| BOO-BKAXIK | distancia medida no plausible | 2,691 → 33,475 |
+| BOO-KY7G69 | distancia medida no plausible | 224,092 → 539,315 |
+| BOO-YWKZWR | factor impreso no corresponde | 590,746 sin cambio; el factor impreso pasa de 3,25 a 3,24 |
+
+Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas apuntan al certificado nuevo, evento `certificado_reemitido` con el usuario del PO, y el PDF con su firma en el bucket con el mismo sha256 que la base. Sin pendientes de esta serie. Observado y sin tocar: los certificados imprimen «—» en la fecha del viaje, y el destino de BOO-KY7G69 trae una región que no corresponde a la dirección; ambos vienen del dato del viaje y ya estaban en la versión 1.
+
+## Agente
+
+Observar/anotar E2–E8; **no** aprueba Environment `production` (ADR-076). `cursor-agent` tiene `run.developer`; no tiene `actions:write`. Release a prod vía `release.yml` (dispatch) o `release-on-request.yml` (archivo en `.github/release-requests/`) + Approve humano.
+
+## Riesgos
+
+Staging no existe: lo que entra a `main` se prueba por primera vez en prod. Matching `activa` aún sin observación real. Demo domain vivo. SMS Twilio faltante. Certs solo secundarios.

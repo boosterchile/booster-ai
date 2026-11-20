@@ -35,11 +35,18 @@ import { and, eq, inArray } from 'drizzle-orm';
 // recibe la función como opt parameter (`opts.config: Partial<EmitirCertificadoConfig>`).
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { assignments, transportDocuments, tripEvents, trips } from '../db/schema.js';
+import {
+  assignments,
+  transportDocuments,
+  tripChangeRequests,
+  tripEvents,
+  trips,
+} from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { actualizarFactorMatchingViaje } from './actualizar-factor-matching.js';
 import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
 import { calcularScoreConduccionViaje } from './calcular-score-conduccion-viaje.js';
+import { cerrarRutaYCertificar } from './cerrar-huella-de-ruta.js';
 import {
   type EmitirCertificadoConfig,
   emitirCertificadoViaje,
@@ -51,6 +58,8 @@ import {
   type FlagsCierreDocumental,
   puedeCerrarConDocumentos,
 } from './puede-cerrar-con-documentos.js';
+import { rutaCompartidaDelViaje } from './ruta-compartida.js';
+import { sincronizarRutaDeAsignacion } from './sincronizar-ruta-de-asignacion.js';
 
 // El guard de estados confirmables vive en @booster-ai/trip-state-machine
 // (esConfirmableEntrega: asignado|en_proceso — ADR-061). 'entregado' es
@@ -76,7 +85,9 @@ export type ConfirmarEntregaResult =
         | 'invalid_status'
         | 'documento_requerido';
       currentStatus?: string;
-    };
+    }
+  /** editar-anular-cargas §6.13: entrega directa con un cambio sin responder. */
+  | { ok: false; code: 'cambio_pendiente'; solicitudId: string };
 
 /**
  * Política de cierre flexible documental (ADR-070, frente F4-4a). Inyectada
@@ -195,6 +206,22 @@ export async function confirmarEntregaViaje(opts: {
       return { ok: false as const, code: 'no_assignment' as const };
     }
 
+    // (6.2) Entrega directa desde `asignado` con un cambio de carga sin
+    // responder: se bloquea igual que la recogida (editar-anular-cargas §6.13).
+    if (trip.status === 'asignado') {
+      // rls-allowlist: solicitud del viaje bloqueado y validado arriba contra el actor.
+      const [pendiente] = await tx
+        .select({ id: tripChangeRequests.id })
+        .from(tripChangeRequests)
+        .where(
+          and(eq(tripChangeRequests.tripId, tripId), eq(tripChangeRequests.status, 'pendiente')),
+        )
+        .limit(1);
+      if (pendiente) {
+        return { ok: false as const, code: 'cambio_pendiente' as const, solicitudId: pendiente.id };
+      }
+    }
+
     // (6.5) Cierre flexible documental (ADR-070, F4-4a). Precondición de
     // negocio (NO toca la tabla de transiciones): si el flag está ON y la
     // orden fue creada en/después de la fecha de corte, exige ≥1 documento
@@ -260,6 +287,15 @@ export async function confirmarEntregaViaje(opts: {
       },
     });
 
+    // La ruta sigue a la asignación (ADR-088): se cierra con sus dos paradas
+    // resueltas.
+    await sincronizarRutaDeAsignacion(tx, {
+      asignacionId: assignment.id,
+      origen: 'entrega_confirmada',
+      userId: actor.userId,
+      logger,
+    });
+
     return {
       ok: true as const,
       alreadyDelivered: false as const,
@@ -284,20 +320,32 @@ export async function confirmarEntregaViaje(opts: {
     // GPS efectiva del viaje. Si falla, loggeamos pero seguimos con la
     // emisión del cert con los valores estimados (no bloqueamos al
     // cliente).
+    //
+    // Una carga que viaja con otras no se mide por separado: su huella sale
+    // de la ruta completa cuando esta se cierra (ADR-089, huella-consolidada
+    // §3.9). Aquí solo se averigua si es el caso.
+    let compartida: Awaited<ReturnType<typeof rutaCompartidaDelViaje>> = null;
     try {
-      await recalcularNivelPostEntrega({
-        db,
-        logger,
-        tripId,
-        // F0-0 paso 1: Routes rellena los huecos de la traza para reconstruir la
-        // distancia real. Sin projectId, un trip con huecos abortaría a estimación.
-        routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
-      });
+      compartida = await rutaCompartidaDelViaje(db, tripId);
     } catch (err) {
-      logger.error(
-        { err, tripId },
-        'recalcularNivelPostEntrega fallo — emitiendo cert con valores estimados',
-      );
+      logger.error({ err, tripId }, 'no se pudo leer la ruta del viaje — se trata como viaje solo');
+    }
+    if (!compartida) {
+      try {
+        await recalcularNivelPostEntrega({
+          db,
+          logger,
+          tripId,
+          // F0-0 paso 1: Routes rellena los huecos de la traza para reconstruir la
+          // distancia real. Sin projectId, un trip con huecos abortaría a estimación.
+          routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+        });
+      } catch (err) {
+        logger.error(
+          { err, tripId },
+          'recalcularNivelPostEntrega fallo — emitiendo cert con valores estimados',
+        );
+      }
     }
 
     // ADR-021 §6.4 — recalcular factor_matching_aplicado post-entrega
@@ -390,34 +438,60 @@ export async function confirmarEntregaViaje(opts: {
         });
     }
 
-    emitirCertificadoViaje({ db, logger, tripId, config })
-      .then((res) => {
-        if (res.skipped) {
-          logger.warn(
-            { tripId, reason: res.reason },
-            'emitirCertificadoViaje skipped tras entrega',
-          );
-        } else {
-          logger.info(
-            {
-              tripId,
-              pdfSha256: res.pdfSha256,
-              kmsKeyVersion: res.kmsKeyVersion,
-            },
-            'certificado emitido tras entrega',
+    if (compartida) {
+      if (compartida.cerrada) {
+        // Era la última parada: la ruta se mide entera, se reparte y cada
+        // carga entregada recibe su certificado.
+        try {
+          await cerrarRutaYCertificar({
+            db,
+            logger,
+            rutaId: compartida.rutaId,
+            config,
+            routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+          });
+        } catch (err) {
+          logger.error(
+            { err, tripId, rutaId: compartida.rutaId },
+            'el cierre de la ruta compartida falló — certificados pendientes para el relleno',
           );
         }
-      })
-      .catch((err) => {
-        // Defensa-en-profundidad: emitirCertificadoViaje no debería
-        // throwear (es defensivo), pero si lo hace por algún path no
-        // cubierto, no queremos crashear el process. Lo loggeamos y
-        // dejamos que el job de backfill lo retome.
-        logger.error(
-          { err, tripId },
-          'emitirCertificadoViaje throwed inesperadamente — pendiente para backfill',
+      } else {
+        logger.info(
+          { tripId, rutaId: compartida.rutaId },
+          'carga entregada en una ruta abierta: su certificado sale al cerrar la ruta',
         );
-      });
+      }
+    } else {
+      emitirCertificadoViaje({ db, logger, tripId, config })
+        .then((res) => {
+          if (res.skipped) {
+            logger.warn(
+              { tripId, reason: res.reason },
+              'emitirCertificadoViaje skipped tras entrega',
+            );
+          } else {
+            logger.info(
+              {
+                tripId,
+                pdfSha256: res.pdfSha256,
+                kmsKeyVersion: res.kmsKeyVersion,
+              },
+              'certificado emitido tras entrega',
+            );
+          }
+        })
+        .catch((err) => {
+          // Defensa-en-profundidad: emitirCertificadoViaje no debería
+          // throwear (es defensivo), pero si lo hace por algún path no
+          // cubierto, no queremos crashear el process. Lo loggeamos y
+          // dejamos que el job de backfill lo retome.
+          logger.error(
+            { err, tripId },
+            'emitirCertificadoViaje throwed inesperadamente — pendiente para backfill',
+          );
+        });
+    }
   }
 
   return txResult;

@@ -1,6 +1,8 @@
 import { Building2, Copy, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { urlActivar } from '../../lib/activar-url.js';
 import { ApiError, api } from '../../lib/api-client.js';
+import { logger } from '../../lib/logger.js';
 
 /**
  * Platform-admin: activar / suspender empresas sin SQL.
@@ -69,12 +71,39 @@ const ESTADO_LABEL: Record<EmpresaAdminRow['estado'], string> = {
   suspendida: 'Suspendida',
 };
 
+function mensajeDeApi(err: unknown, porCodigo: Record<string, string>, fallback: string): string {
+  if (!(err instanceof ApiError)) {
+    return fallback;
+  }
+  const clave = err.code ?? err.message;
+  if (clave && porCodigo[clave]) {
+    return porCodigo[clave];
+  }
+  if (err.status === 401) {
+    return 'Tu sesión expiró. Vuelve a entrar.';
+  }
+  if (err.status === 403) {
+    return 'No tienes permiso para hacer esto.';
+  }
+  return fallback;
+}
+
+const MENSAJE_SESION: Record<string, string> = {
+  unauthorized: 'Tu sesión expiró. Vuelve a entrar.',
+  forbidden_platform_admin: 'No tienes permiso para hacer esto.',
+  forbidden_impersonation_write: 'No puedes cambiar datos mientras impersonas una empresa real.',
+  empresa_not_found: 'No encontramos esa empresa.',
+};
+
 export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) {
-  const [filtro, setFiltro] = useState<EstadoFiltro>('pendiente_verificacion');
+  // «Todas»: la empresa que crea el panel nace activa, y ella y sus
+  // invitaciones pendientes tienen que verse sin cambiar el filtro.
+  const [filtro, setFiltro] = useState<EstadoFiltro>('');
   const [empresas, setEmpresas] = useState<EmpresaAdminRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [generandoId, setGenerandoId] = useState<string | null>(null);
   const [reemitirId, setReemitirId] = useState<string | null>(null);
   const [codigos, setCodigos] = useState<Record<string, CodigoReemitido>>({});
   const [reemitirError, setReemitirError] = useState<{
@@ -118,16 +147,15 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
         },
       }));
     } catch (err) {
-      const message =
-        err instanceof ApiError && err.code === 'already_activated'
-          ? 'Esa persona ya activó su cuenta.'
-          : err instanceof ApiError && err.code === 'membership_not_found'
-            ? 'No encontramos esa invitación en esta empresa.'
-            : err instanceof ApiError
-              ? `${err.status}: ${err.message}`
-              : err instanceof Error
-                ? err.message
-                : String(err);
+      const message = mensajeDeApi(
+        err,
+        {
+          ...MENSAJE_SESION,
+          already_activated: 'Esa persona ya activó su cuenta.',
+          membership_not_found: 'No encontramos esa invitación en esta empresa.',
+        },
+        'No pudimos generar un código nuevo. Inténtalo de nuevo.',
+      );
       setReemitirError({ membershipId: miembro.membership_id, message });
     } finally {
       setReemitirId(null);
@@ -139,9 +167,33 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
       await navigator.clipboard.writeText(codigo);
       setCopiadoId(membershipId);
       window.setTimeout(() => setCopiadoId(null), 2500);
-    } catch {
-      // Sin clipboard (http, permiso denegado): el código igual está en pantalla.
+    } catch (err) {
+      // Sin clipboard (http, permiso denegado): el texto igual está en pantalla.
+      logger.warn({ err, membershipId }, 'activar-empresa: no se pudo copiar al portapapeles');
       setCopiadoId(null);
+    }
+  }
+
+  async function activarGenerador(id: string) {
+    setGenerandoId(id);
+    setError(null);
+    try {
+      await api.post(`/admin/empresas/${id}/activar-generador-carga`);
+      await cargar(filtro);
+    } catch (err) {
+      setError(
+        mensajeDeApi(
+          err,
+          {
+            ...MENSAJE_SESION,
+            not_a_transportista: 'Solo una empresa transportista puede generar carga.',
+            generador_update_failed: 'No pudimos activar el rol de generador. Inténtalo de nuevo.',
+          },
+          'No pudimos activar el rol de generador. Inténtalo de nuevo.',
+        ),
+      );
+    } finally {
+      setGenerandoId(null);
     }
   }
 
@@ -152,9 +204,13 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
       await api.patch(`/admin/empresas/${id}`, { estado });
       await cargar(filtro);
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
-      setError(msg);
+      setError(
+        mensajeDeApi(
+          err,
+          MENSAJE_SESION,
+          'No pudimos cambiar el estado de la empresa. Inténtalo de nuevo.',
+        ),
+      );
     } finally {
       setPendingId(null);
     }
@@ -168,7 +224,9 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
           <h2 className="font-semibold text-neutral-900">Empresas</h2>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
             Activa una empresa pendiente para que entre al matching. Mientras esté en verificación,
-            no le llegan ofertas aunque tenga zonas y flota.
+            no le llegan ofertas aunque tenga zonas y flota. En un transportista activo, «Generar
+            carga» prende también el rol de generador: publica cargas sin dejar de ver su inicio de
+            transportista. No suma un cargo UF. Desactivar ese rol no está en esta pantalla.
           </p>
         </div>
       </div>
@@ -225,6 +283,7 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                       {' · '}
                       {ESTADO_LABEL[e.estado]}
                       {e.es_transportista ? ' · transportista' : ''}
+                      {e.es_generador_carga ? ' · generador de carga' : ''}
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -237,6 +296,17 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                         data-testid={`empresa-activar-${e.id}`}
                       >
                         {pendingId === e.id ? 'Activando…' : 'Activar'}
+                      </button>
+                    )}
+                    {e.es_transportista && !e.es_generador_carga && (
+                      <button
+                        type="button"
+                        disabled={generandoId === e.id}
+                        onClick={() => void activarGenerador(e.id)}
+                        className="rounded-md border border-primary-300 bg-primary-50 px-3 py-1.5 font-medium text-primary-800 text-sm hover:bg-primary-100 disabled:opacity-50"
+                        data-testid={`empresa-generar-carga-${e.id}`}
+                      >
+                        {generandoId === e.id ? 'Activando rol…' : 'Generar carga'}
                       </button>
                     )}
                     {e.estado !== 'suspendida' && (
@@ -293,7 +363,10 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                             </p>
                           )}
                           {codigo && (
-                            <div className="mt-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+                            <div
+                              className="mt-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-4"
+                              data-testid={`codigo-entrega-${m.membership_id}`}
+                            >
                               <div className="font-semibold text-amber-900">
                                 Código de activación nuevo
                               </div>
@@ -302,13 +375,30 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                                 mostrar.
                               </p>
                               <p className="mt-1 text-amber-800 text-sm">
-                                Entrá a /activar, escribí el RUT {codigo.rut}, este código y elegí
-                                tu clave.
+                                Entrégale a la persona la dirección, su RUT ({codigo.rut}) y este
+                                código. Con eso, la persona elige su propia clave de 6 dígitos.
                               </p>
                               <p className="mt-1 text-amber-700 text-xs">
                                 Vence el {fechaCorta(codigo.expira_en)}.
                               </p>
                               <div className="mt-3 flex items-center gap-2">
+                                <div className="min-w-0 flex-1 select-all break-all rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-sm">
+                                  {urlActivar()}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void copiarCodigo(`${m.membership_id}-direccion`, urlActivar())
+                                  }
+                                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+                                >
+                                  <Copy className="h-3 w-3" aria-hidden />
+                                  {copiadoId === `${m.membership_id}-direccion`
+                                    ? 'Copiada ✓'
+                                    : 'Copiar dirección'}
+                                </button>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
                                 <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
                                   {codigo.codigo_activacion}
                                 </div>

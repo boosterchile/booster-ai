@@ -1,10 +1,9 @@
 import type { Logger } from '@booster-ai/logger';
 import { configuracionComercialSchema } from '@booster-ai/shared-schemas';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import {
@@ -21,11 +20,10 @@ import {
   cambiarGestionFlota,
   listarTransportistasGestionFlota,
 } from '../services/gestion-flota.js';
-import type { UserContext } from '../services/user-context.js';
 
 /**
  * ADR-079 §3 — configuración comercial editable por el platform-admin
- * (allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`, ADR-076):
+ * (`requirePlatformAdmin`, ADR-076):
  *
  *   GET /admin/configuracion-comercial → { publicada, historial }
  *   PUT /admin/configuracion-comercial → publica una versión nueva
@@ -49,21 +47,6 @@ export function createAdminConfiguracionComercialRoutes(opts: {
   lector: LectorConfiguracionComercial;
 }) {
   const app = new Hono();
-
-  function requirePlatformAdmin(c: Context) {
-    const userContext = c.get('userContext') as UserContext | undefined;
-    if (!userContext) {
-      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
-    }
-    const email = userContext.user.email?.toLowerCase();
-    if (!email || !appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS.includes(email)) {
-      return {
-        ok: false as const,
-        response: c.json({ error: 'forbidden_platform_admin' }, 403),
-      };
-    }
-    return { ok: true as const, adminEmail: email };
-  }
 
   app.get('/', async (c) => {
     const auth = requirePlatformAdmin(c);

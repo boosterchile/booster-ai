@@ -7,6 +7,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -39,7 +40,8 @@ export function AdminDispositivosRoute() {
           return null;
         }
         const active = ctx.me.active_membership;
-        if (!active || (active.role !== 'dueno' && active.role !== 'admin')) {
+        // CHEQUEOS_REEMPLAZADOS dispositivos: antes role !== dueno && role !== admin.
+        if (!active || !flagsDe(ctx.me).administrar) {
           return (
             <div className="mx-auto max-w-xl px-6 py-12">
               <h1 className="font-bold text-2xl">Acceso restringido</h1>

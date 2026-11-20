@@ -59,6 +59,7 @@ export function AparienciaConductorRoute() {
           assignment={mockAssignment(fase, teltonika)}
           geoPermission="prompt"
           sugerenciasRuta={false}
+          instruccionesRetiro={false}
         />
       </main>
     </div>

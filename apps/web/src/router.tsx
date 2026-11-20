@@ -6,6 +6,7 @@ import {
   lazyRouteComponent,
 } from '@tanstack/react-router';
 import { RouteFallback } from './components/RouteFallback.js';
+import { RUTA_CONFIRMAR_ACCESO_BOOSTER } from './lib/confirmar-acceso-booster-url.js';
 import { reportError } from './lib/error-reporting.js';
 import { RootComponent } from './routes/__root.js';
 // Rutas EAGER (primer-paint público): no se code-splittean, para evitar un
@@ -96,6 +97,23 @@ const serviciosRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/servicios.js'), 'ServiciosRoute'),
 });
 
+// Rutas con varias cargas (ADR-088): la oficina agrupa y ordena paradas.
+const rutasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/rutas',
+  component: lazyRouteComponent(() => import('./routes/rutas.js'), 'RutasRoute'),
+});
+
+// BARH-24 — alta de viaje propio del transportista (fuera del matching).
+const viajePropioNuevoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/viajes-propios/nuevo',
+  component: lazyRouteComponent(
+    () => import('./routes/viaje-propio-nuevo.js'),
+    'ViajePropioNuevoRoute',
+  ),
+});
+
 const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/perfil',
@@ -163,6 +181,21 @@ const flotaRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/flota.js'), 'FlotaRoute'),
 });
 
+const boosterFleetRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/booster-fleet',
+  component: lazyRouteComponent(() => import('./routes/booster-fleet.js'), 'BoosterFleetRoute'),
+});
+
+const boosterFleetVehiculoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/booster-fleet/vehiculos/$id',
+  component: lazyRouteComponent(
+    () => import('./routes/booster-fleet-vehiculo.js'),
+    'BoosterFleetVehiculoRoute',
+  ),
+});
+
 const trayectosTeltonikaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/trayectos',
@@ -225,6 +258,14 @@ const activarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activar',
   component: lazyRouteComponent(() => import('./routes/activar.js'), 'ActivarRoute'),
+});
+
+// ADR-093 — /crear-cuenta: invitación por correo → consignar datos + clave
+// Firebase (personal Booster / stakeholder). Pública por token.
+const crearCuentaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/crear-cuenta',
+  component: lazyRouteComponent(() => import('./routes/crear-cuenta.js'), 'CrearCuentaRoute'),
 });
 
 const conductoresListRoute = createRoute({
@@ -363,12 +404,44 @@ const platformAdminEmpresasRoute = createRoute({
   ),
 });
 
+// .specs/alta-personal-booster — alta del personal de Booster con acceso al
+// panel. Misma gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS).
+const platformAdminPersonalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/personal',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-personal.js'),
+    'PlatformAdminPersonalRoute',
+  ),
+});
+
+// .specs/confirmar-acceso-booster SC18 — la persona confirma con su sesión el
+// código que le entregó el admin de Booster. Bajo /app: exige sesión.
+const confirmarAccesoBoosterRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: RUTA_CONFIRMAR_ACCESO_BOOSTER,
+  component: lazyRouteComponent(
+    () => import('./routes/confirmar-acceso-booster.js'),
+    'ConfirmarAccesoBoosterRoute',
+  ),
+});
+
 const platformAdminTeltonikaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/teltonika',
   component: lazyRouteComponent(
     () => import('./routes/platform-admin-teltonika.js'),
     'PlatformAdminTeltonikaRoute',
+  ),
+});
+
+// .specs/flota-plataforma — la flota de todas las empresas, solo lectura.
+const platformAdminFlotaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/flota',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-flota.js'),
+    'PlatformAdminFlotaRoute',
   ),
 });
 
@@ -428,6 +501,12 @@ const cargasDetalleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cargas/$id',
   component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasDetalleRoute'),
+});
+
+const cargasEditarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cargas/$id/editar',
+  component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasEditarRoute'),
 });
 
 const vehiculoLiveRoute = createRoute({
@@ -590,6 +669,33 @@ const aparienciaInicioRoute = createRoute({
   ),
 });
 
+const aparienciaInicioGeneradorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-generador',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-generador.js'),
+    'AparienciaInicioGeneradorRoute',
+  ),
+});
+
+const aparienciaInicioConductorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-conductor',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-conductor.js'),
+    'AparienciaInicioConductorRoute',
+  ),
+});
+
+const aparienciaInicioMixtaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/inicio-mixta',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-inicio-mixta.js'),
+    'AparienciaInicioMixtaRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -599,6 +705,8 @@ const routeTree = rootRoute.addChildren([
   appRoute,
   ofertasRoute,
   serviciosRoute,
+  rutasRoute,
+  viajePropioNuevoRoute,
   perfilRoute,
   empresaRoute,
   conductorDashboardRoute,
@@ -610,10 +718,13 @@ const routeTree = rootRoute.addChildren([
   vehiculoLiveRoute,
   vehiculoHistorialRoute,
   flotaRoute,
+  boosterFleetRoute,
+  boosterFleetVehiculoRoute,
   trayectosTeltonikaRoute,
   equipoRoute,
   zonasMatchingRoute,
   activarRoute,
+  crearCuentaRoute,
   conductoresListRoute,
   conductoresNuevoRoute,
   conductoresDetalleRoute,
@@ -630,12 +741,16 @@ const routeTree = rootRoute.addChildren([
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,
+  platformAdminPersonalRoute,
+  confirmarAccesoBoosterRoute,
   platformAdminTeltonikaRoute,
+  platformAdminFlotaRoute,
   platformAdminStakeholdersRoute,
   platformAdminObservatorioRoute,
   platformAdminImpersonarRoute,
   cargasListRoute,
   cargasNuevaRoute,
+  cargasEditarRoute,
   cargasDetalleRoute,
   cargaTrackRoute,
   certificadosRoute,
@@ -655,6 +770,9 @@ const routeTree = rootRoute.addChildren([
   aparienciaConductorRoute,
   aparienciaImpersonacionRoute,
   aparienciaInicioRoute,
+  aparienciaInicioGeneradorRoute,
+  aparienciaInicioMixtaRoute,
+  aparienciaInicioConductorRoute,
 ]);
 
 export const router = createRouter({
