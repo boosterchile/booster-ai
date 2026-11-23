@@ -652,6 +652,14 @@ variable "tfstate_bucket" {
   description = "Bucket GCS del state remoto (backend). El SA de drift lo lee."
   type        = string
   default     = "booster-ai-tfstate-494222"
+
+  # El state de prod guarda la contraseña de la base. Fuera de prod, este
+  # bucket recibe bindings de identidades del entorno (SA de drift): nunca
+  # puede ser el de prod. Ver tfstate-staging.tf.
+  validation {
+    condition     = var.environment == "prod" || var.tfstate_bucket != "booster-ai-tfstate-494222"
+    error_message = "Fuera de prod, tfstate_bucket no puede ser el bucket de state de prod (booster-ai-tfstate-494222). Usa el bucket propio del entorno."
+  }
 }
 
 variable "staging_nameservers" {

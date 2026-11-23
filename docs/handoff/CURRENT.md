@@ -65,6 +65,7 @@ Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura).
 - El repo no tiene entorno `staging` en GitHub ni ninguna variable `STAGING_*`.
 - «Deploy staging» corre en cada push a `main` y se omite siempre (sus últimos 100 runs): el job exige la variable `STAGING_PROJECT_ID`. BARH-23/24 llegaron a prod sin pasar por staging.
 - El 2026-11-23 se corrigieron tres defectos de la preparación que habrían roto el primer `apply` o el primer deploy (`.specs/staging-preparacion-defectos/spec.md`). GitHub pide ahora dos variables: `STAGING_API_URL` (API) y `STAGING_URL` (PWA).
+- Revisión de seguridad del 2026-11-23: con el bucket de state compartido, staging habría podido leer la contraseña de la base de prod. Staging pasa a tener bucket propio (`infrastructure/tfstate-staging.tf`). **Pendiente del PO:** el `apply` de prod que lo crea; hasta entonces el Drift Check sale en rojo con esa sola alta.
 - Solo existe la preparación en `infrastructure/environments/staging/`. Crear el proyecto, vincular la facturación, el `terraform apply` y el registro NS en prod son pasos del PO.
 
 ## BARH-21

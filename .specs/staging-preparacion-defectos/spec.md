@@ -37,3 +37,23 @@ Staging se gestiona con el mismo root module que prod. Una lectura de `main` (`f
 - El `plan` de staging: necesita `billing_account` y permisos que la sesión no tiene. Puede haber más defectos que solo aparezcan ahí.
 - El bucket de state compartido: la SA de drift de staging puede leer también el state de prod. Queda declarado en el runbook.
 - El job de drift de staging: entra cuando staging exista.
+
+## Revisión de seguridad (2026-11-23)
+
+Los revisores automáticos no corrieron sobre #1050, así que el agente lo revisó a pedido del PO («sí, haz la revisión de seguridad de #1050»; «sí, corrige los dos en un PR»). #1050 no empeoró nada. Aparecieron dos hallazgos:
+
+| # | Severidad | Hallazgo | Arreglo |
+|---|---|---|---|
+| 4 | Media | El state de prod guarda la contraseña de Postgres en texto plano (`data.tf` arma `DATABASE_URL`). Staging compartía el bucket y su SA de drift recibía `objectViewer` sobre el bucket entero: cualquier identidad capaz de usar esa SA habría leído la credencial de prod. Viene de la preparación original, no de #1050 | Bucket de state propio para staging, `booster-ai-tfstate-stg-494222`, declarado en `infrastructure/tfstate-staging.tf` y creado por el `apply` de prod. `backend.hcl` y el tfvars de staging apuntan a él. `iam.tf` no cambia: el binding sigue a `var.tfstate_bucket`, que en staging ya es el bucket propio |
+| 5 | Baja | La validación de `STAGING_API_URL` aceptaba query, fragmento, usuario, puerto y comas. La coma permite colar otra sustitución en `--substitutions` | El paso exige `https://` más un nombre de host, anclado al valor completo |
+
+Se descartó restringir el permiso por prefijo con una condición de IAM: el listado de objetos se evalúa contra el bucket y no contra el objeto, la sesión no puede probarlo contra GCP y un error dejaría al Drift Check de prod sin leer su state.
+
+### Criterios de éxito
+
+- [ ] `terraform fmt` y `terraform validate` en verde.
+- [ ] El paso de validación, ejecutado tal como está en el workflow, acepta `https://api.staging.boosterchile.com` y rechaza vacío, ruta, query, fragmento, usuario, puerto, coma, salto de línea, `http://` y un host sin punto.
+- [ ] El `plan` de prod posterior al merge muestra una sola alta, `google_storage_bucket.tfstate_staging[0]`. **Lo verifica el PO al aplicar**; el Drift Check queda en rojo hasta ese `apply`.
+- [ ] Ninguna identidad de staging tiene un binding sobre `booster-ai-tfstate-494222`.
+- [ ] Guarda: con `environment = "staging"` y `tfstate_bucket` igual al bucket de prod, `terraform plan` falla en la validación de la variable.
+

@@ -57,11 +57,18 @@ jobs:
         env:
           API_URL: ${{ vars.STAGING_API_URL }}
         run: |
-          case "${API_URL}" in
-            https://*/*) echo "::error::STAGING_API_URL no lleva ruta ni slash final: '${API_URL}'"; exit 1 ;;
-            https://?*) echo "API de staging: ${API_URL}" ;;
-            *) echo "::error::falta la variable de repositorio STAGING_API_URL (https://api.<dominio de staging>)"; exit 1 ;;
-          esac
+          # Solo https:// más un nombre de host. Nada de ruta, query, fragmento,
+          # usuario, puerto ni comas: el valor entra en la lista --substitutions
+          # de Cloud Build, que se separa por comas.
+          if [ -z "${API_URL}" ]; then
+            echo "::error::falta la variable de repositorio STAGING_API_URL (https://api.<dominio de staging>)"; exit 1
+          fi
+          # [[ =~ ]] ancla contra el valor completo; grep lo haría línea a línea.
+          patron='^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+          if [[ ! "${API_URL}" =~ ${patron} ]]; then
+            echo "::error::STAGING_API_URL debe ser https:// más un nombre de host, sin ruta, query ni puerto"; exit 1
+          fi
+          echo "API de staging: ${API_URL}"
 
       - name: Esperar CI Success del mismo SHA
         env:
