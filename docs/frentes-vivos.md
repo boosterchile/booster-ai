@@ -17,7 +17,7 @@
 
 | Fase | Termina cuando | Estado |
 |---|---|---|
-| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa.** Al 2026-11-20: T10-06 y T10-07 marcados; T10-03 mergeado (#748), sin desplegar ni aplicar; T10-01, 02, 04 y 05 no se cumplen: dependen de operación real con terceros y de configurar vehículos |
+| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa.** Al 2026-11-20: T10-06 y T10-07 marcados; T10-03 desplegado y aplicado el 2026-11-23, con el grep en 0, a la espera de que el PO lo marque; T10-01, 02, 04 y 05 no se cumplen: dependen de operación real con terceros y de configurar vehículos |
 | Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A. Al 2026-11-23 están marcados T10-08, 09, 10, 12 y 13 (adelantos declarados por el PO); no se cumplen T10-11 (falta la escucha con lector de pantalla) y T10-14 (p95 10,8 min el 11-20; el job de tests se partió en tres el 11-23 y falta volver a medir) |
 | Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B. Al 2026-11-20 están marcados T10-15, 17 y 18 (adelantos declarados por el PO); T10-16 está montado y falta ver un error real agrupado; T10-19 y T10-20 no tienen corrida, y el load test no tiene entorno (staging no existe) |
 | Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Al 2026-11-20 el código está en prod con los flags apagados (microservicios, wake-word, eco-routing, mandato); falta el acta del municipio |
