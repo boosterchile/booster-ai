@@ -8,6 +8,7 @@
 **Actualización 2026-10-07** (`main` @ `0008fa6`): el objetivo vuelve a ser TRL 10 ([ADR-082](adr/082-objetivo-trl10-supersede-precomercial.md)). Este documento pasa a ordenar el programa por fases; los tres slots son los frentes de la fase A.
 **Actualización 2026-10-29** (`main` @ `1b10cfa3`, prod en `18ce8e22`): se re-verificó el estado de cada slot contra prod. Las cifras y sus fuentes están en `docs/handoff/CURRENT.md`. T10-06 se cumple. Ningún slot se declara cerrado y no se registra ninguna excepción: el trabajo mergeado sin registro se lista como pendiente de decisión del PO (ver «Código en main después del 2026-10-10»).
 **Actualización 2026-11-20** (`main` @ `e7ad3c6c`, prod en `93f084f1`): se re-verificaron los 30 criterios contra el repo, GitHub Actions y GCP en solo lectura; las líneas «Hoy» están en `.specs/trl10/spec.md` y el plan de trabajo en [`docs/handoff/2026-11-20-plan-trl10.md`](handoff/2026-11-20-plan-trl10.md). #748 (Slot 2) se mergeó y espera release y `terraform apply`. Por decisión del PO del 2026-11-20 se marcan T10-07, 08, 09, 10, 13, 15, 17 y 18; con T10-06 son 9 de 30. Ningún slot se declara cerrado. Los estados de slot fechados 2026-10-29 de más abajo no se reescribieron.
+**Actualización 2026-11-23** (`main` @ `f6705924`, prod en `52da4c1b`): el PO cierra el Slot 2 («Limpieza de la superficie demo») con T10-03 marcado; pasa a «Cerrados» y el slot queda libre. Marcados 11 de 30 criterios.
 
 ---
 
@@ -23,7 +24,7 @@
 | Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C. Al 2026-11-20 el código está en prod con los flags apagados (microservicios, wake-word, eco-routing, mandato); falta el acta del municipio |
 | Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo. Al 2026-11-20 el repo no registra RFP enviados, los cinco legales siguen con `lawyer_review: pendiente` (la Ley 21.719 rige el 2026-12-01) y no hay cliente con contrato |
 
-**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO. #837 (mergeado el 10-29) migra a zod 4; si alcanza se verá en la semanal del 2026-11-02.
+**Frentes de la fase A:** Slot 1 (T10-01 y T10-05) y Slot 3 (T10-02 y T10-04). El Slot 2 (T10-03) se cerró el 2026-11-23 y está libre. T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot. T10-06 se cumple: el Drift Check lleva 7 corridas programadas seguidas en verde, del 2026-10-23 al 10-29. T10-07 tuvo dos semanas seguidas en verde (10-12 y 10-19) y después un rojo el 10-26, por una advisory de `zod`. Si eso lo cumple lo decide el PO. #837 (mergeado el 10-29) migra a zod 4; si alcanza se verá en la semanal del 2026-11-02.
 
 **Gestiones de la fase E que arrancan ya** (acción del PO, no ocupan slot): enviar los RFP de `docs/compliance/glec-rfp.md` y `docs/audits/security-rfp.md`, contratar la revisión legal (la Ley 21.719 rige desde 2026-12-01) y buscar el primer cliente con contrato.
 
@@ -82,22 +83,9 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 
 ---
 
-## Slot 2 — Limpieza de la superficie demo
+## Slot 2 — libre
 
-**Por qué:** la bandera `es_demo` atraviesa el núcleo de autenticación y autorización. Mientras exista, cada cambio en ese núcleo carga una dimensión adicional.
-
-**Terminado cuando:** `grep -rl 'es_demo\|isDemo\|DEMO_\|demo\.boosterchile'` sobre `apps/`, `packages/` e `infrastructure/` devuelve cero archivos, y `demo.boosterchile.com` no tiene registro DNS ni recurso en Terraform.
-
-**Estado 2026-10-29:** el criterio no se cumple. El grep, sin las migraciones históricas de `apps/api/drizzle/`, da **8 archivos** (11 con ellas). El retiro del api, la web, CI y Terraform entró con #745 (2026-10-10), y los archivos del núcleo anterior ya no existen (`is-demo-enforcement.ts`, `demo-expires.ts`, `cuentas-demo.ts`, `DemoBanner.tsx`, `use-is-demo.ts`, entre otros). Quedan:
-
-- `apps/api/src/db/schema.ts` (columna `es_demo` y tabla `cuentas_demo`, que siguen en prod);
-- `apps/api/src/services/cobrar-suscripciones-uf.ts` y `apps/api/src/services/observatorio/viajes-entregados.ts` (filtros `isDemo` de #772 y #775);
-- 4 tests: `impersonation-write-guard.test.ts`, y en `apps/api/test/integration/` `impersonate-targets-flag`, `observatorio-viajes` y `suscripciones-uf`;
-- `infrastructure/removed-demo.tf`.
-
-`demo.boosterchile.com` sigue resolviendo (A `34.36.187.195`) y responde HTTPS 200. #748 (migración contract que retira `es_demo` y `cuentas_demo`) está en draft y en conflicto desde el 10-12. Necesita sus precondiciones, la lista de ADR-076 §3, el visto del PO y renumerarse a 0065.
-
-**Fuera de alcance:** cualquier reintroducción de un modo demo. La necesidad legítima que cubría —operar como una empresa de prueba— queda resuelta por impersonación sobre `empresas.es_usuario_prueba` (migración `0050`), que usa el flujo real y no requiere código dedicado.
+Lo ocupó «Limpieza de la superficie demo» hasta el 2026-11-23 (ver «Cerrados»). Queda libre: qué frente de la fase A entra lo decide el PO, con su criterio de término escrito (regla 2).
 
 ---
 
@@ -286,6 +274,13 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 ---
 
 ## Cerrados
+
+**Limpieza de la superficie demo** — ocupó el Slot 2 hasta el 2026-11-23; lo cerró el PO ese día, junto con T10-03. Criterio cumplido:
+
+- El grep `es_demo|isDemo|DEMO_|demo\.boosterchile` sobre `apps/`, `packages/` e `infrastructure/` da 0 archivos fuera de las migraciones históricas de `apps/api/drizzle/` (0024, 0038, 0050 y 0088), que no se reescriben.
+- `demo.boosterchile.com` no tiene registro en Cloud DNS ni recurso en Terraform; el proxy HTTPS sirve solo el certificado sin demo (`gcloud`, 2026-11-23).
+
+Entró en dos partes: #745 (retiro del api, la web, CI y Terraform, 2026-10-10) y #748 (migración contract 0088 y retiro del certificado y del DNS, desplegada y aplicada el 2026-11-23), más #1042 (borra `removed-demo.tf`). Queda fuera de alcance, como estaba escrito, cualquier reintroducción de un modo demo: operar como empresa de prueba se hace con impersonación sobre `empresas.es_usuario_prueba`.
 
 **Cierre documental de SEC-001** — ocupó el Slot 3 hasta el 2026-09-13. Criterio cumplido: los documentos listados en su definición declaran estado terminal en el encabezado (`.specs/sec-001-h1-2-google-blocking/`, `-a/`, `-b/`, `.specs/sec-001-cierre/plan-sprint-2a.md` y `plan-sprint-2b.md`); `-c/` ya estaba `SUPERSEDED`; ADR-054 ya declaraba `Superseded by ADR-057` desde 2026-06-04 y no requirió enmienda. El modo destructivo del reaper sigue fuera de slot, como estaba escrito.
 
