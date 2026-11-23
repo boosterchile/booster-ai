@@ -20,7 +20,8 @@ import {
   Waypoints,
 } from 'lucide-react';
 import type { MeResponse } from '../hooks/use-me.js';
-import { flagsDe } from '../lib/capacidades.js';
+import { type FlagsCapacidad, flagsDe } from '../lib/capacidades.js';
+import { productoDe } from '../lib/producto.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -64,6 +65,10 @@ export function navSectionsForMe(
   // CHEQUEOS_REEMPLAZADOS nav-gestion: el conductor empleado solo ve su viaje.
   if (flags.ctx && !flags.menuGestion) {
     return [{ items: [{ label: 'Mi viaje', to: '/app/conductor', icon: Truck }] }];
+  }
+
+  if (productoDe(me) === 'fleet') {
+    return navFleet({ flags, esDueno: role === 'dueno', rutas: opciones.rutas === true });
   }
 
   const inicioItems: NavItem[] = [INICIO];
@@ -155,4 +160,49 @@ export function navSectionsForMe(
   }
 
   return sections;
+}
+
+/**
+ * Menú del producto Booster Fleet (`.specs/booster-fleet-interfaz` §4.2): la
+ * empresa solo de flota no ve nada del marketplace. El dueño y el admin
+ * parten en el panel de flota; los demás roles, en el Inicio.
+ */
+function navFleet(opts: { flags: FlagsCapacidad; esDueno: boolean; rutas: boolean }): NavSection[] {
+  const { flags } = opts;
+  const esAdmin = flags.administrar;
+
+  const principal: NavItem[] = [
+    esAdmin ? { label: 'Panel de flota', to: '/app/booster-fleet', icon: Gauge } : INICIO,
+  ];
+  if (flags.panelConductor && opts.esDueno) {
+    principal.push({ label: 'Mi viaje', to: '/app/conductor', icon: Truck });
+  }
+  if (esAdmin) {
+    principal.push({ label: 'Empresa', to: '/app/empresa', icon: Leaf });
+  }
+  principal.push({ label: 'Equipo', to: '/app/equipo', icon: UserCog });
+
+  const flota: NavItem[] = [{ label: 'Seguimiento de flota', to: '/app/flota', icon: MapPinned }];
+  if (esAdmin) {
+    flota.push({ label: 'Trayectos', to: '/app/trayectos', icon: Fuel });
+  }
+  flota.push(
+    { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
+    { label: 'Conductores', to: '/app/conductores', icon: Users },
+    { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
+  );
+  if (esAdmin) {
+    flota.push({ label: 'Dispositivos', to: '/app/admin/dispositivos', icon: Radio });
+  }
+
+  const viajes: NavItem[] = [{ label: 'Servicios', to: '/app/servicios', icon: ClipboardList }];
+  if (opts.rutas) {
+    viajes.push({ label: 'Rutas', to: '/app/rutas', icon: Waypoints });
+  }
+
+  return [
+    { items: principal },
+    { heading: 'Flota', items: flota },
+    { heading: 'Viajes propios', items: viajes },
+  ];
 }

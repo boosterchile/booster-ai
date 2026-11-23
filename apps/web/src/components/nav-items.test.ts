@@ -103,26 +103,64 @@ describe('navSectionsForMe', () => {
     expect(l).not.toContain('Mis cargas'); // no es generador
   });
 
-  it('transportista sin ofertas de carga → flota y viajes propios, sin Ofertas, plata ni Zonas', () => {
+  it('empresa solo de flota, dueño → menú de Booster Fleet, sin nada del marketplace', () => {
     const me = buildMe({ transportista: true, role: 'dueno', recibeOfertasCarga: false });
-    const l = labels(navSectionsForMe(me, { rutas: true }));
-    for (const oculto of ['Ofertas', 'Cobra hoy', 'Liquidaciones', 'Zonas de matching']) {
+    const secciones = navSectionsForMe(me, { rutas: true });
+    expect(secciones.map((s) => s.heading)).toEqual([undefined, 'Flota', 'Viajes propios']);
+    expect(secciones.map((s) => s.items.map((i) => i.label))).toEqual([
+      ['Panel de flota', 'Empresa', 'Equipo'],
+      [
+        'Seguimiento de flota',
+        'Trayectos',
+        'Vehículos',
+        'Conductores',
+        'Cumplimiento',
+        'Dispositivos',
+      ],
+      ['Servicios', 'Rutas'],
+    ]);
+    expect(secciones[0]?.items[0]?.to).toBe('/app/booster-fleet');
+    const l = labels(secciones);
+    for (const oculto of ['Inicio', 'Ofertas', 'Cobra hoy', 'Liquidaciones', 'Zonas de matching']) {
       expect(l).not.toContain(oculto);
     }
-    expect(l).toEqual([
-      'Inicio',
-      'Empresa',
-      'Equipo',
-      'Booster Fleet',
-      'Seguimiento de flota',
-      'Trayectos',
-      'Servicios',
-      'Rutas',
-      'Vehículos',
-      'Conductores',
-      'Cumplimiento',
-      'Dispositivos',
+  });
+
+  it('empresa solo de flota, despachador → Inicio y la flota, sin lo de dueño y admin', () => {
+    const me = buildMe({ transportista: true, role: 'despachador', recibeOfertasCarga: false });
+    expect(navSectionsForMe(me).map((s) => s.items.map((i) => i.label))).toEqual([
+      ['Inicio', 'Equipo'],
+      ['Seguimiento de flota', 'Vehículos', 'Conductores', 'Cumplimiento'],
+      ['Servicios'],
     ]);
+  });
+
+  it('empresa solo de flota: el dueño con ficha propia conserva «Mi viaje» y el conductor solo ve su viaje', () => {
+    const dueno = buildMe({
+      transportista: true,
+      role: 'dueno',
+      recibeOfertasCarga: false,
+      fichaPropia: true,
+    });
+    expect(labels(navSectionsForMe(dueno))).toContain('Mi viaje');
+    const conductor = buildMe({
+      transportista: true,
+      role: 'conductor',
+      recibeOfertasCarga: false,
+    });
+    expect(labels(navSectionsForMe(conductor))).toEqual(['Mi viaje']);
+  });
+
+  it('empresa con los dos roles y sin ofertas de carga sigue en la interfaz de Booster', () => {
+    const me = buildMe({
+      transportista: true,
+      generador: true,
+      role: 'dueno',
+      recibeOfertasCarga: false,
+    });
+    const secciones = navSectionsForMe(me);
+    expect(secciones.map((s) => s.heading)).toEqual([undefined, 'Transporte', 'Generador']);
+    expect(labels(secciones)).not.toContain('Ofertas');
   });
 
   it('con la bandera en true o ausente el menú del transportista no cambia', () => {

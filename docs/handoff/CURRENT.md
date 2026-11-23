@@ -11,6 +11,8 @@
 
 Verificado en prod en solo lectura tras el release [45245572913](https://github.com/boosterchile/booster-ai/actions/runs/45245572913): los 8 servicios de Cloud Run sirven `fdc43f11` al 100 % (api `00494-4pr`, web `00436-hdw`); `Drizzle migrate() complete` a las 19:16Z (America/Santiago 16:16) y las tres columnas existen en `empresas`; sin entradas de severidad ERROR en la revisión nueva; las 8 empresas siguen con `recibe_ofertas_carga = true`, sin cambios registrados.
 
+**Interfaz propia de Booster Fleet, en PR** (spec `.specs/booster-fleet-interfaz/`, pedido del PO el 2026-11-23): la empresa transportista, no generadora y sin ofertas de carga ve el producto Booster Fleet: marca «Booster Fleet», el panel de flota como Inicio del dueño y del admin, y un menú con las secciones «Flota» y «Viajes propios». Solo web, sin API ni migración. Los dos planes, según el PO: Booster Fleet es solo gestión de flota; Booster incluye los dos servicios. Visto en un navegador con `/apariencia/shell?rol=fleet`. El cobro todavía no distingue los dos planes.
+
 **Para dejar operativo al cliente** (visto en prod en solo lectura el 2026-11-23: empresa activa, 2 vehículos con Teltonika enviando, 0 conductores, 0 zonas, dueño sin activar con el código vencido el 2026-10-04):
 
 1. En el panel, «Configuración comercial» → «Ofertas de carga»: deshabilitar a la empresa. «Booster Fleet» en la misma página define su tarifa.
