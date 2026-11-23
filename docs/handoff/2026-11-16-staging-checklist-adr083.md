@@ -52,6 +52,7 @@ Orden sugerido. Nada de esto lo ejecuta el agente en este frente.
 
 ### 2.3 Secretos + Firebase (solo PO / consola)
 
+- [ ] `twilio-account-sid` con un `AC…` de prueba **antes** de crear `STAGING_PROJECT_ID` en GitHub (agregado el 2026-11-23): tres servicios lo validan al arrancar.
 - [ ] Secret Manager en el proyecto de staging ([secret-init-runbook.md](../runbooks/secret-init-runbook.md) con `--project=booster-ai-stg-494222`).
 - [ ] Twilio / Resend de **prueba**, nunca prod.
 - [ ] Firebase + App Check (reCAPTCHA) + Maps key restringida a `app.staging.boosterchile.com`.
@@ -127,7 +128,7 @@ terraform -chdir=infrastructure init -reconfigure
 2. Ninguna línea de recurso referencia `booster-ai-494222` como proyecto destino.
 3. `environment = "staging"`, `domain = "staging.boosterchile.com"`.
 4. Cloud SQL zonal `db-custom-1-3840`; Redis BASIC 1 GB; Cloud Run `min_instances` según defaults del módulo (API/web en 0).
-5. Preflight de placeholders exit 0 **o** plan sin montar secrets validados hasta cargar valores reales (disciplina `terraform-apply.md`).
+5. Preflight de placeholders: en el primer `apply` de staging debe listar solo `twilio-account-sid` (corrida en seco del 2026-11-23). Los `content-sid-*` no se montan (`content_sid_ready = {}`).
 
 ---
 

@@ -50,6 +50,13 @@ staging_nameservers = []
 # strict_migration_ordering: staging debe fallar si el orden de migraciones no cuadra.
 strict_migration_ordering = true
 
+# content_sid_ready: el default de variables.tf monta los cinco content-sid
+# porque en PROD ya tienen su valor real. En staging nacen con el placeholder
+# ROTATE_ME_*, que no pasa la validación `^HX` del api: montados, el primer
+# deploy real no arranca (INC-2026-06-19). Mapa vacío = ninguno montado. Pasa
+# a true cada uno solo después de cargar su `HX...` de prueba.
+content_sid_ready = {}
+
 # --- Flags que NO se listan aquí a propósito ---
 # Usan el default de infrastructure/variables.tf. No los actives en el primer
 # apply de staging sin visto del PO (y nunca copies valores de prod a ciegas):
@@ -59,8 +66,8 @@ strict_migration_ordering = true
 #     prod corre activa desde el 2026-11-16; staging puede heredar el default o
 #     fijar "sombra" o "vigente" en el tfvars local si el PO quiere un entorno más quieto)
 #   document_service_push                                  = true (ADR-085)
-#   resend_api_key_ready / content_sid_ready               = false / mapa default
-#     → montar solo después de cargar secretos reales (docs/runbooks/terraform-apply.md)
+#   resend_api_key_ready                                   = false
+#     → montar solo después de cargar el secreto real (docs/runbooks/terraform-apply.md)
 #   rutas_api_activada                                     = true (default del módulo
 #     tras visto PO 2026-11-16; staging gemelo puede heredar o fijar false local)
 #   matching "activa"                                      = fuera de este tfvars;
