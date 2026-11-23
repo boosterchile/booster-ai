@@ -109,7 +109,7 @@ Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas a
 - **Migración 0088: corrió.** Borra la tabla `cuentas_demo`, el enum `persona_demo` y la columna `empresas.es_demo`. La revisión `00493-4pt` registró `Drizzle migrate() complete` y no hay `runMigrations failed`: si la guarda hubiera abortado, con `STRICT_MIGRATION_ORDERING=false` el api arranca igual y ese error queda en el log. No se confirmó con una consulta a la base (la sesión no tuvo acceso); las dos consultas de la guarda tampoco se corrieron antes de disparar.
 - **`terraform apply`: corrido por el PO el 2026-11-23** (1 cambio y 3 destrucciones, igual al plan). Visto en GCP a las 16:37Z: el proxy HTTPS sirve solo `booster-ai-cert-40b4b7c9`, y ya no existen el certificado con demo ni el registro DNS de `demo.boosterchile.com`. El api siguió respondiendo 200.
 - **`infrastructure/removed-demo.tf`: borrado** con permiso del PO. El plan del PO no listó los secretos demo, así que el state ya los había olvidado. El grep de T10-03 da 0 archivos fuera de las migraciones históricas.
-- **T10-03 marcado por el PO el 2026-11-23.** Queda por ver un `terraform plan` sin cambios y que el Drift Check programado vuelva a verde.
+- **T10-03 marcado y Slot 2 cerrado por el PO el 2026-11-23.** Queda por ver un `terraform plan` sin cambios y que el Drift Check programado vuelva a verde.
 
 ## Programa TRL 10
 
