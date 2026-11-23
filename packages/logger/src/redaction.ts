@@ -1,4 +1,5 @@
 import { ensureRutHasDash, normalizePhone, rutSchema } from '@booster-ai/shared-schemas';
+import { serializarError } from './serializar-error.js';
 
 /**
  * Paths que Pino debe redactar automáticamente en cada log.
@@ -125,9 +126,14 @@ export function redactObjectValues(
     return obj;
   }
   if (visited.has(obj as object)) {
-    return obj;
+    // Un Error ya visitado es un ciclo de causas: devolverlo crudo dejaría
+    // pasar su mensaje y sus valores sin serializar.
+    return obj instanceof Error ? '[ciclo]' : obj;
   }
   visited.add(obj as object);
+  if (obj instanceof Error) {
+    return serializarError(obj, (valor) => redactObjectValues(valor, visited));
+  }
   if (Array.isArray(obj)) {
     return obj.map((v) => redactObjectValues(v, visited));
   }

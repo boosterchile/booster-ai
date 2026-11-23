@@ -2,6 +2,7 @@ import { trace } from '@opentelemetry/api';
 import { type Logger as PinoLogger, type LoggerOptions as PinoOptions, pino } from 'pino';
 import { camposErrorReporting } from './error-reporting.js';
 import { redactObjectValues, redactValue, redactionPaths } from './redaction.js';
+import { mensajeSinValores } from './serializar-error.js';
 
 export type Logger = PinoLogger;
 
@@ -59,6 +60,11 @@ export function createLogger(options: LoggerOptions): Logger {
       // y en keys no allowlisted (e.g. `customApiSecret`, mensaje con email).
       log: (obj) => redactObjectValues(obj) as Record<string, unknown>,
     },
+    // `formatters.log` ya entrega cada Error serializado (tipo, mensaje, stack
+    // y causa). El serializer `err` por defecto de pino lo volvería a procesar
+    // como si fuera un Error: pondría `type: 'Object'` y pegaría los mensajes
+    // de las causas en `message`.
+    serializers: { err: (valor: unknown) => valor },
     redact: {
       paths: [...redactionPaths, ...additionalRedactionPaths],
       censor: '[REDACTED]',
@@ -77,6 +83,15 @@ export function createLogger(options: LoggerOptions): Logger {
             primero instanceof Error
               ? { err: primero, ...campos }
               : { ...(primero as object), ...campos };
+        }
+        // Sin mensaje explícito, pino usa `err.message`, que en un error de
+        // consulta trae los valores. Se fija aquí el mensaje ya sin ellos.
+        const err = errorDelRegistro(out[0]);
+        if (err && out[1] === undefined) {
+          if (out[0] === err) {
+            out[0] = { err };
+          }
+          out[1] = redactValue(mensajeSinValores(err));
         }
         return method.apply(this, out as Parameters<typeof method>);
       },
@@ -126,6 +141,16 @@ export function createLogger(options: LoggerOptions): Logger {
   }
 
   return pino(opts);
+}
+
+function errorDelRegistro(arg: unknown): Error | undefined {
+  if (arg instanceof Error) {
+    return arg;
+  }
+  if (typeof arg === 'object' && arg !== null && 'err' in arg && arg.err instanceof Error) {
+    return arg.err;
+  }
+  return undefined;
 }
 
 function pinoLevelToGcpSeverity(label: string): string {
