@@ -30,8 +30,8 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `52da4c1b` | Igual a prod salvo este handoff |
-| Prod | `52da4c1b` | Release 45192156923; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00493-4pt` |
+| `main` | `fdc43f11` | Igual a prod salvo este handoff |
+| Prod | `fdc43f11` | Release 45245572913; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00494-4pr` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
 **Smoke (2026-11-23, tras el release, solo lectura por `gcloud`):** sin entradas de severidad ERROR en la revisión nueva del api desde su arranque; flags conservados. No se probaron `/health` ni `/ready` (el proxy de la sesión bloquea `boosterchile.com`) ni el gateway de GKE. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
