@@ -34,7 +34,9 @@ monthly_budget_usd             = 250
 alert_email                    = "dev@boosterchile.com"
 
 # --- State y facturación del propio proyecto ---
-tfstate_bucket = "booster-ai-tfstate-494222"
+# Bucket propio de staging; lo crea el apply de prod (tfstate-staging.tf).
+# Nunca el de prod: la SA de drift de staging recibe lectura sobre este bucket.
+tfstate_bucket = "booster-ai-tfstate-stg-494222"
 # Export de billing de staging: se crea en el dataset billing_export del
 # proyecto de staging (consola → Billing → Billing export). Hasta entonces,
 # apuntar al de prod deja el dashboard de costos de staging vacío.

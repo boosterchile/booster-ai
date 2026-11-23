@@ -18,7 +18,7 @@ El código de soporte de staging **ya está en `main`**. El proyecto GCP gemelo 
 ## 1. Ya listo (agente / repo) — no requiere visto PO para existir
 
 - [x] ADR-083 vigente; supersede parcial de ADR-048 / cierra preguntas de ADR-055 para staging.
-- [x] `infrastructure/environments/staging/backend.hcl` → bucket `booster-ai-tfstate-494222`, prefix `terraform/staging`.
+- [x] `infrastructure/environments/staging/backend.hcl` → bucket propio `booster-ai-tfstate-stg-494222` (desde el 2026-11-23; antes compartía el de prod), prefix `terraform/staging`.
 - [x] `infrastructure/environments/staging/terraform.tfvars.example` → ID propuesto `booster-ai-stg-494222`, sizing mínimo, `monthly_budget_usd = 250`.
 - [x] Variable `staging_nameservers` + recurso `google_dns_record_set.staging_delegation` (count = 0 mientras lista vacía).
 - [x] `.github/workflows/release-staging.yml` — push a `main` + `workflow_dispatch`; `if: vars.STAGING_PROJECT_ID != ''`.
@@ -34,6 +34,7 @@ Orden sugerido. Nada de esto lo ejecuta el agente en este frente.
 
 ### 2.1 Previos (lista ADR-076)
 
+- [ ] `apply` de **prod** que crea el bucket de state de staging `booster-ai-tfstate-stg-494222` (agregado el 2026-11-23; el plan debe mostrar solo esa alta).
 - [ ] Cuenta con `resourcemanager.projectCreator` + `billing.user`.
 - [ ] Confirmar disponibilidad del ID `booster-ai-stg-494222` (si no, elegir otro y actualizar tfvars + vars GitHub).
 - [ ] Copiar example → `infrastructure/environments/staging/terraform.tfvars` (gitignored) y completar `billing_account`.
