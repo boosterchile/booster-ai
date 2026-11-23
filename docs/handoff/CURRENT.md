@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-21 · America/Santiago (retiro de la superficie demo, parte 2, en `main` sin desplegar: faltan el release con la migración 0088 y el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
-**Prod**: `93f084f1` (Release [44758377706](https://github.com/boosterchile/booster-ai/actions/runs/44758377706) SUCCESS, terminó el 2026-11-20 a las 12:37) — api `booster-ai-api-00492-tz7` @ **100 %**, web `00434-t8f` @ 100 %; los 8 servicios en esa imagen. Lleva el certificado con factores versionados (#877) y un test con fecha fija (#1033). Sin migraciones. El release anterior fue el quinto del 2026-11-18 (`2e6e2c67`, 23:18: reemisión por distancia no plausible #1031 con la migración 0087, corte lineal de palabras #876).  
-**`main`**: tip `562ff419` (#1037). Pendiente de deploy: #748 (migración 0088, fase contract, y Terraform), #1036 (solo un test) y #1037 (tipos del api, T10-12).  
+**Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado: la migración 0088 corrió en prod; falta el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
+**Prod**: `52da4c1b` (Release [45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923) SUCCESS, terminó el 2026-11-23 a las 11:59) — api `booster-ai-api-00493-4pt` @ **100 %**, web `00435-p4g` @ 100 %; los 8 servicios de Cloud Run en esa imagen. Lleva #748 (migración 0088, fase contract), #1036 (solo un test), #1037 (tipos del api, T10-12) y #1039 (solo CI). El release anterior fue el del 2026-11-20 (`93f084f1`: certificado con factores versionados #877).  
+**`main`**: tip `52da4c1b` (#1039), igual a prod salvo este handoff. Nada pendiente de deploy; falta el `terraform apply` de #748.  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Score producto (P)
@@ -15,12 +15,12 @@
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `562ff419` | Prod + #748, #1035 (docs), #1036 y #1037 |
-| Prod | `93f084f1` | Release 44758377706; los 8 servicios al 100 % en su última revisión |
+| `main` | `52da4c1b` | Igual a prod salvo este handoff |
+| Prod | `52da4c1b` | Release 45192156923; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00493-4pt` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
-**Smoke (2026-11-20, tras el release):** sin errores del api desde el deploy; `/health` y `/ready` 200; flags conservados. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
-**Registros:** `Drizzle migrate() complete` en `00486-brt` @ 13:15:11Z (America/Santiago 10:15).  
+**Smoke (2026-11-23, tras el release, solo lectura por `gcloud`):** sin entradas de severidad ERROR en la revisión nueva del api desde su arranque; flags conservados. No se probaron `/health` ni `/ready` (el proxy de la sesión bloquea `boosterchile.com`) ni el gateway de GKE. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
+**Registros:** `Drizzle migrate() complete` en `00493-4pt` @ 14:28:00Z (America/Santiago 11:28), 495 ms, sin ningún `runMigrations failed` desde el deploy.  
 **Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`. El programado del 2026-11-20 16:05 ([44798850335](https://github.com/boosterchile/booster-ai/actions/runs/44798850335)) falló por #748: el plan trae 1 cambio (el proxy HTTPS) y 3 destrucciones (el certificado con el dominio demo, su sufijo y el registro DNS demo). Seguirá fallando hasta el `terraform apply` del PO.
 
 ## Evidencia Score P
@@ -104,16 +104,15 @@ Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas a
 
 ## Retiro de la superficie demo (T10-03 PR 2)
 
-**En `main` desde el 2026-11-20, sin desplegar** ([#748](https://github.com/boosterchile/booster-ai/pull/748), `e7ad3c6c`, spec `.specs/retiro-superficie-demo-t10-03/`). Es la fase contract del PR 1 (#745). Quedan dos pasos del PO, cada uno con su lista de verificación y su corrida en seco registradas antes (ADR-076):
+**Desplegado el 2026-11-23** ([#748](https://github.com/boosterchile/booster-ai/pull/748), `e7ad3c6c`, spec `.specs/retiro-superficie-demo-t10-03/`), en el release 45192156923. Es la fase contract del PR 1 (#745).
 
-- **Release.** La migración 0088 borra la tabla `cuentas_demo`, el enum `persona_demo` y la columna `empresas.es_demo`. Trae una guarda: si queda una empresa marcada como demo o una cuenta demo sin deshabilitar, aborta en el arranque sin tocar la base y el release no avanza. Antes de disparar, las dos consultas de la guarda deben devolver 0 filas (spec §7; no corridas desde esta sesión).
-- **`terraform apply`.** El proxy HTTPS pasa a servir solo el certificado `principal`, y salen el certificado anterior, su sufijo y el registro DNS de `demo.boosterchile.com`. Visto en solo lectura el 2026-11-21: los dos certificados gestionados están ACTIVE, y el que no incluye el dominio demo cubre `api`, `app`, el dominio raíz y `www`.
-
-Después de los dos pasos: `demo.boosterchile.com` no resuelve y el Terraform Drift Check vuelve a quedar sin diferencias.
+- **Migración 0088: corrió.** Borra la tabla `cuentas_demo`, el enum `persona_demo` y la columna `empresas.es_demo`. La revisión `00493-4pt` registró `Drizzle migrate() complete` y no hay `runMigrations failed`: si la guarda hubiera abortado, con `STRICT_MIGRATION_ORDERING=false` el api arranca igual y ese error queda en el log. No se confirmó con una consulta a la base (la sesión no tuvo acceso); las dos consultas de la guarda tampoco se corrieron antes de disparar.
+- **`terraform apply`: pendiente (PO).** El proxy HTTPS pasa a servir solo el certificado `principal`, y salen el certificado anterior, su sufijo y el registro DNS de `demo.boosterchile.com`. Hasta entonces el Terraform Drift Check programado sigue fallando por esa diferencia.
+- **Después del apply:** un PR borra `infrastructure/removed-demo.tf` (declara recursos de secretos: pide permiso del PO) y con eso el grep de T10-03 da 0.
 
 ## Programa TRL 10
 
-Línea base re-verificada el 2026-11-20 (repo, GitHub Actions y GCP en solo lectura; sin acceso a la BD): [`2026-11-20-plan-trl10.md`](./2026-11-20-plan-trl10.md), con el estado de los 30 criterios y el plan de trabajo. Marcados 10 de 30: T10-06; por decisión del PO del 2026-11-20, T10-07, 08, 09, 10, 13, 15, 17 y 18; y del 2026-11-23, T10-12. #748 (T10-03) está en `main` (`e7ad3c6c`) sin desplegar: la migración 0088 sale en el próximo release y falta el `terraform apply`. Plazos: decisión del mandato el 2026-11-30 y Ley 21.719 el 2026-12-01.
+Línea base re-verificada el 2026-11-20 (repo, GitHub Actions y GCP en solo lectura; sin acceso a la BD): [`2026-11-20-plan-trl10.md`](./2026-11-20-plan-trl10.md), con el estado de los 30 criterios y el plan de trabajo. Marcados 10 de 30: T10-06; por decisión del PO del 2026-11-20, T10-07, 08, 09, 10, 13, 15, 17 y 18; y del 2026-11-23, T10-12. #748 (T10-03) está desplegado desde el 2026-11-23 con la migración 0088; falta el `terraform apply`. El job de tests de CI corre en tres runners desde #1039 (T10-14): falta volver a medir el p95. Plazos: decisión del mandato el 2026-11-30 y Ley 21.719 el 2026-12-01.
 
 ## Agente
 
