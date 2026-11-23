@@ -8,6 +8,7 @@
 **Actualización 2026-10-07** (`main` @ `0008fa6`): el objetivo vuelve a ser TRL 10 ([ADR-082](adr/082-objetivo-trl10-supersede-precomercial.md)). Este documento pasa a ordenar el programa por fases; los tres slots son los frentes de la fase A.
 **Actualización 2026-10-29** (`main` @ `1b10cfa3`, prod en `18ce8e22`): se re-verificó el estado de cada slot contra prod. Las cifras y sus fuentes están en `docs/handoff/CURRENT.md`. T10-06 se cumple. Ningún slot se declara cerrado y no se registra ninguna excepción: el trabajo mergeado sin registro se lista como pendiente de decisión del PO (ver «Código en main después del 2026-10-10»).
 **Actualización 2026-11-20** (`main` @ `e7ad3c6c`, prod en `93f084f1`): se re-verificaron los 30 criterios contra el repo, GitHub Actions y GCP en solo lectura; las líneas «Hoy» están en `.specs/trl10/spec.md` y el plan de trabajo en [`docs/handoff/2026-11-20-plan-trl10.md`](handoff/2026-11-20-plan-trl10.md). #748 (Slot 2) se mergeó y espera release y `terraform apply`. Por decisión del PO del 2026-11-20 se marcan T10-07, 08, 09, 10, 13, 15, 17 y 18; con T10-06 son 9 de 30. Ningún slot se declara cerrado. Los estados de slot fechados 2026-10-29 de más abajo no se reescribieron.
+**Actualización 2026-11-23, servicios por empresa**: por pedido del PO entra, fuera de slot, «Servicios por empresa» (una empresa transportista sin ofertas de carga). Los slots no cambian.
 **Actualización 2026-11-23** (`main` @ `f6705924`, prod en `52da4c1b`): el PO cierra el Slot 2 («Limpieza de la superficie demo») con T10-03 marcado; pasa a «Cerrados» y el slot queda libre. Marcados 11 de 30 criterios.
 
 ---
@@ -205,6 +206,18 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 **Ventana completa (pedido del PO, 2026-11-17):** el panel decía «7 días» y leía como máximo 20.000 puntos; en la flota más grande eso cubría unas seis horas. Spec aceptada en `.specs/booster-fleet-ventana-completa/spec.md`. Al 2026-11-17 el criterio de término se cumple: la lectura por vehículo (#1018), la caché (#1019) y el aviso (#1020) están en `main`, con los criterios de la spec cubiertos por tests y los tiempos medidos en local. En prod desde el 2026-11-18 (`cbe37242`). El PO decidió el 2026-11-18 dejar `cobertura_desde` como está. El primer despliegue agotaba la memoria del API con la flota más grande; #1023 lo corrigió y está en prod desde el 2026-11-18 (`5eaf4d38`). Primeras dos respuestas del panel en prod: 4,6 s y 3,5 s. Falta ver el panel con sesión y el histograma de lectura.
 
 **Lectura sin espera (pedido del PO, 2026-11-18):** la lectura completa toma 8 a 10 s en prod y no hay una fase culpable. Spec aceptada en `.specs/booster-fleet-lectura-sin-espera/spec.md`: el panel responde con la última lectura guardada y la pantalla pide la nueva. Al 2026-11-18 el criterio de término se cumple: el API (#1027) y la pantalla (#1028) están en `main` y en prod (`21532312`), con los criterios cubiertos por tests y el criterio 9 medido en prod (0,75 s con una lectura guardada). Falta verlo con sesión y la decisión del PO sobre la primera apertura del día.
+
+## Fuera de slot — Servicios por empresa
+
+**Por qué:** pedido del PO el 2026-11-23. El primer cliente que entra a operar solo usa Booster Fleet; por sus servicios no necesita el matching. Hasta hoy toda empresa transportista recibía los dos servicios.
+
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Los slots de la fase A siguen como están. Spec en `.specs/servicios-por-empresa/spec.md`.
+
+**Terminado cuando:** se cumplen los criterios de la spec §5 y, en producción, el platform-admin deshabilita las ofertas de carga de una empresa transportista desde el panel y su dueño entra y ve su flota y sus viajes propios, sin Ofertas, Cobra hoy, Liquidaciones ni Zonas de matching.
+
+**Estado al 2026-11-23:** código y tests en un PR (migración 0089, expand-only). Falta el release y la verificación en prod con la empresa del cliente.
+
+**Fuera de alcance:** apagar Booster Fleet por empresa, que el dueño active servicios por su cuenta, elegir los servicios al crear la empresa y el cobro (spec §6).
 
 ## Fuera de slot — Ruta, parada y servicio (etapa 2)
 

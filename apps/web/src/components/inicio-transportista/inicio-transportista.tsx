@@ -12,12 +12,15 @@ export function InicioTransportista({
   legalName,
   esAdmin,
   veFinanzas,
+  ofertasCarga = true,
   soloLectura = false,
 }: {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
   veFinanzas: boolean;
+  /** servicios-por-empresa: `false` = empresa sin ofertas de carga. */
+  ofertasCarga?: boolean;
   soloLectura?: boolean;
 }) {
   const { datos, reintentar } = useDatosInicio();
@@ -27,6 +30,7 @@ export function InicioTransportista({
     legalName,
     esAdmin,
     veFinanzas,
+    ofertasCarga,
     ahora,
   });
   const negocio = buildNegocioHoy(datos, ahora);

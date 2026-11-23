@@ -2,6 +2,7 @@ import { MapPinned } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { ServicioNoActivo } from '../components/ServicioNoActivo.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
@@ -39,6 +40,11 @@ export function ZonasRoute() {
       {(ctx) => {
         if (ctx.kind !== 'onboarded') {
           return null;
+        }
+        // servicios-por-empresa: transportista sin ofertas de carga.
+        const empresa = ctx.me.active_membership?.empresa;
+        if (empresa?.is_transportista && !flagsDe(ctx.me).ofertasCarga) {
+          return <ServicioNoActivo me={ctx.me} titulo="Zonas de matching" />;
         }
         return <ZonasPage me={ctx.me} />;
       }}

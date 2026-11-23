@@ -20,9 +20,17 @@ vi.mock('../components/Layout.js', () => ({
   ),
 }));
 
+vi.mock('../components/ServicioNoActivo.js', () => ({
+  ServicioNoActivo: ({ titulo }: { titulo: string }) => (
+    <div data-testid="servicio-no-activo">{titulo}</div>
+  ),
+}));
+
 const { ZonasRoute } = await import('./zonas.js');
 
-function makeMe(over: { role?: string; transportista?: boolean } = {}): MeOnboarded {
+function makeMe(
+  over: { role?: string; transportista?: boolean; recibeOfertasCarga?: boolean } = {},
+): MeOnboarded {
   return {
     needs_onboarding: false,
     user: { id: 'u1', email: 'jefe@x.cl', full_name: 'Jefa', rut: '11111111-1' },
@@ -34,6 +42,9 @@ function makeMe(over: { role?: string; transportista?: boolean } = {}): MeOnboar
         legal_name: 'Transportes X',
         is_transportista: over.transportista ?? true,
         is_generador_carga: false,
+        ...(over.recibeOfertasCarga === undefined
+          ? {}
+          : { recibe_ofertas_carga: over.recibeOfertasCarga }),
       },
     },
   } as unknown as MeOnboarded;
@@ -90,6 +101,14 @@ describe('/app/zonas', () => {
     await waitFor(() => {
       expect(patchSpy).toHaveBeenCalledWith('/me/zonas/z-1', { is_active: false });
     });
+  });
+
+  it('empresa sin ofertas de carga: no lista ni deja editar zonas', () => {
+    providedContext = { kind: 'onboarded', me: makeMe({ recibeOfertasCarga: false }) };
+    const getSpy = vi.spyOn(api, 'get');
+    render(<ZonasRoute />);
+    expect(screen.getByTestId('servicio-no-activo')).toHaveTextContent('Zonas de matching');
+    expect(getSpy).not.toHaveBeenCalled();
   });
 
   it('despachador no gestiona zonas', async () => {

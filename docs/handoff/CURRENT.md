@@ -2,8 +2,22 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `52da4c1b` (Release [45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923) SUCCESS, terminó el 2026-11-23 a las 11:59) — api `booster-ai-api-00493-4pt` @ **100 %**, web `00435-p4g` @ 100 %; los 8 servicios de Cloud Run en esa imagen. Lleva #748 (migración 0088, fase contract), #1036 (solo un test), #1037 (tipos del api, T10-12) y #1039 (solo CI). El release anterior fue el del 2026-11-20 (`93f084f1`: certificado con factores versionados #877).  
-**`main`**: tip `52da4c1b` (#1039), igual a prod salvo este handoff. Nada pendiente de deploy.  
+**`main`**: tip `3812555c` (#1044); igual a prod salvo documentación. Pendiente de merge y deploy: #1047 (servicios por empresa, migración 0089).  
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+
+## Servicios por empresa (primer cliente solo con Booster Fleet)
+
+**En PR, sin desplegar** ([#1047](https://github.com/boosterchile/booster-ai/pull/1047), spec `.specs/servicios-por-empresa/`, pedido del PO el 2026-11-23). El platform-admin apaga por empresa las ofertas de carga: la empresa sale del matching y su menú e Inicio quedan sin Ofertas, Cobra hoy, Liquidaciones ni Zonas de matching; conserva Booster Fleet, la flota y sus viajes propios. Migración **0089**, expand-only (`empresas.recibe_ofertas_carga`, por defecto `true`). Booster Fleet no se puede apagar por empresa: quedó fuera de alcance.
+
+**Para dejar operativo al cliente** (visto en prod en solo lectura el 2026-11-23: empresa activa, 2 vehículos con Teltonika enviando, 0 conductores, 0 zonas, dueño sin activar con el código vencido el 2026-10-04):
+
+1. Mergear #1047 con los checks en verde y disparar el release (PO): `gh workflow run release.yml --ref main` y aprobar el Environment `production`.
+2. En el panel, «Configuración comercial» → «Ofertas de carga»: deshabilitar a la empresa. «Booster Fleet» en la misma página define su tarifa.
+3. En «Activar empresa», generar un código nuevo para el dueño y entregárselo (el panel no lo envía por correo).
+4. El dueño activa en `/activar`, crea sus conductores y abre Booster Fleet.
+5. Configurar la fuente de combustible y la capacidad de estanque de sus camiones; sin eso Booster Fleet no muestra combustible.
+
+**Sin ver:** la web con la bandera apagada en un navegador (cubierto por tests de componente), y el viaje propio y la activación de un conductor nuevo de punta a punta en prod.
 
 ## Score producto (P)
 

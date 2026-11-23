@@ -22,6 +22,7 @@ import {
   puedeVerMapaFlota,
   puedeVerMenuGestion,
   puedeVerPanelConductor,
+  recibeOfertasCarga,
   veSoloSuViaje,
 } from './capacidades.js';
 
@@ -214,5 +215,38 @@ describe('matriz de capacidades por rol', () => {
     expect(puedeEjecutarViaje('user-1', 'user-1')).toBe(true);
     expect(puedeEjecutarViaje('user-1', 'user-2')).toBe(false);
     expect(puedeEjecutarViaje('user-1', null)).toBe(false);
+  });
+});
+
+describe('empresa sin el servicio de ofertas de carga (servicios-por-empresa)', () => {
+  const SIN_OFERTAS = { recibeOfertasCarga: false };
+
+  it('ausente o true cuenta como encendido; solo false lo apaga', () => {
+    expect(recibeOfertasCarga(DUENO)).toBe(true);
+    expect(recibeOfertasCarga(ctx({ recibeOfertasCarga: true }))).toBe(true);
+    expect(recibeOfertasCarga(ctx(SIN_OFERTAS))).toBe(false);
+  });
+
+  it('nadie acepta ofertas, responde cambios de carga ni ve finanzas', () => {
+    for (const quien of [
+      ctx(SIN_OFERTAS),
+      ctx({ ...SIN_OFERTAS, role: 'admin' }),
+      ctx({ ...SIN_OFERTAS, role: 'despachador', puedeAceptarOfertas: true }),
+    ]) {
+      expect(puedeAceptarOferta(quien)).toBe(false);
+      expect(puedeResponderCambioCarga(quien)).toBe(false);
+      expect(puedeVerFinanzas(quien)).toBe(false);
+      expect(puedePedirCobraHoy(quien)).toBe(false);
+    }
+  });
+
+  it('la flota y los viajes propios siguen igual', () => {
+    const dueno = ctx(SIN_OFERTAS);
+    expect(puedeGestionarFlota(dueno)).toBe(true);
+    expect(puedeAsignarViaje(dueno)).toBe(true);
+    expect(puedeAdministrarEmpresa(dueno)).toBe(true);
+    expect(puedeVerMapaFlota(dueno)).toBe(true);
+    expect(puedeVerMenuGestion(dueno)).toBe(true);
+    expect(puedeGestionarDocumentosTransporte(dueno)).toBe(true);
   });
 });

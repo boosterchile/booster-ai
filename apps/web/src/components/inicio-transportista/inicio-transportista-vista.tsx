@@ -58,10 +58,10 @@ export function InicioTransportistaVista({
   return (
     <div data-testid="inicio-transportista" className="min-w-0">
       <Saludo vista={vista} />
-      <EstadoCobraHoy estado={vista.cobraHoy} />
+      {vista.ofertasCarga ? <EstadoCobraHoy estado={vista.cobraHoy} /> : null}
       {vista.modo === 'empresa-nueva' && vista.pasos ? (
         <div className="mt-6">
-          <Alta pasos={vista.pasos} />
+          <Alta pasos={vista.pasos} ofertasCarga={vista.ofertasCarga} />
         </div>
       ) : null}
       <div className="mt-6 md:grid md:grid-cols-[minmax(0,1fr)_380px] md:items-start md:gap-5">
@@ -69,9 +69,11 @@ export function InicioTransportistaVista({
           <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
             Tu negocio hoy
           </h2>
-          <Ofertas negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
+          {vista.ofertasCarga ? (
+            <Ofertas negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
+          ) : null}
           <Retiros negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
-          {plataActiva ? <Plata /> : null}
+          {plataActiva && vista.ofertasCarga ? <Plata /> : null}
           <AvisosChips avisos={avisos} />
           <AvisosDocumentos negocio={negocio} onReintentar={onReintentar} />
         </div>
@@ -275,7 +277,7 @@ function Saludo({ vista }: { vista: InicioVista }) {
   );
 }
 
-function Alta({ pasos }: { pasos: PasoAlta[] }) {
+function Alta({ pasos, ofertasCarga }: { pasos: PasoAlta[]; ofertasCarga: boolean }) {
   const hechos = pasos.filter((paso) => paso.hecho).length;
   const avance = (hechos / pasos.length) * 100;
   return (
@@ -283,10 +285,14 @@ function Alta({ pasos }: { pasos: PasoAlta[] }) {
       <Card className="border-primary-100 bg-primary-50">
         <div className="p-4 sm:p-5">
           <h2 className="font-semibold text-lg text-neutral-900">
-            Dejemos tu empresa lista para recibir cargas
+            {ofertasCarga
+              ? 'Dejemos tu empresa lista para recibir cargas'
+              : 'Dejemos tu flota lista en Booster'}
           </h2>
           <p className="mt-1 text-neutral-700 text-sm">
-            Cuatro pasos y empiezan a llegarte ofertas.
+            {ofertasCarga
+              ? 'Cuatro pasos y empiezan a llegarte ofertas.'
+              : 'Cuatro pasos y tu flota queda bajo control.'}
           </p>
           <div className="mt-4 flex items-center gap-3">
             <div

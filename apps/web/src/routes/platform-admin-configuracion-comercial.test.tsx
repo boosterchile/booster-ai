@@ -238,6 +238,58 @@ describe('contrato programado (ADR-079 §2)', () => {
     expect(screen.getByText('No hay empresas generadoras.')).toBeInTheDocument();
   });
 
+  it('ofertas de carga: una empresa nace habilitada y el admin la deshabilita', async () => {
+    const TRA = {
+      empresaId: '00000000-0000-4000-8000-0000000000e3',
+      razonSocial: 'Flota Sola SpA',
+      rut: '77.000.001-K',
+      activo: true,
+      cambiadoEn: null as string | null,
+      cambiadoPor: null as string | null,
+    };
+    getSpy.mockImplementation(async (path: string) => {
+      if (path === '/admin/configuracion-comercial/ofertas-carga') {
+        return { transportistas: [TRA] };
+      }
+      if (path === '/admin/configuracion-comercial/gestion-flota') {
+        return { transportistas: [] };
+      }
+      if (path === '/admin/configuracion-comercial/contrato-programado') {
+        return { generadores: [] };
+      }
+      return { publicada: version(2), historial: [version(2)] };
+    });
+    putSpy.mockResolvedValueOnce({
+      ok: true,
+      transportista: {
+        ...TRA,
+        activo: false,
+        cambiadoEn: '2026-11-23T12:00:00.000Z',
+        cambiadoPor: 'admin@boosterchile.com',
+      },
+    });
+    const user = userEvent.setup();
+    render(<PlatformAdminConfiguracionComercialRoute />);
+    expect(await screen.findByText(/Habilitado desde el alta/)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Deshabilitar servicio de ofertas de carga de Flota Sola SpA',
+      }),
+    );
+    await waitFor(() =>
+      expect(putSpy).toHaveBeenCalledWith(
+        `/admin/configuracion-comercial/ofertas-carga/${TRA.empresaId}`,
+        { activo: false },
+      ),
+    );
+    expect(
+      await screen.findByRole('button', {
+        name: 'Habilitar servicio de ofertas de carga de Flota Sola SpA',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Deshabilitado por admin@boosterchile.com/)).toBeInTheDocument();
+  });
+
   it('gestión de flota: error al cargar la lista se muestra', async () => {
     getSpy.mockImplementation(async (path: string) => {
       if (path === '/admin/configuracion-comercial/gestion-flota') {

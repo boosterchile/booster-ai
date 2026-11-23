@@ -62,6 +62,12 @@ vi.mock('../components/EmptyState.js', () => ({
   EmptyState: (props: { title: string }) => <div data-testid="empty-state">{props.title}</div>,
 }));
 
+vi.mock('../components/ServicioNoActivo.js', () => ({
+  ServicioNoActivo: ({ titulo }: { titulo: string }) => (
+    <div data-testid="servicio-no-activo">{titulo}</div>
+  ),
+}));
+
 const { OfertasRoute } = await import('./ofertas.js');
 
 function makeMe(isTransportista: boolean): MeOnboarded {
@@ -230,5 +236,14 @@ describe('OfertasRoute', () => {
     renderWithQueryClient(<OfertasRoute />);
     screen.getByRole('button', { name: /Salir/ }).click();
     expect(signOutUserMock).toHaveBeenCalled();
+  });
+
+  it('empresa sin ofertas de carga: muestra que el servicio no está activo y no pide ofertas', () => {
+    const me = makeMe(true);
+    Object.assign(me.active_membership?.empresa ?? {}, { recibe_ofertas_carga: false });
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<OfertasRoute />);
+    expect(screen.getByTestId('servicio-no-activo')).toHaveTextContent('Ofertas activas');
+    expect(useOffersMineMock).not.toHaveBeenCalled();
   });
 });

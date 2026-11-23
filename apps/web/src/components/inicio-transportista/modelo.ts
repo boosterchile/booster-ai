@@ -109,6 +109,11 @@ export interface ContextoInicio {
   legalName: string;
   esAdmin: boolean;
   veFinanzas: boolean;
+  /**
+   * servicios-por-empresa: la empresa tiene el servicio de ofertas de carga.
+   * Ausente cuenta como `true`.
+   */
+  ofertasCarga?: boolean;
   ahora: Date;
 }
 
@@ -199,6 +204,8 @@ export interface InicioVista {
   accesos: AccesoVista[];
   pasos: PasoAlta[] | null;
   cobraHoy: EstadoCobraHoy;
+  /** `false` = empresa sin ofertas de carga: el Inicio no muestra ofertas ni Cobra hoy. */
+  ofertasCarga: boolean;
 }
 
 export function horaEnZona(ahora: Date, timeZone = ZONA_INICIO): number {
@@ -809,14 +816,18 @@ function buildAccesos(datos: DatosInicio, ctx: ContextoInicio): AccesoVista[] {
       to: '/app/flota',
       testId: 'dashboard-link-flota',
     }),
-    acceso({
-      id: 'ofertas',
-      label: 'Ofertas',
-      to: '/app/ofertas',
-      testId: 'dashboard-link-ofertas',
-      badge: ofertas,
-      badgeTono: 'warning',
-    }),
+    ...(ctx.ofertasCarga === false
+      ? []
+      : [
+          acceso({
+            id: 'ofertas',
+            label: 'Ofertas',
+            to: '/app/ofertas',
+            testId: 'dashboard-link-ofertas',
+            badge: ofertas,
+            badgeTono: 'warning',
+          }),
+        ]),
     acceso({
       id: 'servicios',
       label: 'Servicios',
@@ -847,7 +858,7 @@ function buildAccesos(datos: DatosInicio, ctx: ContextoInicio): AccesoVista[] {
     }),
   ];
   // CHEQUEOS_REEMPLAZADOS inicio-plata: antes salían para todo transportista.
-  if (ctx.veFinanzas) {
+  if (ctx.veFinanzas && ctx.ofertasCarga !== false) {
     accesos.push(
       acceso({
         id: 'cobra-hoy',
@@ -907,5 +918,6 @@ export function buildInicioVista(datos: DatosInicio, ctx: ContextoInicio): Inici
     accesos: buildAccesos(datos, ctx),
     pasos: empresaNueva ? pasosAlta({ vehiculos: 0, conductores: 0, documentos: 0 }) : null,
     cobraHoy: datos.cobraHoy,
+    ofertasCarga: ctx.ofertasCarga !== false,
   };
 }

@@ -28,7 +28,11 @@ export function ctxDeUserContext(
     | {
         activeMembership?: {
           membership?: { role?: unknown; puedeAceptarOfertas?: unknown } | null;
-          empresa?: { isTransportista?: unknown; isGeneradorCarga?: unknown } | null;
+          empresa?: {
+            isTransportista?: unknown;
+            isGeneradorCarga?: unknown;
+            recibeOfertasCarga?: unknown;
+          } | null;
         } | null;
       }
     | null
@@ -45,6 +49,8 @@ export function ctxDeUserContext(
     isGeneradorCarga: active.empresa.isGeneradorCarga === true,
     fichaConductorMismoRut: extra?.fichaConductorMismoRut === true,
     puedeAceptarOfertas: active.membership.puedeAceptarOfertas === true,
+    // Solo un `false` explícito apaga el servicio (servicios-por-empresa).
+    recibeOfertasCarga: active.empresa.recibeOfertasCarga !== false,
   });
   return parsed.success ? parsed.data : null;
 }

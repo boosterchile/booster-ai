@@ -1,4 +1,5 @@
 import type { MeResponse } from '../../hooks/use-me.js';
+import { flagsDe } from '../../lib/capacidades.js';
 import type { FuenteReintento } from '../inicio-transportista/modelo.js';
 import {
   fechaLargaEs,
@@ -53,6 +54,7 @@ export function InicioMixta({ me, soloLectura }: { me: MeOnboarded; soloLectura:
       accesosTransporte={accesosTransporte}
       accesosGenerador={accesosGenerador}
       soloLectura={soloLectura}
+      ofertasCarga={flagsDe(me).ofertasCarga}
       onReintentar={(fuente) => {
         if (fuente === 'viajes' || fuente === 'certificados') {
           generadorData.reintentar(fuente);

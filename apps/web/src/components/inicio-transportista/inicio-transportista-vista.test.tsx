@@ -28,12 +28,13 @@ function base(sobre: Partial<DatosInicio> = {}): DatosInicio {
   };
 }
 
-function pintar(datos: DatosInicio) {
+function pintar(datos: DatosInicio, ofertasCarga = true) {
   const vista = buildInicioVista(datos, {
     nombreCompleto: 'Felipe Vicencio',
     legalName: 'Transportes Van Oosterwyk',
     esAdmin: true,
     veFinanzas: true,
+    ofertasCarga,
     ahora: AHORA,
   });
   render(
@@ -46,6 +47,27 @@ function pintar(datos: DatosInicio) {
 }
 
 describe('InicioTransportistaVista', () => {
+  it('empresa sin ofertas de carga: sin bloque Ofertas ni aviso de Cobra hoy; los retiros siguen', () => {
+    pintar(base({ cobraHoy: 'error' }), false);
+    expect(screen.queryByTestId('inicio-ofertas')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-cobra-hoy')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dashboard-link-ofertas')).not.toBeInTheDocument();
+    expect(screen.getByTestId('inicio-retiros')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-link-servicios')).toBeInTheDocument();
+  });
+
+  it('empresa nueva sin ofertas de carga: la tarjeta de alta no promete ofertas', () => {
+    pintar(
+      base({
+        vehiculos: { estado: 'listo', valor: 0 },
+        conductores: { estado: 'listo', valor: 0 },
+      }),
+      false,
+    );
+    expect(screen.getByText('Dejemos tu flota lista en Booster')).toBeInTheDocument();
+    expect(screen.queryByText(/empiezan a llegarte ofertas/)).not.toBeInTheDocument();
+  });
+
   it('en cero muestra cada bloque y no deja una CTA verde', () => {
     pintar(base());
     expect(screen.getByRole('heading', { name: 'Tu negocio hoy' })).toBeInTheDocument();

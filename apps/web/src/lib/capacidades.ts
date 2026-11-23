@@ -18,6 +18,7 @@ import {
   puedeVerFinanzas,
   puedeVerMenuGestion,
   puedeVerPanelConductor,
+  recibeOfertasCarga,
 } from '@booster-ai/shared-schemas';
 import type { MeRegistered } from '../hooks/use-me.js';
 
@@ -40,12 +41,16 @@ export function ctxDesdeMe(me: MeRegistered): CapacidadCtx | null {
     isGeneradorCarga: active.empresa.is_generador_carga === true,
     fichaConductorMismoRut: ficha,
     puedeAceptarOfertas: active.puede_aceptar_ofertas === true,
+    // Un `/me` cacheado de antes no trae el campo: cuenta como encendido.
+    recibeOfertasCarga: active.empresa.recibe_ofertas_carga !== false,
   });
   return parsed.success ? parsed.data : null;
 }
 
 export interface FlagsCapacidad {
   ctx: CapacidadCtx | null;
+  /** servicios-por-empresa: la empresa tiene el servicio de ofertas de carga. */
+  ofertasCarga: boolean;
   verFinanzas: boolean;
   pedirCobraHoy: boolean;
   aceptarOferta: boolean;
@@ -75,6 +80,7 @@ export function flagsDe(me: MeRegistered): FlagsCapacidad {
   const ctx = ctxDesdeMe(me);
   return {
     ctx,
+    ofertasCarga: aplicar(ctx, recibeOfertasCarga),
     verFinanzas: aplicar(ctx, puedeVerFinanzas),
     pedirCobraHoy: aplicar(ctx, puedePedirCobraHoy),
     aceptarOferta: aplicar(ctx, puedeAceptarOferta),

@@ -71,6 +71,7 @@ function membershipRow(role: 'dueno' | 'admin' | 'conductor') {
       rut: '11.111.111-1',
       isGeneradorCarga: false,
       isTransportista: true,
+      recibeOfertasCarga: false,
       status: 'activa',
     },
   };
@@ -210,9 +211,15 @@ describe('GET /me — ficha de conductor de la empresa activa', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       ficha_conductor_mismo_rut?: boolean;
-      active_membership: { role: string; puede_aceptar_ofertas?: boolean } | null;
+      active_membership: {
+        role: string;
+        puede_aceptar_ofertas?: boolean;
+        empresa?: { recibe_ofertas_carga?: boolean } | null;
+      } | null;
     };
     expect(body.active_membership?.role).toBe('admin');
+    // servicios-por-empresa: /me entrega la bandera de la empresa activa.
+    expect(body.active_membership?.empresa?.recibe_ofertas_carga).toBe(false);
     expect(body.ficha_conductor_mismo_rut).toBe(true);
     expect(body.active_membership?.puede_aceptar_ofertas).toBe(false);
   });

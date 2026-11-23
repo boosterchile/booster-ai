@@ -600,6 +600,18 @@ export const empresas = pgTable(
     gestionFlotaActivadaEn: timestamp('gestion_flota_activada_en', { withTimezone: true }),
     gestionFlotaActivadaPor: text('gestion_flota_activada_por'),
     /**
+     * Servicio de ofertas de carga (`.specs/servicios-por-empresa`, migración
+     * 0089). `false` = la empresa transportista no participa del matching ni
+     * ve ofertas ni finanzas: opera con Booster Fleet y sus viajes propios.
+     * Lo cambia el platform-admin; los otros dos campos guardan quién y
+     * cuándo, y quedan en NULL mientras nadie lo haya cambiado.
+     */
+    recibeOfertasCarga: boolean('recibe_ofertas_carga').notNull().default(true),
+    recibeOfertasCargaCambiadoEn: timestamp('recibe_ofertas_carga_cambiado_en', {
+      withTimezone: true,
+    }),
+    recibeOfertasCargaCambiadoPor: text('recibe_ofertas_carga_cambiado_por'),
+    /**
      * Impersonación auditada — marca de empresa de USUARIOS DE PRUEBA. Es el
      * ÚNICO flag que autoriza la escritura de una sesión impersonada (el
      * write-guard) y el ÚNICO que el picker lista como target (ADR-053). No es
