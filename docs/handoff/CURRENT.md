@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `adb83021` (Release [45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475) SUCCESS, 2026-11-23; lleva #1049, solo web; api `booster-ai-api-00495-vfc` y web `00437-j9v` al 100 %). Antes, el mismo día: `fdc43f11` (Release 45245572913, con #1047 y la migración 0089). Release anterior del mismo día: `52da4c1b` (Release [45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923) SUCCESS, terminó el 2026-11-23 a las 11:59) — api `booster-ai-api-00493-4pt` @ **100 %**, web `00435-p4g` @ 100 %; los 8 servicios de Cloud Run en esa imagen. Lleva #748 (migración 0088, fase contract), #1036 (solo un test), #1037 (tipos del api, T10-12) y #1039 (solo CI). El release anterior fue el del 2026-11-20 (`93f084f1`: certificado con factores versionados #877).  
-**`main`**: tip `adb83021` (#1049), igual a prod salvo este handoff. Nada pendiente de deploy.
+**`main`**: tip `a5d585c6` (#1053). Pendiente de deploy: #1053 (el logger ante un corte de Postgres); el resto es documentación.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,7 +32,7 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `adb83021` | Igual a prod salvo este handoff |
+| `main` | `a5d585c6` | Prod más #1053 (logger, sin desplegar) y documentación |
 | Prod | `adb83021` | Release 45261904475; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00495-vfc` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
