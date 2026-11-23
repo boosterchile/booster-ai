@@ -255,6 +255,34 @@ describe('AppRoute', () => {
     expect(screen.queryByTestId('dashboard-link-trayectos')).not.toBeInTheDocument();
   });
 
+  it('empresa solo de flota: el Inicio del dueño es el panel de Booster Fleet', () => {
+    const me = makeMe('dueno', true, false);
+    Object.assign(me.active_membership?.empresa ?? {}, { recibe_ofertas_carga: false });
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/booster-fleet');
+    expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
+  });
+
+  it('empresa solo de flota: el despachador ve el Inicio de la flota como Booster Fleet', async () => {
+    const me = makeMe('despachador', true, false);
+    Object.assign(me.active_membership?.empresa ?? {}, { recibe_ofertas_carga: false });
+    providedContext = { kind: 'onboarded', me };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('inicio-transportista')).toBeInTheDocument();
+    expect(screen.getByTestId('marca-producto')).toHaveTextContent('Booster Fleet');
+    expect(screen.getByRole('heading', { name: 'Tu flota hoy' })).toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-ofertas')).not.toBeInTheDocument();
+  });
+
+  it('empresa con ofertas de carga: la marca y el Inicio no cambian', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marca-producto')).toHaveTextContent('Booster AI');
+  });
+
   it('rol stakeholder → redirige a sus zonas', () => {
     providedContext = { kind: 'onboarded', me: makeMe('stakeholder_sostenibilidad') };
     renderWithQueryClient(<AppRoute />);

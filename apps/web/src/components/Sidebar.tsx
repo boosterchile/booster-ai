@@ -5,6 +5,7 @@ import { signOutUser } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useSwitchCompany } from '../hooks/use-switch-company.js';
+import { NOMBRE_PRODUCTO, productoDe } from '../lib/producto.js';
 import { volverAlPanel } from '../lib/vista-admin.js';
 import { CompanySwitcher } from './CompanySwitcher.js';
 import { navSectionsForMe } from './nav-items.js';
@@ -80,7 +81,9 @@ export function Sidebar({ me, onNavigate }: { me: MeOnboarded; onNavigate?: () =
         className="flex shrink-0 items-center gap-2 border-neutral-200 border-b px-4 py-4"
       >
         <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
-        <span className="font-semibold text-lg text-neutral-900">Booster AI</span>
+        <span data-testid="marca-producto" className="font-semibold text-lg text-neutral-900">
+          {NOMBRE_PRODUCTO[productoDe(me)]}
+        </span>
       </Link>
 
       <div className="shrink-0 border-neutral-200 border-b px-3 py-3">

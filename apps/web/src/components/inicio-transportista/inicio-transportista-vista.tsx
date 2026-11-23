@@ -67,7 +67,7 @@ export function InicioTransportistaVista({
       <div className="mt-6 md:grid md:grid-cols-[minmax(0,1fr)_380px] md:items-start md:gap-5">
         <div className="min-w-0 space-y-4">
           <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
-            Tu negocio hoy
+            {vista.ofertasCarga ? 'Tu negocio hoy' : 'Tu flota hoy'}
           </h2>
           {vista.ofertasCarga ? (
             <Ofertas negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
@@ -271,7 +271,7 @@ function Saludo({ vista }: { vista: InicioVista }) {
       <p className="mt-1 text-neutral-600 text-sm">
         {vista.fecha ? <span>{vista.fecha} · </span> : null}
         <span>{vista.empresa}</span>
-        <span> · Transportista</span>
+        <span> · {vista.ofertasCarga ? 'Transportista' : 'Booster Fleet'}</span>
       </p>
     </header>
   );

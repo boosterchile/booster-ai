@@ -2,11 +2,13 @@ import { Link, Navigate } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { puedeVerBoosterFleet } from '../components/booster-fleet/use-panel.js';
 import { InicioTransportista } from '../components/inicio-transportista/inicio-transportista.js';
 import { InicioGenerador } from '../components/inicio/inicio-generador.js';
 import { InicioMixta } from '../components/inicio/inicio-mixta.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { flagsDe } from '../lib/capacidades.js';
+import { productoDe } from '../lib/producto.js';
 import { vistaEmpresaElegida } from '../lib/vista-admin.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -46,6 +48,12 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
   }
   if (myRole === 'stakeholder_sostenibilidad') {
     return <Navigate to="/app/stakeholder/zonas" />;
+  }
+
+  // booster-fleet-interfaz §4.2: el Inicio del dueño y del admin de una
+  // empresa solo de flota es el panel de Booster Fleet.
+  if (productoDe(me) === 'fleet' && puedeVerBoosterFleet(me)) {
+    return <Navigate to="/app/booster-fleet" />;
   }
 
   const esTransportista = Boolean(activeEmpresa?.is_transportista);
