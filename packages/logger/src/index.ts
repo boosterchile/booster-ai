@@ -13,7 +13,9 @@ export { redactionPaths, redactObjectValues, redactValue } from './redaction.js'
 export {
   camposErrorReporting,
   REPORTED_ERROR_EVENT_TYPE,
+  registrarErroresDePool,
   registrarErroresNoControlados,
+  type PoolConErrores,
   type ProcesoNode,
   type ServiceContext,
 } from './error-reporting.js';

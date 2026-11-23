@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import tls from 'node:tls';
-import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
+import {
+  createLogger,
+  registrarErroresDePool,
+  registrarErroresNoControlados,
+} from '@booster-ai/logger';
 import { PubSub } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
@@ -61,6 +65,7 @@ async function main(): Promise<void> {
     max: 20,
     idleTimeoutMillis: 30_000,
   });
+  registrarErroresDePool(pool, logger);
   const db = drizzle(pool);
 
   // Pub/Sub client (singleton).

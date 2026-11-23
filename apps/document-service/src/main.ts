@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { createLogger } from '@booster-ai/logger';
+import { createLogger, registrarErroresDePool } from '@booster-ai/logger';
 import { createPdfTedIngestor } from '@booster-ai/transport-documents';
 import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -85,6 +85,7 @@ async function main(): Promise<void> {
     max: 10,
     idleTimeoutMillis: 30_000,
   });
+  registrarErroresDePool(pool, logger);
   const db = drizzle(pool);
 
   const registrarEntrega = createRegistrarEntrega();

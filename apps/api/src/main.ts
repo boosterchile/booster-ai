@@ -1,4 +1,8 @@
-import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
+import {
+  createLogger,
+  registrarErroresDePool,
+  registrarErroresNoControlados,
+} from '@booster-ai/logger';
 import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
@@ -29,6 +33,7 @@ async function main(): Promise<void> {
     poolMax: config.DATABASE_POOL_MAX,
     connectTimeoutMs: config.DATABASE_CONNECT_TIMEOUT_MS,
   });
+  registrarErroresDePool(pool, logger);
 
   // Correr migraciones antes de aceptar tráfico. T3 SEC-001: el wrapper
   // runMigrationsGated aplica STRICT_MIGRATION_ORDERING — si flag=true

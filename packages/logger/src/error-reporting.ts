@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+import { stackSinValores } from './serializar-error.js';
 
 /**
  * Integración con Cloud Error Reporting vía Cloud Logging (T10-16, ADR-082).
@@ -53,9 +54,28 @@ export function camposErrorReporting(
   }
   return {
     '@type': REPORTED_ERROR_EVENT_TYPE,
-    stack_trace: err.stack ?? `${err.name}: ${err.message}`,
+    stack_trace: stackSinValores(err),
     serviceContext,
   };
+}
+
+/** Subconjunto de `pg.Pool` que usa el registro (sin depender de `pg`). */
+export interface PoolConErrores {
+  on(evento: 'error', handler: (err: Error) => void): unknown;
+}
+
+/**
+ * Escucha el evento `error` del pool de Postgres. `pg` lo emite cuando una
+ * conexión inactiva se corta; sin listener, Node lo convierte en una
+ * excepción no controlada y `registrarErroresNoControlados` termina el
+ * proceso. No hay nada que recuperar: `pg` ya descartó esa conexión y abre
+ * otra cuando hace falta. Queda como `warn` porque no es una falla del
+ * servicio; una consulta que falle por el corte se registra como error aparte.
+ */
+export function registrarErroresDePool(pool: PoolConErrores, logger: Pick<Logger, 'warn'>): void {
+  pool.on('error', (err) => {
+    logger.warn({ err }, 'conexión inactiva del pool de Postgres terminó con error');
+  });
 }
 
 /** Subconjunto de `process` que usa el registro (inyectable en tests). */
