@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `267e7e0e` (Release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100) SUCCESS, terminó el 2026-11-23 a las 22:35Z; lleva #1053; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00496-n8c` y web `00438-gz7`). Releases anteriores del mismo día: `adb83021` ([45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475), #1049, solo web), `fdc43f11` (45245572913, #1047 y la migración 0089) y `52da4c1b` ([45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923), migración 0088 y #748, #1036, #1037, #1039). El anterior fue el del 2026-11-20 (`93f084f1`).  
-**`main`**: tip `05c9352c` (#1054), igual a prod salvo documentación. Nada de código pendiente de deploy. #1050 (preparación de staging) es Terraform y workflow: en prod solo mueve cinco direcciones de IAM en el próximo `plan`.
+**`main`**: tip `e12424be` (#1055), igual a prod salvo documentación. Nada de código pendiente de deploy ni de `apply`: los cinco movimientos de dirección de #1050 quedaron grabados en el state el 2026-11-23.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,14 +32,14 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `05c9352c` | Igual a prod salvo documentación |
+| `main` | `e12424be` | Igual a prod salvo documentación |
 | Prod | `267e7e0e` | Release 45273910100; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00496-n8c` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
 **Release 45273910100 (visto en solo lectura a las 22:40Z):** `Drizzle migrate() complete` en `00496-n8c` a las 22:03Z, sin `runMigrations failed`. La única entrada ERROR de las revisiones nuevas es la del gateway SMS al arrancar (falta la configuración de Twilio), que ya salía en las tres revisiones anteriores del día. El pod del gateway de telemetría reinició a las 22:34Z. El smoke de la línea siguiente es del release `52da4c1b`.  
 **Smoke (2026-11-23, tras el release, solo lectura por `gcloud`):** sin entradas de severidad ERROR en la revisión nueva del api desde su arranque; flags conservados. No se probaron `/health` ni `/ready` (el proxy de la sesión bloquea `boosterchile.com`) ni el gateway de GKE. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
 **Registros:** `Drizzle migrate() complete` en `00493-4pt` @ 14:28:00Z (America/Santiago 11:28), 495 ms, sin ningún `runMigrations failed` desde el deploy.  
-**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`. Los programados del 2026-11-20, 11-21 y 11-22 fallaron por #748 (el proxy HTTPS, el certificado con demo, su sufijo y el registro DNS demo); el PO aplicó esa diferencia el 2026-11-23 y la corrida manual de ese día (45230338851) salió sin diferencias.
+**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`. Los programados del 2026-11-20, 11-21 y 11-22 fallaron por #748 (el proxy HTTPS, el certificado con demo, su sufijo y el registro DNS demo); el PO aplicó esa diferencia el 2026-11-23 y la corrida manual de ese día (45230338851) salió sin diferencias. El programado del 2026-11-23 22:38Z ([45281589494](https://github.com/boosterchile/booster-ai/actions/runs/45281589494)) falló sin diferencias en GCP: #1050 movió cinco permisos de `cursor-agent@` a su índice `[0]` y `plan -detailed-exitcode` devuelve 2 mientras esos movimientos no estén en el state. El PO corrió el `terraform apply` (0 altas, 0 cambios, 0 bajas; state escrito a las 23:03Z) y la corrida manual [45285541888](https://github.com/boosterchile/booster-ai/actions/runs/45285541888) sobre `e12424be` terminó con «No changes». Lección: un PR con bloques `moved` deja el Drift Check en rojo hasta el `apply`.
 
 ## Evidencia Score P
 
