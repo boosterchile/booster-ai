@@ -141,4 +141,17 @@ describe('denegarEditarCarga y denegarResponderCambioCarga (editar-anular-cargas
       });
     }
   });
+
+  it('empresa sin ofertas de carga: el dueño no acepta ofertas ni ve finanzas', () => {
+    const sinOfertas = sesion({ role: 'dueno' });
+    Object.assign(sinOfertas.activeMembership.empresa, { recibeOfertasCarga: false });
+    const ctx = exigir(ctxDeUserContext(sinOfertas));
+    expect(puedeAceptarOferta(ctx)).toBe(false);
+    expect(puedeVerFinanzas(ctx)).toBe(false);
+  });
+
+  it('un contexto sin el dato de ofertas de carga cuenta como encendido', () => {
+    const ctx = exigir(ctxDeUserContext(sesion({ role: 'dueno' })));
+    expect(ctx.recibeOfertasCarga).toBe(true);
+  });
 });

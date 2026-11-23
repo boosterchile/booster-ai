@@ -14,6 +14,8 @@ function buildMe(opts: {
   fichaPropia?: boolean;
   /** Señal vieja de #814, solo por usuario_id, sin comprobar el RUT. */
   tieneFichaConductor?: boolean;
+  /** servicios-por-empresa: `false` = empresa sin ofertas de carga. */
+  recibeOfertasCarga?: boolean;
 }): MeOnboarded {
   const membership = opts.stakeholder
     ? {
@@ -34,6 +36,9 @@ function buildMe(opts: {
           rut: '1-9',
           is_generador_carga: opts.generador ?? false,
           is_transportista: opts.transportista ?? false,
+          ...(opts.recibeOfertasCarga === undefined
+            ? {}
+            : { recibe_ofertas_carga: opts.recibeOfertasCarga }),
           status: 'activa' as const,
         },
       };
@@ -96,6 +101,37 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Booster Fleet');
     expect(l.indexOf('Booster Fleet')).toBeLessThan(l.indexOf('Seguimiento de flota'));
     expect(l).not.toContain('Mis cargas'); // no es generador
+  });
+
+  it('transportista sin ofertas de carga → flota y viajes propios, sin Ofertas, plata ni Zonas', () => {
+    const me = buildMe({ transportista: true, role: 'dueno', recibeOfertasCarga: false });
+    const l = labels(navSectionsForMe(me, { rutas: true }));
+    for (const oculto of ['Ofertas', 'Cobra hoy', 'Liquidaciones', 'Zonas de matching']) {
+      expect(l).not.toContain(oculto);
+    }
+    expect(l).toEqual([
+      'Inicio',
+      'Empresa',
+      'Equipo',
+      'Booster Fleet',
+      'Seguimiento de flota',
+      'Trayectos',
+      'Servicios',
+      'Rutas',
+      'Vehículos',
+      'Conductores',
+      'Cumplimiento',
+      'Dispositivos',
+    ]);
+  });
+
+  it('con la bandera en true o ausente el menú del transportista no cambia', () => {
+    const sinDato = labels(navSectionsForMe(buildMe({ transportista: true, role: 'dueno' })));
+    const encendida = labels(
+      navSectionsForMe(buildMe({ transportista: true, role: 'dueno', recibeOfertasCarga: true })),
+    );
+    expect(encendida).toEqual(sinDato);
+    expect(sinDato).toEqual(expect.arrayContaining(['Ofertas', 'Cobra hoy', 'Zonas de matching']));
   });
 
   // El despachador no tenía dónde ver las cargas que ya aceptó: la pantalla

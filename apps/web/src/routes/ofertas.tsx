@@ -2,6 +2,7 @@ import { Inbox, RefreshCw } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { ServicioNoActivo } from '../components/ServicioNoActivo.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
 import { ViajeAbiertoCard } from '../components/offers/ViajeAbiertoCard.js';
 import { VoiceAcceptOfferControl } from '../components/offers/VoiceAcceptOfferControl.js';
@@ -25,6 +26,11 @@ export function OfertasRoute() {
       {(ctx) => {
         if (ctx.kind !== 'onboarded') {
           return null;
+        }
+        // servicios-por-empresa: transportista sin ofertas de carga.
+        const empresa = ctx.me.active_membership?.empresa;
+        if (empresa?.is_transportista && !flagsDe(ctx.me).ofertasCarga) {
+          return <ServicioNoActivo me={ctx.me} titulo="Ofertas activas" />;
         }
         return <OfertasPage me={ctx.me} />;
       }}

@@ -23,7 +23,13 @@ vi.mock('../../src/services/gestion-flota.js', () => ({
   cambiarGestionFlota: vi.fn(),
 }));
 
+vi.mock('../../src/services/ofertas-carga-por-empresa.js', () => ({
+  listarTransportistasOfertasCarga: vi.fn(),
+  cambiarOfertasCarga: vi.fn(),
+}));
+
 const svc = await import('../../src/services/configuracion-comercial.js');
+const oc = await import('../../src/services/ofertas-carga-por-empresa.js');
 const gf = await import('../../src/services/gestion-flota.js');
 const cp = await import('../../src/services/contrato-programado.js');
 const { config: appConfig } = await import('../../src/config.js');
@@ -256,6 +262,61 @@ describe('gestión de flota por transportista (ADR-079 §4)', () => {
           { method: 'PUT', body: '{}' },
         )
       ).status,
+    ).toBe(403);
+  });
+});
+
+describe('ofertas de carga por transportista (servicios-por-empresa)', () => {
+  const EMP = '00000000-0000-4000-8000-0000000000e3';
+  const FILA = {
+    empresaId: EMP,
+    razonSocial: 'Flota Sola SpA',
+    rut: '77.000.001-K',
+    activo: true,
+    cambiadoEn: null,
+    cambiadoPor: null,
+  };
+  const RUTA = '/admin/configuracion-comercial/ofertas-carga';
+
+  it('GET lista transportistas; fuera de la allowlist → 403', async () => {
+    vi.mocked(oc.listarTransportistasOfertasCarga).mockResolvedValueOnce([FILA]);
+    const res = await buildApp(ADMIN).app.request(RUTA);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { transportistas: unknown[] }).transportistas).toEqual([FILA]);
+    expect((await buildApp('otro@x.cl').app.request(RUTA)).status).toBe(403);
+  });
+
+  it('PUT apaga con el email del admin; no transportista → 404; body inválido → 422; id inválido → 400', async () => {
+    const { app } = buildApp(ADMIN);
+    const put = (id: string, body: unknown) =>
+      app.request(`${RUTA}/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      });
+    vi.mocked(oc.cambiarOfertasCarga).mockResolvedValueOnce({
+      ...FILA,
+      activo: false,
+      cambiadoEn: new Date(),
+      cambiadoPor: ADMIN,
+    });
+    const res = await put(EMP, { activo: false });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      transportista: { empresaId: EMP, activo: false, cambiadoPor: ADMIN },
+    });
+    expect(oc.cambiarOfertasCarga).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: EMP, activo: false, adminEmail: ADMIN }),
+    );
+    vi.mocked(oc.cambiarOfertasCarga).mockResolvedValueOnce(null);
+    expect((await put(EMP, { activo: true })).status).toBe(404);
+    expect((await put(EMP, { activo: 'no' })).status).toBe(422);
+    expect((await put(EMP, '{no-json')).status).toBe(400);
+    expect((await put('no-uuid', { activo: true })).status).toBe(400);
+    expect(
+      (await buildApp('otro@x.cl').app.request(`${RUTA}/${EMP}`, { method: 'PUT', body: '{}' }))
+        .status,
     ).toBe(403);
   });
 });

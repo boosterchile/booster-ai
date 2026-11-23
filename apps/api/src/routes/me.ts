@@ -198,6 +198,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         rut: string;
         is_generador_carga: boolean;
         is_transportista: boolean;
+        recibe_ofertas_carga: boolean;
         status: (typeof empresas.status.enumValues)[number];
       } | null;
       organizacion_stakeholder: {
@@ -221,6 +222,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         rut: r.empresa.rut,
         is_generador_carga: r.empresa.isGeneradorCarga,
         is_transportista: r.empresa.isTransportista,
+        recibe_ofertas_carga: r.empresa.recibeOfertasCarga,
         status: r.empresa.status,
       },
       organizacion_stakeholder: null,

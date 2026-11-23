@@ -88,8 +88,13 @@ export function navSectionsForMe(
     if (isAdmin) {
       transporte.unshift({ label: 'Booster Fleet', to: '/app/booster-fleet', icon: Gauge });
     }
+    // servicios-por-empresa: sin el servicio de ofertas de carga la empresa
+    // opera con Booster Fleet y sus viajes propios; no ve Ofertas, la plata
+    // (ya la corta `verFinanzas`) ni Zonas de matching.
+    if (flags.ofertasCarga) {
+      transporte.push({ label: 'Ofertas', to: '/app/ofertas', icon: Truck });
+    }
     transporte.push(
-      { label: 'Ofertas', to: '/app/ofertas', icon: Truck },
       // Servicios va inmediatamente después de Ofertas porque ese es el flujo
       // real: llega la oferta, se acepta, y la carga hay que despacharla —
       // asignarle conductor. Sin esta entrada, la asignación quedaba
@@ -124,10 +129,10 @@ export function navSectionsForMe(
         to: '/app/trayectos',
         icon: Fuel,
       });
-      transporte.push(
-        { label: 'Zonas de matching', to: '/app/zonas', icon: MapPinned },
-        { label: 'Dispositivos', to: '/app/admin/dispositivos', icon: Radio },
-      );
+      if (flags.ofertasCarga) {
+        transporte.push({ label: 'Zonas de matching', to: '/app/zonas', icon: MapPinned });
+      }
+      transporte.push({ label: 'Dispositivos', to: '/app/admin/dispositivos', icon: Radio });
     }
     sections.push({ heading: 'Transporte', items: transporte });
   }

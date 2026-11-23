@@ -40,6 +40,12 @@ export interface MembershipPayload {
     rut: string;
     is_generador_carga: boolean;
     is_transportista: boolean;
+    /**
+     * servicios-por-empresa: `false` = transportista sin ofertas de carga
+     * (solo Booster Fleet y viajes propios). Opcional para tolerar un `/me`
+     * cacheado de antes; ausente cuenta como `true`.
+     */
+    recibe_ofertas_carga?: boolean;
     status: 'pendiente_verificacion' | 'activa' | 'suspendida';
   } | null;
   /**

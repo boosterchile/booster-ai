@@ -207,6 +207,9 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
             inArray(empresas.id, candidateEmpresaIds),
             eq(empresas.isTransportista, true),
             eq(empresas.status, 'activa'),
+            // servicios-por-empresa: sin el servicio de ofertas de carga la
+            // empresa no es candidata, aunque tenga zona y vehículo.
+            eq(empresas.recibeOfertasCarga, true),
           ),
         );
       if (candidateEmpresas.length === 0) {

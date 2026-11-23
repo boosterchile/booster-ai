@@ -624,6 +624,13 @@
       "when": 1781654400420,
       "tag": "0088_retiro_superficie_demo",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1781740800420,
+      "tag": "0089_empresas_recibe_ofertas_carga",
+      "breakpoints": true
     }
   ]
 }

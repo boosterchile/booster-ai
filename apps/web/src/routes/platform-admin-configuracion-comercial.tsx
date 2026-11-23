@@ -368,6 +368,16 @@ function Pagina() {
         vacio="No hay empresas transportistas."
       />
 
+      <BanderaPorEmpresa
+        titulo="Ofertas de carga"
+        descripcion="Servicio de matching con generadores de carga. Una empresa transportista deshabilitada no recibe ofertas ni ve Ofertas, Cobra hoy, Liquidaciones ni Zonas de matching: opera con Booster Fleet y sus viajes propios."
+        ruta="/admin/configuracion-comercial/ofertas-carga"
+        claveLista="transportistas"
+        claveFila="transportista"
+        nombre="servicio de ofertas de carga"
+        vacio="No hay empresas transportistas."
+      />
+
       <section className="mt-8">
         <h2 className="flex items-center gap-2 font-semibold text-neutral-900">
           <History className="h-4 w-4" aria-hidden /> Historial
@@ -405,14 +415,37 @@ interface EmpresaBanderaDto {
   empresaId: string;
   razonSocial: string;
   rut: string;
-  activadoEn: string | null;
-  activadoPor: string | null;
+  /** Banderas que nacen apagadas (contrato programado, Booster Fleet). */
+  activadoEn?: string | null;
+  activadoPor?: string | null;
+  /** Bandera que nace encendida (ofertas de carga): estado y último cambio. */
+  activo?: boolean;
+  cambiadoEn?: string | null;
+  cambiadoPor?: string | null;
+}
+
+/** Encendida: `activo` si la fila lo trae; si no, que tenga fecha de activación. */
+function banderaEncendida(e: EmpresaBanderaDto): boolean {
+  return e.activo ?? e.activadoEn != null;
+}
+
+function detalleBandera(e: EmpresaBanderaDto): string {
+  const fecha = (iso: string) => new Date(iso).toLocaleDateString('es-CL');
+  if (e.activadoEn) {
+    return ` · Habilitado por ${e.activadoPor ?? '—'} el ${fecha(e.activadoEn)}`;
+  }
+  if (e.cambiadoEn) {
+    const verbo = e.activo === false ? 'Deshabilitado' : 'Habilitado';
+    return ` · ${verbo} por ${e.cambiadoPor ?? '—'} el ${fecha(e.cambiadoEn)}`;
+  }
+  return e.activo === true ? ' · Habilitado desde el alta' : '';
 }
 
 /**
  * Bandera comercial por empresa, decidida a mano por el platform-admin:
  * queda registrado quién y cuándo. La usan el contrato programado (ADR-079
- * §2, generadores) y la gestión de flota (§4, transportistas).
+ * §2, generadores), la gestión de flota (§4, transportistas) y las ofertas
+ * de carga (`.specs/servicios-por-empresa`, transportistas).
  */
 function BanderaPorEmpresa(props: {
   titulo: string;
@@ -447,7 +480,7 @@ function BanderaPorEmpresa(props: {
     setError(null);
     try {
       const r = await api.put<Record<string, EmpresaBanderaDto>>(`${ruta}/${e.empresaId}`, {
-        activo: e.activadoEn === null,
+        activo: !banderaEncendida(e),
       });
       const actualizada = r[claveFila];
       if (actualizada) {
@@ -480,18 +513,17 @@ function BanderaPorEmpresa(props: {
                 <div className="font-medium text-neutral-900">{e.razonSocial}</div>
                 <div className="text-neutral-500 text-xs">
                   {e.rut}
-                  {e.activadoEn &&
-                    ` · Habilitado por ${e.activadoPor ?? '—'} el ${new Date(e.activadoEn).toLocaleDateString('es-CL')}`}
+                  {detalleBandera(e)}
                 </div>
               </div>
               <button
                 type="button"
                 disabled={cambiando === e.empresaId}
                 onClick={() => void cambiar(e)}
-                aria-label={`${e.activadoEn ? 'Deshabilitar' : 'Habilitar'} ${nombre} de ${e.razonSocial}`}
+                aria-label={`${banderaEncendida(e) ? 'Deshabilitar' : 'Habilitar'} ${nombre} de ${e.razonSocial}`}
                 className="rounded-md border border-neutral-300 px-3 py-1 text-neutral-800 disabled:opacity-50"
               >
-                {e.activadoEn ? 'Deshabilitar' : 'Habilitar'}
+                {banderaEncendida(e) ? 'Deshabilitar' : 'Habilitar'}
               </button>
             </li>
           ))}

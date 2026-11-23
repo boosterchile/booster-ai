@@ -23,6 +23,12 @@ export const capacidadCtxSchema = z.object({
   isGeneradorCarga: z.boolean(),
   fichaConductorMismoRut: z.boolean(),
   puedeAceptarOfertas: z.boolean(),
+  /**
+   * Servicio de ofertas de carga de la empresa (`.specs/servicios-por-empresa`).
+   * `false` = transportista sin matching: no acepta ofertas ni ve finanzas.
+   * Ausente equivale a `true`.
+   */
+  recibeOfertasCarga: z.boolean().optional(),
 });
 
 export type CapacidadCtx = z.infer<typeof capacidadCtxSchema>;
@@ -41,6 +47,11 @@ export function mismoRut(
     return false;
   }
   return a === b;
+}
+
+/** La empresa tiene el servicio de ofertas de carga. Ausente cuenta como encendido. */
+export function recibeOfertasCarga(ctx: CapacidadCtx): boolean {
+  return ctx.recibeOfertasCarga !== false;
 }
 
 export function esSoloLectura(ctx: CapacidadCtx): boolean {
@@ -77,10 +88,11 @@ export function puedeInvitarMiembro(ctx: CapacidadCtx): boolean {
 
 /**
  * Liquidaciones, historial de Cobra hoy y pedir Cobra hoy.
- * El despachador, el conductor y el visualizador quedan fuera.
+ * El despachador, el conductor y el visualizador quedan fuera, y también
+ * la empresa sin el servicio de ofertas de carga.
  */
 export function puedeVerFinanzas(ctx: CapacidadCtx): boolean {
-  return ctx.isTransportista && esDuenoOAdmin(ctx);
+  return ctx.isTransportista && recibeOfertasCarga(ctx) && esDuenoOAdmin(ctx);
 }
 
 export function puedePedirCobraHoy(ctx: CapacidadCtx): boolean {
@@ -95,10 +107,11 @@ export function puedeAsignarViaje(ctx: CapacidadCtx): boolean {
 /**
  * Dueño y admin siempre. El despachador solo si la membresía tiene
  * `puede_aceptar_ofertas`. Conductor y visualizador nunca, aunque el
- * flag esté en true.
+ * flag esté en true. Nadie, si la empresa no tiene el servicio de ofertas
+ * de carga.
  */
 export function puedeAceptarOferta(ctx: CapacidadCtx): boolean {
-  if (!ctx.isTransportista || esSoloLectura(ctx)) {
+  if (!ctx.isTransportista || !recibeOfertasCarga(ctx) || esSoloLectura(ctx)) {
     return false;
   }
   if (ctx.role === 'dueno' || ctx.role === 'admin') {

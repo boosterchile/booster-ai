@@ -20,6 +20,10 @@ import {
   cambiarGestionFlota,
   listarTransportistasGestionFlota,
 } from '../services/gestion-flota.js';
+import {
+  cambiarOfertasCarga,
+  listarTransportistasOfertasCarga,
+} from '../services/ofertas-carga-por-empresa.js';
 
 /**
  * ADR-079 §3 — configuración comercial editable por el platform-admin
@@ -33,7 +37,7 @@ import {
  * publicaciones de carga nuevas en ≤ 60 s en todas las instancias, y al
  * instante en la que atendió el PUT.
  */
-/** Body de los toggles por empresa (contrato programado, gestión de flota). */
+/** Body de los toggles por empresa (contrato programado, gestión de flota, ofertas de carga). */
 const contratoProgramadoBodySchema = z.object({ activo: z.boolean() });
 
 const putBodySchema = z.object({
@@ -202,6 +206,64 @@ export function createAdminConfiguracionComercialRoutes(opts: {
     opts.logger.info(
       { adminEmail: auth.adminEmail, empresaId: empresaId.data, activo: body.data.activo },
       'gestión de flota actualizada',
+    );
+    return c.json({ ok: true, transportista });
+  });
+
+  /**
+   * `.specs/servicios-por-empresa` — servicio de ofertas de carga por
+   * empresa transportista. Apagado, la empresa no participa del matching ni
+   * ve ofertas ni finanzas. Decisión manual del platform-admin.
+   */
+  app.get('/ofertas-carga', async (c) => {
+    const auth = requirePlatformAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    return c.json({ transportistas: await listarTransportistasOfertasCarga(opts.db) });
+  });
+
+  app.put('/ofertas-carga/:empresaId', async (c) => {
+    const auth = requirePlatformAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const empresaId = z.string().uuid().safeParse(c.req.param('empresaId'));
+    if (!empresaId.success) {
+      return c.json({ error: 'invalid_empresa_id' }, 400);
+    }
+    let crudo: unknown;
+    try {
+      crudo = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+    const body = contratoProgramadoBodySchema.safeParse(crudo);
+    if (!body.success) {
+      return c.json({ error: 'body_invalido', issues: body.error.issues }, 422);
+    }
+    const transportista = await withBusinessSpan(
+      { name: 'servicios.ofertas_carga.cambiar' },
+      async (span) => {
+        const t = await cambiarOfertasCarga({
+          db: opts.db,
+          empresaId: empresaId.data,
+          activo: body.data.activo,
+          adminEmail: auth.adminEmail,
+        });
+        setResultAttributes(span, { 'booster.ofertas_carga.activo': body.data.activo });
+        return t;
+      },
+    );
+    if (!transportista) {
+      return c.json({ error: 'transportista_no_encontrado' }, 404);
+    }
+    getBusinessCounter('servicios.ofertas_carga_cambiada').add(1, {
+      activo: String(body.data.activo),
+    });
+    opts.logger.info(
+      { adminEmail: auth.adminEmail, empresaId: empresaId.data, activo: body.data.activo },
+      'ofertas de carga de la empresa actualizadas',
     );
     return c.json({ ok: true, transportista });
   });

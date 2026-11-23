@@ -213,6 +213,25 @@ describe('buildInicioVista', () => {
     );
   });
 
+  it('empresa sin ofertas de carga: sin accesos a Ofertas, Cobra hoy ni Liquidaciones', () => {
+    const vista = buildInicioVista(datosVacios(), {
+      ...ctx,
+      esAdmin: true,
+      veFinanzas: true,
+      ofertasCarga: false,
+    });
+    expect(vista.ofertasCarga).toBe(false);
+    const ids = vista.accesos.map((acceso) => acceso.id);
+    expect(ids).not.toEqual(expect.arrayContaining(['ofertas']));
+    expect(ids).not.toEqual(expect.arrayContaining(['cobra-hoy']));
+    expect(ids).not.toEqual(expect.arrayContaining(['liquidaciones']));
+    expect(ids).toEqual(
+      expect.arrayContaining(['flota', 'servicios', 'vehiculos', 'conductores', 'cumplimiento']),
+    );
+    // Sin el dato, la empresa recibe ofertas.
+    expect(buildInicioVista(datosVacios(), ctx).ofertasCarga).toBe(true);
+  });
+
   it('empresa nueva: sin vehículos, conductores ni documentos observados', () => {
     const vista = buildInicioVista(
       datosVacios({

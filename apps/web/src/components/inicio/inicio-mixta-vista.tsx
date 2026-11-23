@@ -28,6 +28,7 @@ export function InicioMixtaVista({
   accesosTransporte,
   accesosGenerador,
   soloLectura,
+  ofertasCarga = true,
   onReintentar,
 }: {
   saludo: string;
@@ -38,6 +39,8 @@ export function InicioMixtaVista({
   accesosTransporte: NavItem[];
   accesosGenerador: NavItem[];
   soloLectura: boolean;
+  /** servicios-por-empresa: `false` = empresa sin ofertas de carga. */
+  ofertasCarga?: boolean;
   onReintentar: (fuente: string) => void;
 }) {
   const [filtro, setFiltro] = useState<FiltroMixta>('todo');
@@ -56,7 +59,7 @@ export function InicioMixtaVista({
       encabezado={<FiltroRol value={filtro} onChange={setFiltro} />}
     >
       <div className="space-y-4">
-        {modelo.ofertas ? (
+        {modelo.ofertas && ofertasCarga ? (
           <OfertasFlota panel={modelo.ofertas} onReintentar={onReintentar} />
         ) : null}
         {modelo.cargas ? (

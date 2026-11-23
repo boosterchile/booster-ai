@@ -81,6 +81,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
           esAdmin={isAdmin}
           soloLectura={soloLectura}
           veFinanzas={flagsDe(me).verFinanzas}
+          ofertasCarga={flagsDe(me).ofertasCarga}
         />
       ) : null}
 
