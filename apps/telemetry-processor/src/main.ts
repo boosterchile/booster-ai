@@ -1,6 +1,10 @@
 import http from 'node:http';
 import { type AvlPacket, type AvlRecord, extractCrashTrace } from '@booster-ai/codec8-parser';
-import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
+import {
+  createLogger,
+  registrarErroresDePool,
+  registrarErroresNoControlados,
+} from '@booster-ai/logger';
 import { BigQuery } from '@google-cloud/bigquery';
 import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
@@ -64,6 +68,7 @@ async function main(): Promise<void> {
     max: 10,
     idleTimeoutMillis: 30_000,
   });
+  registrarErroresDePool(pool, logger);
   const db = drizzle(pool);
 
   const pubsub = new PubSub({ projectId: config.GOOGLE_CLOUD_PROJECT });
