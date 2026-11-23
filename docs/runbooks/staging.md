@@ -65,7 +65,8 @@ En la consola de Firebase, agrega el proyecto `booster-ai-stg-494222`, crea la a
 
 - **Variables de repositorio**:
   - `STAGING_PROJECT_ID=booster-ai-stg-494222`
-  - `STAGING_URL`, con el mismo rol que `PRODUCTION_URL` pero apuntando a staging
+  - `STAGING_API_URL=https://api.staging.boosterchile.com` — el API, sin slash final. La usa `release-staging.yml` para construir la PWA, registrar el webhook y probar `/health`. Si falta, el deploy falla en su primer paso.
+  - `STAGING_URL=https://app.staging.boosterchile.com` — la PWA. Es la `BASE_URL` de Playwright en `e2e-staging.yml`, igual que `PRODUCTION_URL` en prod.
 - **Environment `staging`**:
   - `STAGING_WIF_PROVIDER` y `STAGING_WIF_SERVICE_ACCOUNT_DEPLOY` (los outputs `wif_provider` y `wif_service_account_deploy` del state de staging)
   - `STAGING_VITE_FIREBASE_API_KEY`, `STAGING_VITE_FIREBASE_APP_ID`, `STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID`
@@ -98,6 +99,7 @@ Desde ahí, Cloud Build actualiza la imagen con `kubectl set image`, igual que e
 ## Operación
 
 - **Destruir staging** (si se decide): `terraform destroy` con el state de staging y lista de verificación. Cloud SQL tiene `deletion_protection = true` fijo en `data.tf`. Antes del destroy, desactívala solo en la instancia de staging (`gcloud sql instances patch <instancia> --no-deletion-protection --project=booster-ai-stg-494222`). Nunca toques el `.tf` ni prod.
+- **State compartido**: el bucket `booster-ai-tfstate-494222` guarda el state de prod y el de staging. La SA de drift de staging recibe lectura sobre todo el bucket, así que también puede leer el state de prod. Queda declarado; separarlo pide un bucket propio para staging.
 - **Drift**: `terraform-drift.yml` vigila prod. Agregar un job de staging queda pendiente hasta que staging exista (ADR-083 §Consecuencias).
 
 ## Gaps conocidos (auditoría docs 2026-11-16)
@@ -109,7 +111,9 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 | Terraform + workflows + este runbook en `main` | Repo | **Listo** |
 | Proyecto `booster-ai-stg-494222`, billing, `apply`, secretos, Firebase | **PO** | Pendiente |
 | Environment GitHub `staging` (hoy solo existe `production`) | **PO** | Pendiente — créalo antes de cargar las vars de §6 |
-| Vars repo `STAGING_PROJECT_ID` / `STAGING_URL` | **PO** | Pendiente — sin ellas `release-staging.yml` se salta |
-| Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Docs / decisión PO | Pendiente — ver checklist §3; no cambiar workflows sin acuerdo |
+| Vars repo `STAGING_PROJECT_ID` / `STAGING_API_URL` / `STAGING_URL` | **PO** | Pendiente — sin `STAGING_PROJECT_ID`, `release-staging.yml` se salta |
+| Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
+| Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
+| Permisos de `cursor-agent@` sobre una SA que staging no tiene | Repo | **Resuelta el 2026-11-23**: solo se crean con `environment = "prod"` |
 | Job drift de staging | Repo (después de que exista el entorno) | Pendiente declarado |
 | Nightly E2E contra prod | Deuda CLAUDE.md | Hasta que exista `STAGING_URL` |

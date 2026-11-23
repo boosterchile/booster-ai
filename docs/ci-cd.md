@@ -95,7 +95,8 @@ Configurar en `Settings → Secrets and variables → Actions`:
 
 - `WIF_PROVIDER` — `projects/NNN/locations/global/workloadIdentityPools/github-actions/providers/github`
 - `WIF_SERVICE_ACCOUNT_DEPLOY` — `github-deployer@booster-ai.iam.gserviceaccount.com`
-- `STAGING_URL` — `https://staging.boosterchile.com`
+- `STAGING_API_URL` — `https://api.staging.boosterchile.com` (API; la usa `release-staging.yml`)
+- `STAGING_URL` — `https://app.staging.boosterchile.com` (PWA; `BASE_URL` de `e2e-staging.yml`)
 - `PRODUCTION_URL` — `https://app.boosterchile.com`
 
 ### Secrets (sensibles)

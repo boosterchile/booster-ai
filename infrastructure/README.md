@@ -123,7 +123,8 @@ terraform output wif_service_account_deploy
 # Configurar en GitHub UI → Settings → Secrets and variables → Actions → Variables:
 #   WIF_PROVIDER                 = <valor de wif_provider>
 #   WIF_SERVICE_ACCOUNT_DEPLOY   = <valor de wif_service_account_deploy>
-#   STAGING_URL                  = https://staging.boosterchile.com
+#   STAGING_API_URL              = https://api.staging.boosterchile.com   (API; release-staging.yml)
+#   STAGING_URL                  = https://app.staging.boosterchile.com   (PWA; e2e-staging.yml)
 #   PRODUCTION_URL               = https://app.boosterchile.com
 ```
 

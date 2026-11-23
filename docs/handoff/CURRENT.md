@@ -63,6 +63,7 @@ Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura).
 - `staging.boosterchile.com` no tiene delegación NS y `api.staging.boosterchile.com` no resuelve.
 - El repo no tiene entorno `staging` en GitHub ni ninguna variable `STAGING_*`.
 - «Deploy staging» corre en cada push a `main` y se omite siempre (sus últimos 100 runs): el job exige la variable `STAGING_PROJECT_ID`. BARH-23/24 llegaron a prod sin pasar por staging.
+- El 2026-11-23 se corrigieron tres defectos de la preparación que habrían roto el primer `apply` o el primer deploy (`.specs/staging-preparacion-defectos/spec.md`). GitHub pide ahora dos variables: `STAGING_API_URL` (API) y `STAGING_URL` (PWA).
 - Solo existe la preparación en `infrastructure/environments/staging/`. Crear el proyecto, vincular la facturación, el `terraform apply` y el registro NS en prod son pasos del PO.
 
 ## BARH-21

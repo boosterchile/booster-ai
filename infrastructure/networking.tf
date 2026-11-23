@@ -219,7 +219,10 @@ resource "google_compute_security_policy" "waf" {
         # Trade-off: GETs al api también bypass WAF. Aceptable porque la
         # superficie de ataque GET sin auth es prácticamente nula
         # (middleware Firebase Auth rebota antes).
-        expression = "request.headers['host'] == 'api.boosterchile.com'"
+        # El host sale de var.domain: en prod es api.boosterchile.com (texto
+        # idéntico al literal anterior) y en staging api.staging.boosterchile.com
+        # (ADR-083). Con el literal de prod, la regla nunca coincidía en staging.
+        expression = "request.headers['host'] == 'api.${var.domain}'"
       }
     }
     description = "Allow api host — defensa via Firebase Auth + zod + Drizzle"
