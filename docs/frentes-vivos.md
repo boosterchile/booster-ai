@@ -215,7 +215,7 @@ Falta el criterio de término en prod: un dueño creado por el admin que active 
 
 **Terminado cuando:** se cumplen los criterios de la spec §5 y, en producción, el platform-admin deshabilita las ofertas de carga de una empresa transportista desde el panel y su dueño entra y ve su flota y sus viajes propios, sin Ofertas, Cobra hoy, Liquidaciones ni Zonas de matching.
 
-**Estado al 2026-11-23:** #1047 en prod (`fdc43f11`, migración 0089). El PO aclaró los dos planes: **Booster Fleet** es solo gestión de flota y **Booster** incluye los dos servicios. La interfaz propia de Booster Fleet para la empresa solo de flota (marca, Inicio y menú; spec `.specs/booster-fleet-interfaz/spec.md`) está en un PR. Falta deshabilitar las ofertas de carga de la empresa del cliente y verla operar.
+**Estado al 2026-11-23:** #1047 en prod (`fdc43f11`, migración 0089). El PO aclaró los dos planes: **Booster Fleet** es solo gestión de flota y **Booster** incluye los dos servicios. La interfaz propia de Booster Fleet para la empresa solo de flota (marca, Inicio y menú; spec `.specs/booster-fleet-interfaz/spec.md`) está en prod desde el 2026-11-23 (#1049, `adb83021`). Falta deshabilitar las ofertas de carga de la empresa del cliente y verla operar.
 
 **Fuera de alcance:** apagar Booster Fleet por empresa, que el dueño active servicios por su cuenta, elegir los servicios al crear la empresa y el cobro (spec §6).
 

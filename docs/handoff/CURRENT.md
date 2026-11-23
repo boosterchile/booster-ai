@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
-**Prod**: `fdc43f11` (Release [45245572913](https://github.com/boosterchile/booster-ai/actions/runs/45245572913) SUCCESS, 2026-11-23; lleva #1047 y la migración 0089; api `booster-ai-api-00494-4pr` y web `00436-hdw` al 100 %). Release anterior del mismo día: `52da4c1b` (Release [45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923) SUCCESS, terminó el 2026-11-23 a las 11:59) — api `booster-ai-api-00493-4pt` @ **100 %**, web `00435-p4g` @ 100 %; los 8 servicios de Cloud Run en esa imagen. Lleva #748 (migración 0088, fase contract), #1036 (solo un test), #1037 (tipos del api, T10-12) y #1039 (solo CI). El release anterior fue el del 2026-11-20 (`93f084f1`: certificado con factores versionados #877).  
-**`main`**: tip `fdc43f11` (#1047), igual a prod salvo este handoff. Nada pendiente de deploy.
+**Prod**: `adb83021` (Release [45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475) SUCCESS, 2026-11-23; lleva #1049, solo web; api `booster-ai-api-00495-vfc` y web `00437-j9v` al 100 %). Antes, el mismo día: `fdc43f11` (Release 45245572913, con #1047 y la migración 0089). Release anterior del mismo día: `52da4c1b` (Release [45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923) SUCCESS, terminó el 2026-11-23 a las 11:59) — api `booster-ai-api-00493-4pt` @ **100 %**, web `00435-p4g` @ 100 %; los 8 servicios de Cloud Run en esa imagen. Lleva #748 (migración 0088, fase contract), #1036 (solo un test), #1037 (tipos del api, T10-12) y #1039 (solo CI). El release anterior fue el del 2026-11-20 (`93f084f1`: certificado con factores versionados #877).  
+**`main`**: tip `a5d585c6` (#1053). Pendiente de deploy: #1053 (el logger ante un corte de Postgres); el resto es documentación.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -11,7 +11,7 @@
 
 Verificado en prod en solo lectura tras el release [45245572913](https://github.com/boosterchile/booster-ai/actions/runs/45245572913): los 8 servicios de Cloud Run sirven `fdc43f11` al 100 % (api `00494-4pr`, web `00436-hdw`); `Drizzle migrate() complete` a las 19:16Z (America/Santiago 16:16) y las tres columnas existen en `empresas`; sin entradas de severidad ERROR en la revisión nueva; las 8 empresas siguen con `recibe_ofertas_carga = true`, sin cambios registrados.
 
-**Interfaz propia de Booster Fleet, en PR** (spec `.specs/booster-fleet-interfaz/`, pedido del PO el 2026-11-23): la empresa transportista, no generadora y sin ofertas de carga ve el producto Booster Fleet: marca «Booster Fleet», el panel de flota como Inicio del dueño y del admin, y un menú con las secciones «Flota» y «Viajes propios». Solo web, sin API ni migración. Los dos planes, según el PO: Booster Fleet es solo gestión de flota; Booster incluye los dos servicios. Visto en un navegador con `/apariencia/shell?rol=fleet`. El cobro todavía no distingue los dos planes.
+**Interfaz propia de Booster Fleet, en prod desde el 2026-11-23** ([#1049](https://github.com/boosterchile/booster-ai/pull/1049), release [45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475); spec `.specs/booster-fleet-interfaz/`, pedido del PO el 2026-11-23): la empresa transportista, no generadora y sin ofertas de carga ve el producto Booster Fleet: marca «Booster Fleet», el panel de flota como Inicio del dueño y del admin, y un menú con las secciones «Flota» y «Viajes propios». Solo web, sin API ni migración. Los dos planes, según el PO: Booster Fleet es solo gestión de flota; Booster incluye los dos servicios. Visto en un navegador con `/apariencia/shell?rol=fleet`. Tras el release, los 8 servicios sirven `adb83021` al 100 % (web `00437-j9v`, api `00495-vfc`), sin entradas de severidad ERROR en el api ni en la web. Ninguna empresa la ve todavía: todas siguen con ofertas de carga habilitadas. El cobro todavía no distingue los dos planes.
 
 **Para dejar operativo al cliente** (visto en prod en solo lectura el 2026-11-23: empresa activa, 2 vehículos con Teltonika enviando, 0 conductores, 0 zonas, dueño sin activar con el código vencido el 2026-10-04):
 
@@ -32,8 +32,8 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `fdc43f11` | Igual a prod salvo este handoff |
-| Prod | `fdc43f11` | Release 45245572913; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00494-4pr` |
+| `main` | `a5d585c6` | Prod más #1053 (logger, sin desplegar) y documentación |
+| Prod | `adb83021` | Release 45261904475; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00495-vfc` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
 **Smoke (2026-11-23, tras el release, solo lectura por `gcloud`):** sin entradas de severidad ERROR en la revisión nueva del api desde su arranque; flags conservados. No se probaron `/health` ni `/ready` (el proxy de la sesión bloquea `boosterchile.com`) ni el gateway de GKE. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
