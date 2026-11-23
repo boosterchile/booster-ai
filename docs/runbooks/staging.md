@@ -116,6 +116,6 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 | Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
 | Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
 | Permisos de `cursor-agent@` sobre una SA que staging no tiene | Repo | **Resuelta el 2026-11-23**: solo se crean con `environment = "prod"` |
-| Staging podía leer el state de prod (bucket compartido) | Repo + **PO** | **Resuelta en el repo el 2026-11-23**: bucket propio. Falta el `apply` de prod que lo crea |
+| Staging podía leer el state de prod (bucket compartido) | Repo + **PO** | **Resuelta el 2026-11-23**: bucket propio, creado por el `apply` de prod de ese día |
 | Job drift de staging | Repo (después de que exista el entorno) | Pendiente declarado |
 | Nightly E2E contra prod | Deuda CLAUDE.md | Hasta que exista `STAGING_URL` |
