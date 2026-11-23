@@ -21,7 +21,7 @@
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
 **Smoke (2026-11-23, tras el release, solo lectura por `gcloud`):** sin entradas de severidad ERROR en la revisión nueva del api desde su arranque; flags conservados. No se probaron `/health` ni `/ready` (el proxy de la sesión bloquea `boosterchile.com`) ni el gateway de GKE. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
 **Registros:** `Drizzle migrate() complete` en `00493-4pt` @ 14:28:00Z (America/Santiago 11:28), 495 ms, sin ningún `runMigrations failed` desde el deploy.  
-**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`. Los programados del 2026-11-20, 11-21 y 11-22 fallaron por #748 (el proxy HTTPS, el certificado con demo, su sufijo y el registro DNS demo); el PO aplicó esa diferencia el 2026-11-23 y el siguiente programado debería volver a verde.
+**Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`. Los programados del 2026-11-20, 11-21 y 11-22 fallaron por #748 (el proxy HTTPS, el certificado con demo, su sufijo y el registro DNS demo); el PO aplicó esa diferencia el 2026-11-23 y la corrida manual de ese día (45230338851) salió sin diferencias.
 
 ## Evidencia Score P
 
@@ -109,7 +109,7 @@ Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas a
 - **Migración 0088: corrió.** Borra la tabla `cuentas_demo`, el enum `persona_demo` y la columna `empresas.es_demo`. La revisión `00493-4pt` registró `Drizzle migrate() complete` y no hay `runMigrations failed`: si la guarda hubiera abortado, con `STRICT_MIGRATION_ORDERING=false` el api arranca igual y ese error queda en el log. No se confirmó con una consulta a la base (la sesión no tuvo acceso); las dos consultas de la guarda tampoco se corrieron antes de disparar.
 - **`terraform apply`: corrido por el PO el 2026-11-23** (1 cambio y 3 destrucciones, igual al plan). Visto en GCP a las 16:37Z: el proxy HTTPS sirve solo `booster-ai-cert-40b4b7c9`, y ya no existen el certificado con demo ni el registro DNS de `demo.boosterchile.com`. El api siguió respondiendo 200.
 - **`infrastructure/removed-demo.tf`: borrado** con permiso del PO. El plan del PO no listó los secretos demo, así que el state ya los había olvidado. El grep de T10-03 da 0 archivos fuera de las migraciones históricas.
-- **T10-03 marcado y Slot 2 cerrado por el PO el 2026-11-23.** Queda por ver un `terraform plan` sin cambios y que el Drift Check programado vuelva a verde.
+- **T10-03 marcado y Slot 2 cerrado por el PO el 2026-11-23.** El Drift Check lanzado a mano el 2026-11-23 sobre `3812555c` ([45230338851](https://github.com/boosterchile/booster-ai/actions/runs/45230338851)) terminó sin diferencias. Queda por ver el programado en verde.
 
 ## Programa TRL 10
 
