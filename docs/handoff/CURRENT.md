@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `267e7e0e` (Release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100) SUCCESS, terminó el 2026-11-23 a las 22:35Z; lleva #1053; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00496-n8c` y web `00438-gz7`). Releases anteriores del mismo día: `adb83021` ([45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475), #1049, solo web), `fdc43f11` (45245572913, #1047 y la migración 0089) y `52da4c1b` ([45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923), migración 0088 y #748, #1036, #1037, #1039). El anterior fue el del 2026-11-20 (`93f084f1`).  
-**`main`**: tip `e12424be` (#1055), igual a prod salvo documentación. Nada de código pendiente de deploy ni de `apply`: los cinco movimientos de dirección de #1050 quedaron grabados en el state el 2026-11-23.
+**`main`**: tip `b294092c` (#1057), igual a prod salvo documentación, Terraform y el workflow de staging. Nada de código pendiente de deploy ni de `apply`.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,7 +32,7 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `e12424be` | Igual a prod salvo documentación |
+| `main` | `b294092c` | Igual a prod salvo documentación, Terraform y el workflow de staging |
 | Prod | `267e7e0e` | Release 45273910100; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00496-n8c` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -65,7 +65,7 @@ Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura).
 - El repo no tiene entorno `staging` en GitHub ni ninguna variable `STAGING_*`.
 - «Deploy staging» corre en cada push a `main` y se omite siempre (sus últimos 100 runs): el job exige la variable `STAGING_PROJECT_ID`. BARH-23/24 llegaron a prod sin pasar por staging.
 - El 2026-11-23 se corrigieron tres defectos de la preparación que habrían roto el primer `apply` o el primer deploy (`.specs/staging-preparacion-defectos/spec.md`). GitHub pide ahora dos variables: `STAGING_API_URL` (API) y `STAGING_URL` (PWA).
-- Revisión de seguridad del 2026-11-23: con el bucket de state compartido, staging habría podido leer la contraseña de la base de prod. Staging pasa a tener bucket propio (`infrastructure/tfstate-staging.tf`). **Pendiente del PO:** el `apply` de prod que lo crea; hasta entonces el Drift Check sale en rojo con esa sola alta.
+- Revisión de seguridad del 2026-11-23 ([#1057](https://github.com/boosterchile/booster-ai/pull/1057)): con el bucket de state compartido, staging habría podido leer la contraseña de la base de prod. Staging tiene ahora bucket propio, `booster-ai-tfstate-stg-494222` (`infrastructure/tfstate-staging.tf`), y una validación impide apuntarlo al de prod. El PO corrió el `apply` de prod el 2026-11-23 (una alta; bucket creado a las 23:38Z) y el Drift Check [45290704540](https://github.com/boosterchile/booster-ai/actions/runs/45290704540) sobre `b294092c` terminó con «No changes».
 - Solo existe la preparación en `infrastructure/environments/staging/`. Crear el proyecto, vincular la facturación, el `terraform apply` y el registro NS en prod son pasos del PO.
 
 ## BARH-21
