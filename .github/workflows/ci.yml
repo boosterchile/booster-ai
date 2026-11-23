@@ -107,11 +107,26 @@ jobs:
   # ---------------------------------------------------------------------------
   # Test + Coverage Gate (≥80% bloqueante)
   # ---------------------------------------------------------------------------
+  # T10-14 (ADR-082): el job corre en tres runners en paralelo. Un solo runner
+  # con los 32 workspaces tardaba unos 7 min y dejaba el p95 de CI en 10,8.
+  # Los tres grupos son disjuntos y cubren todos los workspaces; cada uno
+  # aplica el mismo umbral. `needs.test.result` solo es `success` si pasan
+  # los tres, así que `CI Success` no cambia.
   test:
-    name: Test + Coverage (≥80%)
+    name: Test + Coverage (≥80%) · ${{ matrix.grupo }}
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - grupo: api
+            filtro: --filter=@booster-ai/api
+          - grupo: web
+            filtro: --filter=@booster-ai/web
+          - grupo: resto
+            filtro: --filter=!@booster-ai/api --filter=!@booster-ai/web
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
@@ -123,13 +138,19 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Run tests with coverage
-        run: pnpm test:coverage
+        run: pnpm exec turbo run test:coverage ${{ matrix.filtro }}
       - name: Check coverage thresholds
         run: |
           # Busca todos los coverage-summary.json y valida umbrales.
           # Vitest emite uno por workspace en coverage/coverage-summary.json.
           fail=0
-          for f in $(find . -name coverage-summary.json -not -path './node_modules/*'); do
+          resumenes=$(find . -name coverage-summary.json -not -path './node_modules/*')
+          # Un grupo sin ningún resumen no midió nada: no puede pasar el gate.
+          if [ -z "$resumenes" ]; then
+            echo "::error::No se generó ningún coverage-summary.json en el grupo ${{ matrix.grupo }}."
+            exit 1
+          fi
+          for f in $resumenes; do
             echo "Checking $f"
             node -e "
               const r = require('./$f').total;
@@ -154,7 +175,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          name: coverage-report-${{ matrix.grupo }}
           path: '**/coverage/**'
           retention-days: 14
 
