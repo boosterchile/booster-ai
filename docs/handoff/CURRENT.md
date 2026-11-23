@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `adb83021` (Release [45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475) SUCCESS, 2026-11-23; lleva #1049, solo web; api `booster-ai-api-00495-vfc` y web `00437-j9v` al 100 %). Antes, el mismo día: `fdc43f11` (Release 45245572913, con #1047 y la migración 0089). Release anterior del mismo día: `52da4c1b` (Release [45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923) SUCCESS, terminó el 2026-11-23 a las 11:59) — api `booster-ai-api-00493-4pt` @ **100 %**, web `00435-p4g` @ 100 %; los 8 servicios de Cloud Run en esa imagen. Lleva #748 (migración 0088, fase contract), #1036 (solo un test), #1037 (tipos del api, T10-12) y #1039 (solo CI). El release anterior fue el del 2026-11-20 (`93f084f1`: certificado con factores versionados #877).  
-**`main`**: tip `a5d585c6` (#1053). Pendiente de deploy: #1053 (el logger ante un corte de Postgres); el resto es documentación.
+**`main`**: tip `267e7e0e` (#1052). Pendiente de deploy: #1053 (el logger ante un corte de Postgres), en el release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100), lanzado el 2026-11-23 21:51Z a pedido del PO y a la espera de su aprobación. #1050 (preparación de staging) es Terraform y workflow: no viaja en el release; en prod solo mueve cinco direcciones de IAM en el próximo `plan`. El resto es documentación.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,10 +32,11 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `a5d585c6` | Prod más #1053 (logger, sin desplegar) y documentación |
+| `main` | `267e7e0e` | Prod más #1053 (logger, en el release 45273910100), #1050 (Terraform y workflow de staging) y documentación |
 | Prod | `adb83021` | Release 45261904475; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00495-vfc` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
+**Release 45261904475 (visto en solo lectura a las 21:50Z):** `Drizzle migrate() complete` en `00495-vfc` a las 20:53Z, sin `runMigrations failed` y sin entradas de severidad ERROR en esa revisión. El smoke de la línea siguiente es del release `52da4c1b`.  
 **Smoke (2026-11-23, tras el release, solo lectura por `gcloud`):** sin entradas de severidad ERROR en la revisión nueva del api desde su arranque; flags conservados. No se probaron `/health` ni `/ready` (el proxy de la sesión bloquea `boosterchile.com`) ni el gateway de GKE. **Sin ver con sesión:** `/app/booster-fleet` y el detalle del vehículo con telemetría real, el panel de costos del platform-admin (arreglo de #1006) y un certificado emitido con la plantilla nueva (#877 y el corte de palabras de #876).
 **Registros:** `Drizzle migrate() complete` en `00493-4pt` @ 14:28:00Z (America/Santiago 11:28), 495 ms, sin ningún `runMigrations failed` desde el deploy.  
 **Terraform Drift Check:** el programado del 2026-11-16 18:01 falló por una sola diferencia (faltaba la variable del remitente en el api). El run [44006376104](https://github.com/boosterchile/booster-ai/actions/runs/44006376104), posterior al release BARH, terminó sin diferencias entre GCP y `main`. Los programados del 2026-11-20, 11-21 y 11-22 fallaron por #748 (el proxy HTTPS, el certificado con demo, su sufijo y el registro DNS demo); el PO aplicó esa diferencia el 2026-11-23 y la corrida manual de ese día (45230338851) salió sin diferencias.
@@ -128,6 +129,10 @@ Verificado en solo lectura por cada viaje: versión 2 `vigente`, las métricas a
 - **`terraform apply`: corrido por el PO el 2026-11-23** (1 cambio y 3 destrucciones, igual al plan). Visto en GCP a las 16:37Z: el proxy HTTPS sirve solo `booster-ai-cert-40b4b7c9`, y ya no existen el certificado con demo ni el registro DNS de `demo.boosterchile.com`. El api siguió respondiendo 200.
 - **`infrastructure/removed-demo.tf`: borrado** con permiso del PO. El plan del PO no listó los secretos demo, así que el state ya los había olvidado. El grep de T10-03 da 0 archivos fuera de las migraciones históricas.
 - **T10-03 marcado y Slot 2 cerrado por el PO el 2026-11-23.** El Drift Check lanzado a mano el 2026-11-23 sobre `3812555c` ([45230338851](https://github.com/boosterchile/booster-ai/actions/runs/45230338851)) terminó sin diferencias. Queda por ver el programado en verde.
+
+## Cortes de conexión a Postgres (en `main`, sin desplegar)
+
+[#1053](https://github.com/boosterchile/booster-ai/pull/1053), spec `.specs/errores-conexion-postgres/`. Al verificar T10-16 apareció en Error Reporting un `INSERT` fallido del telemetry-processor (34 eventos desde el 10-19, en ráfagas del tamaño del pool; los mensajes se reprocesan y no se pierde nada). El PR corrige tres defectos: el proceso se caía cuando se cortaba una conexión inactiva (5 veces el processor y 1 el api desde el 30-10), el log perdía la causa del error y escribía los valores de la consulta (IMEI y coordenadas). **Sin determinar:** por qué se cortan las conexiones; tras el próximo release, el primer corte queda registrado con su causa.
 
 ## Programa TRL 10
 
