@@ -57,3 +57,32 @@ Se descartó restringir el permiso por prefijo con una condición de IAM: el lis
 - [ ] Ninguna identidad de staging tiene un binding sobre `booster-ai-tfstate-494222`.
 - [ ] Guarda: con `environment = "staging"` y `tfstate_bucket` igual al bucket de prod, `terraform plan` falla en la validación de la variable.
 
+## Corrida en seco del plan de staging (2026-11-23)
+
+El agente corrió `terraform plan` contra el backend de staging, en solo lectura y sin lock, con el tfvars de ejemplo y un `billing_account` de relleno.
+
+```
+Plan: 421 to add, 0 to change, 0 to destroy.
+```
+
+- Solo altas. Ninguna mención de `booster-ai-494222` ni de su número de proyecto.
+- Proyecto `booster-ai-stg-494222`, Cloud SQL `db-custom-1-3840` zonal, Redis `BASIC` de 1 GB, zona DNS `staging.boosterchile.com.`, ocho servicios de Cloud Run con la imagen placeholder.
+- Ningún binding de `cursor-agent@`; el binding de lectura del state apunta a `booster-ai-tfstate-stg-494222`.
+
+El chequeo `check-validated-secret-placeholders.mjs` sobre ese plan falló y destapó un sexto defecto:
+
+| # | Severidad | Hallazgo | Arreglo |
+|---|---|---|---|
+| 6 | Media (rompe el primer deploy) | `content_sid_ready` tiene por defecto los cinco content-sid en `true`, porque en prod ya tienen valor real. El tfvars de ejemplo decía heredar el default. En staging nacen con `ROTATE_ME_*`, que no pasa la validación `^HX` del api: el primer deploy real no arranca | `content_sid_ready = {}` en el tfvars de ejemplo |
+
+`twilio-account-sid` no tiene compuerta y se monta siempre en api, notification-service y whatsapp-bot. No se toca el Terraform: el runbook pide cargarlo con un valor de prueba antes del primer deploy.
+
+### Criterios de éxito
+
+- [ ] Con el tfvars de ejemplo corregido, el chequeo de placeholders lista solo `twilio-account-sid`.
+- [ ] El plan sigue en 421 altas, sin cambios ni bajas (los montajes son atributos del servicio, no recursos).
+
+### Sin verificar
+
+- El `apply`. Un plan limpio no garantiza que GCP acepte las 421 altas: disponibilidad del ID del proyecto, cuotas, políticas de la organización y propagación de APIs solo se ven al aplicar.
+

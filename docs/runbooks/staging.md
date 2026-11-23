@@ -39,6 +39,10 @@ El primer `apply` crea el proyecto, habilita las APIs y levanta la red, Cloud SQ
 
 ## 3. Secretos
 
+**Antes del primer deploy** (es decir, antes de crear la variable `STAGING_PROJECT_ID` en GitHub), carga al menos `twilio-account-sid` con un Account SID de prueba (`AC…`). El `apply` lo crea con un placeholder y tres servicios lo validan al arrancar: api, notification-service y whatsapp-bot. El primer `apply` no falla por esto, porque los servicios nacen con una imagen placeholder; el primer deploy real sí.
+
+El chequeo `check-validated-secret-placeholders.mjs` sobre el plan del primer `apply` de staging debe listar **solo** `twilio-account-sid`. Si lista algún `content-sid-*`, falta `content_sid_ready = {}` en tu `terraform.tfvars`.
+
 Sigue [`secret-init-runbook.md`](secret-init-runbook.md) apuntando a `--project=booster-ai-stg-494222`:
 
 - **Twilio**: credenciales de prueba, nunca las de prod.
@@ -116,6 +120,7 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 | Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
 | Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
 | Permisos de `cursor-agent@` sobre una SA que staging no tiene | Repo | **Resuelta el 2026-11-23**: solo se crean con `environment = "prod"` |
+| El tfvars de staging montaba los cinco content-sid con placeholder | Repo | **Resuelta el 2026-11-23**: `content_sid_ready = {}` en el ejemplo. Quien ya copió el tfvars debe agregar esa línea |
 | Staging podía leer el state de prod (bucket compartido) | Repo + **PO** | **Resuelta el 2026-11-23**: bucket propio, creado por el `apply` de prod de ese día |
 | Job drift de staging | Repo (después de que exista el entorno) | Pendiente declarado |
 | Nightly E2E contra prod | Deuda CLAUDE.md | Hasta que exista `STAGING_URL` |
