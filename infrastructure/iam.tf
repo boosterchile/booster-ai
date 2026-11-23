@@ -447,14 +447,26 @@ resource "google_project_iam_member" "claude_cloud_readonly_roles" {
 #   crons existentes sin un update del job; actAs se mantiene porque el
 #   provider exige serviceAccountUser al create del http_target OIDC.
 
+# Solo en prod (ADR-083): la SA se creó a mano en booster-ai-494222 y no existe
+# en el proyecto gemelo de staging. GCP rechaza un binding a una SA inexistente,
+# así que sin esta condición el apply de staging fallaría. En prod no cambia
+# nada: los bloques `moved` de abajo llevan cada recurso a su índice [0].
 locals {
-  cursor_agent_member = "serviceAccount:cursor-agent@${google_project.booster_ai.project_id}.iam.gserviceaccount.com"
+  cursor_agent_member  = "serviceAccount:cursor-agent@${google_project.booster_ai.project_id}.iam.gserviceaccount.com"
+  cursor_agent_enabled = var.environment == "prod"
 }
 
 resource "google_storage_bucket_iam_member" "cursor_agent_tfstate" {
+  count = local.cursor_agent_enabled ? 1 : 0
+
   bucket = var.tfstate_bucket
   role   = "roles/storage.objectUser"
   member = local.cursor_agent_member
+}
+
+moved {
+  from = google_storage_bucket_iam_member.cursor_agent_tfstate
+  to   = google_storage_bucket_iam_member.cursor_agent_tfstate[0]
 }
 
 resource "google_project_iam_custom_role" "cursor_agent_scheduler_writer" {
@@ -476,9 +488,16 @@ resource "google_project_iam_custom_role" "cursor_agent_scheduler_writer" {
 }
 
 resource "google_project_iam_member" "cursor_agent_scheduler_writer" {
+  count = local.cursor_agent_enabled ? 1 : 0
+
   project = google_project.booster_ai.project_id
   role    = google_project_iam_custom_role.cursor_agent_scheduler_writer.id
   member  = local.cursor_agent_member
+}
+
+moved {
+  from = google_project_iam_member.cursor_agent_scheduler_writer
+  to   = google_project_iam_member.cursor_agent_scheduler_writer[0]
 }
 
 # actAs sobre internal_cron_invoker: necesario para que Terraform cree/actualice
@@ -486,9 +505,16 @@ resource "google_project_iam_member" "cursor_agent_scheduler_writer" {
 # Sin este binding, el create falla con PERMISSION_DENIED actAs. Riesgo residual
 # documentado arriba (project-level scheduler writer + OIDC de cron).
 resource "google_service_account_iam_member" "cursor_agent_act_as_cron_invoker" {
+  count = local.cursor_agent_enabled ? 1 : 0
+
   service_account_id = google_service_account.internal_cron_invoker.name
   role               = "roles/iam.serviceAccountUser"
   member             = local.cursor_agent_member
+}
+
+moved {
+  from = google_service_account_iam_member.cursor_agent_act_as_cron_invoker
+  to   = google_service_account_iam_member.cursor_agent_act_as_cron_invoker[0]
 }
 
 # -----------------------------------------------------------------------------
@@ -519,6 +545,8 @@ resource "google_service_account_iam_member" "cursor_agent_act_as_cron_invoker" 
 #   sin impersonar github-deployer@.
 
 resource "google_cloud_run_v2_service_iam_member" "cursor_agent_api_developer" {
+  count = local.cursor_agent_enabled ? 1 : 0
+
   project  = google_project.booster_ai.project_id
   location = var.region
   name     = module.service_api.name
@@ -526,8 +554,20 @@ resource "google_cloud_run_v2_service_iam_member" "cursor_agent_api_developer" {
   member   = local.cursor_agent_member
 }
 
+moved {
+  from = google_cloud_run_v2_service_iam_member.cursor_agent_api_developer
+  to   = google_cloud_run_v2_service_iam_member.cursor_agent_api_developer[0]
+}
+
 resource "google_service_account_iam_member" "cursor_agent_act_as_cloud_run_runtime" {
+  count = local.cursor_agent_enabled ? 1 : 0
+
   service_account_id = google_service_account.cloud_run_runtime.name
   role               = "roles/iam.serviceAccountUser"
   member             = local.cursor_agent_member
+}
+
+moved {
+  from = google_service_account_iam_member.cursor_agent_act_as_cloud_run_runtime
+  to   = google_service_account_iam_member.cursor_agent_act_as_cloud_run_runtime[0]
 }

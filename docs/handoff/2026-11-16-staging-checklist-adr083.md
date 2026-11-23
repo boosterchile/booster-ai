@@ -63,7 +63,7 @@ Orden sugerido. Nada de esto lo ejecuta el agente en este frente.
 ### 2.5 GitHub
 
 - [ ] Crear Environment `staging` (hoy solo existe `production`).
-- [ ] Repo vars: `STAGING_PROJECT_ID`, `STAGING_URL` (ver §3 gap de URL).
+- [ ] Repo vars: `STAGING_PROJECT_ID`, `STAGING_API_URL` (API) y `STAGING_URL` (PWA). Corregido el 2026-11-23; ver §3.
 - [ ] Env vars: WIF deploy + Vite Firebase/Maps/reCAPTCHA (outputs del apply).
 
 ### 2.6 Post-apply
@@ -82,7 +82,7 @@ Orden sugerido. Nada de esto lo ejecuta el agente en este frente.
 |---|---|---|
 | Proyecto / billing / apply | **Abierto · PO** | Staging gemelo no existe. |
 | GitHub Environment `staging` | **Abierto · PO** | API de environments solo lista `production`. El runbook habla de vars pero no dice «crear el Environment». |
-| `STAGING_URL` ambigua | **Abierto · docs/CI** | `release-staging.yml` usa `STAGING_URL` como host del **API** (`/health`, `_VITE_API_URL`). `e2e-staging.yml` la usa como Playwright `BASE_URL` (PWA). `docs/ci-cd.md` sugiere `https://staging.boosterchile.com`; prod E2E usa `https://app.boosterchile.com`. Hay que fijar convención (p. ej. API = `https://api.staging.boosterchile.com` y var aparte para la PWA, o documentar un solo host). **No se cambia el workflow en este PR.** |
+| `STAGING_URL` ambigua | **Resuelto el 2026-11-23**: `release-staging.yml` usa `STAGING_API_URL` y `STAGING_URL` queda para la PWA. Diagnóstico original: | `release-staging.yml` usa `STAGING_URL` como host del **API** (`/health`, `_VITE_API_URL`). `e2e-staging.yml` la usa como Playwright `BASE_URL` (PWA). `docs/ci-cd.md` sugiere `https://staging.boosterchile.com`; prod E2E usa `https://app.boosterchile.com`. Hay que fijar convención (p. ej. API = `https://api.staging.boosterchile.com` y var aparte para la PWA, o documentar un solo host). **No se cambia el workflow en este PR.** |
 | tfvars example incompleto vs flags de prod | **Mitigado en este PR** | Defaults de Terraform cubren la mayoría; el example ahora declara explícitamente qué dejar en default y qué no tocar sin visto PO. |
 | `terraform-drift` solo prod | **Abierto · post-existencia** | ADR-083 / runbook: agregar job staging cuando el entorno exista. |
 | Nightly E2E → prod | **Deuda declarada** | Hasta `STAGING_URL`. |
@@ -141,6 +141,6 @@ terraform -chdir=infrastructure init -reconfigure
 ## 6. Qué mirar el PO
 
 1. Este checklist (§2) como orden de trabajo cuando quiera habilitar staging.
-2. Gap de `STAGING_URL` (§3) antes de cablear GitHub.
+2. Las dos URL de §2.5 al cablear GitHub (el gap de `STAGING_URL` se resolvió el 2026-11-23).
 3. Confirmar ID de proyecto y `billing_account` en el tfvars (example en repo).
 4. Seguir con flags de prod solo cuando decida; staging no desbloquea esos flips por sí solo.

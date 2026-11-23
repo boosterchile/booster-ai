@@ -7,8 +7,14 @@ name: Deploy staging
 # (release.yml, gate humano en el Environment `production`).
 #
 # Variables de REPOSITORIO (las lee el `if` del job, que se evalúa antes de
-# entrar al Environment): STAGING_PROJECT_ID, STAGING_URL
-# (mismo rol que PRODUCTION_URL, pero de staging; también la usa e2e-staging.yml).
+# entrar al Environment):
+#   STAGING_PROJECT_ID
+#   STAGING_API_URL  URL del API (https://api.staging.boosterchile.com). De ella
+#                    salen _PUBLIC_API_HOST, _VITE_API_URL y el smoke de /health.
+#   STAGING_URL      URL de la PWA (https://app.staging.boosterchile.com). Es la
+#                    BASE_URL de Playwright en e2e-staging.yml; aquí solo es el
+#                    enlace del Environment. El balanceador sirve api. y app.
+#                    por separado, así que una sola variable no cubre los dos.
 # Variables del GitHub Environment `staging` (no secretos; los valores de
 # Firebase web son públicos por diseño):
 #   STAGING_WIF_PROVIDER, STAGING_WIF_SERVICE_ACCOUNT_DEPLOY,
@@ -46,6 +52,16 @@ jobs:
     if: vars.STAGING_PROJECT_ID != ''
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validar STAGING_API_URL
+        env:
+          API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          case "${API_URL}" in
+            https://*/*) echo "::error::STAGING_API_URL no lleva ruta ni slash final: '${API_URL}'"; exit 1 ;;
+            https://?*) echo "API de staging: ${API_URL}" ;;
+            *) echo "::error::falta la variable de repositorio STAGING_API_URL (https://api.<dominio de staging>)"; exit 1 ;;
+          esac
 
       - name: Esperar CI Success del mismo SHA
         env:
@@ -88,7 +104,7 @@ jobs:
       - name: Trigger Cloud Build (staging)
         env:
           STAGING_PROJECT_ID: ${{ vars.STAGING_PROJECT_ID }}
-          API_HOST: ${{ vars.STAGING_URL }}
+          API_HOST: ${{ vars.STAGING_API_URL }}
         run: |
           set -euo pipefail
           host="${API_HOST#https://}"
@@ -109,9 +125,11 @@ jobs:
             --substitutions="${subs}"
 
       - name: Smoke test — API health
+        env:
+          API_URL: ${{ vars.STAGING_API_URL }}
         run: |
           for i in 1 2 3; do
-            if curl -fsS "${{ vars.STAGING_URL }}/health"; then echo "✓ staging healthy"; exit 0; fi
+            if curl -fsS "${API_URL}/health"; then echo "✓ staging healthy"; exit 0; fi
             echo "Attempt $i failed, retrying in 30s..."; sleep 30
           done
           echo "::error::staging health check failed after 3 attempts"; exit 1
