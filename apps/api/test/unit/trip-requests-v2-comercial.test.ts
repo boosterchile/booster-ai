@@ -4,8 +4,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 
 /**
- * ADR-079 §1–§2 en la publicación de cargas: modalidad, contrato programado,
- * tasa congelada con PRICING_V3_ACTIVATED y desglose solo para el generador.
+ * Publicación de cargas: modalidad, contrato programado y tasa congelada
+ * (ADR-079 §2) con PRICING_V3_ACTIVATED; el precio publicado es el precio del
+ * viaje y el generador ve lo que paga con IVA (ADR-094 §1 y §3).
  */
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
@@ -115,7 +116,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('POST /trip-requests-v2 — modelo comercial v3', () => {
+describe('POST /trip-requests-v2 — modelo comercial (ADR-079 §2, ADR-094 §1)', () => {
   it('programada sin contrato programado habilitado → 422 y no inserta', async () => {
     const { post, insertados } = setup();
     const res = await post(body({ modalidad_carga: 'programada' }));
@@ -146,12 +147,9 @@ describe('POST /trip-requests-v2 — modelo comercial v3', () => {
     });
     expect(((await res.json()) as { comercial: unknown }).comercial).toEqual({
       modalidad_carga: 'programada',
-      precio_transportista_clp: 250_000,
-      comision_pct: 10,
-      comision_clp: 25_000,
-      iva_comision_clp: 4_750,
-      precio_generador_clp: 275_000,
-      total_factura_generador_clp: 29_750,
+      precio_viaje_clp: 250_000,
+      iva_viaje_clp: 47_500,
+      total_generador_clp: 297_500,
     });
   });
 
@@ -168,25 +166,22 @@ describe('GET /trip-requests-v2/cotizacion', () => {
   const get = (app: Hono, q: string) => app.request(`/trip-requests-v2/cotizacion?${q}`);
 
   it('flag apagado → 404 pricing_v3_disabled', async () => {
-    const res = await get(setup().app, 'precio_transportista_clp=700000&modalidad_carga=spot');
+    const res = await get(setup().app, 'precio_viaje_clp=700000&modalidad_carga=spot');
     expect(res.status).toBe(404);
   });
 
   it('flag encendido → desglose con la configuración vigente y si programada está disponible', async () => {
     appConfig.PRICING_V3_ACTIVATED = true;
-    const res = await get(setup().app, 'precio_transportista_clp=700000&modalidad_carga=spot');
+    const res = await get(setup().app, 'precio_viaje_clp=700000&modalidad_carga=spot');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       configuracion_version: 1,
       programada_disponible: false,
       desglose: {
         modalidad_carga: 'spot',
-        precio_transportista_clp: 700_000,
-        comision_pct: 20,
-        comision_clp: 140_000,
-        iva_comision_clp: 26_600,
-        precio_generador_clp: 840_000,
-        total_factura_generador_clp: 166_600,
+        precio_viaje_clp: 700_000,
+        iva_viaje_clp: 133_000,
+        total_generador_clp: 833_000,
       },
     });
   });
@@ -194,10 +189,8 @@ describe('GET /trip-requests-v2/cotizacion', () => {
   it('programada sin contrato → 422; query inválida → 400', async () => {
     appConfig.PRICING_V3_ACTIVATED = true;
     const { app } = setup();
-    expect((await get(app, 'precio_transportista_clp=1&modalidad_carga=programada')).status).toBe(
-      422,
-    );
-    expect((await get(app, 'precio_transportista_clp=-5&modalidad_carga=spot')).status).toBe(400);
+    expect((await get(app, 'precio_viaje_clp=1&modalidad_carga=programada')).status).toBe(422);
+    expect((await get(app, 'precio_viaje_clp=-5&modalidad_carga=spot')).status).toBe(400);
   });
 });
 
@@ -205,7 +198,7 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
   it('precio negativo → 400 invalid_query', async () => {
     appConfig.PRICING_V3_ACTIVATED = true;
     const res = await setup().app.request(
-      '/trip-requests-v2/cotizacion?precio_transportista_clp=-5&modalidad_carga=spot',
+      '/trip-requests-v2/cotizacion?precio_viaje_clp=-5&modalidad_carga=spot',
     );
     expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
       {
@@ -219,7 +212,7 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
               "minimum": 0,
               "origin": "number",
               "path": [
-                "precio_transportista_clp",
+                "precio_viaje_clp",
               ],
             },
           ],
@@ -242,7 +235,7 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
               "expected": "number",
               "message": "Ingresa un número válido",
               "path": [
-                "precio_transportista_clp",
+                "precio_viaje_clp",
               ],
               "received": "NaN",
             },
@@ -267,11 +260,11 @@ describe('GET /trip-requests-v2/cotizacion — contrato del 400 (TRK-003)', () =
 
 describe('GET /trip-requests-v2/cotizacion — input hostil → 400, nunca 500 (TRK-006)', () => {
   it.each([
-    'precio_transportista_clp=__proto__',
-    'precio_transportista_clp=1e400',
-    'precio_transportista_clp=1.5',
-    `precio_transportista_clp=${'9'.repeat(5000)}`,
-    'precio_transportista_clp=1&modalidad_carga=constructor',
+    'precio_viaje_clp=__proto__',
+    'precio_viaje_clp=1e400',
+    'precio_viaje_clp=1.5',
+    `precio_viaje_clp=${'9'.repeat(5000)}`,
+    'precio_viaje_clp=1&modalidad_carga=constructor',
   ])('%s', async (q) => {
     appConfig.PRICING_V3_ACTIVATED = true;
     const res = await setup().app.request(`/trip-requests-v2/cotizacion?${q}`);

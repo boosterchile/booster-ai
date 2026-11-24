@@ -1,6 +1,6 @@
 # Spec — Comisión dentro del precio del generador (ADR-094)
 
-**Estado**: en curso. Frente 1 hecho; frentes 2 a 6 sin empezar.
+**Estado**: en curso. Frentes 1 y 2 hechos; frentes 3 a 6 sin empezar.
 **ADR**: [ADR-094](../../docs/adr/094-comision-dentro-del-precio-del-generador.md)
 
 ## Entradas
@@ -32,11 +32,16 @@
 - `packages/pricing-engine/src/liquidacion-v4.ts`: `calcularLiquidacionV4`.
 - Evidencia: tests de `pricing-engine`, `shared-schemas`, ruta admin de la API y pantalla admin de la web.
 
-### 2. Ancla en publicación y cotización
+### 2. Ancla en publicación y cotización — hecho
 
-- `GET /cotizacion` recibe `precio_viaje_clp` en vez de `precio_transportista_clp` y responde el desglose v4.
-- `trips.proposedPriceClp` pasa a significar precio del viaje. Decidir qué se hace con las cargas ya publicadas (hoy guardan el precio del transportista).
-- Archivos: `apps/api/src/routes/trip-requests-v2.ts`, `apps/api/src/services/cotizacion-comercial.ts`, `apps/web/src/components/comercial/SeccionComercial.tsx`, `apps/web/src/routes/cargas.tsx`.
+- `GET /trip-requests-v2/cotizacion` recibe `precio_viaje_clp` (antes `precio_transportista_clp`) y responde lo que ve el generador: `precio_viaje_clp`, `iva_viaje_clp` y `total_generador_clp`. La misma forma va en `comercial` al publicar y en el detalle de la carga.
+- El generador no ve la comisión ni lo que recibe el transportista: es la lectura de «Salidas» y de ADR-094 §3. El total que paga no depende de la tasa.
+- `trips.proposedPriceClp` significa precio del viaje en los viajes que congelaron tasa (`comision_pct_aplicada`). No hay migración: `PRICING_V3_ACTIVATED` nunca se encendió en producción, así que ningún viaje de producción congeló tasa con el significado anterior. Los viajes sin tasa congelada siguen por el camino anterior.
+- `precio_viaje_clp`, `iva_viaje_clp` y `total_generador_clp` se suman a `CLAVES_PRIVADAS_GENERADOR`: la guardia de visibilidad los veda en las respuestas a transportista y conductor.
+- El interruptor sigue siendo `PRICING_V3_ACTIVATED` (apagado). Con él apagado nada cambia: la cotización responde 404 y no se congela tasa.
+- La propuesta de cambio de carga (`desglose_propuesto`) sigue con el desglose de ADR-079 hasta el frente 4.
+- Archivos: `apps/api/src/routes/trip-requests-v2.ts`, `apps/api/src/services/cotizacion-comercial.ts`, `packages/shared-schemas/src/configuracion-comercial.ts`, `apps/web/src/components/comercial/SeccionComercial.tsx`, `apps/web/src/routes/cargas.tsx`.
+- Evidencia: tests de `cotizacion-comercial`, `trip-requests-v2-comercial`, `SeccionComercial` y `configuracion-comercial`.
 
 ### 3. Ofertas y asignación
 

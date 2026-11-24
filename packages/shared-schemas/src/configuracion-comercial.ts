@@ -101,9 +101,10 @@ export const CONFIGURACION_COMERCIAL_INICIAL: ConfiguracionComercial = {
 };
 
 /**
- * ADR-079 §5 — claves que NUNCA llegan a transportista ni conductor (API,
- * bot, notificaciones). El guard de visibilidad del api y su test de
- * contrato usan esta lista.
+ * ADR-079 §5 y ADR-094 §3 — claves que NUNCA llegan a transportista ni
+ * conductor (API, bot, notificaciones): la comisión y, desde ADR-094, el
+ * precio del viaje y lo que paga el generador. El guard de visibilidad del
+ * api y su test de contrato usan esta lista.
  */
 export const CLAVES_PRIVADAS_GENERADOR = [
   'comision_pct',
@@ -112,4 +113,7 @@ export const CLAVES_PRIVADAS_GENERADOR = [
   'precio_generador_clp',
   'total_factura_generador_clp',
   'comision_pct_aplicada',
+  'precio_viaje_clp',
+  'iva_viaje_clp',
+  'total_generador_clp',
 ] as const;

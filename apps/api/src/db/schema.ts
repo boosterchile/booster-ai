@@ -1455,7 +1455,11 @@ export const trips = pgTable(
     pickupDateRaw: varchar('recogida_fecha_raw', { length: 200 }).notNull(),
     pickupWindowStart: timestamp('recogida_ventana_inicio', { withTimezone: true }),
     pickupWindowEnd: timestamp('recogida_ventana_fin', { withTimezone: true }),
-    /** Precio sugerido por generador de carga o admin. Null si pricing-engine sugerirá. */
+    /**
+     * Precio sugerido por generador de carga o admin. Null si pricing-engine
+     * sugerirá. En viajes que congelaron tasa (`comision_pct_aplicada`) es el
+     * precio del viaje: el neto que paga el generador (ADR-094 §1).
+     */
     proposedPriceClp: integer('precio_propuesto_clp'),
     /**
      * Phase 5 PR-L3b — Datos opcionales del consignee. Si presentes,

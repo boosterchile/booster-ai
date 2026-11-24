@@ -4,16 +4,13 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../../lib/api-client.js';
-import { DesgloseGenerador, SeccionComercial } from './SeccionComercial.js';
+import { DesgloseViaje, SeccionComercial } from './SeccionComercial.js';
 
 const DESGLOSE = {
   modalidad_carga: 'spot' as const,
-  precio_transportista_clp: 700_000,
-  comision_pct: 20,
-  comision_clp: 140_000,
-  iva_comision_clp: 26_600,
-  precio_generador_clp: 840_000,
-  total_factura_generador_clp: 166_600,
+  precio_viaje_clp: 700_000,
+  iva_viaje_clp: 133_000,
+  total_generador_clp: 833_000,
 };
 
 function wrap(node: ReactNode) {
@@ -25,8 +22,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SeccionComercial (ADR-079 §1)', () => {
-  it('v3 apagado (404): no muestra nada', async () => {
+describe('SeccionComercial (ADR-094 §1 y §3)', () => {
+  it('interruptor apagado (404): no muestra nada', async () => {
     const get = vi
       .spyOn(api, 'get')
       .mockRejectedValue(new ApiError(404, 'pricing_v3_disabled', {}));
@@ -44,9 +41,9 @@ describe('SeccionComercial (ADR-079 §1)', () => {
       desglose: DESGLOSE,
     });
     wrap(<SeccionComercial precioClp={700_000} modalidad="spot" onModalidad={vi.fn()} />);
-    expect(await screen.findByText('$866.600')).toBeInTheDocument();
+    expect(await screen.findByText('$833.000')).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(
-      '/trip-requests-v2/cotizacion?precio_transportista_clp=700000&modalidad_carga=spot',
+      '/trip-requests-v2/cotizacion?precio_viaje_clp=700000&modalidad_carga=spot',
     );
     expect(screen.queryByLabelText('Carga programada')).not.toBeInTheDocument();
   });
@@ -68,12 +65,12 @@ describe('SeccionComercial (ADR-079 §1)', () => {
     const get = vi.spyOn(api, 'get').mockResolvedValue({
       configuracion_version: 3,
       programada_disponible: false,
-      desglose: { ...DESGLOSE, precio_transportista_clp: 0 },
+      desglose: { ...DESGLOSE, precio_viaje_clp: 0, iva_viaje_clp: 0, total_generador_clp: 0 },
     });
     wrap(<SeccionComercial precioClp={null} modalidad="spot" onModalidad={vi.fn()} />);
     expect(await screen.findByText(/Ingresa el precio/)).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(
-      '/trip-requests-v2/cotizacion?precio_transportista_clp=0&modalidad_carga=spot',
+      '/trip-requests-v2/cotizacion?precio_viaje_clp=0&modalidad_carga=spot',
     );
   });
 
@@ -86,13 +83,13 @@ describe('SeccionComercial (ADR-079 §1)', () => {
   });
 });
 
-describe('DesgloseGenerador', () => {
-  it('lista precio del transportista, comisión, IVA y total', () => {
-    render(<DesgloseGenerador desglose={DESGLOSE} />);
+describe('DesgloseViaje', () => {
+  it('lista el precio del viaje, el IVA y el total; nunca la comisión', () => {
+    render(<DesgloseViaje desglose={DESGLOSE} />);
+    expect(screen.getByText('Precio del viaje')).toBeInTheDocument();
     expect(screen.getByText('$700.000')).toBeInTheDocument();
-    expect(screen.getByText(/20 %/)).toBeInTheDocument();
-    expect(screen.getByText('$140.000')).toBeInTheDocument();
-    expect(screen.getByText('$26.600')).toBeInTheDocument();
-    expect(screen.getByText('$866.600')).toBeInTheDocument();
+    expect(screen.getByText('$133.000')).toBeInTheDocument();
+    expect(screen.getByText('$833.000')).toBeInTheDocument();
+    expect(screen.queryByText(/[Cc]omisión/)).not.toBeInTheDocument();
   });
 });
