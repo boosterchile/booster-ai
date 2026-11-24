@@ -73,9 +73,9 @@ Nada de esta sección está en Terraform, igual que en prod.
 1. **App web.** El `apply` deja el proyecto `booster-ai-stg-494222` como proyecto Firebase, sin apps. En la consola de Firebase → Configuración del proyecto → «Tus apps», registra una app web (sin Hosting) y copia su configuración: `apiKey`, `appId`, `messagingSenderId`. El `apiKey` es la «Browser key (auto created by Firebase)».
 2. **Dominio autorizado.** En Authentication → Configuración → «Dominios autorizados», agrega `app.staging.boosterchile.com`. El `apply` solo deja los dos dominios por defecto (`*.firebaseapp.com` y `*.web.app`), y sin este el inicio de sesión por ventana emergente o redirección falla desde la PWA. Terraform ignora esa lista (`authorized_domains` en `ignore_changes`).
 3. **Maps.** Crea una API key restringida al referrer `https://app.staging.boosterchile.com/*` y a las APIs de Maps habilitadas en el proyecto.
-4. **reCAPTCHA y App Check.** Registra una key de reCAPTCHA **v3** (la web usa `ReCaptchaV3Provider`, no Enterprise) con el dominio `app.staging.boosterchile.com` y regístrala en App Check de la app web con su clave secreta.
+4. **reCAPTCHA y App Check.** Firebase ya no deja registrar reCAPTCHA clásico en una app nueva (el campo de la clave secreta aparece deshabilitado), así que staging atestigua con **Fraud Defense** (reCAPTCHA Enterprise): `release-staging.yml` construye la PWA con `VITE_APPCHECK_PROVIDER=recaptcha-enterprise` (`.specs/app-check-fraud-defense/spec.md`). En la consola de reCAPTCHA, registra un sitio basado en puntuación con el dominio `app.staging.boosterchile.com` en el proyecto de staging. En Firebase → App Check → Apps → app web, registra el proveedor «Fraud Defense» con la **clave del sitio**; este proveedor no pide clave secreta. La misma clave del sitio va en `STAGING_VITE_RECAPTCHA_SITE_KEY`. Prod sigue con reCAPTCHA clásico hasta su propia migración: es una diferencia declarada entre los dos entornos.
 
-Hecho en staging el 2026-11-24: pasos 1 a 3. Pendiente del PO: el paso 4.
+Hecho en staging el 2026-11-24: pasos 1 a 3 y la clave de reCAPTCHA del paso 4. Pendiente: registrar el proveedor en App Check y cargar `STAGING_VITE_RECAPTCHA_SITE_KEY`.
 
 ## 6. GitHub
 

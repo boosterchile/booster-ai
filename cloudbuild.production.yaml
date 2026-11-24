@@ -75,6 +75,7 @@ steps:
       - --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
       - --build-arg=VITE_GOOGLE_MAPS_API_KEY=${_VITE_GOOGLE_MAPS_API_KEY}
       - --build-arg=VITE_RECAPTCHA_SITE_KEY=${_VITE_RECAPTCHA_SITE_KEY}
+      - --build-arg=VITE_APPCHECK_PROVIDER=${_VITE_APPCHECK_PROVIDER}
       # ADR-074 — sink de errores client-side. DSN público (misma categoría
       # que las keys Firebase de arriba); release = commit para correlar
       # issue ↔ deploy. DSN vacío = sink deshabilitado (build idéntico al actual).
@@ -133,6 +134,7 @@ steps:
           --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID} \
           --build-arg=VITE_GOOGLE_MAPS_API_KEY=${_VITE_GOOGLE_MAPS_API_KEY} \
           --build-arg=VITE_RECAPTCHA_SITE_KEY=${_VITE_RECAPTCHA_SITE_KEY} \
+          --build-arg=VITE_APPCHECK_PROVIDER=${_VITE_APPCHECK_PROVIDER} \
           --build-arg=VITE_SENTRY_DSN=${_VITE_SENTRY_DSN} \
           --build-arg=VITE_RELEASE=${_COMMIT_SHA} \
           -t web-build-stage .
@@ -1150,6 +1152,12 @@ substitutions:
   # Sin esta substitution, env.ts (VITE_RECAPTCHA_SITE_KEY required) lanza en
   # runtime y la PWA no bootea para ningún usuario.
   _VITE_RECAPTCHA_SITE_KEY: 6Lc5BwotAAAAAM-FUGv52Fg9tSaJPaD_hLFpUsRw
+  # Proveedor de App Check con el que está registrada la app web de prod:
+  # reCAPTCHA v3 clásico. Staging lo pisa con recaptcha-enterprise (Fraud
+  # Defense) desde release-staging.yml, porque Firebase ya no deja registrar el
+  # clásico en apps nuevas. Al migrar prod se cambian juntas esta línea y la
+  # site key de arriba. Ver .specs/app-check-fraud-defense.
+  _VITE_APPCHECK_PROVIDER: recaptcha-v3
 
 images:
   - ${_REGISTRY}/api:${_COMMIT_SHA}

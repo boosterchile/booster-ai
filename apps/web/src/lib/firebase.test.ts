@@ -21,6 +21,10 @@ const reCaptchaV3ProviderMock = vi.fn();
 function ReCaptchaV3ProviderStub(this: Record<string, never>, siteKey: string) {
   reCaptchaV3ProviderMock(siteKey);
 }
+const reCaptchaEnterpriseProviderMock = vi.fn();
+function ReCaptchaEnterpriseProviderStub(this: Record<string, never>, siteKey: string) {
+  reCaptchaEnterpriseProviderMock(siteKey);
+}
 
 vi.mock('firebase/app', () => ({
   initializeApp: initializeAppMock,
@@ -29,6 +33,7 @@ vi.mock('firebase/app', () => ({
 vi.mock('firebase/app-check', () => ({
   initializeAppCheck: initializeAppCheckMock,
   ReCaptchaV3Provider: ReCaptchaV3ProviderStub,
+  ReCaptchaEnterpriseProvider: ReCaptchaEnterpriseProviderStub,
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -48,6 +53,8 @@ beforeEach(() => {
   setCustomParametersMock.mockClear();
   initializeAppCheckMock.mockClear();
   reCaptchaV3ProviderMock.mockClear();
+  reCaptchaEnterpriseProviderMock.mockClear();
+  vi.stubEnv('VITE_APPCHECK_PROVIDER', '');
   // Reset del flag global entre tests (lo setea el bloque DEV de firebase.ts).
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = undefined;
   vi.stubEnv('VITE_USE_AUTH_EMULATOR', 'false');
@@ -101,6 +108,21 @@ describe('lib/firebase', () => {
     const options = initializeAppCheckMock.mock.calls.at(0)?.[1];
     expect(options?.provider).toBeInstanceOf(ReCaptchaV3ProviderStub);
     expect(reCaptchaV3ProviderMock).toHaveBeenCalledWith('test-recaptcha-site-key');
+    expect(reCaptchaEnterpriseProviderMock).not.toHaveBeenCalled();
+  });
+
+  it('con VITE_APPCHECK_PROVIDER=recaptcha-enterprise usa ReCaptchaEnterpriseProvider', async () => {
+    vi.stubEnv('VITE_APPCHECK_PROVIDER', 'recaptcha-enterprise');
+    const mod = await import('./firebase.js');
+    expect(initializeAppCheckMock).toHaveBeenCalledTimes(1);
+    expect(initializeAppCheckMock).toHaveBeenCalledWith(
+      mod.firebaseApp,
+      expect.objectContaining({ isTokenAutoRefreshEnabled: true }),
+    );
+    const options = initializeAppCheckMock.mock.calls.at(0)?.[1];
+    expect(options?.provider).toBeInstanceOf(ReCaptchaEnterpriseProviderStub);
+    expect(reCaptchaEnterpriseProviderMock).toHaveBeenCalledWith('test-recaptcha-site-key');
+    expect(reCaptchaV3ProviderMock).not.toHaveBeenCalled();
   });
 
   it('inicializa App Check ANTES que getAuth', async () => {

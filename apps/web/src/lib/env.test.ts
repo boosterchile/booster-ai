@@ -6,6 +6,32 @@ vi.mock('./logger.js', () => ({ logger: { error: errorMock } }));
 describe('env', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.resetModules();
+    errorMock.mockClear();
+  });
+
+  describe('VITE_APPCHECK_PROVIDER', () => {
+    it('ausente: usa recaptcha-v3, el proveedor de prod', async () => {
+      const { env } = await import('./env.js');
+      expect(env.VITE_APPCHECK_PROVIDER).toBe('recaptcha-v3');
+    });
+
+    it('vacía (build-arg sin valor): usa recaptcha-v3', async () => {
+      vi.stubEnv('VITE_APPCHECK_PROVIDER', '');
+      const { env } = await import('./env.js');
+      expect(env.VITE_APPCHECK_PROVIDER).toBe('recaptcha-v3');
+    });
+
+    it('acepta recaptcha-enterprise', async () => {
+      vi.stubEnv('VITE_APPCHECK_PROVIDER', 'recaptcha-enterprise');
+      const { env } = await import('./env.js');
+      expect(env.VITE_APPCHECK_PROVIDER).toBe('recaptcha-enterprise');
+    });
+
+    it('un valor desconocido hace fallar la configuración', async () => {
+      vi.stubEnv('VITE_APPCHECK_PROVIDER', 'turnstile');
+      await expect(import('./env.js')).rejects.toThrow('Invalid env');
+    });
   });
 
   it('contrato TRK-003: env inválido loguea error.flatten() de zod 3 y lanza', async () => {
