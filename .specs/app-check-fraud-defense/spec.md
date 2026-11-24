@@ -37,7 +37,7 @@ Que la web pueda atestiguar con Fraud Defense (reCAPTCHA Enterprise), eligiendo 
 - [x] Con un valor desconocido, la validación de configuración falla.
 - [x] Rojo exhibido antes de la implementación (dominio de autenticación).
 - [x] Tests, lint, typecheck y build de la web en verde.
-- [ ] **Lo hace el PO o el agente con su visto:** en App Check de `booster-ai-stg-494222`, registrar el proveedor Fraud Defense de la app «Booster PWA (staging)» con la clave del sitio (este proveedor no pide clave secreta).
+- [x] En App Check de `booster-ai-stg-494222`, el proveedor Fraud Defense de la app «Booster PWA (staging)» quedó registrado con la clave del sitio el 2026-11-24 (este proveedor no pide clave secreta). Leído por la API: `recaptchaEnterpriseConfig` con la clave del sitio y vigencia de 1 hora, `recaptchaV3Config` vacío y ningún servicio con aplicación obligatoria. La misma clave está en `STAGING_VITE_RECAPTCHA_SITE_KEY`.
 
 ## Fuera de alcance
 

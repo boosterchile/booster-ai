@@ -75,7 +75,7 @@ Nada de esta sección está en Terraform, igual que en prod.
 3. **Maps.** Crea una API key restringida al referrer `https://app.staging.boosterchile.com/*` y a las APIs de Maps habilitadas en el proyecto.
 4. **reCAPTCHA y App Check.** Firebase ya no deja registrar reCAPTCHA clásico en una app nueva (el campo de la clave secreta aparece deshabilitado), así que staging atestigua con **Fraud Defense** (reCAPTCHA Enterprise): `release-staging.yml` construye la PWA con `VITE_APPCHECK_PROVIDER=recaptcha-enterprise` (`.specs/app-check-fraud-defense/spec.md`). En la consola de reCAPTCHA, registra un sitio basado en puntuación con el dominio `app.staging.boosterchile.com` en el proyecto de staging. En Firebase → App Check → Apps → app web, registra el proveedor «Fraud Defense» con la **clave del sitio**; este proveedor no pide clave secreta. La misma clave del sitio va en `STAGING_VITE_RECAPTCHA_SITE_KEY`. Prod sigue con reCAPTCHA clásico hasta su propia migración: es una diferencia declarada entre los dos entornos.
 
-Hecho en staging el 2026-11-24: pasos 1 a 3 y la clave de reCAPTCHA del paso 4. Pendiente: registrar el proveedor en App Check y cargar `STAGING_VITE_RECAPTCHA_SITE_KEY`.
+Hecho en staging el 2026-11-24: los cuatro pasos, incluida la variable `STAGING_VITE_RECAPTCHA_SITE_KEY`. No se activó la aplicación obligatoria de App Check en ningún servicio.
 
 ## 6. GitHub
 
@@ -128,7 +128,7 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 |---|---|---|
 | Terraform + workflows + este runbook en `main` | Repo | **Listo** |
 | Proyecto `booster-ai-stg-494222`, billing, `apply`, secretos, Firebase | **PO** | Hecho al 2026-11-24, salvo reCAPTCHA v3 y App Check (§5, paso 4) y los secretos distintos de `twilio-account-sid` |
-| Environment GitHub `staging` | **PO** | **Creado el 2026-11-24**, con las variables de WIF, Firebase y Maps. Falta `STAGING_VITE_RECAPTCHA_SITE_KEY` |
+| Environment GitHub `staging` | **PO** | **Creado el 2026-11-24**, con las variables de WIF, Firebase, Maps y reCAPTCHA |
 | Vars repo `STAGING_PROJECT_ID` / `STAGING_API_URL` / `STAGING_URL` | **PO** | `STAGING_API_URL` creada el 2026-11-24. `STAGING_URL` y `STAGING_PROJECT_ID` pendientes a propósito: van al final |
 | Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
 | Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
