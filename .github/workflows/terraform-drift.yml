@@ -76,6 +76,12 @@ jobs:
           # (`RESEND_API_KEY -> null`): falso drift. Si prod vuelve a false, quitar
           # esta línea en el mismo PR que desmonta la key.
           TF_VAR_resend_api_key_ready: "true"
+          # Valor real de prod (default = []). Prod delega `staging.boosterchile.com`
+          # a la zona del proyecto de staging con un registro NS (networking.tf,
+          # ADR-083). Con el default el plan propone borrar ese registro: falso
+          # drift. Son los nameservers de la zona de staging (output
+          # `dns_zone_name_servers` de su state); si esa zona se recrea, cambian.
+          TF_VAR_staging_nameservers: '["ns-cloud-d1.googledomains.com.","ns-cloud-d2.googledomains.com.","ns-cloud-d3.googledomains.com.","ns-cloud-d4.googledomains.com."]'
         run: |
           set +e
           terraform plan -input=false -lock=false -detailed-exitcode -no-color -out=drift.plan 2>&1 | tee plan.out
