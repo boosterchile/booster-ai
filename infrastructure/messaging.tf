@@ -321,6 +321,22 @@ resource "google_pubsub_subscription" "document_uploaded_processor" {
   ]
 }
 
+# Cuenta interna de Pub/Sub (`service-<número>@gcp-sa-pubsub`). GCP no la crea
+# al habilitar la API sino con el primer uso, y los permisos de este archivo que
+# la nombran fallan en el primer apply de un entorno si todavía no existe
+# (arranque de staging, 2026-11-24). Este recurso la pide; si ya existe, la
+# devuelve. Los permisos conservan el `member` escrito con el número de
+# proyecto y solo declaran la dependencia: referenciar el atributo del recurso
+# los haría reemplazarse en un entorno ya creado.
+resource "google_project_service_identity" "pubsub" {
+  provider = google-beta
+
+  project = google_project.booster_ai.project_id
+  service = "pubsub.googleapis.com"
+
+  depends_on = [google_project_service.apis]
+}
+
 # ADR-085 — SA con el que Pub/Sub firma el OIDC del push de
 # `document-uploaded-processor-sub`. Identidad propia y de mínimo privilegio:
 # solo tiene run.invoker sobre booster-ai-document-service, y el worker exige
@@ -343,6 +359,8 @@ resource "google_service_account_iam_member" "pubsub_document_push_token_creator
   service_account_id = google_service_account.document_push_invoker.name
   role               = "roles/iam.serviceAccountOpenIdTokenCreator"
   member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 # Único invoker explícito de document-service (public=false). Acotado al
@@ -368,6 +386,8 @@ resource "google_pubsub_topic_iam_member" "dlq_publisher_pubsub_agent" {
   topic   = google_pubsub_topic.dlq.name
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 resource "google_pubsub_subscription_iam_member" "document_uploaded_dlq_subscriber" {
@@ -375,6 +395,8 @@ resource "google_pubsub_subscription_iam_member" "document_uploaded_dlq_subscrib
   subscription = google_pubsub_subscription.document_uploaded_processor.name
   role         = "roles/pubsub.subscriber"
   member       = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 # Wave 2 — Subscriptions para los 4 topics de eventos AVL eventuales.
@@ -450,6 +472,8 @@ resource "google_service_account_iam_member" "pubsub_safety_push_token_creator" 
   service_account_id = google_service_account.safety_push_invoker.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 # Permitir que el SA invoque booster-ai-api. El api ya es public=true (allUsers

@@ -116,3 +116,36 @@ Dos causas, independientes:
 
 - Que no queden otros bloqueos de arranque después de este. La sesión no puede aplicar; cada uno solo aparece cuando el `apply` del PO llega a ese recurso.
 
+
+## Tropiezos del primer `apply` completo (2026-11-24, corrido por el PO)
+
+Con el defecto 7 resuelto, el `apply` de staging terminó, pero el PO tuvo que intervenir cuatro veces. Ninguna aparece en el plan: son problemas de orden o de recursos que GCP crea por su cuenta, y prod no los sufrió porque su proyecto ya tenía todo eso. Un entorno nuevo los repetiría.
+
+| # | Severidad | Hallazgo | Arreglo |
+|---|---|---|---|
+| 8 | Media (obliga a repetir el `apply`) | Los cinco `google_bigquery_dataset` de `data.tf` no dependen de `google_project_service.apis`: Terraform los crea en paralelo con la habilitación de la API de BigQuery | `depends_on = [google_project_service.apis]` en los cinco |
+| 9 | Media (obliga a un paso manual) | Cuatro permisos de `messaging.tf` nombran la cuenta interna de Pub/Sub (`service-<número>@gcp-sa-pubsub`), que GCP no crea al habilitar la API sino con el primer uso. El PO la creó con `gcloud beta services identity create` | Recurso `google_project_service_identity.pubsub` (proveedor `google-beta`), que pide esa cuenta, y `depends_on` desde los cuatro permisos. El texto del `member` no cambia, para que en prod los permisos no se reemplacen |
+| 10 | Media (obliga a repetir el `apply`) | El permiso de identidad de carga de cert-manager (`wave-3-tls.tf`) nombra el pool `<proyecto>.svc.id.goog`, que solo existe cuando ya hay un clúster de GKE con identidad de carga | `depends_on = [google_container_cluster.telemetry]` |
+| 11 | Media (obliga a un paso manual) | `google_bigquery_table.crash_events` quedó marcada para recrearse y tiene `deletion_protection = true`: el PO hizo `terraform untaint` | Sin cambio propio. **Inferido, no comprobado:** la marca vino de la corrida que falló por el defecto 8 (la tabla vive en el dataset `telemetry`); el error de esa corrida no quedó registrado. Si se repite con el 8 corregido, `untaint` sigue siendo la salida y está en el runbook |
+
+### Entradas
+
+- `infrastructure/data.tf`, `infrastructure/messaging.tf`, `infrastructure/wave-3-tls.tf`. Los tres declaran IAM: editados con permiso del PO dado en el chat el 2026-11-23.
+- El state de staging (los 421 recursos ya creados) y el de prod, solo para `plan`.
+
+### Salidas
+
+- Los tres `.tf` con las dependencias y el recurso nuevo.
+- `docs/runbooks/staging.md` y `docs/handoff/CURRENT.md` al día.
+
+### Criterios de éxito
+
+- [x] `terraform validate` en verde.
+- [x] Plan de staging: solo el alta de `google_project_service_identity.pubsub`, sin cambios ni bajas («Plan: 1 to add, 0 to change, 0 to destroy.», 2026-11-23, America/Santiago).
+- [x] Plan de prod: solo esa misma alta, sin cambios ni bajas («Plan: 1 to add, 0 to change, 0 to destroy.»); en particular, los cuatro permisos de la cuenta de Pub/Sub no se reemplazan.
+- [ ] **Lo aplica el PO:** el alta en prod y en staging. Hasta el `apply` de prod, el Drift Check queda en rojo.
+
+### Sin verificar
+
+- Un `apply` desde cero en un proyecto vacío: es la única prueba real de los arreglos 8, 9 y 10, y no hay un entorno nuevo donde correrla. Lo comprobado es que los planes no rompen lo que ya existe.
+- La causa del tropiezo 11.

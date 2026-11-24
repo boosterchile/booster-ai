@@ -39,6 +39,8 @@ terraform -chdir=infrastructure apply staging.plan
 
 El primer `apply` crea el proyecto, habilita las APIs y levanta la red, Cloud SQL, Redis, Cloud Run (placeholder), Pub/Sub, KMS, buckets, GKE y la zona DNS `staging.boosterchile.com`. Si falla por APIs que todavía se están propagando, repite el `apply`: es idempotente.
 
+El primer `apply` de staging (2026-11-24) tropezó cuatro veces. Tres quedaron corregidas en Terraform, sin probar todavía en un proyecto vacío: los datasets de BigQuery esperan a las APIs, la cuenta interna de Pub/Sub la pide `google_project_service_identity.pubsub`, y el permiso de cert-manager espera al clúster de GKE. La cuarta no tiene arreglo propio: si `google_bigquery_table.crash_events` queda marcada para recrearse tras un `apply` fallido, el siguiente se niega a borrarla (`deletion_protection`); se resuelve con `terraform untaint google_bigquery_table.crash_events`. Detalle en `.specs/staging-preparacion-defectos/spec.md`.
+
 ## 3. Secretos
 
 **Antes del primer deploy** (es decir, antes de crear la variable `STAGING_PROJECT_ID` en GitHub), carga al menos `twilio-account-sid` con un Account SID de prueba (`AC…`). El `apply` lo crea con un placeholder y tres servicios lo validan al arrancar: api, notification-service y whatsapp-bot. El primer `apply` no falla por esto, porque los servicios nacen con una imagen placeholder; el primer deploy real sí.
@@ -123,6 +125,7 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 | Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
 | Permisos de `cursor-agent@` sobre una SA que staging no tiene | Repo | **Resuelta el 2026-11-23**: solo se crean con `environment = "prod"` |
 | El primer `apply` no podía crear el proyecto (era su propio proyecto de cuota) | Repo | **Resuelta el 2026-11-24**: `quota_project_id` durante el arranque |
+| El primer `apply` exigió repetirlo y crear a mano la cuenta interna de Pub/Sub | Repo + **PO** | **Corregido el 2026-11-23** en Terraform (dependencias y `google_project_service_identity.pubsub`); falta el `apply` del alta en prod y en staging |
 | El tfvars de staging montaba los cinco content-sid con placeholder | Repo | **Resuelta el 2026-11-23**: `content_sid_ready = {}` en el ejemplo. Quien ya copió el tfvars debe agregar esa línea |
 | Staging podía leer el state de prod (bucket compartido) | Repo + **PO** | **Resuelta el 2026-11-23**: bucket propio, creado por el `apply` de prod de ese día |
 | Job drift de staging | Repo (después de que exista el entorno) | Pendiente declarado |
