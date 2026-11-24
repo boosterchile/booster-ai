@@ -59,4 +59,4 @@ Solo Task 1 de 13 implementada (columnas opt-in, 0046). NO existen: origin lat/l
 
 ## 9. copy-guide.md
 
-Sin claim central hoy (secciones: Tono, Tuteo, Glosario prohibidas, Mayúsculas, Tipografía, Empty states, Errores, Revisión). Insertar `## Claim central de marca` tras `## Tono general` con "impacta menos, transporta más" + reglas de uso (minúsculas, sin exclamación, coherente con tono actual).
+Sin claim central hoy (secciones: Tono, Tuteo, Glosario prohibidas, Mayúsculas, Tipografía, Empty states, Errores, Revisión). Insertar `## Claim central de marca` tras `## Tono general` con "transporta más, impacta menos" + reglas de uso (minúsculas, sin exclamación, coherente con tono actual).

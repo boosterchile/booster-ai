@@ -4,7 +4,7 @@
 >
 > **Para workers agénticos**: ejecutar con `superpowers:executing-plans` / `superpowers:subagent-driven-development`, tarea por tarea, orden estricto W1→W2→W3→W4→W5→W6. TDD obligatorio en dominio crítico (auth, GLEC, migraciones, matching). CLAUDE.md del repo manda.
 
-**Producto**: Booster AI (`boosterchile/booster-ai`) · **Concepto rector**: "impacta menos, transporta más" · **Sesión**: hoy hasta cierre · **Informe**: mañana.
+**Producto**: Booster AI (`boosterchile/booster-ai`) · **Concepto rector**: "transporta más, impacta menos" · **Sesión**: hoy hasta cierre · **Informe**: mañana.
 
 ## Alcance v4 (decisiones del PO)
 
@@ -29,7 +29,7 @@ Tres candados deliberados (SEC-001 + `.specs/onboarding-flow-redesign/`):
 - **La clase GLEC hoy deriva del vehículo suelto** (`carbon-calculator/glec/factor-carga.ts` mapea el enum → LDV/MDV/HDV) — conceptualmente incorrecto: rígido vs articulado lo define la **configuración**, y de ella dependen los factores de emisión. Corregirlo es dominio crítico GLEC (TDD obligatorio).
 - **El fallback sin Teltonika ya está arquitecturado y parcialmente vivo**: ADR-028 (dual-source: Teltonika = dato primario GLEC §4.4 nivel 1; sin Teltonika = Google Routes API con `vehicleInfo` + `FUEL_CONSUMPTION`, nivel 2 modelado, con `precision_method` de ADR-022 y degradación de certificado); `posiciones_movil_conductor` recibe GPS del navegador del conductor (`apps/web/src/services/driver-position.ts`) y `/flota` ya la usa como fallback; cron de retención 30d spec'd. **No es greenfield: es cablear el inicio-de-viaje a lo existente.**
 - **Conductor**: dashboard propio existe (`conductor.tsx`, "próximo servicio asignado", detalle de asignación). Falta verificar/cerrar la acción explícita **"iniciar viaje"** (transición asignado→en_proceso — el trigger no aparece en las rutas inspeccionadas) con captura de origen/destino, que es el ancla de la medición.
-- **Branding**: "impacta menos, transporta más" **no está** en `docs/copy-guide.md` — incorporarlo como claim central.
+- **Branding**: "transporta más, impacta menos" **no está** en `docs/copy-guide.md` — incorporarlo como claim central.
 
 ## 3. Plan de ejecución (orden estricto)
 
@@ -91,7 +91,7 @@ Taxonomía semilla (validar contra normativa chilena MTT/D.S. 158 pesos y dimens
 
 1. [ ] Localizar/cerrar el trigger de asignado→en_proceso (no aparece en rutas inspeccionadas): acción **"Iniciar viaje"** en la UI del conductor (detalle de asignación), que registra timestamp de inicio, **origen y destino confirmados/definidos por el conductor**, y la **configuración efectiva** (motriz de referencia + arrastre acoplado, editable al iniciar).
 2. [ ] Desde ese instante corre la ventana de medición: **con Teltonika** → telemetría real (nivel primario GLEC, ADR-028); **sin Teltonika** → `driver-position.ts` (ya emite GPS del teléfono a `posiciones_movil_conductor`) + Google Routes API `computeRoutes` con `vehicleInfo`/`FUEL_CONSUMPTION` (nivel secundario modelado, ADR-028/022 con `precision_method` y degradación de certificado ya definidos). El cierre del viaje (entregado) cierra la ventana y dispara el cálculo por viaje.
-3. [ ] Copy del flujo alineado al claim **"impacta menos, transporta más"**; agregarlo a `docs/copy-guide.md` como claim central.
+3. [ ] Copy del flujo alineado al claim **"transporta más, impacta menos"**; agregarlo a `docs/copy-guide.md` como claim central.
 
 **Aceptación W4**: viaje iniciado por conductor sin Teltonika → posiciones móviles fluyen → huella calculada al cierre con `precision_method`=modelado y clase GLEC de la configuración; mismo flujo con Teltonika → nivel primario; capacidad agregada visible en el registro de flota.
 
@@ -104,7 +104,7 @@ Taxonomía semilla (validar contra normativa chilena MTT/D.S. 158 pesos y dimens
 ### W6 — Informe de hito (1.5 h) · P0
 
 - [ ] `docs/corfo/hito-2/informe-hito-2.md`:
-  1. Resumen con el concepto **"impacta menos, transporta más"** como hilo conductor + equivalencia SmartAICargo↔Booster AI (MCIC-IA→matching/pricing; MVST-IoT/BC→telemetría dual-source Teltonika/Maps + trazabilidad documental; MSC-ESG→carbon-calculator GLEC v3 con huella por viaje anclada al inicio del conductor; MGCR→chat SSE + driver-scoring).
+  1. Resumen con el concepto **"transporta más, impacta menos"** como hilo conductor + equivalencia SmartAICargo↔Booster AI (MCIC-IA→matching/pricing; MVST-IoT/BC→telemetría dual-source Teltonika/Maps + trazabilidad documental; MSC-ESG→carbon-calculator GLEC v3 con huella por viaje anclada al inicio del conductor; MGCR→chat SSE + driver-scoring).
   2. Cumplimiento por meta con evidencia (M1 incl. reapertura segura de altas; M2 redefinida: IMEI self-service + 2 sensores + 1 dispositivo real activo del piloto + fallback Maps para flota sin dispositivo).
   3. Resultados parciales de la carta.
   4. Desviaciones (§4).
