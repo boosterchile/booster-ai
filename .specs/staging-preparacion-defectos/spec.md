@@ -172,7 +172,7 @@ Comparación en solo lectura del 2026-11-24: en prod, `github-deployer` tiene ad
 ### Criterios de éxito
 
 - [x] `terraform validate` en verde.
-- [x] Plan de prod: «Plan: 1 to import, 1 to add, 0 to change, 0 to destroy.» El bucket se importa sin cambios y el permiso que se agrega ya existe en prod.
+- [x] Plan de prod: «Plan: 1 to import, 1 to add, 1 to change, 0 to destroy.» El bucket se importa y en el mismo `apply` recibe la configuración de los demás buckets del proyecto, que el creado a mano no tenía y que Trivy exige (GCP-0066, 0077 y 0078): cifrado con la key operacional, versiones, registro de accesos, borrado a los 30 días, acceso público bloqueado y etiquetas. El permiso que se agrega ya existe en prod.
 - [x] Plan de staging: «Plan: 2 to add, 0 to change, 0 to destroy.» (el bucket y el permiso).
 - [ ] **Lo aplica el PO** en staging y en prod. Hasta el `apply` de prod, el Drift Check queda en rojo.
 - [ ] **Lo comprueba el siguiente deploy:** «Trigger Cloud Build (staging)» sube el código y lanza el build.
@@ -181,3 +181,4 @@ Comparación en solo lectura del 2026-11-24: en prod, `github-deployer` tiene ad
 
 - Que `roles/storage.legacyBucketWriter` sobre el bucket más `roles/storage.objectAdmin` de proyecto alcancen para `gcloud builds submit` con `--gcs-source-staging-dir`: en prod la cuenta tiene además `roles/storage.admin`, que podría estar tapando un permiso faltante. Solo lo dirá el siguiente deploy.
 - Los pasos del build y del deploy posteriores a este: nunca han corrido contra staging.
+- Que el release de prod siga subiendo y leyendo las fuentes con el bucket ya cifrado con la key operacional y con versiones. El agente de servicio de Cloud Storage ya tiene permiso sobre esa key (`gcs_encrypter_operational`); se comprueba en el primer release posterior al `apply` de prod.

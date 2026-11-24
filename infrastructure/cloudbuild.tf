@@ -88,16 +88,66 @@ resource "google_compute_global_address" "cloudbuild_pool_range_dr" {
 # bucket no existe y `github-deployer` no puede crearlo ni leerlo.
 #
 # Queda declarado para todos los entornos. En prod se adopta el existente con
-# el bloque `import` de más abajo; su configuración (ubicación y acceso
-# uniforme) coincide con la que tiene hoy, para que el plan no lo modifique.
+# el bloque `import` de más abajo y, en el mismo apply, pasa a tener la
+# configuración del resto de los buckets del proyecto (cifrado, versiones,
+# registro de accesos), que el creado a mano no tenía.
 resource "google_storage_bucket" "cloudbuild_source" {
   name     = "${var.project_id}_cloudbuild"
   project  = google_project.booster_ai.project_id
   location = upper(var.region)
 
   uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
 
-  depends_on = [google_project_service.apis]
+  # Trivy IaC AVD-GCP-0066: cifrado en reposo con la key operacional
+  # compartida. Los tarballs llevan el código fuente completo del repo.
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
+
+  # Trivy IaC AVD-GCP-0078: versiones para recuperar un tarball pisado o
+  # borrado; las reglas de abajo acotan el costo.
+  versioning {
+    enabled = true
+  }
+
+  # Trivy IaC AVD-GCP-0077: accesos al bucket dedicado de logs.
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "cloudbuild-source/"
+  }
+
+  # Cada tarball sirve solo para su build. 30 días cubren reintentos y
+  # diagnóstico de un build fallido sin acumular código indefinidamente.
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      age        = 7
+      with_state = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    purpose    = "cloudbuild-source"
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    google_kms_crypto_key_iam_member.gcs_encrypter_operational,
+  ]
 }
 
 import {
