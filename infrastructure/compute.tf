@@ -7,7 +7,12 @@
 
 locals {
   common_env_vars = {
-    NODE_ENV             = var.environment == "prod" ? "production" : "staging"
+    # "production" en todos los entornos. Staging es gemelo de prod (ADR-083):
+    # varios servicios activan controles solo con NODE_ENV=production (firma
+    # de Twilio, CA de Redis, backend de certificados), y cuatro ni siquiera
+    # arrancan con otro valor que development/production/test. El entorno se
+    # distingue por GOOGLE_CLOUD_PROJECT, no por esta variable.
+    NODE_ENV             = "production"
     LOG_LEVEL            = "info"
     GOOGLE_CLOUD_PROJECT = var.project_id
     SERVICE_VERSION      = "0.0.0"
