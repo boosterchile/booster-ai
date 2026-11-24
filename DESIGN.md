@@ -198,6 +198,15 @@ Booster usa el color con **significado**, no por decoración. Hay tres registros
 - **Ambiental (verde):** reservado para lo relacionado con impacto ambiental y medición de huella. El verde en Booster **significa algo verificado** — a diferencia de la competencia (Fleteretorno) que usa el verde como apariencia sin medición detrás. No lo malgastamos en decoración; cuando aparece, es porque hay sustancia ambiental real.
 - **Producto (propio, customizable):** el registro de la app del mundo autenticado, donde viven el conductor y los operadores. Distinto de los otros dos, y adaptable por el usuario (sección 6).
 
+### 8.1 El verde es marca y acción principal; lo ambiental se marca con sello
+
+Instrucción del Product Owner (2026-11-24). Prevalece sobre la reserva del verde descrita arriba y sobre D-4 en lo que la contradigan.
+
+- **El verde Booster (`primary-600`) es el color de la marca y de la acción principal** en toda la plataforma. El botón principal es verde en todas las superficies, y el `Button` compartido de `ui-components` usa `primary-600`, no el acento.
+- **El dato ambiental no se distingue por color, sino por su sello:** una forma y una palabra («Medido», «Estimado»). El sello es lo que significa "verificado"; un verde sin sello no afirma nada ambiental.
+- **Ningún estado se comunica solo con color.** Todo estado lleva forma y palabra.
+- La customización de la sección 6 no cambia: el usuario adapta su registro; el verde es el valor por defecto.
+
 ---
 
 # PARTE II — SISTEMA TÉCNICO-OPERATIVO
@@ -269,6 +278,7 @@ Viewport notch-aware (viewport-fit=cover); tokens de breakpoint mobile-first; us
 | D-15 | El eje conductor/operador **no es universal**: solo las 5 duales (Button, Card, Input, Modal, Toast) lo llevan; las operador-first (DataTable, Tabs, Dropdown, Select) no tienen "modo conductor"; las semántico-compartidas (Badge, estados) son fijas | El esfuerzo de registro se concentra en 5 duales, no se dispersa en las 11 (ver 4.5) |
 | D-16 | Las primitivas de `ui-components` son **tontas** (token-driven, sin personalidad); los momentos humanos son **capa separada**: primitiva → componente-de-momento → contenido → adaptador de canal | La personalidad no se hornea en la primitiva; el split voz/UI y el contenido viven en un solo lugar, no repetidos por componente |
 | D-17 | **React Aria** (`react-aria-components`, headless puro) para el comportamiento accesible de los componentes difíciles (Modal, Dropdown, Select, Tabs); primitivas simples a mano con tokens | A11y real sin reinventar la rueda difícil; cero estilos de terceros (no shadcn/Radix); apariencia 100% por tokens |
+| D-18 | El verde `primary-600` es marca y acción principal en toda la plataforma; lo ambiental se distingue por sello (forma + palabra), no por color. Prevalece sobre D-4 y la sección 8 en lo que contradigan (ver 8.1) | `Button` compartido pasa de acento a `primary-600`; sello «Medido»/«Estimado» como componente semántico fijo |
 
 ## Trabajo pendiente por fase
 
