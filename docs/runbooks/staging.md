@@ -68,7 +68,14 @@ El registro DS de DNSSEC para el subdominio es opcional: sin él, la zona de sta
 
 ## 5. Firebase / Identity Platform
 
-En la consola de Firebase, agrega el proyecto `booster-ai-stg-494222`, crea la app web y copia su configuración (`apiKey`, `appId`, `messagingSenderId`). Registra una key de reCAPTCHA v3 para App Check con el dominio `app.staging.boosterchile.com`. Crea también una API key de Maps restringida a ese mismo dominio.
+Nada de esta sección está en Terraform, igual que en prod.
+
+1. **App web.** El `apply` deja el proyecto `booster-ai-stg-494222` como proyecto Firebase, sin apps. En la consola de Firebase → Configuración del proyecto → «Tus apps», registra una app web (sin Hosting) y copia su configuración: `apiKey`, `appId`, `messagingSenderId`. El `apiKey` es la «Browser key (auto created by Firebase)».
+2. **Dominio autorizado.** En Authentication → Configuración → «Dominios autorizados», agrega `app.staging.boosterchile.com`. El `apply` solo deja los dos dominios por defecto (`*.firebaseapp.com` y `*.web.app`), y sin este el inicio de sesión por ventana emergente o redirección falla desde la PWA. Terraform ignora esa lista (`authorized_domains` en `ignore_changes`).
+3. **Maps.** Crea una API key restringida al referrer `https://app.staging.boosterchile.com/*` y a las APIs de Maps habilitadas en el proyecto.
+4. **reCAPTCHA y App Check.** Registra una key de reCAPTCHA **v3** (la web usa `ReCaptchaV3Provider`, no Enterprise) con el dominio `app.staging.boosterchile.com` y regístrala en App Check de la app web con su clave secreta.
+
+Hecho en staging el 2026-11-24: pasos 1 a 3. Pendiente del PO: el paso 4.
 
 ## 6. GitHub
 
@@ -118,7 +125,7 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 | Ítem | Quién | Estado |
 |---|---|---|
 | Terraform + workflows + este runbook en `main` | Repo | **Listo** |
-| Proyecto `booster-ai-stg-494222`, billing, `apply`, secretos, Firebase | **PO** | Pendiente |
+| Proyecto `booster-ai-stg-494222`, billing, `apply`, secretos, Firebase | **PO** | Hecho al 2026-11-24, salvo reCAPTCHA v3 y App Check (§5, paso 4) y los secretos distintos de `twilio-account-sid` |
 | Environment GitHub `staging` (hoy solo existe `production`) | **PO** | Pendiente — créalo antes de cargar las vars de §6 |
 | Vars repo `STAGING_PROJECT_ID` / `STAGING_API_URL` / `STAGING_URL` | **PO** | Pendiente — sin `STAGING_PROJECT_ID`, `release-staging.yml` se salta |
 | Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
