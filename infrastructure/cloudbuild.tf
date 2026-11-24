@@ -77,3 +77,40 @@ resource "google_compute_global_address" "cloudbuild_pool_range_dr" {
   prefix_length = 24
   network       = google_compute_network.vpc.id
 }
+
+# =============================================================================
+# Bucket de fuentes de Cloud Build (`<proyecto>_cloudbuild`)
+# =============================================================================
+# `gcloud builds submit` sube el código a este bucket antes de construir. En
+# prod se creó a mano el 2026-04-24, igual que el permiso de la cuenta de
+# deploy sobre él; por eso el primer deploy de staging (2026-11-24) falló con
+# «The user is forbidden from accessing the bucket»: en un proyecto nuevo el
+# bucket no existe y `github-deployer` no puede crearlo ni leerlo.
+#
+# Queda declarado para todos los entornos. En prod se adopta el existente con
+# el bloque `import` de más abajo; su configuración (ubicación y acceso
+# uniforme) coincide con la que tiene hoy, para que el plan no lo modifique.
+resource "google_storage_bucket" "cloudbuild_source" {
+  name     = "${var.project_id}_cloudbuild"
+  project  = google_project.booster_ai.project_id
+  location = upper(var.region)
+
+  uniform_bucket_level_access = true
+
+  depends_on = [google_project_service.apis]
+}
+
+import {
+  for_each = var.environment == "prod" ? toset(["existente"]) : toset([])
+  to       = google_storage_bucket.cloudbuild_source
+  id       = "${var.project_id}_cloudbuild"
+}
+
+# `gcloud builds submit` consulta el bucket antes de subir (storage.buckets.get),
+# permiso que `roles/storage.objectAdmin` de proyecto no trae. Acotado a este
+# bucket: es el mismo rol que la cuenta ya tiene en prod.
+resource "google_storage_bucket_iam_member" "cloudbuild_source_deployer" {
+  bucket = google_storage_bucket.cloudbuild_source.name
+  role   = "roles/storage.legacyBucketWriter"
+  member = "serviceAccount:${google_service_account.github_deployer.email}"
+}

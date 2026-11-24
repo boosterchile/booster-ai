@@ -149,3 +149,35 @@ Con el defecto 7 resuelto, el `apply` de staging terminó, pero el PO tuvo que i
 
 - Un `apply` desde cero en un proyecto vacío: es la única prueba real de los arreglos 8, 9 y 10, y no hay un entorno nuevo donde correrla. Lo comprobado es que los planes no rompen lo que ya existe.
 - La causa del tropiezo 11.
+
+## Primer deploy de staging (2026-11-24, lanzado por el PO)
+
+Con `STAGING_PROJECT_ID` creada, «Deploy staging» corrió por primera vez ([45328113870](https://github.com/boosterchile/booster-ai/actions/runs/45328113870)). Pasó el control de CI y la autenticación por WIF, y falló en «Trigger Cloud Build (staging)»:
+
+```
+ERROR: (gcloud.builds.submit) The user is forbidden from accessing the bucket [booster-ai-stg-494222_cloudbuild].
+```
+
+| # | Severidad | Hallazgo | Arreglo |
+|---|---|---|---|
+| 12 | Alta (bloquea todo deploy) | `gcloud builds submit` sube el código al bucket `<proyecto>_cloudbuild`. En prod ese bucket y el permiso de `github-deployer` sobre él se crearon a mano el 2026-04-24 y no están en Terraform; en staging no existen, y la cuenta de deploy no puede crear el bucket ni consultarlo | `google_storage_bucket.cloudbuild_source` y `google_storage_bucket_iam_member.cloudbuild_source_deployer` (`roles/storage.legacyBucketWriter`, acotado al bucket) en `cloudbuild.tf`. En prod el bucket existente se adopta con un bloque `import`. `release-staging.yml` pasa `--gcs-source-staging-dir` con ese bucket |
+
+Comparación en solo lectura del 2026-11-24: en prod, `github-deployer` tiene además `roles/storage.admin` y `roles/serviceusage.serviceUsageAdmin` a nivel de proyecto, que Terraform no declara. No se tocan aquí.
+
+### Entradas
+
+- `infrastructure/cloudbuild.tf`, que pasa a declarar IAM: editado con permiso del PO dado en el chat el 2026-11-24.
+- `.github/workflows/release-staging.yml`.
+
+### Criterios de éxito
+
+- [x] `terraform validate` en verde.
+- [x] Plan de prod: «Plan: 1 to import, 1 to add, 0 to change, 0 to destroy.» El bucket se importa sin cambios y el permiso que se agrega ya existe en prod.
+- [x] Plan de staging: «Plan: 2 to add, 0 to change, 0 to destroy.» (el bucket y el permiso).
+- [ ] **Lo aplica el PO** en staging y en prod. Hasta el `apply` de prod, el Drift Check queda en rojo.
+- [ ] **Lo comprueba el siguiente deploy:** «Trigger Cloud Build (staging)» sube el código y lanza el build.
+
+### Sin verificar
+
+- Que `roles/storage.legacyBucketWriter` sobre el bucket más `roles/storage.objectAdmin` de proyecto alcancen para `gcloud builds submit` con `--gcs-source-staging-dir`: en prod la cuenta tiene además `roles/storage.admin`, que podría estar tapando un permiso faltante. Solo lo dirá el siguiente deploy.
+- Los pasos del build y del deploy posteriores a este: nunca han corrido contra staging.

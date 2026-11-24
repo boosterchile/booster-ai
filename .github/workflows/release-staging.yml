@@ -131,7 +131,11 @@ jobs:
           # Staging atestigua con Fraud Defense: Firebase ya no deja registrar
           # reCAPTCHA clásico en apps nuevas (.specs/app-check-fraud-defense).
           subs+=",_VITE_APPCHECK_PROVIDER=recaptcha-enterprise"
+          # Bucket de fuentes explícito (lo crea Terraform, cloudbuild.tf). Con el
+          # bucket por defecto, gcloud además lista los buckets del proyecto para
+          # comprobar a quién pertenece, y la cuenta de deploy no tiene ese permiso.
           gcloud builds submit --config=cloudbuild.staging.generated.yaml \
+            --gcs-source-staging-dir="gs://${STAGING_PROJECT_ID}_cloudbuild/source" \
             --project="${STAGING_PROJECT_ID}" --region=${{ env.GCP_REGION }} \
             --substitutions="${subs}"
 
