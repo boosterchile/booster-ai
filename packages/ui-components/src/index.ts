@@ -20,6 +20,11 @@ export { Button, type ButtonProps, type ButtonVariant } from './button.js';
 export { Card, CardBody, CardFooter, CardHeader, type CardProps } from './card.js';
 export { Input, type InputProps } from './input.js';
 export {
+  MeasurementSeal,
+  type MeasurementSealKind,
+  type MeasurementSealProps,
+} from './measurement-seal.js';
+export {
   ToastProvider,
   type ToastOptions,
   type ToastSeverity,

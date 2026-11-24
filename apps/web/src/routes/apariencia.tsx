@@ -6,6 +6,7 @@ import {
   CardFooter,
   CardHeader,
   Input,
+  MeasurementSeal,
   Modal,
   RegisterProvider,
   ToastProvider,
@@ -228,8 +229,9 @@ export function AparienciaRoute() {
               </span>
             </div>
 
-            {/* Primitivas D2 Ola 1: responden al registro (tamaño) y al acento
-                (el primary del Button). El Toast va en su propio provider. */}
+            {/* Primitivas D2 Ola 1: responden al registro (tamaño). El primary
+                del Button es verde Booster y no cambia con el acento (D-18).
+                El Toast va en su propio provider. */}
             <ToastProvider>
               <PrimitivasDemo />
             </ToastProvider>
@@ -260,6 +262,10 @@ function PrimitivasDemo() {
         <Badge variant="warning">Pendiente</Badge>
         <Badge variant="info">En ruta</Badge>
         <Badge variant="neutral">Borrador</Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <MeasurementSeal kind="measured" />
+        <MeasurementSeal kind="estimated" />
       </div>
       <Card className="max-w-sm">
         <CardHeader>Carga #1234</CardHeader>
