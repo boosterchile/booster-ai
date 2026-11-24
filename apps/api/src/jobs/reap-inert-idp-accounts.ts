@@ -42,6 +42,7 @@ import {
   isReapable,
   normalizeReaperEmail,
 } from '../services/reaper-predicate.js';
+import { esEjecucionDirecta } from './ejecucion-directa.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -327,8 +328,9 @@ async function main(): Promise<void> {
   }
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
-if (isMain) {
+// Solo al ejecutar este archivo a mano. Importado desde el api va dentro de
+// dist/main.js y no debe correr al arrancar (ver ejecucion-directa.ts).
+if (esEjecucionDirecta(import.meta.url, process.argv[1], 'reap-inert-idp-accounts')) {
   main().catch((err) => {
     process.stderr.write(`[reap-inert-idp-accounts] failed: ${String(err)}\n`);
     process.exit(1);
