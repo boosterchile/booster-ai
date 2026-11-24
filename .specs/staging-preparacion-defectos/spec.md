@@ -182,3 +182,28 @@ Comparación en solo lectura del 2026-11-24: en prod, `github-deployer` tiene ad
 - Que `roles/storage.legacyBucketWriter` sobre el bucket más `roles/storage.objectAdmin` de proyecto alcancen para `gcloud builds submit` con `--gcs-source-staging-dir`: en prod la cuenta tiene además `roles/storage.admin`, que podría estar tapando un permiso faltante. Solo lo dirá el siguiente deploy.
 - Los pasos del build y del deploy posteriores a este: nunca han corrido contra staging.
 - Que el release de prod siga subiendo y leyendo las fuentes con el bucket ya cifrado con la key operacional y con versiones. El agente de servicio de Cloud Storage ya tiene permiso sobre esa key (`gcs_encrypter_operational`); se comprueba en el primer release posterior al `apply` de prod.
+
+## Segundo deploy de staging (2026-11-24)
+
+Con el bucket del hallazgo 12 aplicado, la corrida [45387379255](https://github.com/boosterchile/booster-ai/actions/runs/45387379255) subió el código, construyó las nueve imágenes y falló en `deploy-sms-fallback-gateway`: la revisión nueva no pasó el chequeo de arranque.
+
+```
+Invalid option: expected one of "development"|"production"|"test"   (path: NODE_ENV)
+Invalid environment configuration. Refusing to start.
+```
+
+| # | Severidad | Hallazgo | Arreglo |
+|---|---|---|---|
+| 13 | Alta (bloquea todo deploy) | `compute.tf` fijaba `NODE_ENV=staging` fuera de prod. Cuatro servicios solo aceptan `development`, `production` o `test` (sms-fallback-gateway, document-service, telemetry-processor, telemetry-tcp-gateway) y no arrancan. Además, ocho puntos del código activan controles solo con `production`: firma de Twilio, CA de Redis, invariantes del backend de certificados y de la configuración de GCP, y el valor por defecto de `PRICING_V2_ACTIVATED` | `NODE_ENV=production` en todos los entornos. Decisión del PO en el chat el 2026-11-24: staging es gemelo de prod (ADR-083) y debe correr con los mismos controles. El entorno se distingue por `GOOGLE_CLOUD_PROJECT` |
+
+### Criterios de éxito
+
+- [x] `terraform validate` en verde.
+- [x] Plan de prod: «No changes. Your infrastructure matches the configuration.»
+- [x] Plan de staging: «Plan: 0 to add, 7 to change, 0 to destroy.» Los siete servicios de Cloud Run con variables comunes cambian solo `NODE_ENV`, de `staging` a `production`.
+- [ ] **Lo aplica el PO** en staging.
+- [ ] **Lo comprueba el siguiente deploy:** los servicios arrancan.
+
+### Sin verificar
+
+- Que con `NODE_ENV=production` no aparezcan otras exigencias de configuración que staging todavía no cumple (por ejemplo, las invariantes de arranque del api). Solo lo dirá el siguiente deploy.
