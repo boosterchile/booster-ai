@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `267e7e0e` (Release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100) SUCCESS, terminó el 2026-11-23 a las 22:35Z; lleva #1053; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00496-n8c` y web `00438-gz7`). Releases anteriores del mismo día: `adb83021` ([45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475), #1049, solo web), `fdc43f11` (45245572913, #1047 y la migración 0089) y `52da4c1b` ([45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923), migración 0088 y #748, #1036, #1037, #1039). El anterior fue el del 2026-11-20 (`93f084f1`).  
-**`main`**: tip `ff3a3915` (#1061), igual a prod salvo documentación, Terraform y el workflow de staging. Nada de código pendiente de deploy ni de `apply` de prod.
+**`main`**: tip `522026a8` (#1064), igual a prod salvo documentación, Terraform y el workflow de staging. Nada de código pendiente de deploy. Pendiente de `apply` en prod y en staging: el alta `google_project_service_identity.pubsub` de #1064.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,7 +32,7 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `ff3a3915` | Igual a prod salvo documentación, Terraform y el workflow de staging |
+| `main` | `522026a8` | Igual a prod salvo documentación, Terraform y el workflow de staging |
 | Prod | `267e7e0e` | Release 45273910100; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00496-n8c` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -61,7 +61,8 @@ Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura).
 **Infraestructura creada el 2026-11-24 (UTC); todavía no sirve tráfico.** El PO corrió el `terraform apply` de staging ([ADR-083](../adr/083-staging-gemelo-y-extraccion-con-shadow.md)): el proyecto `booster-ai-stg-494222` existe y los 421 recursos del plan están en su state (bucket propio `booster-ai-tfstate-stg-494222`, prefijo `terraform/staging`). Comprobado comparando el state con el plan; el agente no tiene acceso al proyecto y no vio los servicios respondiendo. Detalle y hallazgos: `.specs/staging-preparacion-defectos/spec.md`; runbook: `docs/runbooks/staging.md`.
 
 - **Se sostiene sin el proyecto de cuota prestado** (2026-11-23, America/Santiago, desde el Mac del PO sobre `61f77537`): quitada la línea `quota_project_id` del `terraform.tfvars` local, `terraform plan` contra el state de staging terminó con «No changes. Your infrastructure matches the configuration.», sin errores de API ni avisos. El backend local volvió a prod (`booster-ai-tfstate-494222` / `terraform/state`).
-- **Falta, en este orden (PO):** cargar `twilio-account-sid` de prueba; el `apply` de prod que agrega el registro NS de `staging.boosterchile.com`; Firebase, Maps y reCAPTCHA del proyecto nuevo; el Environment `staging` y las variables de GitHub (`STAGING_API_URL` para el API, `STAGING_URL` para la PWA). `STAGING_PROJECT_ID` va al final: enciende el deploy automático.
+- **Secreto `twilio-account-sid` cargado** (2026-11-24 01:11Z, por el PO): versión 2 habilitada con el Account SID de prueba de Twilio; la versión 1, el placeholder del `apply`, sigue habilitada. Comprobado listando las versiones, sin leer el valor.
+- **Falta, en este orden (PO):** el `apply` de prod que agrega el registro NS de `staging.boosterchile.com`; Firebase, Maps y reCAPTCHA del proyecto nuevo; el Environment `staging` y las variables de GitHub (`STAGING_API_URL` para el API, `STAGING_URL` para la PWA). `STAGING_PROJECT_ID` va al final: enciende el deploy automático.
 - **Hasta entonces** «Deploy staging» se sigue omitiendo en cada push a `main` y lo que entra a `main` se prueba por primera vez en prod.
 - **Arreglos de la preparación (2026-11-23/24):** host de Cloud Armor y permisos de `cursor-agent@` solo en prod (#1050); bucket de state propio, porque el de prod guarda la contraseña de la base (#1057); content-sid sin montar (#1059); proyecto de cuota para el arranque (#1060).
 - **Tropiezos del primer `apply`, corregidos en Terraform (pendiente de `apply`):** los datasets de BigQuery esperan a las APIs, la cuenta interna de Pub/Sub la pide `google_project_service_identity.pubsub` y el permiso de cert-manager espera al clúster. Los planes de prod y de staging muestran solo esa alta («Plan: 1 to add, 0 to change, 0 to destroy.»); el Drift Check queda en rojo hasta el `apply` de prod. Sin probar en un proyecto vacío. El `terraform untaint` de `google_bigquery_table.crash_events` queda como paso del runbook: su causa no quedó registrada.
