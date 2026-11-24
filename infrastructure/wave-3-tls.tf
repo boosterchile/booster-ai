@@ -89,6 +89,11 @@ resource "google_service_account_iam_member" "cert_manager_workload_identity_pri
   service_account_id = google_service_account.cert_manager_cloud_dns.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${google_project.booster_ai.project_id}.svc.id.goog[cert-manager/cert-manager]"
+
+  # El pool `<proyecto>.svc.id.goog` existe recién cuando hay un clúster de GKE
+  # con identidad de carga; sin esta dependencia el primer apply de un entorno
+  # falla aquí y hay que repetirlo.
+  depends_on = [google_container_cluster.telemetry]
 }
 
 # =============================================================================

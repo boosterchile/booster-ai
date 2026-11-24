@@ -379,6 +379,10 @@ resource "google_bigquery_dataset" "telemetry" {
     env        = var.environment
     managed_by = "terraform"
   }
+
+  # Sin esto el primer apply de un entorno los crea antes de que la API de
+  # BigQuery termine de habilitarse (tropiezo del arranque de staging).
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_bigquery_dataset" "esg_analytics" {
@@ -391,6 +395,10 @@ resource "google_bigquery_dataset" "esg_analytics" {
     env        = var.environment
     managed_by = "terraform"
   }
+
+  # Sin esto el primer apply de un entorno los crea antes de que la API de
+  # BigQuery termine de habilitarse (tropiezo del arranque de staging).
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_bigquery_dataset" "matching" {
@@ -403,6 +411,10 @@ resource "google_bigquery_dataset" "matching" {
     env        = var.environment
     managed_by = "terraform"
   }
+
+  # Sin esto el primer apply de un entorno los crea antes de que la API de
+  # BigQuery termine de habilitarse (tropiezo del arranque de staging).
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_bigquery_dataset" "observatory" {
@@ -415,6 +427,10 @@ resource "google_bigquery_dataset" "observatory" {
     env        = var.environment
     managed_by = "terraform"
   }
+
+  # Sin esto el primer apply de un entorno los crea antes de que la API de
+  # BigQuery termine de habilitarse (tropiezo del arranque de staging).
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_bigquery_dataset" "audit" {
@@ -427,6 +443,10 @@ resource "google_bigquery_dataset" "audit" {
     env        = var.environment
     managed_by = "terraform"
   }
+
+  # Sin esto el primer apply de un entorno los crea antes de que la API de
+  # BigQuery termine de habilitarse (tropiezo del arranque de staging).
+  depends_on = [google_project_service.apis]
 }
 
 # =============================================================================
