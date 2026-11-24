@@ -186,6 +186,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -288,7 +289,11 @@ describe('BoosterFleetRoute', () => {
     expect(screen.queryByText('77,7')).not.toBeInTheDocument();
   });
 
-  it('si la lectura nueva falla conserva las cifras y dice de qué hora son', async () => {
+  // El reloj va fijo: con el reloj real, una lectura de «hace 20 minutos» cae
+  // en el día anterior entre las 00:00 y las 00:20 de Santiago y el texto cambia.
+  const lecturaGuardadaQueNoSeActualiza = (ahora: string) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(ahora));
     const guardada = panel();
     guardada.combustible.leido_en = new Date(Date.now() - 20 * 60_000).toISOString();
     guardada.combustible.al_dia = false;
@@ -300,12 +305,27 @@ describe('BoosterFleetRoute', () => {
     );
     providedContext = { kind: 'onboarded', me: me() };
     wrap(<BoosterFleetRoute />);
+  };
+
+  it('si la lectura nueva falla conserva las cifras y dice de qué hora son', async () => {
+    // 12:00 en Santiago: la lectura guardada es de las 11:40 del mismo día.
+    lecturaGuardadaQueNoSeActualiza('2026-11-18T15:00:00Z');
 
     expect(
-      await screen.findByText(/No se pudo actualizar\. Estas cifras son de las \d\d:\d\d\./),
+      await screen.findByText('No se pudo actualizar. Estas cifras son de las 11:40.'),
     ).toBeInTheDocument();
     expect(screen.getByText('77,7')).toBeInTheDocument();
     expect(screen.queryByText(/actualizando…/)).not.toBeInTheDocument();
+  });
+
+  it('si la lectura que conserva es del día anterior, dice también la fecha', async () => {
+    // 00:06 en Santiago: la lectura guardada es de las 23:46 del día anterior.
+    lecturaGuardadaQueNoSeActualiza('2026-11-24T03:06:00Z');
+
+    expect(
+      await screen.findByText('No se pudo actualizar. Estas cifras son del lun 23 nov, 23:46.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('77,7')).toBeInTheDocument();
   });
 
   it('un despachador ve que el control es del dueño', () => {
