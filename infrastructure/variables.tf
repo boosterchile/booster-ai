@@ -648,6 +648,12 @@ variable "content_sid_ready" {
 # -----------------------------------------------------------------------------
 # Entornos (ADR-083): staging es un proyecto gemelo con este mismo root module.
 # -----------------------------------------------------------------------------
+variable "quota_project_id" {
+  description = "Proyecto de cuota para las llamadas del proveedor. null = el propio proyecto (var.project_id). Solo se fija en el primer apply de un entorno nuevo, cuando su proyecto aún no existe; después se quita."
+  type        = string
+  default     = null
+}
+
 variable "tfstate_bucket" {
   description = "Bucket GCS del state remoto (backend). El SA de drift lo lee."
   type        = string

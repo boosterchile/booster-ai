@@ -86,3 +86,33 @@ El chequeo `check-validated-secret-placeholders.mjs` sobre ese plan falló y des
 
 - El `apply`. Un plan limpio no garantiza que GCP acepte las 421 altas: disponibilidad del ID del proyecto, cuotas, políticas de la organización y propagación de APIs solo se ven al aplicar.
 
+## Primer `apply` de staging (2026-11-23, corrido por el PO)
+
+Creó cuatro recursos `random_*` en el state y se detuvo en `google_project.booster_ai`:
+
+```
+Error: failed pre-requisites: failed to check permissions on billing account
+"billingAccounts/XXXXXX-XXXXXX-XXXXXX": googleapi: Error 400:
+Project 'projects/booster-ai-stg-494222' not found or deleted.
+  "service": "cloudbilling.googleapis.com", "reason": "USER_PROJECT_DENIED"
+```
+
+Dos causas, independientes:
+
+1. El `terraform.tfvars` local seguía con el `billing_account` de relleno. Es del PO.
+2. **Defecto 7.** `versions.tf` fija `billing_project = var.project_id` con `user_project_override = true`: cada llamada se factura contra el proyecto del entorno. En el primer `apply` ese proyecto no existe, así que la primera llamada falla aunque el `billing_account` sea correcto. El plan no lo detecta porque no hace esa llamada. Prod no lo sufrió porque su proyecto ya existía.
+
+| # | Severidad | Hallazgo | Arreglo |
+|---|---|---|---|
+| 7 | Alta (bloquea el primer `apply`) | El proveedor usa como proyecto de cuota el proyecto que el mismo `apply` tiene que crear | Variable `quota_project_id` (por defecto `null`, es decir el propio proyecto). El tfvars de staging la fija en `booster-ai-494222` durante el arranque; se quita al terminar el primer `apply` |
+
+### Criterios de éxito
+
+- [ ] `terraform validate` en verde y el plan de staging sigue en solo altas.
+- [ ] En prod, `quota_project_id` queda en `null`: la configuración del proveedor no cambia y el plan no muestra diferencias.
+- [ ] **Lo verifica el PO:** el `apply` de staging pasa de `google_project.booster_ai`.
+
+### Sin verificar
+
+- Que no queden otros bloqueos de arranque después de este. La sesión no puede aplicar; cada uno solo aparece cuando el `apply` del PO llega a ese recurso.
+

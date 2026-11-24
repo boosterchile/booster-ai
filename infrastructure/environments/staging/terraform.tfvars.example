@@ -20,6 +20,12 @@ zone        = "southamerica-west1-a"
 billing_account = "XXXXXX-XXXXXX-XXXXXX"
 organization_id = "435506363892"
 
+# ARRANQUE: en el primer apply el proyecto de staging no existe y no puede ser
+# su propio proyecto de cuota. Mientras dure el arranque, las llamadas se
+# facturan contra prod, que ya tiene habilitadas las mismas APIs. Quita esta
+# línea cuando el primer apply termine completo (docs/runbooks/staging.md §2).
+quota_project_id = "booster-ai-494222"
+
 # --- Identidad humana / GitHub (WIF propio del proyecto de staging) ---
 human_owners      = ["user:dev@boosterchile.com"]
 github_repository = "boosterchile/booster-ai"
