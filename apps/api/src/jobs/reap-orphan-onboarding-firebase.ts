@@ -40,6 +40,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import pg from 'pg';
 import { config as appConfig } from '../config.js';
+import { esEjecucionDirecta } from './ejecucion-directa.js';
 
 /** Default del cap de borrados por corrida (acota blast radius de false-positive). */
 export const DEFAULT_ORPHAN_MAX_DELETES_PER_RUN = 50;
@@ -238,8 +239,9 @@ async function main(): Promise<void> {
   }
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
-if (isMain) {
+// Solo al ejecutar este archivo a mano. Importado desde el api va dentro de
+// dist/main.js y no debe correr al arrancar (ver ejecucion-directa.ts).
+if (esEjecucionDirecta(import.meta.url, process.argv[1], 'reap-orphan-onboarding-firebase')) {
   main().catch((err) => {
     process.stderr.write(`[reap-orphan-onboarding-firebase] failed: ${String(err)}\n`);
     process.exit(1);
