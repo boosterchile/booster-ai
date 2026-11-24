@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
 **Prod**: `267e7e0e` (Release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100) SUCCESS, terminó el 2026-11-23 a las 22:35Z; lleva #1053; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00496-n8c` y web `00438-gz7`). Releases anteriores del mismo día: `adb83021` ([45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475), #1049, solo web), `fdc43f11` (45245572913, #1047 y la migración 0089) y `52da4c1b` ([45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923), migración 0088 y #748, #1036, #1037, #1039). El anterior fue el del 2026-11-20 (`93f084f1`).  
-**`main`**: tip `b294092c` (#1057), igual a prod salvo documentación, Terraform y el workflow de staging. Nada de código pendiente de deploy ni de `apply`.
+**`main`**: tip `61f77537` (#1060), igual a prod salvo documentación, Terraform y el workflow de staging. Nada de código pendiente de deploy ni de `apply` de prod.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,7 +32,7 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `b294092c` | Igual a prod salvo documentación, Terraform y el workflow de staging |
+| `main` | `61f77537` | Igual a prod salvo documentación, Terraform y el workflow de staging |
 | Prod | `267e7e0e` | Release 45273910100; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00496-n8c` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
@@ -58,15 +58,13 @@ Migración **0085**: aplicada y verificada en prod el 2026-11-16 (solo lectura).
 
 ## Staging
 
-**No existe** (revisado el 2026-11-17, solo lectura). Lo que pide [ADR-083](../adr/083-staging-gemelo-y-extraccion-con-shadow.md) está sin crear:
+**Infraestructura creada el 2026-11-24 (UTC); todavía no sirve tráfico.** El PO corrió el `terraform apply` de staging ([ADR-083](../adr/083-staging-gemelo-y-extraccion-con-shadow.md)): el proyecto `booster-ai-stg-494222` existe y los 421 recursos del plan están en su state (bucket propio `booster-ai-tfstate-stg-494222`, prefijo `terraform/staging`). Comprobado comparando el state con el plan; el agente no tiene acceso al proyecto y no vio los servicios respondiendo. Detalle y hallazgos: `.specs/staging-preparacion-defectos/spec.md`; runbook: `docs/runbooks/staging.md`.
 
-- El proyecto `booster-ai-stg-494222` no aparece entre los proyectos visibles para la cuenta del PO; no se descarta uno creado bajo otra cuenta.
-- `staging.boosterchile.com` no tiene delegación NS y `api.staging.boosterchile.com` no resuelve.
-- El repo no tiene entorno `staging` en GitHub ni ninguna variable `STAGING_*`.
-- «Deploy staging» corre en cada push a `main` y se omite siempre (sus últimos 100 runs): el job exige la variable `STAGING_PROJECT_ID`. BARH-23/24 llegaron a prod sin pasar por staging.
-- El 2026-11-23 se corrigieron tres defectos de la preparación que habrían roto el primer `apply` o el primer deploy (`.specs/staging-preparacion-defectos/spec.md`). GitHub pide ahora dos variables: `STAGING_API_URL` (API) y `STAGING_URL` (PWA).
-- Revisión de seguridad del 2026-11-23 ([#1057](https://github.com/boosterchile/booster-ai/pull/1057)): con el bucket de state compartido, staging habría podido leer la contraseña de la base de prod. Staging tiene ahora bucket propio, `booster-ai-tfstate-stg-494222` (`infrastructure/tfstate-staging.tf`), y una validación impide apuntarlo al de prod. El PO corrió el `apply` de prod el 2026-11-23 (una alta; bucket creado a las 23:38Z) y el Drift Check [45290704540](https://github.com/boosterchile/booster-ai/actions/runs/45290704540) sobre `b294092c` terminó con «No changes».
-- Solo existe la preparación en `infrastructure/environments/staging/`. Crear el proyecto, vincular la facturación, el `terraform apply` y el registro NS en prod son pasos del PO.
+- **Falta, en este orden (PO):** quitar `quota_project_id` del `terraform.tfvars` local y ver un plan sin cambios; cargar `twilio-account-sid` de prueba; el `apply` de prod que agrega el registro NS de `staging.boosterchile.com`; Firebase, Maps y reCAPTCHA del proyecto nuevo; el Environment `staging` y las variables de GitHub (`STAGING_API_URL` para el API, `STAGING_URL` para la PWA). `STAGING_PROJECT_ID` va al final: enciende el deploy automático.
+- **Hasta entonces** «Deploy staging» se sigue omitiendo en cada push a `main` y lo que entra a `main` se prueba por primera vez en prod.
+- **Arreglos de la preparación (2026-11-23/24):** host de Cloud Armor y permisos de `cursor-agent@` solo en prod (#1050); bucket de state propio, porque el de prod guarda la contraseña de la base (#1057); content-sid sin montar (#1059); proyecto de cuota para el arranque (#1060).
+- **Tropiezos del primer `apply`, resueltos a mano y sin corregir en Terraform:** los datasets de BigQuery se crearon antes de que su API se activara (se repitió el `apply`); la cuenta interna de Pub/Sub no existía (`gcloud beta services identity create`); el permiso de cert-manager se aplicó antes de existir el clúster; y hubo que hacer `terraform untaint` de `google_bigquery_table.crash_events`. Un `apply` desde cero los repetiría.
+- **Costo:** USD 150 a 250 al mes desde hoy (`monthly_budget_usd = 250`).
 
 ## BARH-21
 
@@ -145,4 +143,4 @@ Observar/anotar E2–E8; **no** aprueba Environment `production` (ADR-076). `cur
 
 ## Riesgos
 
-Staging no existe: lo que entra a `main` se prueba por primera vez en prod. Matching `activa` aún sin observación real. SMS Twilio faltante. Certs solo secundarios.
+Staging existe pero no recibe deploys: lo que entra a `main` se sigue probando por primera vez en prod. Matching `activa` aún sin observación real. SMS Twilio faltante. Certs solo secundarios.
