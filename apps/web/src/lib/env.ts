@@ -33,12 +33,26 @@ const envSchema = z.object({
   VITE_GOOGLE_MAPS_API_KEY: z.string().optional(),
 
   /**
-   * reCAPTCHA v3 site key (pública) para Firebase App Check. Required: App
-   * Check es un control de seguridad, no opcional como los mapas — si falta,
-   * preferimos que el build/boot falle antes que shippear sin attestation.
+   * Site key de reCAPTCHA (pública) para Firebase App Check: la del proveedor
+   * que indique `VITE_APPCHECK_PROVIDER`. Required: App Check es un control de
+   * seguridad, no opcional como los mapas — si falta, preferimos que el
+   * build/boot falle antes que shippear sin attestation.
    * En dev se define en `.env.local`; en prod la inyecta cloudbuild como VITE_*.
    */
   VITE_RECAPTCHA_SITE_KEY: z.string().min(1, 'VITE_RECAPTCHA_SITE_KEY required'),
+
+  /**
+   * Proveedor de attestation de App Check, elegido por entorno en el build
+   * (.specs/app-check-fraud-defense). `recaptcha-v3` es reCAPTCHA clásico, que
+   * Google declaró obsoleto y ya no deja registrar en apps nuevas;
+   * `recaptcha-enterprise` es Fraud Defense. Ausente o vacía (un build-arg sin
+   * valor llega como string vacío) = `recaptcha-v3`, el proveedor con el que
+   * está registrada la app de prod. Un valor desconocido hace fallar el boot.
+   */
+  VITE_APPCHECK_PROVIDER: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.enum(['recaptcha-v3', 'recaptcha-enterprise']).default('recaptcha-v3'),
+  ),
 
   /**
    * DSN de Sentry (público por diseño, como las keys de Firebase; ADR-074).

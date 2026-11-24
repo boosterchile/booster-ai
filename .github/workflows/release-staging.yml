@@ -20,7 +20,8 @@ name: Deploy staging
 #   STAGING_WIF_PROVIDER, STAGING_WIF_SERVICE_ACCOUNT_DEPLOY,
 #   STAGING_VITE_FIREBASE_API_KEY, STAGING_VITE_FIREBASE_APP_ID,
 #   STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID, STAGING_VITE_GOOGLE_MAPS_API_KEY,
-#   STAGING_VITE_RECAPTCHA_SITE_KEY
+#   STAGING_VITE_RECAPTCHA_SITE_KEY (site key de Fraud Defense, no de reCAPTCHA
+#   clásico: el build de staging usa el proveedor recaptcha-enterprise)
 # Mientras STAGING_PROJECT_ID no exista (staging aún no creado), el job se
 # salta: no falla ni intenta desplegar.
 
@@ -127,6 +128,9 @@ jobs:
           subs+=",_VITE_FIREBASE_MESSAGING_SENDER_ID=${{ vars.STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID }}"
           subs+=",_VITE_GOOGLE_MAPS_API_KEY=${{ vars.STAGING_VITE_GOOGLE_MAPS_API_KEY }}"
           subs+=",_VITE_RECAPTCHA_SITE_KEY=${{ vars.STAGING_VITE_RECAPTCHA_SITE_KEY }}"
+          # Staging atestigua con Fraud Defense: Firebase ya no deja registrar
+          # reCAPTCHA clásico en apps nuevas (.specs/app-check-fraud-defense).
+          subs+=",_VITE_APPCHECK_PROVIDER=recaptcha-enterprise"
           gcloud builds submit --config=cloudbuild.staging.generated.yaml \
             --project="${STAGING_PROJECT_ID}" --region=${{ env.GCP_REGION }} \
             --substitutions="${subs}"

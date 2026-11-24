@@ -1,5 +1,10 @@
 import { type FirebaseApp, initializeApp } from 'firebase/app';
-import { type AppCheck, ReCaptchaV3Provider, initializeAppCheck } from 'firebase/app-check';
+import {
+  type AppCheck,
+  ReCaptchaEnterpriseProvider,
+  ReCaptchaV3Provider,
+  initializeAppCheck,
+} from 'firebase/app-check';
 import {
   type Auth,
   GoogleAuthProvider,
@@ -55,7 +60,12 @@ const authEmulatorOrigin = useAuthEmulator
 
 // App Check debe inicializarse INMEDIATAMENTE después de `initializeApp` y
 // ANTES de cualquier otro servicio Firebase (auth, firestore, storage…) para
-// que sus requests lleven el token de attestation reCAPTCHA v3.
+// que sus requests lleven el token de attestation de reCAPTCHA.
+//
+// El proveedor lo fija el build por entorno (`VITE_APPCHECK_PROVIDER`): Fraud
+// Defense (reCAPTCHA Enterprise) o reCAPTCHA v3 clásico, que Google declaró
+// obsoleto y ya no deja registrar en apps nuevas. La site key es la del
+// proveedor elegido. Ver .specs/app-check-fraud-defense.
 //
 // Con Auth emulator el attestation no aplica: el emulador no verifica App
 // Check y reCAPTCHA v3 pegaría a Google. Skip explícito, no fallback.
@@ -76,7 +86,10 @@ if (!useAuthEmulator && import.meta.env.DEV) {
 export const appCheck: AppCheck | null = useAuthEmulator
   ? null
   : initializeAppCheck(firebaseApp, {
-      provider: new ReCaptchaV3Provider(env.VITE_RECAPTCHA_SITE_KEY),
+      provider:
+        env.VITE_APPCHECK_PROVIDER === 'recaptcha-enterprise'
+          ? new ReCaptchaEnterpriseProvider(env.VITE_RECAPTCHA_SITE_KEY)
+          : new ReCaptchaV3Provider(env.VITE_RECAPTCHA_SITE_KEY),
       // Nombre real de la opción en el SDK Firebase v12 (la doc/uso coloquial la
       // llama "isTokenAutoRefresh"): refresca el token de App Check en background.
       isTokenAutoRefreshEnabled: true,
