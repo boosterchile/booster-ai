@@ -1,8 +1,8 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-23 · America/Santiago (retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
-**Prod**: `267e7e0e` (Release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100) SUCCESS, terminó el 2026-11-23 a las 22:35Z; lleva #1053; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00496-n8c` y web `00438-gz7`). Releases anteriores del mismo día: `adb83021` ([45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475), #1049, solo web), `fdc43f11` (45245572913, #1047 y la migración 0089) y `52da4c1b` ([45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923), migración 0088 y #748, #1036, #1037, #1039). El anterior fue el del 2026-11-20 (`93f084f1`).  
-**`main`**: tip `696ba408` (#1069), igual a prod salvo documentación, Terraform y el workflow de staging. Nada de código pendiente de deploy ni de `apply`, en prod ni en staging.
+**Última actualización**: 2026-11-24 · America/Santiago (release `fdd05289` sin código nuevo; staging con infraestructura, DNS, Firebase y GitHub listos, todavía sin deploy. Del 2026-11-23: retiro de la superficie demo, parte 2, desplegado y aplicado: la migración 0088 corrió en prod y el PO corrió el `terraform apply`. Certificado con factores versionados y referencia HuellaChile en prod; falta ver uno emitido. Booster Fleet en prod, falta verlo con sesión. Reemisión por distancia no plausible cerrada: los cinco certificados quedaron en versión 2).  
+**Prod**: `fdd05289` (Release [45311791220](https://github.com/boosterchile/booster-ai/actions/runs/45311791220) SUCCESS, terminó el 2026-11-24 a las 03:02Z; sin código nuevo respecto de `267e7e0e`: solo documentación, Terraform y workflows; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00497-x44` y web `00439-bd5`; la única entrada ERROR es la ya conocida del gateway SMS al arrancar; las revisiones nuevas leen la versión 5 de `twilio-auth-token`, cargada por el PO ese día, y falta su envío real de prueba). Release anterior: `267e7e0e` (Release [45273910100](https://github.com/boosterchile/booster-ai/actions/runs/45273910100) SUCCESS, terminó el 2026-11-23 a las 22:35Z; lleva #1053; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00496-n8c` y web `00438-gz7`). Releases anteriores del mismo día: `adb83021` ([45261904475](https://github.com/boosterchile/booster-ai/actions/runs/45261904475), #1049, solo web), `fdc43f11` (45245572913, #1047 y la migración 0089) y `52da4c1b` ([45192156923](https://github.com/boosterchile/booster-ai/actions/runs/45192156923), migración 0088 y #748, #1036, #1037, #1039). El anterior fue el del 2026-11-20 (`93f084f1`).  
+**`main`**: tip `fdd05289` (#1070), igual a prod. Nada pendiente de deploy ni de `apply`, en prod ni en staging.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
@@ -32,8 +32,8 @@ Verificado en prod en solo lectura tras el release [45245572913](https://github.
 
 | | Commit | Notas |
 |---|---|---|
-| `main` | `696ba408` | Igual a prod salvo documentación, Terraform y el workflow de staging |
-| Prod | `267e7e0e` | Release 45273910100; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00496-n8c` |
+| `main` | `fdd05289` | Igual a prod |
+| Prod | `fdd05289` | Release 45311791220; los 8 servicios de Cloud Run en esa imagen, el api al 100 % en `00497-x44` |
 
 **Flags conservados:** matching `activa`, `RUTAS_API_ACTIVADA=true`, `EMAIL_FROM=Booster <contacto@boosterchile.com>`.  
 **Release 45273910100 (visto en solo lectura a las 22:40Z):** `Drizzle migrate() complete` en `00496-n8c` a las 22:03Z, sin `runMigrations failed`. La única entrada ERROR de las revisiones nuevas es la del gateway SMS al arrancar (falta la configuración de Twilio), que ya salía en las tres revisiones anteriores del día. El pod del gateway de telemetría reinició a las 22:34Z. El smoke de la línea siguiente es del release `52da4c1b`.  
