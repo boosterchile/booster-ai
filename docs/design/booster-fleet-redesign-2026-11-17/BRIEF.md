@@ -12,7 +12,7 @@
 
 Booster Fleet ya funciona en producción (combustible 7 días, documentos, mantenciones), pero la UI es **listados de texto y tablas crudas**. El PO —usuario experto del dominio— no la encuentra intuitiva. El resto de la app autenticada comparte el mismo patrón: utilidad sin diseño de producto.
 
-La promesa de marca (“Impacta menos, transporta más”; sentimiento *rápido / sin fricción / simple*; personalidad *buena onda*) está escrita en `DESIGN.md` y **casi no se ve** en esta pantalla. Las capturas de prod se adjuntan al diseñador por canal privado; no van en git.
+La promesa de marca (“Transporta más, impacta menos”; sentimiento *rápido / sin fricción / simple*; personalidad *buena onda*) está escrita en `DESIGN.md` y **casi no se ve** en esta pantalla. Las capturas de prod se adjuntan al diseñador por canal privado; no van en git.
 
 ## 2. Usuario y trabajo a hacer
 

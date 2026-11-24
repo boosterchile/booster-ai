@@ -70,7 +70,7 @@ function OnboardingAdminPage({ token }: { token: string }) {
               Bienvenido a Booster
             </h1>
             <p className="mt-2 text-neutral-600 text-sm">
-              Impacta menos, transporta más. En 2 minutos creamos tu empresa y empiezas a operar.
+              Transporta más, impacta menos. En 2 minutos creamos tu empresa y empiezas a operar.
             </p>
           </div>
 

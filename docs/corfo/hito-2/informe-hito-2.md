@@ -10,7 +10,7 @@
 
 ## 1. Resumen ejecutivo
 
-Booster AI opera bajo un concepto rector único: **"impacta menos, transporta más"**. Todo el desarrollo del hito 2 — desde la reapertura segura de altas de usuario hasta el anclaje de la medición de huella de carbono al inicio real del viaje — se subordina a ese principio: reducir el impacto ambiental de la industria del transporte de carga terrestre monetizando la capacidad ociosa (empty-legs), mientras se transporta un volumen mayor de carga con la misma flota.
+Booster AI opera bajo un concepto rector único: **"transporta más, impacta menos"**. Todo el desarrollo del hito 2 — desde la reapertura segura de altas de usuario hasta el anclaje de la medición de huella de carbono al inicio real del viaje — se subordina a ese principio: reducir el impacto ambiental de la industria del transporte de carga terrestre monetizando la capacidad ociosa (empty-legs), mientras se transporta un volumen mayor de carga con la misma flota.
 
 El proyecto CORFO 25IR-305522 fue presentado bajo el nombre **SmartAICargo**; el producto en desarrollo y en producción se llama **Booster AI**. Esta es la desviación #1 declarada en la §4 de este informe — no hay ambigüedad de fondo, es un cambio de marca comercial sobre el mismo desarrollo técnico, pendiente de formalización administrativa con el ejecutivo CORFO.
 
