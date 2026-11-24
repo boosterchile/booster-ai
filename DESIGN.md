@@ -1,6 +1,6 @@
 # Booster — Sistema de Experiencia (DESIGN.md)
 
-> **Booster: Impacta menos, transporta más.**
+> **Booster: Transporta más, impacta menos.**
 
 **Estado:** Borrador v1 · Fase D0 del sistema de experiencia (d-máximo)
 **Propósito:** Este documento es el cimiento de identidad de producto de Booster. Gobierna cómo se ve, cómo suena, cómo se siente y cómo se comporta la plataforma en todas sus superficies. De él se derivan los tokens (D1), los componentes (D2) y los patrones de interacción y accesibilidad (D3). Ningún elemento visual o de interacción debería construirse sin poder trazarse a un principio de este documento.
@@ -17,7 +17,7 @@ Este documento tiene dos apartados que se complementan y **no se resumen entre s
 
 ## 1. La promesa central
 
-Todo en Booster existe para cumplir una promesa: **Impacta menos, transporta más.** No es un eslogan de marketing — es el criterio con el que se juzga cada decisión de diseño. Una pantalla, una interacción o una palabra que no sirva a esa promesa está de más.
+Todo en Booster existe para cumplir una promesa: **Transporta más, impacta menos.** No es un eslogan de marketing — es el criterio con el que se juzga cada decisión de diseño. Una pantalla, una interacción o una palabra que no sirva a esa promesa está de más.
 
 Booster mide de verdad lo que otros solo declaran. Ese mismo rigor —sustancia sobre apariencia— gobierna la experiencia: **no decoramos, resolvemos.**
 
@@ -260,7 +260,7 @@ Viewport notch-aware (viewport-fit=cover); tokens de breakpoint mobile-first; us
 | D-6b | "Momentos humanos" son capa transversal: misma lógica, distinto canal (voz para conductor, UI para operadores) | Sistema de momentos humanos compartido, con adaptadores de canal |
 | D-7 | Voz de Booster: cálida, humor chileno, voz elegible por el conductor | TTS con personalidad + selección de voz (parte de customización) |
 | D-8 | Accesibilidad real y verificada, no nominal | Activar axe en CI, escribir specs, a11y en cada componente |
-| D-9 | Propuesta de valor "Impacta menos, transporta más" como hilo conductor | Presente en el tono de todas las superficies |
+| D-9 | Propuesta de valor "Transporta más, impacta menos" como hilo conductor | Presente en el tono de todas las superficies |
 | D-10 | Cuatro usuarios en **dos mundos**: autenticado (conductor + 2 operadores, app) vs público-efímero (destinatario, por código) | La línea autenticado/público es la divisoria estructural; registros y superficies distintas |
 | D-11 | Destinatario = tracking Uber-like por código, sin login, **diferenciador comercial trascendental** | Superficie pública separada; registro comercial; mobile-first; vitrina de marca |
 | D-12 | Destinatario V1 = ubicación en vivo + ventana estimada, **NO ETA calculado en tiempo real** | Recorte deliberado: resuelve el dolor sin sobre-ingeniería; ETA dinámico fuera de V1 |
@@ -312,4 +312,4 @@ El **destinatario** (sección 4.3) es un caso especial: pertenece al mundo públ
 
 *Este documento vive en el repositorio como fuente de verdad de la identidad de Booster. Se actualiza cuando el PO evoluciona la visión. Toda construcción de UI/UX debe poder trazarse a un principio de la Parte I y una especificación de la Parte II.*
 
-**Booster: Impacta menos, transporta más.**
+**Booster: Transporta más, impacta menos.**
