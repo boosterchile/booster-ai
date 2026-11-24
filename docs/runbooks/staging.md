@@ -88,6 +88,8 @@ Hecho en staging el 2026-11-24: pasos 1 a 3. Pendiente del PO: el paso 4.
   - `STAGING_VITE_FIREBASE_API_KEY`, `STAGING_VITE_FIREBASE_APP_ID`, `STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID`
   - `STAGING_VITE_GOOGLE_MAPS_API_KEY`, `STAGING_VITE_RECAPTCHA_SITE_KEY`
 
+**Orden.** Crea primero el Environment y todo lo demás; deja `STAGING_URL` y `STAGING_PROJECT_ID` para el final, juntas y con staging listo para recibir un deploy. `STAGING_URL` no es inocua por sí sola: en `e2e-staging.yml` hace que el job corra en cada PR y es la `BASE_URL` también del nightly, así que con la variable creada y sin PWA desplegada el E2E falla.
+
 Con `STAGING_PROJECT_ID` definida:
 
 - `release-staging.yml` despliega cada push a `main`. Mientras no exista, el job se salta.
@@ -126,8 +128,8 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 |---|---|---|
 | Terraform + workflows + este runbook en `main` | Repo | **Listo** |
 | Proyecto `booster-ai-stg-494222`, billing, `apply`, secretos, Firebase | **PO** | Hecho al 2026-11-24, salvo reCAPTCHA v3 y App Check (§5, paso 4) y los secretos distintos de `twilio-account-sid` |
-| Environment GitHub `staging` (hoy solo existe `production`) | **PO** | Pendiente — créalo antes de cargar las vars de §6 |
-| Vars repo `STAGING_PROJECT_ID` / `STAGING_API_URL` / `STAGING_URL` | **PO** | Pendiente — sin `STAGING_PROJECT_ID`, `release-staging.yml` se salta |
+| Environment GitHub `staging` | **PO** | **Creado el 2026-11-24**, con las variables de WIF, Firebase y Maps. Falta `STAGING_VITE_RECAPTCHA_SITE_KEY` |
+| Vars repo `STAGING_PROJECT_ID` / `STAGING_API_URL` / `STAGING_URL` | **PO** | `STAGING_API_URL` creada el 2026-11-24. `STAGING_URL` y `STAGING_PROJECT_ID` pendientes a propósito: van al final |
 | Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
 | Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
 | Permisos de `cursor-agent@` sobre una SA que staging no tiene | Repo | **Resuelta el 2026-11-23**: solo se crean con `environment = "prod"` |
