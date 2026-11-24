@@ -1,48 +1,92 @@
-import { type Page, test as base } from '@playwright/test';
+import { type Page, test as base, expect } from '@playwright/test';
 
 /**
- * Fixtures Playwright con login automático.
+ * Fixtures de la suite que corre contra un entorno desplegado (staging).
+ * Ver .specs/e2e-staging.
  *
- * Firebase persiste el estado auth en IndexedDB; Playwright 1.49 todavía
- * no expone `storageState({ indexedDB: true })` (llega en 1.51), así
- * que en lugar de capturar storage hacemos login por UI antes de cada
- * test. Es más lento pero confiable y evita inyectar tokens a mano.
+ * Sesión: login universal por RUT y clave numérica (ADR-035), por los mismos
+ * `data-testid` que usa la suite local (`e2e-conductor/helpers.ts`). Firebase
+ * guarda la sesión en IndexedDB y Playwright no la captura en `storageState`,
+ * así que cada test entra por la interfaz.
  *
- * Credenciales: vienen de `E2E_USER_EMAIL` / `E2E_USER_PASSWORD`. Si
- * faltan, el test que use la fixture lanza error y debe skipearse a
- * nivel describe (ver `perfil-validacion.spec.ts` para el patrón).
+ * Credenciales del usuario de prueba, que vienen del entorno y nunca del repo:
+ *   E2E_USER_RUT    RUT del usuario.
+ *   E2E_USER_CLAVE  Su clave numérica de 6 dígitos (secreto).
+ *   E2E_USER_TIPO   Tipo de acceso: `transporte` (por defecto) o `carga`.
  */
 
 export type AuthFixtures = {
   authenticatedPage: Page;
 };
 
+type TipoAcceso = 'transporte' | 'carga';
+
+/** True si el entorno trae el usuario de prueba. Sin él, los tests de sesión se saltan. */
+export function hasE2ECredentials(): boolean {
+  return Boolean(process.env.E2E_USER_RUT && process.env.E2E_USER_CLAVE);
+}
+
+function tipoAcceso(): TipoAcceso {
+  return process.env.E2E_USER_TIPO === 'carga' ? 'carga' : 'transporte';
+}
+
+/**
+ * URL del api del entorno bajo prueba. `E2E_API_URL` si viene; si no, la de
+ * `BASE_URL` cambiando el primer `app.` del host por `api.`, que es la
+ * convención de prod y de staging.
+ */
+export function apiUrl(): string {
+  const explicita = process.env.E2E_API_URL;
+  if (explicita) {
+    return explicita.replace(/\/$/, '');
+  }
+  const base = new URL(process.env.BASE_URL ?? 'http://localhost:5173');
+  if (!base.hostname.startsWith('app.')) {
+    throw new Error(
+      `No se puede derivar el api desde BASE_URL=${base.origin}: define E2E_API_URL.`,
+    );
+  }
+  base.hostname = base.hostname.replace(/^app\./, 'api.');
+  return base.origin;
+}
+
+/** True si el entorno bajo prueba es staging, por el host de `BASE_URL`. */
+export function esStaging(): boolean {
+  const host = new URL(process.env.BASE_URL ?? 'http://localhost:5173').hostname;
+  return host.split('.').includes('staging');
+}
+
+export async function loginRutClave(
+  page: Page,
+  cred: { rut: string; clave: string; tipo: TipoAcceso },
+): Promise<void> {
+  await page.goto(`/login?tipo=${cred.tipo}`);
+  const form = page.getByTestId('login-universal-form');
+  const tipoBtn = page.getByTestId(`login-tipo-${cred.tipo}`);
+  // Con `?tipo=` la interfaz muestra el formulario; sin él, el selector de tipo.
+  await expect(form.or(tipoBtn)).toBeVisible();
+  if (await tipoBtn.isVisible()) {
+    await tipoBtn.click();
+  }
+  await expect(form).toBeVisible();
+  await page.getByTestId('login-rut-input').fill(cred.rut);
+  await page.getByTestId('login-clave-input').fill(cred.clave);
+  await page.getByTestId('login-submit').click();
+}
+
 export const test = base.extend<AuthFixtures>({
   authenticatedPage: async ({ page }, use) => {
-    const email = process.env.E2E_USER_EMAIL;
-    const password = process.env.E2E_USER_PASSWORD;
-    if (!email || !password) {
+    const rut = process.env.E2E_USER_RUT;
+    const clave = process.env.E2E_USER_CLAVE;
+    if (!rut || !clave) {
       throw new Error(
-        'E2E_USER_EMAIL / E2E_USER_PASSWORD no definidas. Configurar en CI vars (GitLab) o local antes de correr tests E2E.',
+        'E2E_USER_RUT / E2E_USER_CLAVE no definidas: el test debe saltarse con hasE2ECredentials().',
       );
     }
-
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Contraseña').fill(password);
-    await page.getByRole('button', { name: /Entrar/i }).click();
-    await page.waitForURL(/\/app(\/|$)/, { timeout: 15_000 });
-
+    await loginRutClave(page, { rut, clave, tipo: tipoAcceso() });
+    await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
     await use(page);
   },
 });
 
-export { expect } from '@playwright/test';
-
-/**
- * Helper: chequea si las credenciales E2E están disponibles.
- * Útil para `test.describe.configure({ mode: 'skip' })` condicional.
- */
-export function hasE2ECredentials(): boolean {
-  return Boolean(process.env.E2E_USER_EMAIL && process.env.E2E_USER_PASSWORD);
-}
+export { expect };

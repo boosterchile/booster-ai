@@ -9,13 +9,13 @@ import { expect, hasE2ECredentials, test } from './fixtures.js';
  *   - validación inline de formato chileno (vía chileanPhoneSchema).
  *   - RUT readonly se muestra con puntos cuando ya está declarado.
  *
- * Skip si no hay credenciales E2E configuradas — los tests requieren
- * un user real (Firebase + onboarding completado) en el entorno
- * apuntado por BASE_URL.
+ * Se salta sin el usuario de prueba (`E2E_USER_RUT` y `E2E_USER_CLAVE`, ver
+ * `fixtures.ts`): necesita una cuenta activa, con empresa, en el entorno de
+ * `BASE_URL`.
  */
 
 test.describe('FIX-009: validación de perfil @bug', () => {
-  test.skip(!hasE2ECredentials(), 'E2E_USER_EMAIL / E2E_USER_PASSWORD no configuradas');
+  test.skip(!hasE2ECredentials(), 'E2E_USER_RUT / E2E_USER_CLAVE no configuradas');
 
   test('input de teléfono tiene type="tel"', async ({ authenticatedPage: page }) => {
     await page.goto('/app/perfil');

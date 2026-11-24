@@ -47,6 +47,14 @@ jobs:
           # ADR-083: con staging creado (STAGING_URL definida) todo corre contra
           # staging, nightly incluido; sin staging, el nightly sigue contra prod.
           BASE_URL: ${{ vars.STAGING_URL || vars.PRODUCTION_URL }}
+          # Usuario de prueba de staging (.specs/e2e-staging). Sin estos valores
+          # los tests de sesión se saltan y solo corre el humo público.
+          E2E_USER_RUT: ${{ vars.STAGING_E2E_USER_RUT }}
+          E2E_USER_TIPO: ${{ vars.STAGING_E2E_USER_TIPO }}
+          E2E_USER_CLAVE: ${{ secrets.STAGING_E2E_USER_CLAVE }}
+          # El smoke de rate limit genera intentos reales: solo contra staging.
+          # El spec además se niega si el host de BASE_URL no es de staging.
+          RUN_RATELIMIT_SMOKE: ${{ vars.STAGING_URL != '' && '1' || '0' }}
         run: pnpm --filter @booster-ai/web test:e2e
       - name: Upload Playwright report
         if: always()
