@@ -35,6 +35,8 @@ terraform -chdir=infrastructure plan \
 terraform -chdir=infrastructure apply staging.plan
 ```
 
+**Proyecto de cuota en el arranque.** El tfvars de ejemplo trae `quota_project_id = "booster-ai-494222"`. Sin esa línea el primer `apply` falla al crear el proyecto con «Project 'projects/booster-ai-stg-494222' not found or deleted»: el proveedor factura cada llamada contra el proyecto del entorno, que todavía no existe. Cuando el `apply` termine completo, quita la línea y corre un `plan`: debe decir «No changes».
+
 El primer `apply` crea el proyecto, habilita las APIs y levanta la red, Cloud SQL, Redis, Cloud Run (placeholder), Pub/Sub, KMS, buckets, GKE y la zona DNS `staging.boosterchile.com`. Si falla por APIs que todavía se están propagando, repite el `apply`: es idempotente.
 
 ## 3. Secretos
@@ -120,6 +122,7 @@ Checklist en seco completo: [`docs/handoff/2026-11-16-staging-checklist-adr083.m
 | Ambigüedad `STAGING_URL` (API en deploy vs PWA en E2E) | Repo | **Resuelta el 2026-11-23**: el deploy usa `STAGING_API_URL`; `STAGING_URL` queda para la PWA |
 | Regla de Cloud Armor con el host de prod fijo | Repo | **Resuelta el 2026-11-23**: usa `api.${var.domain}` |
 | Permisos de `cursor-agent@` sobre una SA que staging no tiene | Repo | **Resuelta el 2026-11-23**: solo se crean con `environment = "prod"` |
+| El primer `apply` no podía crear el proyecto (era su propio proyecto de cuota) | Repo | **Resuelta el 2026-11-24**: `quota_project_id` durante el arranque |
 | El tfvars de staging montaba los cinco content-sid con placeholder | Repo | **Resuelta el 2026-11-23**: `content_sid_ready = {}` en el ejemplo. Quien ya copió el tfvars debe agregar esa línea |
 | Staging podía leer el state de prod (bucket compartido) | Repo + **PO** | **Resuelta el 2026-11-23**: bucket propio, creado por el `apply` de prod de ese día |
 | Job drift de staging | Repo (después de que exista el entorno) | Pendiente declarado |
