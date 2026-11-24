@@ -343,6 +343,10 @@ resource "google_service_account_iam_member" "pubsub_document_push_token_creator
   service_account_id = google_service_account.document_push_invoker.name
   role               = "roles/iam.serviceAccountOpenIdTokenCreator"
   member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  # El agente de Pub/Sub no existe en un proyecto nuevo hasta que se lo pide:
+  # sin esta dependencia el binding falla con «Service account ... does not exist».
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 # Único invoker explícito de document-service (public=false). Acotado al
@@ -368,6 +372,10 @@ resource "google_pubsub_topic_iam_member" "dlq_publisher_pubsub_agent" {
   topic   = google_pubsub_topic.dlq.name
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  # El agente de Pub/Sub no existe en un proyecto nuevo hasta que se lo pide:
+  # sin esta dependencia el binding falla con «Service account ... does not exist».
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 resource "google_pubsub_subscription_iam_member" "document_uploaded_dlq_subscriber" {
@@ -375,6 +383,10 @@ resource "google_pubsub_subscription_iam_member" "document_uploaded_dlq_subscrib
   subscription = google_pubsub_subscription.document_uploaded_processor.name
   role         = "roles/pubsub.subscriber"
   member       = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  # El agente de Pub/Sub no existe en un proyecto nuevo hasta que se lo pide:
+  # sin esta dependencia el binding falla con «Service account ... does not exist».
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 # Wave 2 — Subscriptions para los 4 topics de eventos AVL eventuales.
@@ -450,6 +462,10 @@ resource "google_service_account_iam_member" "pubsub_safety_push_token_creator" 
   service_account_id = google_service_account.safety_push_invoker.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+
+  # El agente de Pub/Sub no existe en un proyecto nuevo hasta que se lo pide:
+  # sin esta dependencia el binding falla con «Service account ... does not exist».
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 # Permitir que el SA invoque booster-ai-api. El api ya es public=true (allUsers

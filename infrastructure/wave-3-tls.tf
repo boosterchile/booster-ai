@@ -89,6 +89,10 @@ resource "google_service_account_iam_member" "cert_manager_workload_identity_pri
   service_account_id = google_service_account.cert_manager_cloud_dns.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${google_project.booster_ai.project_id}.svc.id.goog[cert-manager/cert-manager]"
+
+  # El pool `<proyecto>.svc.id.goog` lo crea el clúster: antes de que exista,
+  # el binding falla con «Identity Pool does not exist».
+  depends_on = [google_container_cluster.telemetry]
 }
 
 # =============================================================================

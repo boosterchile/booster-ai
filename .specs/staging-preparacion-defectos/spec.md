@@ -116,3 +116,27 @@ Dos causas, independientes:
 
 - Que no queden otros bloqueos de arranque después de este. La sesión no puede aplicar; cada uno solo aparece cuando el `apply` del PO llega a ese recurso.
 
+## Tropiezos del primer `apply` completo (2026-11-24)
+
+Con el proyecto de cuota resuelto, el `apply` del PO creó el proyecto y casi todo lo demás. Fallaron ocho recursos por tres causas de orden, que en prod nunca aparecieron porque su proyecto ya tenía todo activado. El PO los resolvió repitiendo el `apply` y con un comando manual. Permiso del PO en el chat para corregirlos en Terraform, incluidos los archivos protegidos: «sí, corrige en Terraform los tres tropiezos del arranque».
+
+| # | Error | Causa | Arreglo |
+|---|---|---|---|
+| 8 | `The project booster-ai-stg-494222 has not enabled BigQuery` en cinco datasets | Los datasets no dependían de la habilitación de APIs | `depends_on = [google_project_service.apis]` en los cinco (`data.tf`) |
+| 9 | `Service account service-<n>@gcp-sa-pubsub.iam.gserviceaccount.com does not exist` en dos bindings | El agente de Pub/Sub no existe en un proyecto nuevo hasta que se lo pide. Cuatro bindings lo nombran; dos pasaron por azar de orden | `google_project_service_identity.pubsub` (`service-identities.tf`) y `depends_on` en los cuatro bindings (`messaging.tf`) |
+| 10 | `Identity Pool does not exist (booster-ai-stg-494222.svc.id.goog)` | El binding de cert-manager no dependía del clúster, que es quien crea el pool | `depends_on = [google_container_cluster.telemetry]` (`wave-3-tls.tf`) |
+
+El texto de cada `member` no cambia: se agrega solo la dependencia, para que Terraform no vea un valor «conocido después del apply» y recree los bindings.
+
+### Criterios de éxito
+
+- [ ] `terraform fmt` y `terraform validate` en verde.
+- [ ] Plan contra el state de staging: una sola alta, `google_project_service_identity.pubsub`.
+- [ ] Plan contra el state de prod: la misma alta y ningún cambio en los datasets, los cuatro bindings de Pub/Sub ni el de cert-manager.
+- [ ] **Lo verifica el PO:** los dos `apply`. Crear la identidad donde ya existe no cambia nada en GCP.
+
+### Sin verificar
+
+- **Un `apply` desde cero.** Es la única prueba real de estos arreglos y la sesión no puede hacerla. Puede haber otros problemas de orden que en esta corrida no aparecieron por azar.
+- **Por qué `google_bigquery_table.crash_events` quedó marcada como a medio crear.** El error de esa corrida no llegó a la sesión. Se resolvió con `terraform untaint`; la causa queda sin determinar y este PR no la toca.
+
