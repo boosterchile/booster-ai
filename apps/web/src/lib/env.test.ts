@@ -1,9 +1,22 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { errorMock } = vi.hoisted(() => ({ errorMock: vi.fn() }));
 vi.mock('./logger.js', () => ({ logger: { error: errorMock } }));
 
 describe('env', () => {
+  // `afterEach` quita todos los stubs, incluidos los de test/setup.ts, así que
+  // cada test parte de la configuración válida de base. Sin esto el resultado
+  // depende de que exista un `.env` local: CI no lo tiene.
+  beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_API_KEY', 'test-api-key');
+    vi.stubEnv('VITE_FIREBASE_AUTH_DOMAIN', 'test.firebaseapp.com');
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'booster-ai-test');
+    vi.stubEnv('VITE_FIREBASE_APP_ID', '1:000:web:abc');
+    vi.stubEnv('VITE_API_URL', 'https://api.test.boosterchile.com');
+    vi.stubEnv('VITE_RECAPTCHA_SITE_KEY', 'test-recaptcha-site-key');
+    vi.stubEnv('VITE_APPCHECK_PROVIDER', '');
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
@@ -12,6 +25,7 @@ describe('env', () => {
 
   describe('VITE_APPCHECK_PROVIDER', () => {
     it('ausente: usa recaptcha-v3, el proveedor de prod', async () => {
+      vi.stubEnv('VITE_APPCHECK_PROVIDER', undefined);
       const { env } = await import('./env.js');
       expect(env.VITE_APPCHECK_PROVIDER).toBe('recaptcha-v3');
     });
