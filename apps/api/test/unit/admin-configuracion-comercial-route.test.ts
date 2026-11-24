@@ -127,13 +127,13 @@ describe('admin configuración comercial (ADR-079 §3)', () => {
     expect(((await res.json()) as { publicada: { version: number } }).publicada.version).toBe(3);
   });
 
-  it('PUT con spot ≤ programada → 422 y no publica', async () => {
+  it('PUT con una tasa sobre 100 → 422 y no publica', async () => {
     const res = await buildApp(ADMIN).put({
       config: {
         ...CONFIGURACION_COMERCIAL_INICIAL,
-        comisiones: { spot_pct: 10, programada_pct: 10 },
+        comisiones: { spot_pct: 101, programada_pct: 10 },
       },
-      nota_cambio: 'empate',
+      nota_cambio: 'fuera de rango',
     });
     expect(res.status).toBe(422);
     expect(svc.publicarConfiguracionComercial).not.toHaveBeenCalled();
@@ -352,33 +352,17 @@ describe('admin configuración comercial — contrato del 422 (TRK-003)', () => 
     `);
   });
 
-  it('PUT / con spot ≤ programada → 422 configuracion_invalida (refine)', async () => {
-    const res = await buildApp(ADMIN).put({
-      config: {
-        ...CONFIGURACION_COMERCIAL_INICIAL,
-        comisiones: { spot_pct: 10, programada_pct: 10 },
-      },
-      nota_cambio: 'empate',
-    });
-    expect({ status: res.status, body: await res.json() }).toMatchInlineSnapshot(`
-      {
-        "body": {
-          "error": "configuracion_invalida",
-          "issues": [
-            {
-              "code": "custom",
-              "message": "spot_pct debe ser mayor que programada_pct (ADR-079 §2)",
-              "path": [
-                "config",
-                "comisiones",
-                "spot_pct",
-              ],
-            },
-          ],
-        },
-        "status": 422,
-      }
-    `);
+  it('ADR-094 §2: PUT / con spot igual a programada publica', async () => {
+    vi.mocked(svc.publicarConfiguracionComercial).mockResolvedValueOnce(version(3, 5));
+    const config = {
+      ...CONFIGURACION_COMERCIAL_INICIAL,
+      comisiones: { spot_pct: 5, programada_pct: 5 },
+    };
+    const res = await buildApp(ADMIN).put({ config, nota_cambio: 'tasas iguales' });
+    expect(res.status).toBe(200);
+    expect(svc.publicarConfiguracionComercial).toHaveBeenCalledWith(
+      expect.objectContaining({ config, notaCambio: 'tasas iguales' }),
+    );
   });
 
   it('PUT /contrato-programado/:id con activo no booleano → 422 body_invalido', async () => {
