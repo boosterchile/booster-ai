@@ -1,33 +1,52 @@
-import { type Page, test as base, expect } from '@playwright/test';
+import { type Browser, type Page, test as base, expect } from '@playwright/test';
 
 /**
- * Fixtures de la suite que corre contra un entorno desplegado (staging).
+ * Utilidades de la suite que corre contra un entorno desplegado (staging).
  * Ver .specs/e2e-staging.
  *
  * Sesión: login universal por RUT y clave numérica (ADR-035), por los mismos
- * `data-testid` que usa la suite local (`e2e-conductor/helpers.ts`). Firebase
- * guarda la sesión en IndexedDB y Playwright no la captura en `storageState`,
- * así que cada test entra por la interfaz.
+ * `data-testid` que usa la suite local (`e2e-conductor/helpers.ts`).
  *
- * Credenciales del usuario de prueba, que vienen del entorno y nunca del repo:
- *   E2E_USER_RUT    RUT del usuario.
- *   E2E_USER_CLAVE  Su clave numérica de 6 dígitos (secreto).
- *   E2E_USER_TIPO   Tipo de acceso: `transporte` (por defecto) o `carga`.
+ * Usuarios de prueba, sembrados por `scripts/db/seed-staging-e2e.sh`. Sus
+ * credenciales vienen del entorno y nunca del repo:
+ *   E2E_TRANSPORTISTA_RUT / E2E_TRANSPORTISTA_CLAVE   dueño de la empresa transportista
+ *   E2E_GENERADOR_RUT     / E2E_GENERADOR_CLAVE       dueña de la empresa generadora
+ *
+ * El login por RUT tiene un límite de 5 intentos cada 15 minutos que cuenta
+ * también los exitosos, y en staging nadie lo limpia entre corridas. Por eso
+ * cada rol entra UNA vez por corrida (`abrirSesion` en `beforeAll`) y las
+ * pruebas con sesión corren en un solo navegador (`noEsChromiumDeEscritorio`).
  */
 
-export type AuthFixtures = {
-  authenticatedPage: Page;
+export type Rol = 'transportista' | 'generador';
+
+const TIPO_DE_ACCESO: Record<Rol, 'transporte' | 'carga'> = {
+  transportista: 'transporte',
+  generador: 'carga',
 };
 
-type TipoAcceso = 'transporte' | 'carga';
-
-/** True si el entorno trae el usuario de prueba. Sin él, los tests de sesión se saltan. */
-export function hasE2ECredentials(): boolean {
-  return Boolean(process.env.E2E_USER_RUT && process.env.E2E_USER_CLAVE);
+function credencial(rol: Rol): { rut: string | undefined; clave: string | undefined } {
+  return rol === 'transportista'
+    ? { rut: process.env.E2E_TRANSPORTISTA_RUT, clave: process.env.E2E_TRANSPORTISTA_CLAVE }
+    : { rut: process.env.E2E_GENERADOR_RUT, clave: process.env.E2E_GENERADOR_CLAVE };
 }
 
-function tipoAcceso(): TipoAcceso {
-  return process.env.E2E_USER_TIPO === 'carga' ? 'carga' : 'transporte';
+/** True si el entorno trae el usuario de prueba de ese rol. Sin él, sus pruebas se saltan. */
+export function hayCredenciales(rol: Rol): boolean {
+  const { rut, clave } = credencial(rol);
+  return Boolean(rut && clave);
+}
+
+/**
+ * Condición de `test.skip` para las pruebas con sesión: corren solo en el
+ * proyecto `chromium` de escritorio (ver arriba). `mobile-chrome` también es
+ * Chromium, por eso se mira además `isMobile`.
+ */
+export function noEsChromiumDeEscritorio({
+  browserName,
+  isMobile,
+}: { browserName: string; isMobile: boolean }): boolean {
+  return browserName !== 'chromium' || isMobile;
 }
 
 /**
@@ -58,7 +77,7 @@ export function esStaging(): boolean {
 
 export async function loginRutClave(
   page: Page,
-  cred: { rut: string; clave: string; tipo: TipoAcceso },
+  cred: { rut: string; clave: string; tipo: 'transporte' | 'carga' },
 ): Promise<void> {
   await page.goto(`/login?tipo=${cred.tipo}`);
   const form = page.getByTestId('login-universal-form');
@@ -74,19 +93,22 @@ export async function loginRutClave(
   await page.getByTestId('login-submit').click();
 }
 
-export const test = base.extend<AuthFixtures>({
-  authenticatedPage: async ({ page }, use) => {
-    const rut = process.env.E2E_USER_RUT;
-    const clave = process.env.E2E_USER_CLAVE;
-    if (!rut || !clave) {
-      throw new Error(
-        'E2E_USER_RUT / E2E_USER_CLAVE no definidas: el test debe saltarse con hasE2ECredentials().',
-      );
-    }
-    await loginRutClave(page, { rut, clave, tipo: tipoAcceso() });
-    await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
-    await use(page);
-  },
-});
+/**
+ * Abre una página con la sesión del rol ya iniciada. Pensada para `beforeAll`:
+ * un solo login por rol y por corrida. Quien la abre la cierra en `afterAll`.
+ */
+export async function abrirSesion(browser: Browser, rol: Rol): Promise<Page> {
+  const { rut, clave } = credencial(rol);
+  if (!rut || !clave) {
+    throw new Error(
+      `Faltan las credenciales del ${rol}: la prueba debe saltarse con hayCredenciales().`,
+    );
+  }
+  const page = await browser.newPage();
+  await loginRutClave(page, { rut, clave, tipo: TIPO_DE_ACCESO[rol] });
+  await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
+  return page;
+}
 
+export const test = base;
 export { expect };
