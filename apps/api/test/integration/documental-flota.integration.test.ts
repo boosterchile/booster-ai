@@ -7,9 +7,7 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
  * `.specs/una-sola-verdad-por-dato` contra Postgres real: el cálculo único de
- * documentos lee bien la fecha de vencimiento. La columna es `date` y el
- * esquema de drizzle la declara `timestamp`; leída tal cual llegaba como
- * fecha inválida y todo documento quedaba «sin fecha».
+ * documentos lee bien la fecha de vencimiento (columna `date`).
  */
 describe('integration: documentos de la flota con fecha', () => {
   let handle: TestDbHandle;
@@ -71,16 +69,16 @@ describe('integration: documentos de la flota con fecha', () => {
     }
     const ahora = new Date('2026-11-25T15:00:00.000Z');
     await db.insert(schema.documentosVehiculo).values([
-      { vehicleId: camion.id, tipo: 'soap', fechaVencimiento: new Date('2026-11-01T00:00:00Z') },
+      { vehicleId: camion.id, tipo: 'soap', fechaVencimiento: '2026-11-01' },
       {
         vehicleId: camion.id,
         tipo: 'revision_tecnica',
-        fechaVencimiento: new Date('2026-12-10T00:00:00Z'),
+        fechaVencimiento: '2026-12-10',
       },
       {
         vehicleId: camion.id,
         tipo: 'permiso_circulacion',
-        fechaVencimiento: new Date('2027-06-01T00:00:00Z'),
+        fechaVencimiento: '2027-06-01',
       },
     ]);
 

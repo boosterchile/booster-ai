@@ -108,11 +108,13 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
     return auth;
   }
 
-  function parseDate(s: string | null | undefined): Date | null {
-    if (!s) {
-      return null;
-    }
-    return new Date(`${s}T00:00:00.000Z`);
+  /** `AAAA-MM-DD` ya validado por Zod; la columna es `date` y se guarda tal cual. */
+  function parseDate(s: string | null | undefined): string | null {
+    return s ? s : null;
+  }
+
+  function estadoPara(fecha: string | null) {
+    return calcularEstadoDocumento(fecha ? new Date(`${fecha}T00:00:00.000Z`) : null);
   }
 
   function serializeVehicleDoc(row: typeof documentosVehiculo.$inferSelect) {
@@ -121,14 +123,8 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
       vehiculo_id: row.vehicleId,
       tipo: row.tipo,
       archivo_url: row.archivoUrl,
-      fecha_emision:
-        row.fechaEmision instanceof Date
-          ? row.fechaEmision.toISOString().slice(0, 10)
-          : row.fechaEmision,
-      fecha_vencimiento:
-        row.fechaVencimiento instanceof Date
-          ? row.fechaVencimiento.toISOString().slice(0, 10)
-          : row.fechaVencimiento,
+      fecha_emision: row.fechaEmision,
+      fecha_vencimiento: row.fechaVencimiento,
       estado: row.estado,
       notas: row.notas,
       created_at: row.createdAt,
@@ -142,14 +138,8 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
       conductor_id: row.conductorId,
       tipo: row.tipo,
       archivo_url: row.archivoUrl,
-      fecha_emision:
-        row.fechaEmision instanceof Date
-          ? row.fechaEmision.toISOString().slice(0, 10)
-          : row.fechaEmision,
-      fecha_vencimiento:
-        row.fechaVencimiento instanceof Date
-          ? row.fechaVencimiento.toISOString().slice(0, 10)
-          : row.fechaVencimiento,
+      fecha_emision: row.fechaEmision,
+      fecha_vencimiento: row.fechaVencimiento,
       estado: row.estado,
       notas: row.notas,
       created_at: row.createdAt,
@@ -206,7 +196,7 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     const fechaVencimiento = parseDate(body.fecha_vencimiento);
-    const estado = calcularEstadoDocumento(fechaVencimiento);
+    const estado = estadoPara(fechaVencimiento);
 
     const inserted = await opts.db
       .insert(documentosVehiculo)
@@ -260,7 +250,7 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
     if (body.fecha_vencimiento !== undefined) {
       const newVencimiento = parseDate(body.fecha_vencimiento);
       updates.fechaVencimiento = newVencimiento;
-      updates.estado = calcularEstadoDocumento(newVencimiento);
+      updates.estado = estadoPara(newVencimiento);
     }
     if (body.notas !== undefined) {
       updates.notas = body.notas ?? null;
@@ -352,7 +342,7 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     const fechaVencimiento = parseDate(body.fecha_vencimiento);
-    const estado = calcularEstadoDocumento(fechaVencimiento);
+    const estado = estadoPara(fechaVencimiento);
 
     const inserted = await opts.db
       .insert(documentosConductor)
@@ -405,7 +395,7 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
     if (body.fecha_vencimiento !== undefined) {
       const newVencimiento = parseDate(body.fecha_vencimiento);
       updates.fechaVencimiento = newVencimiento;
-      updates.estado = calcularEstadoDocumento(newVencimiento);
+      updates.estado = estadoPara(newVencimiento);
     }
     if (body.notas !== undefined) {
       updates.notas = body.notas ?? null;
