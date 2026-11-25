@@ -114,7 +114,7 @@ Dueño, administrador y despachador de la empresa. El conductor no (decisión de
 | 9 | Plazo para elegir | Lo fija el generador al publicar, según el tipo de servicio |
 | 10 | A cuántos transportistas se invita | Lo decide el generador |
 
-Para la spec, sin decisión del PO todavía: los valores que la pantalla propone por defecto y sus límites. Propuesta de la sesión de diseño: en la carga inmediata, 30 minutos por defecto y nunca más allá de 2 horas antes del inicio de la ventana de retiro, que es el límite de la cancelación sin cargo; en la programada, 24 horas por defecto. Para los invitados, 5 por defecto (el valor actual de `MAX_OFFERS_PER_REQUEST`) con la opción de invitar a todos los que cumplen.
+Valores por defecto y límites, confirmados por el PO el 2026-11-25. Plazo para elegir: en la carga inmediata, 30 minutos por defecto y nunca más allá de 2 horas antes del inicio de la ventana de retiro, que es el límite de la cancelación sin cargo; en la programada, 24 horas por defecto. Invitados: 5 por defecto, con la opción de invitar a todos los que cumplen.
 
 ## Consecuencias
 

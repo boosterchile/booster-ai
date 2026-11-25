@@ -121,9 +121,8 @@ Todos los mapas son de Google Maps con `@vis.gl/react-google-maps`. No hay un co
 
 ## Preguntas abiertas para el PO
 
-1. **Asignación (ADR-095):** los valores por defecto y los límites del plazo para elegir y del número de invitados, que fija el generador.
-2. **Dispositivos:** dónde queda en el menú nuevo.
-3. **Costo de «Cobra hoy»:** no está definido.
+1. **Dispositivos:** dónde queda en el menú nuevo.
+2. **Costo de «Cobra hoy»:** no está definido.
 
 ## Reparto entre sesiones
 
