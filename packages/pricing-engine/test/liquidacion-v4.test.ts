@@ -10,7 +10,7 @@ describe('calcularLiquidacionV4 (ADR-094 §1)', () => {
       comisionPct: 5,
       comisionClp: 5_000,
       ivaComisionClp: 950,
-      descuentoBoosterClp: 5_950,
+      totalFacturaBoosterClp: 5_950,
       precioTransportistaClp: 95_000,
       totalTransportistaClp: 113_050,
       pricingMethodologyVersion: PRICING_METHODOLOGY_VERSION_V4,
@@ -21,7 +21,7 @@ describe('calcularLiquidacionV4 (ADR-094 §1)', () => {
     for (const precioViajeClp of [1, 5, 999, 1_001, 333_333, 47_519_999]) {
       for (const comisionPct of [0, 3.5, 5, 12.5, 100]) {
         const r = calcularLiquidacionV4({ precioViajeClp, comisionPct });
-        expect(r.totalTransportistaClp + r.descuentoBoosterClp).toBe(r.totalGeneradorClp);
+        expect(r.totalTransportistaClp + r.totalFacturaBoosterClp).toBe(r.totalGeneradorClp);
         expect(r.precioTransportistaClp + r.comisionClp).toBe(r.precioViajeClp);
         expect(Number.isInteger(r.totalTransportistaClp)).toBe(true);
       }
@@ -30,7 +30,7 @@ describe('calcularLiquidacionV4 (ADR-094 §1)', () => {
 
   it('comisión 0 %: el transportista recibe todo lo que paga el generador', () => {
     const r = calcularLiquidacionV4({ precioViajeClp: 250_000, comisionPct: 0 });
-    expect(r.descuentoBoosterClp).toBe(0);
+    expect(r.totalFacturaBoosterClp).toBe(0);
     expect(r.precioTransportistaClp).toBe(250_000);
     expect(r.totalTransportistaClp).toBe(r.totalGeneradorClp);
   });
