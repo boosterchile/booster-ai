@@ -23,7 +23,7 @@ const logger = {
 const ADMIN = 'admin@boosterchile.com';
 const DATOS = {
   region: 'IV',
-  k_min_vehiculos: 10,
+  k_min_vehiculos: 1,
   franjas: [{ mes: '2026-10', franja: '09-12', vehiculos: 12, viajes: 40 }],
   emisiones: [],
   od: [],
