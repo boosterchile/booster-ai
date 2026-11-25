@@ -89,11 +89,6 @@ function enDias(dias: number): string {
   return new Date(Date.now() + dias * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Fecha de calendario como medianoche UTC, igual que guarda el API. */
-function dia(fecha: string): Date {
-  return new Date(`${fecha}T00:00:00.000Z`);
-}
-
 function leerModo(): Modo {
   const arg = process.argv.find((a) => a.startsWith('--modo='))?.slice('--modo='.length);
   return modoSchema.parse(arg ?? process.env.UNA_VERDAD_MODO ?? 'completo');
@@ -257,16 +252,16 @@ async function main(): Promise<void> {
     const a = idPorPatente.get('UVEA01') ?? '';
     const b = idPorPatente.get('UVEB02') ?? '';
     await db.insert(documentosVehiculo).values([
-      { vehicleId: a, tipo: 'soap', fechaVencimiento: dia('2020-04-01'), estado: 'vencido' },
+      { vehicleId: a, tipo: 'soap', fechaVencimiento: '2020-04-01', estado: 'vencido' },
       {
         vehicleId: a,
         tipo: 'revision_tecnica',
-        fechaVencimiento: dia(enDias(10)),
+        fechaVencimiento: enDias(10),
         estado: 'por_vencer',
       },
-      { vehicleId: b, tipo: 'soap', fechaVencimiento: dia('2099-01-01') },
-      { vehicleId: b, tipo: 'revision_tecnica', fechaVencimiento: dia('2099-01-01') },
-      { vehicleId: b, tipo: 'permiso_circulacion', fechaVencimiento: dia('2099-01-01') },
+      { vehicleId: b, tipo: 'soap', fechaVencimiento: '2099-01-01' },
+      { vehicleId: b, tipo: 'revision_tecnica', fechaVencimiento: '2099-01-01' },
+      { vehicleId: b, tipo: 'permiso_circulacion', fechaVencimiento: '2099-01-01' },
     ]);
 
     // Conductores: la licencia de Benito está vencida en su ficha y no tiene
@@ -302,8 +297,8 @@ async function main(): Promise<void> {
       await db.delete(documentosConductor).where(eq(documentosConductor.conductorId, conductorId));
       if (conductor.alDia) {
         await db.insert(documentosConductor).values([
-          { conductorId, tipo: 'licencia_conducir', fechaVencimiento: dia(conductor.licencia) },
-          { conductorId, tipo: 'examen_psicotecnico', fechaVencimiento: dia('2099-01-01') },
+          { conductorId, tipo: 'licencia_conducir', fechaVencimiento: conductor.licencia },
+          { conductorId, tipo: 'examen_psicotecnico', fechaVencimiento: '2099-01-01' },
         ]);
       }
     }

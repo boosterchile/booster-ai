@@ -9,7 +9,7 @@ import {
   fechaEnZona,
   resumirDocumental,
 } from '@booster-ai/shared-schemas';
-import { type AnyColumn, and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   conductores,
@@ -21,15 +21,6 @@ import {
 } from '../db/schema.js';
 
 const ZONA_FALLBACK = 'America/Santiago';
-
-/**
- * `fecha_vencimiento` es `date` en la base, pero el esquema de drizzle la
- * declara `timestamp`: leída tal cual llega como una fecha inválida y todo
- * documento quedaba «sin fecha». Se lee como texto `AAAA-MM-DD`.
- */
-function fechaComoTexto(columna: AnyColumn) {
-  return sql<string | null>`${columna}::text`;
-}
 
 export function aFechaCalendario(valor: Date | string | null): string | null {
   if (valor == null) {
@@ -84,7 +75,7 @@ export async function leerEntradaDocumental(opts: {
     .select({
       duenoId: documentosVehiculo.vehicleId,
       tipo: documentosVehiculo.tipo,
-      fechaVencimiento: fechaComoTexto(documentosVehiculo.fechaVencimiento),
+      fechaVencimiento: documentosVehiculo.fechaVencimiento,
     })
     .from(documentosVehiculo)
     .innerJoin(vehicles, eq(vehicles.id, documentosVehiculo.vehicleId))
@@ -105,7 +96,7 @@ export async function leerEntradaDocumental(opts: {
     .select({
       duenoId: documentosConductor.conductorId,
       tipo: documentosConductor.tipo,
-      fechaVencimiento: fechaComoTexto(documentosConductor.fechaVencimiento),
+      fechaVencimiento: documentosConductor.fechaVencimiento,
     })
     .from(documentosConductor)
     .innerJoin(conductores, eq(conductores.id, documentosConductor.conductorId))

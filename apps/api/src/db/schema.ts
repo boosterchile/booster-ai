@@ -1122,12 +1122,12 @@ export const documentosVehiculo = pgTable(
      * en follow-up.
      */
     archivoUrl: text('archivo_url'),
-    fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
+    fechaEmision: date('fecha_emision', { mode: 'string' }),
     /**
      * Para documentos sin vencimiento (e.g. padrón) queda NULL. La query
      * del dashboard ignora estos (estado siempre 'vigente').
      */
-    fechaVencimiento: timestamp('fecha_vencimiento', { mode: 'date' }),
+    fechaVencimiento: date('fecha_vencimiento', { mode: 'string' }),
     estado: documentoEstadoEnum('estado').notNull().default('vigente'),
     notas: text('notas'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1153,8 +1153,8 @@ export const documentosConductor = pgTable(
       .references(() => conductores.id, { onDelete: 'restrict' }),
     tipo: documentoConductorTipoEnum('tipo').notNull(),
     archivoUrl: text('archivo_url'),
-    fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
-    fechaVencimiento: timestamp('fecha_vencimiento', { mode: 'date' }),
+    fechaEmision: date('fecha_emision', { mode: 'string' }),
+    fechaVencimiento: date('fecha_vencimiento', { mode: 'string' }),
     estado: documentoEstadoEnum('estado').notNull().default('vigente'),
     notas: text('notas'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),

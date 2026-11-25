@@ -25,8 +25,8 @@ function buildVehicleDocRow(overrides: Partial<Record<string, unknown>> = {}) {
     vehicleId: VEHICLE_ID,
     tipo: 'revision_tecnica',
     archivoUrl: null,
-    fechaEmision: new Date('2026-01-01T00:00:00Z'),
-    fechaVencimiento: new Date('2027-01-01T00:00:00Z'),
+    fechaEmision: '2026-01-01',
+    fechaVencimiento: '2027-01-01',
     estado: 'vigente',
     notas: null,
     createdAt: new Date('2026-05-10T00:00:00Z'),
@@ -41,8 +41,8 @@ function buildDriverDocRow(overrides: Partial<Record<string, unknown>> = {}) {
     conductorId: CONDUCTOR_ID,
     tipo: 'licencia_conducir',
     archivoUrl: null,
-    fechaEmision: new Date('2026-01-01T00:00:00Z'),
-    fechaVencimiento: new Date('2027-01-01T00:00:00Z'),
+    fechaEmision: '2026-01-01',
+    fechaVencimiento: '2027-01-01',
     estado: 'vigente',
     notas: null,
     createdAt: new Date('2026-05-10T00:00:00Z'),
@@ -246,8 +246,8 @@ describe('documentos vehiculo routes', () => {
       insertRows: [
         buildVehicleDocRow({
           tipo: 'soap',
-          fechaEmision: new Date('2026-01-15T00:00:00Z'),
-          fechaVencimiento: new Date('2027-01-15T00:00:00Z'),
+          fechaEmision: '2026-01-15',
+          fechaVencimiento: '2027-01-15',
         }),
       ],
     });
@@ -281,10 +281,10 @@ describe('documentos vehiculo routes', () => {
 
   it('PATCH /vehiculo-doc/:id actualiza fecha_vencimiento → recalcula estado', async () => {
     const stub = makeDbStub({
-      selectQueue: [[{ id: DOC_ID, fechaVencimiento: new Date('2027-01-01T00:00:00Z') }]],
+      selectQueue: [[{ id: DOC_ID, fechaVencimiento: '2027-01-01' }]],
       updateRows: [
         buildVehicleDocRow({
-          fechaVencimiento: new Date('2026-06-01T00:00:00Z'),
+          fechaVencimiento: '2026-06-01',
           estado: 'por_vencer',
         }),
       ],
@@ -405,8 +405,8 @@ describe('documentos conductor routes', () => {
       updateRows: [
         buildDriverDocRow({
           archivoUrl: 'https://x.com/doc.pdf',
-          fechaEmision: new Date('2026-02-01T00:00:00Z'),
-          fechaVencimiento: new Date('2027-02-01T00:00:00Z'),
+          fechaEmision: '2026-02-01',
+          fechaVencimiento: '2027-02-01',
           notas: 'Renovado',
         }),
       ],
@@ -483,7 +483,7 @@ describe('cumplimiento dashboard', () => {
         [{ timezone: 'America/Santiago' }],
         [{ id: VEHICLE_ID, patente: 'AB1234', estado: 'activo', teltonikaImei: null }],
         [
-          { duenoId: VEHICLE_ID, tipo: 'soap', fechaVencimiento: new Date('2020-04-01T00:00:00Z') },
+          { duenoId: VEHICLE_ID, tipo: 'soap', fechaVencimiento: '2020-04-01' },
           { duenoId: VEHICLE_ID, tipo: 'revision_tecnica', fechaVencimiento: enDias(10) },
           // Falta el permiso de circulación.
         ],
