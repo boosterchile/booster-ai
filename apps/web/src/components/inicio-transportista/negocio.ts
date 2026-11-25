@@ -1,4 +1,5 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
+import { cuentaEstadoFlota, etiquetaDispositivo } from '../../lib/estado-dispositivo.js';
 import {
   type AsignacionInicio,
   type Carga,
@@ -274,7 +275,10 @@ function panelSenal(carga: Carga<VehiculoFlotaInicio[]>, ahoraMs: number): Panel
       valor: {
         id: 'senal-ok',
         titulo: 'Flota al día',
-        detalle: conteo.total > 0 ? `${conteo.conectados}/${conteo.total} conectados` : null,
+        detalle:
+          conteo.total > 0
+            ? `${conteo.conectados}/${conteo.total} ${etiquetaDispositivo('conectado').toLowerCase()}`
+            : null,
         href: '/app/flota',
         tono: 'calmo',
       },
@@ -288,7 +292,7 @@ function panelSenal(carga: Carga<VehiculoFlotaInicio[]>, ahoraMs: number): Panel
     estado: 'listo',
     valor: {
       id: 'sin-senal',
-      titulo: conteo.sinSenal === 1 ? '1 sin señal' : `${conteo.sinSenal} sin señal`,
+      titulo: cuentaEstadoFlota('sin_senal', conteo.sinSenal),
       detalle: patentes.length > 0 ? patentes.join(', ') : null,
       href: '/app/flota',
       tono: 'alerta',
@@ -303,8 +307,8 @@ function panelDocumentos(carga: DatosInicio['cumplimiento']): Panel<AvisoNegocio
   if (carga.estado === 'error') {
     return { estado: 'error' };
   }
-  const { vencidos, porVencer30d, documentos } = carga.valor;
-  if (vencidos <= 0 && porVencer30d <= 0) {
+  const { pendientes, vencidos, documentos } = carga.valor;
+  if (pendientes <= 0) {
     return {
       estado: 'listo',
       valor: {
@@ -316,10 +320,10 @@ function panelDocumentos(carga: DatosInicio['cumplimiento']): Panel<AvisoNegocio
       },
     };
   }
-  const primero = documentos.find((doc) => doc.estado === 'vencido' || doc.estado === 'por_vencer');
+  const primero = documentos.find((doc) => doc.estado !== 'vigente');
   const partes: string[] = [];
-  if (vencidos > 0 && porVencer30d > 0) {
-    partes.push(`+${porVencer30d} por vencer en 30 días`);
+  if (vencidos > 0) {
+    partes.push(vencidos === 1 ? '1 vencido' : `${vencidos} vencidos`);
   }
   if (primero) {
     const referencia =
@@ -327,14 +331,7 @@ function panelDocumentos(carga: DatosInicio['cumplimiento']): Panel<AvisoNegocio
     partes.push(`${etiquetaDocumento(primero.tipo)} ${referencia ?? ''}`.trim());
   }
   const detalle = partes.length > 0 ? partes.join(' · ') : null;
-  const titulo =
-    vencidos > 0
-      ? vencidos === 1
-        ? '1 documento vencido'
-        : `${vencidos} documentos vencidos`
-      : porVencer30d === 1
-        ? '1 doc por vencer'
-        : `${porVencer30d} docs por vencer`;
+  const titulo = pendientes === 1 ? '1 documento pendiente' : `${pendientes} documentos pendientes`;
   return {
     estado: 'listo',
     valor: {

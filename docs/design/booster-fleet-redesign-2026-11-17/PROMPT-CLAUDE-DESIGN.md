@@ -11,7 +11,7 @@ Sos diseñador de producto para **Booster AI**, logística B2B en Chile. Necesit
 Booster Fleet ya está en producción. Hoy es una página con tres bloques de texto/tablas (Combustible, Documentos, Mantenciones). El Product Owner dice que es básica, poco intuitiva y anticuada respecto de la imagen de Booster. Te adjunto el documento de contexto de marca/tokens y, si están disponibles, capturas de la UI actual (solo como referencia privada).
 
 Identidad (resumen):
-- Promesa: “Impacta menos, transporta más.”
+- Promesa: “Transporta más, impacta menos.”
 - Sentimiento: rápido, sin fricción, simple — vara Stripe/Linear.
 - Personalidad: “buena onda” chilena, solo en momentos (vacíos/éxitos), no en tablas.
 - Marca producto: verde `#1FA058`, neutrales cálidos `#FAF9F7`, urgencia ámbar `#F58A00`. Tipografía Inter + JetBrains Mono para patentes. **No uses fucsia de marketing.**

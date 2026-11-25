@@ -34,6 +34,7 @@ import { createAdminDispositivosPlataformaRoutes } from './routes/admin-disposit
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
 import { createAdminFlotaPlataformaRoutes } from './routes/admin-flota-plataforma.js';
+import { createAdminIndicadoresRoutes } from './routes/admin-indicadores.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
@@ -868,6 +869,19 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/plataforma/flota', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use('/admin/plataforma/flota/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/plataforma/flota', createAdminFlotaPlataformaRoutes({ db: opts.db, logger }));
+
+    // Platform-admin: indicadores del negocio del Inicio del panel, solo
+    // lectura (`.specs/una-sola-verdad-por-dato`). Mismo chain que la flota.
+    app.use('/admin/plataforma/indicadores', firebaseAuthMiddleware);
+    app.use(
+      '/admin/plataforma/indicadores',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/plataforma/indicadores',
+      createAdminIndicadoresRoutes({ db: opts.db, logger }),
+    );
 
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
     // ADR-032). Auth con requirePlatformAdmin dentro del handler (regla

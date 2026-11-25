@@ -274,10 +274,10 @@ describe('/app/rutas', () => {
     const huella = await screen.findByRole('region', { name: 'Huella de la ruta' });
     expect(huella).toHaveTextContent('Estimación');
     expect(huella).not.toHaveTextContent('Medida');
-    expect(huella).toHaveTextContent('100,000 kg CO₂e');
+    expect(huella).toHaveTextContent('100,0 kg CO₂e');
     expect(huella).toHaveTextContent('BOO-AAA111');
     expect(huella).toHaveTextContent('40,00 %');
-    expect(huella).toHaveTextContent('60,000 kg CO₂e');
+    expect(huella).toHaveTextContent('60,0 kg CO₂e');
   });
 
   it('una ruta cerrada con distancia de mapas no dice Medida', async () => {

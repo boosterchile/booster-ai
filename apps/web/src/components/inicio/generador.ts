@@ -1,3 +1,4 @@
+import { formatoEmisiones } from '../../lib/formato-emisiones.js';
 import { comunaDesdeDireccion } from '../inicio-transportista/modelo.js';
 import type { AgendaItem } from './agenda.js';
 import type { AvisoItem } from './avisos.js';
@@ -80,16 +81,6 @@ function pesos(valor: number): string {
     currency: 'CLP',
     maximumFractionDigits: 0,
   }).format(valor);
-}
-
-export function textoHuella(kg: number): string {
-  if (kg >= 1000) {
-    const toneladas = kg / 1000;
-    const texto = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 }).format(toneladas);
-    return `${texto} t CO₂e`;
-  }
-  const texto = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(kg);
-  return `${texto} kg CO₂e`;
 }
 
 function estadoVisible(viaje: ViajeInicio): { texto: string; tono: AgendaItem['tono'] } | null {
@@ -256,11 +247,11 @@ function huellaDe(certificados: Panel<CertificadoInicio[]>, ahora: Date): Panel<
   if (delMes.length === 0) {
     return {
       estado: 'listo',
-      valor: { texto: textoHuella(0), detalle: 'Sin certificados este mes' },
+      valor: { texto: formatoEmisiones(0), detalle: 'Sin certificados este mes' },
     };
   }
   const detalle = delMes.length === 1 ? '1 certificado' : `${delMes.length} certificados`;
-  return { estado: 'listo', valor: { texto: textoHuella(kg), detalle } };
+  return { estado: 'listo', valor: { texto: formatoEmisiones(kg), detalle } };
 }
 
 function avisosDe(certificados: Panel<CertificadoInicio[]>, ahora: Date): AvisoItem[] {

@@ -4,11 +4,13 @@ import {
   type MantencionEntrada,
   type TrayectoBoosterFleet,
   type VehiculoBoosterFleet,
+  calcularDocumental,
   clasificarMantencion,
   componerPanelBoosterFleet,
   fechaEnZona,
   panelBoosterFleetSchema,
   programarMantencionSchema,
+  resumirDocumental,
 } from './booster-fleet.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -614,5 +616,61 @@ describe('vigencia de la lectura de combustible', () => {
     expect('leido_en' in panel.combustible).toBe(false);
     expect('al_dia' in panel.combustible).toBe(false);
     expect(panelBoosterFleetSchema.safeParse(panel).success).toBe(true);
+  });
+});
+
+describe('un solo cálculo de documentos pendientes (una-sola-verdad-por-dato)', () => {
+  const flota = {
+    hoy: HOY,
+    vehiculos: [vehiculo(A, 'DOC001'), vehiculo(B, 'RET002', { estado: 'retirado' as const })],
+    documentosVehiculo: [
+      // Vencido ayer.
+      { duenoId: A, tipo: 'soap', fechaVencimiento: '2026-11-16' },
+      // Por vencer dentro de 30 días.
+      { duenoId: A, tipo: 'permiso_circulacion', fechaVencimiento: '2026-12-01' },
+      // La revisión técnica falta.
+      // Un documento de un camión retirado no cuenta.
+      { duenoId: B, tipo: 'soap', fechaVencimiento: '2020-01-01' },
+    ],
+    conductores: [
+      { id: CONDUCTOR, nombre: 'Ana Rojas', rut: '11111111-1', licenciaVencimiento: '2027-06-01' },
+    ],
+    documentosConductor: [
+      { duenoId: CONDUCTOR, tipo: 'licencia_conducir', fechaVencimiento: '2027-06-01' },
+      // El psicotécnico falta.
+    ],
+  };
+
+  it('el panel de Booster Fleet y calcularDocumental entregan lo mismo', () => {
+    const panel = componerPanelBoosterFleet(entrada(flota));
+    expect(calcularDocumental(flota)).toEqual(panel.documental);
+  });
+
+  it('un documento que falta cuenta como pendiente, igual que el vencido y el por vencer', () => {
+    const resumen = resumirDocumental(calcularDocumental(flota));
+    expect(resumen).toEqual({
+      pendientes: 4,
+      vencidos: 1,
+      por_vencer: 1,
+      faltantes: 2,
+      incompletos: 0,
+      de_vehiculos: 3,
+      de_conductores: 1,
+    });
+  });
+
+  it('una flota al día no tiene pendientes', () => {
+    const alDia = calcularDocumental({
+      hoy: HOY,
+      vehiculos: [vehiculo(A, 'DOC001')],
+      documentosVehiculo: ['soap', 'permiso_circulacion', 'revision_tecnica'].map((tipo) => ({
+        duenoId: A,
+        tipo,
+        fechaVencimiento: '2027-06-01',
+      })),
+      conductores: [],
+      documentosConductor: [],
+    });
+    expect(resumirDocumental(alDia).pendientes).toBe(0);
   });
 });

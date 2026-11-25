@@ -5,6 +5,16 @@
 **`main`**: tip `f06d656f` (#1076), adelante de prod en el test de la web (#1072) y el proveedor de App Check elegible (#1073, sin efecto en prod). Nada pendiente de deploy ni de `apply`, en prod ni en staging.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
+## Release del 2026-11-25 y traspaso del rediseño
+
+**Prod al 2026-11-25**: `c37fa6c0` (Release on request [45635387767](https://github.com/boosterchile/booster-ai/actions/runs/45635387767) SUCCESS, terminó a las 17:18Z; Cloud Build y el smoke de `/health` pasaron; no se revisaron las revisiones de Cloud Run ni los logs). Lleva #1072 a #1078, el lema (#1080, #1081), D-18 en `DESIGN.md` (#1082) y los frentes 1 y 2 de ADR-094 (#1084, #1085) con `PRICING_V3_ACTIVATED` apagado. Sin migraciones. La línea «Prod» de arriba quedó atrás.
+
+**No encender `PRICING_V3_ACTIVATED`** hasta cerrar los frentes 3, 4 y 5 de `.specs/comision-dentro-del-precio/spec.md`: la oferta copia el precio publicado y la liquidación suma la comisión encima.
+
+**Staging**: el deploy falla en el paso 32 de Cloud Build en todas las corridas desde `c89cc91`; sin diagnosticar.
+
+**Rediseño** (pedido del PO el 2026-11-25: «necesito que las maquetas entren a producción»): las 56 maquetas, sus capturas, el plan en diez frentes y el mapa verificado contra el código están en [`docs/design/rediseno-2026-11-25/`](../design/rediseno-2026-11-25/README.md). Varias pantallas ya tienen spec aceptada: la maqueta se aplica como diferencia, no como reemplazo. El PO decidió el 2026-11-25: menú superior en vez de barra lateral, «Medido» solo con huella medida, el generador elige transportista o recibe ofertas (falta ADR y spec del modelo), y cada pantalla sale a todos al liberarse (README, «Decisiones del PO del 2026-11-25»). #1083 (botón verde y sello) sigue abierto. Implementa una sola sesión, en este repositorio.
+
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
 
 **En prod desde el 2026-11-23** ([#1047](https://github.com/boosterchile/booster-ai/pull/1047), spec `.specs/servicios-por-empresa/`, pedido del PO el 2026-11-23). El platform-admin apaga por empresa las ofertas de carga: la empresa sale del matching y su menú e Inicio quedan sin Ofertas, Cobra hoy, Liquidaciones ni Zonas de matching; conserva Booster Fleet, la flota y sus viajes propios. Migración **0089**, expand-only (`empresas.recibe_ofertas_carga`, por defecto `true`). Booster Fleet no se puede apagar por empresa: quedó fuera de alcance.

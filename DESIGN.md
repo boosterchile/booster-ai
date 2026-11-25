@@ -1,6 +1,6 @@
 # Booster — Sistema de Experiencia (DESIGN.md)
 
-> **Booster: Impacta menos, transporta más.**
+> **Booster: Transporta más, impacta menos.**
 
 **Estado:** Borrador v1 · Fase D0 del sistema de experiencia (d-máximo)
 **Propósito:** Este documento es el cimiento de identidad de producto de Booster. Gobierna cómo se ve, cómo suena, cómo se siente y cómo se comporta la plataforma en todas sus superficies. De él se derivan los tokens (D1), los componentes (D2) y los patrones de interacción y accesibilidad (D3). Ningún elemento visual o de interacción debería construirse sin poder trazarse a un principio de este documento.
@@ -17,7 +17,7 @@ Este documento tiene dos apartados que se complementan y **no se resumen entre s
 
 ## 1. La promesa central
 
-Todo en Booster existe para cumplir una promesa: **Impacta menos, transporta más.** No es un eslogan de marketing — es el criterio con el que se juzga cada decisión de diseño. Una pantalla, una interacción o una palabra que no sirva a esa promesa está de más.
+Todo en Booster existe para cumplir una promesa: **Transporta más, impacta menos.** No es un eslogan de marketing — es el criterio con el que se juzga cada decisión de diseño. Una pantalla, una interacción o una palabra que no sirva a esa promesa está de más.
 
 Booster mide de verdad lo que otros solo declaran. Ese mismo rigor —sustancia sobre apariencia— gobierna la experiencia: **no decoramos, resolvemos.**
 
@@ -198,6 +198,15 @@ Booster usa el color con **significado**, no por decoración. Hay tres registros
 - **Ambiental (verde):** reservado para lo relacionado con impacto ambiental y medición de huella. El verde en Booster **significa algo verificado** — a diferencia de la competencia (Fleteretorno) que usa el verde como apariencia sin medición detrás. No lo malgastamos en decoración; cuando aparece, es porque hay sustancia ambiental real.
 - **Producto (propio, customizable):** el registro de la app del mundo autenticado, donde viven el conductor y los operadores. Distinto de los otros dos, y adaptable por el usuario (sección 6).
 
+### 8.1 El verde es marca y acción principal; lo ambiental se marca con sello
+
+Instrucción del Product Owner (2026-11-24). Prevalece sobre la reserva del verde descrita arriba y sobre D-4 en lo que la contradigan.
+
+- **El verde Booster (`primary-600`) es el color de la marca y de la acción principal** en toda la plataforma. El botón principal es verde en todas las superficies, y el `Button` compartido de `ui-components` usa `primary-600`, no el acento.
+- **El dato ambiental no se distingue por color, sino por su sello:** una forma y una palabra («Medido», «Estimado»). El sello es lo que significa "verificado"; un verde sin sello no afirma nada ambiental.
+- **Ningún estado se comunica solo con color.** Todo estado lleva forma y palabra.
+- La customización de la sección 6 no cambia: el usuario adapta su registro; el verde es el valor por defecto.
+
 ---
 
 # PARTE II — SISTEMA TÉCNICO-OPERATIVO
@@ -260,7 +269,7 @@ Viewport notch-aware (viewport-fit=cover); tokens de breakpoint mobile-first; us
 | D-6b | "Momentos humanos" son capa transversal: misma lógica, distinto canal (voz para conductor, UI para operadores) | Sistema de momentos humanos compartido, con adaptadores de canal |
 | D-7 | Voz de Booster: cálida, humor chileno, voz elegible por el conductor | TTS con personalidad + selección de voz (parte de customización) |
 | D-8 | Accesibilidad real y verificada, no nominal | Activar axe en CI, escribir specs, a11y en cada componente |
-| D-9 | Propuesta de valor "Impacta menos, transporta más" como hilo conductor | Presente en el tono de todas las superficies |
+| D-9 | Propuesta de valor "Transporta más, impacta menos" como hilo conductor | Presente en el tono de todas las superficies |
 | D-10 | Cuatro usuarios en **dos mundos**: autenticado (conductor + 2 operadores, app) vs público-efímero (destinatario, por código) | La línea autenticado/público es la divisoria estructural; registros y superficies distintas |
 | D-11 | Destinatario = tracking Uber-like por código, sin login, **diferenciador comercial trascendental** | Superficie pública separada; registro comercial; mobile-first; vitrina de marca |
 | D-12 | Destinatario V1 = ubicación en vivo + ventana estimada, **NO ETA calculado en tiempo real** | Recorte deliberado: resuelve el dolor sin sobre-ingeniería; ETA dinámico fuera de V1 |
@@ -269,6 +278,7 @@ Viewport notch-aware (viewport-fit=cover); tokens de breakpoint mobile-first; us
 | D-15 | El eje conductor/operador **no es universal**: solo las 5 duales (Button, Card, Input, Modal, Toast) lo llevan; las operador-first (DataTable, Tabs, Dropdown, Select) no tienen "modo conductor"; las semántico-compartidas (Badge, estados) son fijas | El esfuerzo de registro se concentra en 5 duales, no se dispersa en las 11 (ver 4.5) |
 | D-16 | Las primitivas de `ui-components` son **tontas** (token-driven, sin personalidad); los momentos humanos son **capa separada**: primitiva → componente-de-momento → contenido → adaptador de canal | La personalidad no se hornea en la primitiva; el split voz/UI y el contenido viven en un solo lugar, no repetidos por componente |
 | D-17 | **React Aria** (`react-aria-components`, headless puro) para el comportamiento accesible de los componentes difíciles (Modal, Dropdown, Select, Tabs); primitivas simples a mano con tokens | A11y real sin reinventar la rueda difícil; cero estilos de terceros (no shadcn/Radix); apariencia 100% por tokens |
+| D-18 | El verde `primary-600` es marca y acción principal en toda la plataforma; lo ambiental se distingue por sello (forma + palabra), no por color. Prevalece sobre D-4 y la sección 8 en lo que contradigan (ver 8.1) | `Button` compartido pasa de acento a `primary-600`; sello «Medido»/«Estimado» como componente semántico fijo |
 
 ## Trabajo pendiente por fase
 
@@ -312,4 +322,4 @@ El **destinatario** (sección 4.3) es un caso especial: pertenece al mundo públ
 
 *Este documento vive en el repositorio como fuente de verdad de la identidad de Booster. Se actualiza cuando el PO evoluciona la visión. Toda construcción de UI/UX debe poder trazarse a un principio de la Parte I y una especificación de la Parte II.*
 
-**Booster: Impacta menos, transporta más.**
+**Booster: Transporta más, impacta menos.**

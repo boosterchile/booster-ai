@@ -13,7 +13,7 @@ import type { ViajeEntregado } from './proyeccion.js';
  */
 export async function leerViajesEntregados(db: Db): Promise<ViajeEntregado[]> {
   const generador = alias(empresas, 'generador');
-  // rls-allowlist: export platform-wide y agregado del observatorio (ADR-012 §Privacidad: solo agregados k ≥ 10 salen del sistema).
+  // rls-allowlist: export platform-wide y agregado del observatorio (ADR-012 §Privacidad: solo agregados salen del sistema; umbral en ADR-096).
   return await db
     .select({
       viajeId: trips.id,

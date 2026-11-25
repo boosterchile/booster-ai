@@ -9,6 +9,7 @@ import {
   useRejectOfferMutation,
 } from '../../hooks/use-offers.js';
 import { ApiError } from '../../lib/api-client.js';
+import { formatoEmisiones, formatoIntensidad } from '../../lib/formato-emisiones.js';
 import { EcoRouteMapPreview } from './EcoRouteMapPreview.js';
 
 const CARGO_LABELS: Record<string, string> = {
@@ -296,7 +297,7 @@ export function OfferCard({ offer, puedeDecidir }: OfferCardProps) {
  * en "Ver impacto ambiental". Maneja los tres estados de la query:
  *   - loading: spinner + texto
  *   - error: mensaje genérico (no expone detalle)
- *   - success: distancia, kg CO2e, intensidad + nota del data source
+ *   - success: distancia, emisiones, intensidad + nota del data source
  */
 function EcoPreviewBlock(props: {
   query: ReturnType<typeof useEcoPreview>;
@@ -349,12 +350,12 @@ function EcoPreviewBlock(props: {
         <div>
           <dt className="text-neutral-600">Emisiones (WTW)</dt>
           <dd className="font-semibold text-success-700">
-            {p.emisiones_kgco2e_wtw.toFixed(1)} kg CO₂e
+            {formatoEmisiones(p.emisiones_kgco2e_wtw)}
           </dd>
         </div>
         <div>
           <dt className="text-neutral-600">Intensidad</dt>
-          <dd className="text-neutral-900">{p.intensidad_gco2e_por_tonkm.toFixed(0)} g/t·km</dd>
+          <dd className="text-neutral-900">{formatoIntensidad(p.intensidad_gco2e_por_tonkm)}</dd>
         </div>
         {p.fuel_liters_estimated != null && (
           <div>

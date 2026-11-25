@@ -1,10 +1,13 @@
-import { STAKEHOLDER_ORG_TYPE_LABEL } from '@booster-ai/shared-schemas';
+import { STAKEHOLDER_ORG_TYPE_LABEL, UMBRAL_ANONIMATO } from '@booster-ai/shared-schemas';
 import { Link, Navigate } from '@tanstack/react-router';
 import { ArrowLeft, Building2, Info, MapPin, Shield, Star, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { CO2E, formatoEmisiones } from '../lib/formato-emisiones.js';
+
+const DESDE_VIAJES = UMBRAL_ANONIMATO === 1 ? '1 viaje' : `${UMBRAL_ANONIMATO} viajes`;
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -16,9 +19,8 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * zonas críticas (puertos, mercados de abastos, polos industriales) sin
  * exponer PII ni data identificable de empresas individuales.
  *
- * Garantía: k-anonymity ≥ 5 — un dato sólo se muestra si hay ≥ 5 viajes
- * únicos en la celda temporal-geográfica. Sin agregación suficiente, la
- * UI muestra "Sin data suficiente para preservar anonimato".
+ * Garantía: datos agregados desde `UMBRAL_ANONIMATO` viajes por celda
+ * (ADR-096); nunca empresa, patente, conductor ni un viaje individual.
  *
  * **Estado actual**: skeleton. Las cards de zona están con data mock para
  * que el stakeholder pueda recorrer la pantalla y entender la propuesta
@@ -233,8 +235,8 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
             Visualiza los flujos de transporte agregados en zonas críticas (puertos, mercados, polos
             industriales) para tomar decisiones sobre regulación, infraestructura y
-            descarbonización. Toda la data está agregada con <strong>k-anonymity ≥ 5</strong>:
-            ninguna celda identifica a empresas individuales.
+            descarbonización. Los datos son agregados: ninguna celda muestra una empresa, una
+            patente, un conductor ni un viaje individual.
           </p>
         </div>
       </header>
@@ -283,8 +285,8 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
             Matching: asigna viaje y camión dentro de la empresa. Aquí no se ofrece ni se acepta.
           </li>
           <li>
-            Huella y certificados: el viaje cierra con kg CO2e. Aquí el dato sale si hay al menos 5
-            viajes en la celda.
+            Huella y certificados: el viaje cierra con su huella en {CO2E}. Aquí el dato sale desde{' '}
+            {DESDE_VIAJES} en la celda.
           </li>
           <li className="sm:col-span-2">
             Zonas de esta pantalla: puertos, mercados y polos, con ámbito nacional o regional de tu
@@ -341,9 +343,9 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
           <li className="flex items-start gap-2">
             <Shield className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
             <span>
-              <strong>k-anonymity ≥ 5</strong>: cualquier celda (zona × hora × tipo de carga) sólo
-              se publica si tiene ≥ 5 viajes únicos. Por debajo del umbral, la celda se rellena con
-              "Sin data suficiente".
+              <strong>Datos agregados</strong>: una celda (zona × hora × tipo de carga) se publica
+              desde {DESDE_VIAJES}. Nunca muestra una empresa, una patente, un conductor ni un viaje
+              individual.
             </span>
           </li>
           <li className="flex items-start gap-2">
@@ -399,7 +401,7 @@ function ZonaCard({ zona }: { zona: ZonaPredefinida }) {
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
         <Stat label="Viajes (30 días)" value={zona.demo_viajes_30d.toLocaleString('es-CL')} />
-        <Stat label="CO₂e total" value={`${(zona.demo_co2e_kg / 1000).toFixed(1)} t`} />
+        <Stat label={`${CO2E} total`} value={formatoEmisiones(zona.demo_co2e_kg)} />
         <Stat label="Horario pico" value={zona.demo_horario_pico} className="col-span-2" />
       </dl>
 

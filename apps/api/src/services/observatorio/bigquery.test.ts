@@ -140,14 +140,15 @@ describe('crearLectorObservatorio', () => {
   const filas = {
     franjas: [
       { mes: '2026-10', franja: '09-12', vehiculos: 12, viajes: 40 },
-      { mes: '2026-10', franja: '06-09', vehiculos: 4, viajes: 9 },
+      { mes: '2026-10', franja: '06-09', vehiculos: 1, viajes: 9 },
+      { mes: '2026-10', franja: '12-15', vehiculos: 0, viajes: 0 },
     ],
     emisiones: [{ mes: '2026-10', kgco2e: 1200.5, vehiculos: 11, viajes: 30 }],
     od: [{ mes: '2026-10', vehiculos: 10, viajes: 22, vehiculo_id: 'x' }],
     activos: [{ mes: '2026-10', vehiculos: 15 }],
   };
 
-  it('consulta las cuatro vistas con la región como parámetro y aplica k ≥ 10', async () => {
+  it('consulta las cuatro vistas con la región como parámetro y aplica el umbral de anonimato', async () => {
     const f = clienteFalso(filas);
     const lector = crearLectorObservatorio({ cliente: f.cliente, datasetId: 'observatory' });
     const r = await lector.porRegion('IV');
@@ -157,9 +158,12 @@ describe('crearLectorObservatorio', () => {
       expect(c.params).toEqual({ region: 'IV' });
       expect(c.query).toMatch(/`observatory\.urban_flow_metrics_\w+`/);
     }
-    expect(r.franjas).toEqual([{ mes: '2026-10', franja: '09-12', vehiculos: 12, viajes: 40 }]);
+    expect(r.franjas).toEqual([
+      { mes: '2026-10', franja: '09-12', vehiculos: 12, viajes: 40 },
+      { mes: '2026-10', franja: '06-09', vehiculos: 1, viajes: 9 },
+    ]);
     expect(r.od).toEqual([{ mes: '2026-10', vehiculos: 10, viajes: 22 }]);
-    expect(r.k_min_vehiculos).toBe(10);
+    expect(r.k_min_vehiculos).toBe(1);
   });
 
   it('una vista que no devuelve filas queda como lista vacía', async () => {

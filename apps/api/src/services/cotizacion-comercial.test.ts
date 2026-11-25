@@ -2,6 +2,7 @@ import { CONFIGURACION_COMERCIAL_INICIAL } from '@booster-ai/shared-schemas';
 import { describe, expect, it } from 'vitest';
 import {
   desgloseParaGenerador,
+  desgloseViajeParaGenerador,
   modalidadPermitida,
   tasaCongeladaParaModalidad,
   tasaParaPublicacion,
@@ -43,6 +44,25 @@ describe('desgloseParaGenerador (ADR-079 §1 y §5)', () => {
       desgloseParaGenerador({ precioTransportistaClp: 100_000, comisionPct: '10.00', ivaPct: 19 })
         .comision_clp,
     ).toBe(10_000);
+  });
+});
+
+describe('desgloseViajeParaGenerador (ADR-094 §1 y §3)', () => {
+  it('ejemplo del PO: viaje de $100.000 → el generador paga $119.000', () => {
+    expect(
+      desgloseViajeParaGenerador({ precioViajeClp: 100_000, comisionPct: 5, ivaPct: 19 }),
+    ).toEqual({ precio_viaje_clp: 100_000, iva_viaje_clp: 19_000, total_generador_clp: 119_000 });
+  });
+
+  it('el total del generador no depende de la tasa, y no expone la comisión', () => {
+    const a = desgloseViajeParaGenerador({ precioViajeClp: 700_000, comisionPct: 20, ivaPct: 19 });
+    const b = desgloseViajeParaGenerador({
+      precioViajeClp: 700_000,
+      comisionPct: '8.00',
+      ivaPct: 19,
+    });
+    expect(a).toEqual(b);
+    expect(Object.keys(a).filter((k) => k.includes('comision'))).toEqual([]);
   });
 });
 

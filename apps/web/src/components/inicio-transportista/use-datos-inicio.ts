@@ -77,6 +77,7 @@ function seleccionarCumplimiento(data: CumplimientoCache): CumplimientoInicio {
     })),
   ];
   return {
+    pendientes: data.resumen.total_pendientes,
     vencidos: data.resumen.vencidos,
     porVencer30d: data.resumen.por_vencer_30d,
     documentos,

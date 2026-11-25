@@ -6,7 +6,7 @@ Usar junto con `BRIEF.md` y `screenshots/`. Fuente canónica de identidad: `/DES
 
 ## 1. Promesa y sentimiento
 
-- Promesa: **Impacta menos, transporta más.**
+- Promesa: **Transporta más, impacta menos.**
 - Sentimiento: **Rápido. Sin fricción. Simple.** (vara Stripe / Linear)
 - Personalidad: **buena onda** (chilena): cercana sin ser informal; lúdica **solo en momentos** (vacíos, logros, confirmaciones). En tablas y formularios críticos: sobriedad.
 

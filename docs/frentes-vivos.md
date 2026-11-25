@@ -11,6 +11,7 @@
 **Actualización 2026-11-23, servicios por empresa**: por pedido del PO entra, fuera de slot, «Servicios por empresa» (una empresa transportista sin ofertas de carga). Los slots no cambian.
 **Actualización 2026-11-23** (`main` @ `f6705924`, prod en `52da4c1b`): el PO cierra el Slot 2 («Limpieza de la superficie demo») con T10-03 marcado; pasa a «Cerrados» y el slot queda libre. Marcados 11 de 30 criterios.
 
+**Actualización 2026-11-25, rediseño**: por pedido del PO entra, fuera de slot, «Rediseño de la aplicación» (56 maquetas). Traspaso, mapa y tandas en [`docs/design/rediseno-2026-11-25/`](design/rediseno-2026-11-25/README.md). Los slots no cambian.
 ---
 
 ## Programa TRL 10

@@ -90,7 +90,7 @@ test.describe('flujo conductor T2', () => {
     );
     const resultado = page.getByTestId('resultado-viaje');
     await expect(resultado).toBeVisible();
-    await expect(resultado).toContainText('kg CO2e', { timeout: 30_000 });
+    await expect(resultado).toContainText('kg CO₂e', { timeout: 30_000 });
 
     // Certificado emitido: el panel cambia «Certificado en proceso» por la
     // descarga cuando la API ya tiene `certificado_emitido_en`.

@@ -1,6 +1,6 @@
 /**
  * Resultado del viaje en la tarjeta del conductor, tras confirmar la entrega
- * (Slot 3, paso 4 — decisión D3: solo lectura). Muestra kg CO2e, distancia,
+ * (Slot 3, paso 4 — decisión D3: solo lectura). Muestra la huella, distancia,
  * cobertura, nivel de certificación y la línea de método de ADR-077, y deja
  * descargar el certificado cuando existe. La emisión del PDF es asíncrona
  * (fire-and-forget tras la entrega): mientras no exista se reconsulta cada
@@ -8,6 +8,7 @@
  */
 import { Download, Leaf, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { formatoEmisiones } from '../../lib/formato-emisiones.js';
 import {
   type MotivoCoberturaCero,
   type ResultadoAsignacion,
@@ -194,9 +195,8 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
 
   const m = resultado.metrics;
   const medida = m?.carbon_emissions_kgco2e_actual != null;
-  const kg = numero(
+  const huella = formatoEmisiones(
     medida ? m.carbon_emissions_kgco2e_actual : (m?.carbon_emissions_kgco2e_estimated ?? null),
-    2,
   );
   const km = numero(m?.distance_km_actual ?? m?.distance_km_estimated ?? null, 1);
   const motivoRaw = resultado.cobertura?.motivo;
@@ -223,7 +223,7 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
                   ? 'Huella estimada'
                   : 'Huella estimada (cobertura insuficiente para medir)'}
             </dt>
-            <dd className="font-semibold text-lg">{kg != null ? `${kg} kg CO2e` : 'Sin dato'}</dd>
+            <dd className="font-semibold text-lg">{huella}</dd>
           </div>
           <div>
             <dt className="text-neutral-500 text-xs">

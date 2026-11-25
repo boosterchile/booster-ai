@@ -41,7 +41,11 @@ export function AvisosCard({ avisos }: { avisos: AvisoNegocio[] }) {
         const Icono = aviso.id === 'documentos' ? ShieldAlert : WifiOff;
         return (
           <li key={aviso.id}>
-            <Link to={aviso.href} className="flex items-center gap-3 py-2">
+            <Link
+              to={aviso.href}
+              className="flex items-center gap-3 py-2"
+              data-testid={`aviso-${aviso.id}`}
+            >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-warning-50 text-warning-700">
                 <Icono className="h-4 w-4" aria-hidden="true" />
               </span>

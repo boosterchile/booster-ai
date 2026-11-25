@@ -32,22 +32,29 @@ const DRIVER_DOC_LABELS: Record<string, string> = {
   otro: 'Otro',
 };
 
+/** Estados del cálculo único de documentos (`calcularDocumental`). */
+type EstadoDocumento =
+  | 'vencido'
+  | 'faltante'
+  | 'sin_fecha'
+  | 'sin_archivo'
+  | 'por_vencer'
+  | 'vigente';
+
 interface CumplimientoVehicleDoc {
-  documento_id: string;
   vehiculo_id: string;
   plate: string;
   tipo: string;
-  estado: 'vencido' | 'por_vencer' | 'vigente';
+  estado: EstadoDocumento;
   fecha_vencimiento: string | null;
 }
 
 interface CumplimientoDriverDoc {
-  documento_id: string;
   conductor_id: string;
   full_name: string;
   rut: string;
   tipo: string;
-  estado: 'vencido' | 'por_vencer' | 'vigente';
+  estado: EstadoDocumento;
   fecha_vencimiento: string | null;
 }
 
@@ -55,6 +62,8 @@ interface CumplimientoResponse {
   resumen: {
     vencidos: number;
     por_vencer_30d: number;
+    faltantes: number;
+    incompletos: number;
     total_pendientes: number;
   };
   vehiculos: CumplimientoVehicleDoc[];
@@ -119,9 +128,9 @@ function CumplimientoPage({ me }: { me: MeOnboarded }) {
           </h1>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
             Documentos del vehículo (revisión técnica, permiso de circulación, SOAP) y del conductor
-            (licencia, antecedentes, examen psicotécnico) que están <strong>vencidos</strong> o{' '}
-            <strong>por vencer en los próximos 30 días</strong>. Mantenlos al día para evitar
-            incidentes legales y multas.
+            (licencia, examen psicotécnico) que están <strong>vencidos</strong>, que{' '}
+            <strong>faltan</strong>, que no tienen fecha o archivo, o que vencen en los próximos 30
+            días. Mantenlos al día para evitar incidentes legales y multas.
           </p>
         </div>
       </header>
@@ -133,7 +142,14 @@ function CumplimientoPage({ me }: { me: MeOnboarded }) {
 
       {q.data && (
         <>
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-4">
+            <SummaryCard
+              title="Documentos pendientes"
+              value={q.data.resumen.total_pendientes.toString()}
+              icon={<ShieldAlert className="h-5 w-5 text-primary-700" aria-hidden />}
+              tone="neutral"
+              testId="cumplimiento-documentos-pendientes"
+            />
             <SummaryCard
               title="Vencidos"
               value={q.data.resumen.vencidos.toString()}
@@ -147,10 +163,10 @@ function CumplimientoPage({ me }: { me: MeOnboarded }) {
               tone="warning"
             />
             <SummaryCard
-              title="Total a gestionar"
-              value={q.data.resumen.total_pendientes.toString()}
-              icon={<ShieldAlert className="h-5 w-5 text-primary-700" aria-hidden />}
-              tone="neutral"
+              title="Faltan o incompletos"
+              value={(q.data.resumen.faltantes + q.data.resumen.incompletos).toString()}
+              icon={<ShieldAlert className="h-5 w-5 text-danger-700" aria-hidden />}
+              tone="danger"
             />
           </div>
 
@@ -180,7 +196,7 @@ function CumplimientoPage({ me }: { me: MeOnboarded }) {
                       </thead>
                       <tbody className="divide-y divide-neutral-100 bg-white">
                         {q.data.vehiculos.map((d) => (
-                          <tr key={d.documento_id} className="hover:bg-neutral-50">
+                          <tr key={`${d.vehiculo_id}:${d.tipo}`} className="hover:bg-neutral-50">
                             <Td>
                               <ChileanPlate plate={d.plate} size="sm" />
                             </Td>
@@ -225,7 +241,7 @@ function CumplimientoPage({ me }: { me: MeOnboarded }) {
                       </thead>
                       <tbody className="divide-y divide-neutral-100 bg-white">
                         {q.data.conductores.map((d) => (
-                          <tr key={d.documento_id} className="hover:bg-neutral-50">
+                          <tr key={`${d.conductor_id}:${d.tipo}`} className="hover:bg-neutral-50">
                             <Td className="font-medium">{d.full_name}</Td>
                             <Td className="font-mono text-xs">{d.rut}</Td>
                             <Td>{DRIVER_DOC_LABELS[d.tipo] ?? d.tipo}</Td>
@@ -255,9 +271,10 @@ function CumplimientoPage({ me }: { me: MeOnboarded }) {
           )}
 
           <p className="mt-8 text-neutral-500 text-xs">
-            La columna "Estado" se calcula automáticamente: <strong>Vencido</strong> si la fecha ya
-            pasó, <strong>Por vencer</strong> si vence en los próximos 30 días. Carga o renueva los
-            documentos desde el detalle del vehículo o conductor.
+            La columna «Estado» se calcula automáticamente y es la misma de Booster Fleet:{' '}
+            <strong>Vencido</strong> si la fecha ya pasó, <strong>Falta el documento</strong> si un
+            obligatorio no se ha subido, <strong>Por vencer</strong> si vence en los próximos 30
+            días. Carga o renueva los documentos desde el detalle del vehículo o conductor.
           </p>
         </>
       )}
@@ -279,7 +296,15 @@ function NoCarrierPermission() {
   );
 }
 
-function EstadoBadge({ estado }: { estado: 'vencido' | 'por_vencer' | 'vigente' }) {
+function EstadoBadge({ estado }: { estado: EstadoDocumento }) {
+  if (estado === 'faltante' || estado === 'sin_fecha' || estado === 'sin_archivo') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-danger-50 px-2 py-0.5 font-medium text-danger-700 text-xs">
+        <AlertTriangle className="h-3 w-3" aria-hidden />
+        {TEXTO_INCOMPLETO[estado]}
+      </span>
+    );
+  }
   if (estado === 'vencido') {
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-danger-50 px-2 py-0.5 font-medium text-danger-700 text-xs">
@@ -304,16 +329,24 @@ function EstadoBadge({ estado }: { estado: 'vencido' | 'por_vencer' | 'vigente' 
   );
 }
 
+const TEXTO_INCOMPLETO = {
+  faltante: 'Falta el documento',
+  sin_fecha: 'Sin fecha de vencimiento',
+  sin_archivo: 'Falta el archivo',
+} as const;
+
 function SummaryCard({
   title,
   value,
   icon,
   tone,
+  testId,
 }: {
   title: string;
   value: string;
   icon: ReactNode;
   tone: 'danger' | 'warning' | 'neutral';
+  testId?: string;
 }) {
   const toneClasses =
     tone === 'danger'
@@ -326,7 +359,9 @@ function SummaryCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-neutral-500 text-xs uppercase tracking-wider">{title}</div>
-          <div className="mt-1 font-bold text-3xl text-neutral-900">{value}</div>
+          <div className="mt-1 font-bold text-3xl text-neutral-900" data-testid={testId}>
+            {value}
+          </div>
         </div>
         {icon}
       </div>

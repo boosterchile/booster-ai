@@ -35,21 +35,9 @@ export const comisionesSchema = z
     programada_pct: porcentaje,
     retorno_programada_pct: porcentaje.optional(),
   })
-  .strict()
-  // Invariante contractual de ADR-079 §2: cambiarla exige ADR nuevo.
-  .refine((c) => c.spot_pct > c.programada_pct, {
-    message: 'spot_pct debe ser mayor que programada_pct (ADR-079 §2)',
-    path: ['spot_pct'],
-  })
-  .refine(
-    (c) =>
-      c.retorno_programada_pct === undefined ||
-      (c.retorno_programada_pct >= c.programada_pct && c.retorno_programada_pct <= c.spot_pct),
-    {
-      message: 'retorno_programada_pct debe quedar entre programada_pct y spot_pct (ADR-079 §2)',
-      path: ['retorno_programada_pct'],
-    },
-  );
+  // ADR-094 §2: sin invariante entre tasas. El Product Owner fija cada una
+  // con libertad (iguales, o programada sobre spot); `porcentaje` acota 0–100.
+  .strict();
 
 /**
  * Servicios recurrentes y huella (ADR-079 §4). Es también la proyección
@@ -113,9 +101,10 @@ export const CONFIGURACION_COMERCIAL_INICIAL: ConfiguracionComercial = {
 };
 
 /**
- * ADR-079 §5 — claves que NUNCA llegan a transportista ni conductor (API,
- * bot, notificaciones). El guard de visibilidad del api y su test de
- * contrato usan esta lista.
+ * ADR-079 §5 y ADR-094 §3 — claves que NUNCA llegan a transportista ni
+ * conductor (API, bot, notificaciones): la comisión y, desde ADR-094, el
+ * precio del viaje y lo que paga el generador. El guard de visibilidad del
+ * api y su test de contrato usan esta lista.
  */
 export const CLAVES_PRIVADAS_GENERADOR = [
   'comision_pct',
@@ -124,4 +113,7 @@ export const CLAVES_PRIVADAS_GENERADOR = [
   'precio_generador_clp',
   'total_factura_generador_clp',
   'comision_pct_aplicada',
+  'precio_viaje_clp',
+  'iva_viaje_clp',
+  'total_generador_clp',
 ] as const;

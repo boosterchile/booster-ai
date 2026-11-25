@@ -20,7 +20,8 @@
     "load-test:t10": "k6 run test/load/t10.k6.js",
     "seed:conductor-e2e": "tsx scripts/seed-conductor-e2e.ts",
     "seed:flujos-e2e": "tsx scripts/seed-flujos-e2e.ts",
-    "seed:staging-e2e": "tsx scripts/seed-staging-e2e.ts"
+    "seed:staging-e2e": "tsx scripts/seed-staging-e2e.ts",
+    "seed:una-verdad-e2e": "tsx scripts/seed-una-verdad-e2e.ts"
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",

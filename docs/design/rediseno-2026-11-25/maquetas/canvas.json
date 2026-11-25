@@ -1,0 +1,586 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-24T18:22:00Z"
+  },
+  "title": "Booster — maquetas del rediseño",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 1090,
+      "title": "Conductor · Próximo viaje"
+    },
+    "ConductorEnCamino.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 1010,
+      "title": "Conductor · En camino"
+    },
+    "ConductorEntregado.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 1010,
+      "title": "Conductor · Entregado"
+    },
+    "ConductorSinViajes.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Conductor · Sin viajes"
+    },
+    "InicioGenerador.dc.html": {
+      "x": 0,
+      "y": 1500,
+      "w": 1280,
+      "h": 971,
+      "title": "Generador · Inicio",
+      "expand": "fill"
+    },
+    "GeneradorPublicar.dc.html": {
+      "x": 1360,
+      "y": 1500,
+      "w": 1280,
+      "h": 1051,
+      "title": "Generador · Publicar carga",
+      "expand": "fill"
+    },
+    "GeneradorMisCargas.dc.html": {
+      "x": 2720,
+      "y": 1500,
+      "w": 1280,
+      "h": 720,
+      "title": "Generador · Mis cargas",
+      "expand": "fill"
+    },
+    "GeneradorCargaEnCamino.dc.html": {
+      "x": 4080,
+      "y": 1500,
+      "w": 1280,
+      "h": 1247,
+      "title": "Generador · Carga en camino",
+      "expand": "fill"
+    },
+    "GeneradorCargaEntregada.dc.html": {
+      "x": 5440,
+      "y": 1500,
+      "w": 1280,
+      "h": 1419,
+      "title": "Generador · Carga entregada",
+      "expand": "fill"
+    },
+    "GeneradorCertificados.dc.html": {
+      "x": 6800,
+      "y": 1500,
+      "w": 1280,
+      "h": 735,
+      "title": "Generador · Huella y certificados",
+      "expand": "fill"
+    },
+    "TransportistaSoloFleet.dc.html": {
+      "x": 0,
+      "y": 3100,
+      "w": 1280,
+      "h": 1019,
+      "title": "Transportista · Inicio con Booster Fleet",
+      "expand": "fill"
+    },
+    "InicioTransportista.dc.html": {
+      "x": 1360,
+      "y": 3100,
+      "w": 1280,
+      "h": 1270,
+      "title": "Transportista · Inicio con servicio completo",
+      "expand": "fill"
+    },
+    "TransportistaOfertas.dc.html": {
+      "x": 2720,
+      "y": 3100,
+      "w": 1280,
+      "h": 914,
+      "title": "Transportista · Ofertas de Booster Spot",
+      "expand": "fill"
+    },
+    "SolicitarAcceso.dc.html": {
+      "x": 0,
+      "y": 4760,
+      "w": 1280,
+      "h": 720,
+      "title": "Puerta de entrada · Solicitar acceso",
+      "expand": "fill"
+    },
+    "ConductorAjustes.dc.html": {
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 1010,
+      "title": "Conductor · Letra, color y voz"
+    },
+    "ConductorDocumentos.dc.html": {
+      "x": 2350,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Conductor · Documentos"
+    },
+    "ConductorIncidente.dc.html": {
+      "x": 2820,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Conductor · Incidente"
+    },
+    "GeneradorElegir.dc.html": {
+      "x": 8160,
+      "y": 1500,
+      "w": 1280,
+      "h": 813,
+      "title": "Generador · Elegir transportista",
+      "expand": "fill"
+    },
+    "GeneradorSucursales.dc.html": {
+      "x": 9520,
+      "y": 1500,
+      "w": 1280,
+      "h": 870,
+      "title": "Generador · Sucursales y lugares",
+      "expand": "fill"
+    },
+    "GeneradorEmpresa.dc.html": {
+      "x": 10880,
+      "y": 1500,
+      "w": 1280,
+      "h": 848,
+      "title": "Generador · Empresa",
+      "expand": "fill"
+    },
+    "TransportistaFlota.dc.html": {
+      "x": 4080,
+      "y": 3100,
+      "w": 1280,
+      "h": 1412,
+      "title": "Transportista · Flota",
+      "expand": "fill"
+    },
+    "TransportistaVehiculo.dc.html": {
+      "x": 5440,
+      "y": 3100,
+      "w": 1280,
+      "h": 1360,
+      "title": "Transportista · Detalle de vehículo",
+      "expand": "fill"
+    },
+    "TransportistaViajes.dc.html": {
+      "x": 6800,
+      "y": 3100,
+      "w": 1280,
+      "h": 720,
+      "title": "Transportista · Viajes",
+      "expand": "fill"
+    },
+    "TransportistaViajeDetalle.dc.html": {
+      "x": 8160,
+      "y": 3100,
+      "w": 1280,
+      "h": 1389,
+      "title": "Transportista · Viaje en camino",
+      "expand": "fill"
+    },
+    "TransportistaViajePropio.dc.html": {
+      "x": 9520,
+      "y": 3100,
+      "w": 1280,
+      "h": 1128,
+      "title": "Transportista · Nuevo viaje propio",
+      "expand": "fill"
+    },
+    "TransportistaConductores.dc.html": {
+      "x": 10880,
+      "y": 3100,
+      "w": 1280,
+      "h": 720,
+      "title": "Transportista · Conductores",
+      "expand": "fill"
+    },
+    "TransportistaEmpresa.dc.html": {
+      "x": 12240,
+      "y": 3100,
+      "w": 1280,
+      "h": 942,
+      "title": "Transportista · Empresa",
+      "expand": "fill"
+    },
+    "TransportistaPagos.dc.html": {
+      "x": 13600,
+      "y": 3100,
+      "w": 1280,
+      "h": 720,
+      "title": "Transportista · Pagos",
+      "expand": "fill"
+    },
+    "PublicoEntrar.dc.html": {
+      "x": 1360,
+      "y": 4760,
+      "w": 1280,
+      "h": 720,
+      "title": "Puerta de entrada · Entrar",
+      "expand": "fill"
+    },
+    "PublicoActivar.dc.html": {
+      "x": 2720,
+      "y": 4760,
+      "w": 1280,
+      "h": 720,
+      "title": "Puerta de entrada · Activar cuenta",
+      "expand": "fill"
+    },
+    "PublicoSeguimiento.dc.html": {
+      "x": 4080,
+      "y": 4760,
+      "w": 390,
+      "h": 1010,
+      "title": "Público · Seguimiento de quien recibe"
+    },
+    "AdminInicio.dc.html": {
+      "x": 0,
+      "y": 6270,
+      "w": 1280,
+      "h": 981,
+      "title": "Administración · Inicio",
+      "expand": "fill"
+    },
+    "AdminSolicitudes.dc.html": {
+      "x": 1360,
+      "y": 6270,
+      "w": 1280,
+      "h": 792,
+      "title": "Administración · Solicitudes de acceso",
+      "expand": "fill"
+    },
+    "AdminEmpresas.dc.html": {
+      "x": 2720,
+      "y": 6270,
+      "w": 1280,
+      "h": 735,
+      "title": "Administración · Empresas",
+      "expand": "fill"
+    },
+    "MovilInicioGenerador.dc.html": {
+      "x": 0,
+      "y": 7850,
+      "w": 390,
+      "h": 1764,
+      "title": "Móvil · Generador · Inicio"
+    },
+    "MovilGeneradorPublicar.dc.html": {
+      "x": 470,
+      "y": 7850,
+      "w": 390,
+      "h": 2344,
+      "title": "Móvil · Generador · Publicar carga"
+    },
+    "MovilGeneradorCargaEnCamino.dc.html": {
+      "x": 940,
+      "y": 7850,
+      "w": 390,
+      "h": 1644,
+      "title": "Móvil · Generador · Carga en camino"
+    },
+    "MovilInicioTransportista.dc.html": {
+      "x": 1410,
+      "y": 7850,
+      "w": 390,
+      "h": 2344,
+      "title": "Móvil · Transportista · Inicio"
+    },
+    "MovilTransportistaOfertas.dc.html": {
+      "x": 1880,
+      "y": 7850,
+      "w": 390,
+      "h": 1939,
+      "title": "Móvil · Transportista · Ofertas"
+    },
+    "MovilTransportistaFlota.dc.html": {
+      "x": 2350,
+      "y": 7850,
+      "w": 390,
+      "h": 2888,
+      "title": "Móvil · Transportista · Flota"
+    },
+    "TransportistaCobraHoy.dc.html": {
+      "x": 14960,
+      "y": 3100,
+      "w": 1280,
+      "h": 737,
+      "title": "Transportista · Cobra hoy",
+      "expand": "fill"
+    },
+    "TransportistaSubirDocumento.dc.html": {
+      "x": 16320,
+      "y": 3100,
+      "w": 1280,
+      "h": 754,
+      "title": "Transportista · Subir un documento",
+      "expand": "fill"
+    },
+    "TransportistaMantencion.dc.html": {
+      "x": 17680,
+      "y": 3100,
+      "w": 1280,
+      "h": 813,
+      "title": "Transportista · Programar mantención",
+      "expand": "fill"
+    },
+    "AdminFlota.dc.html": {
+      "x": 4080,
+      "y": 6270,
+      "w": 1280,
+      "h": 1170,
+      "title": "Administración · Flota de la plataforma",
+      "expand": "fill"
+    },
+    "AdminTeltonika.dc.html": {
+      "x": 5440,
+      "y": 6270,
+      "w": 1280,
+      "h": 879,
+      "title": "Administración · Equipos Teltonika",
+      "expand": "fill"
+    },
+    "AdminServicios.dc.html": {
+      "x": 6800,
+      "y": 6270,
+      "w": 1280,
+      "h": 1378,
+      "title": "Administración · Servicios y condiciones",
+      "expand": "fill"
+    },
+    "AdminPersonal.dc.html": {
+      "x": 8160,
+      "y": 6270,
+      "w": 1280,
+      "h": 720,
+      "title": "Administración · Personal de Booster",
+      "expand": "fill"
+    },
+    "AdminStakeholders.dc.html": {
+      "x": 9520,
+      "y": 6270,
+      "w": 1280,
+      "h": 720,
+      "title": "Administración · Organizaciones",
+      "expand": "fill"
+    },
+    "AdminObservatorio.dc.html": {
+      "x": 10880,
+      "y": 6270,
+      "w": 1280,
+      "h": 876,
+      "title": "Administración · Observatorio urbano",
+      "expand": "fill"
+    },
+    "AdminAlgoritmo.dc.html": {
+      "x": 12240,
+      "y": 6270,
+      "w": 1280,
+      "h": 790,
+      "title": "Administración · Algoritmo de asignación",
+      "expand": "fill"
+    },
+    "AdminSalud.dc.html": {
+      "x": 13600,
+      "y": 6270,
+      "w": 1280,
+      "h": 843,
+      "title": "Administración · Salud y costos",
+      "expand": "fill"
+    },
+    "AdminSitio.dc.html": {
+      "x": 14960,
+      "y": 6270,
+      "w": 1280,
+      "h": 816,
+      "title": "Administración · Sitio público",
+      "expand": "fill"
+    },
+    "AdminEntrarComo.dc.html": {
+      "x": 16320,
+      "y": 6270,
+      "w": 1280,
+      "h": 760,
+      "title": "Administración · Entrar como un usuario",
+      "expand": "fill"
+    },
+    "PublicoSeguimientoEntregado.dc.html": {
+      "x": 4550,
+      "y": 4760,
+      "w": 390,
+      "h": 900,
+      "title": "Público · Seguimiento, carga entregada"
+    },
+    "TransportistaViajePropioEntregado.dc.html": {
+      "x": 19040,
+      "y": 3100,
+      "w": 1280,
+      "h": 1122,
+      "title": "Transportista · Viaje propio entregado y certificado",
+      "expand": "fill"
+    },
+    "GeneradorGuiaDespacho.dc.html": {
+      "x": 12240,
+      "y": 1500,
+      "w": 1280,
+      "h": 1190,
+      "title": "Generador · Datos para la guía de despacho (Res. Ex. SII N.º 144)",
+      "expand": "fill"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "ConductorEnCamino.dc.html",
+    "ConductorEntregado.dc.html",
+    "ConductorSinViajes.dc.html",
+    "InicioGenerador.dc.html",
+    "GeneradorPublicar.dc.html",
+    "GeneradorMisCargas.dc.html",
+    "GeneradorCargaEnCamino.dc.html",
+    "GeneradorGuiaDespacho.dc.html",
+    "GeneradorCargaEntregada.dc.html",
+    "GeneradorCertificados.dc.html",
+    "TransportistaSoloFleet.dc.html",
+    "InicioTransportista.dc.html",
+    "TransportistaOfertas.dc.html",
+    "SolicitarAcceso.dc.html",
+    "ConductorAjustes.dc.html",
+    "ConductorDocumentos.dc.html",
+    "ConductorIncidente.dc.html",
+    "GeneradorElegir.dc.html",
+    "GeneradorSucursales.dc.html",
+    "GeneradorEmpresa.dc.html",
+    "TransportistaFlota.dc.html",
+    "TransportistaVehiculo.dc.html",
+    "TransportistaViajes.dc.html",
+    "TransportistaViajeDetalle.dc.html",
+    "TransportistaViajePropio.dc.html",
+    "TransportistaViajePropioEntregado.dc.html",
+    "TransportistaConductores.dc.html",
+    "TransportistaEmpresa.dc.html",
+    "TransportistaPagos.dc.html",
+    "PublicoEntrar.dc.html",
+    "PublicoActivar.dc.html",
+    "PublicoSeguimiento.dc.html",
+    "AdminInicio.dc.html",
+    "AdminSolicitudes.dc.html",
+    "AdminEmpresas.dc.html",
+    "MovilInicioGenerador.dc.html",
+    "MovilGeneradorPublicar.dc.html",
+    "MovilGeneradorCargaEnCamino.dc.html",
+    "MovilInicioTransportista.dc.html",
+    "MovilTransportistaOfertas.dc.html",
+    "MovilTransportistaFlota.dc.html",
+    "TransportistaCobraHoy.dc.html",
+    "TransportistaSubirDocumento.dc.html",
+    "TransportistaMantencion.dc.html",
+    "AdminFlota.dc.html",
+    "AdminTeltonika.dc.html",
+    "AdminServicios.dc.html",
+    "AdminPersonal.dc.html",
+    "AdminStakeholders.dc.html",
+    "AdminObservatorio.dc.html",
+    "AdminAlgoritmo.dc.html",
+    "AdminSalud.dc.html",
+    "AdminSitio.dc.html",
+    "AdminEntrarComo.dc.html",
+    "PublicoSeguimientoEntregado.dc.html"
+  ],
+  "notes": {
+    "t-conductor": {
+      "x": 0,
+      "y": -300,
+      "text": "Conductor: el viaje en sus fases",
+      "kind": "title1",
+      "maxW": 3210
+    },
+    "t-operadores": {
+      "x": 0,
+      "y": 1200,
+      "text": "Generador de carga",
+      "kind": "title1",
+      "maxW": 12160
+    },
+    "t-transportista": {
+      "x": 0,
+      "y": 2800,
+      "text": "Transportista: Booster Fleet solo, o servicio completo con Booster Spot",
+      "kind": "title1",
+      "maxW": 18960
+    },
+    "t-entrada": {
+      "x": 0,
+      "y": 4460,
+      "text": "Puerta de entrada y seguimiento público",
+      "kind": "title1",
+      "maxW": 4940
+    },
+    "n-datos": {
+      "x": 3320,
+      "y": 0,
+      "w": 360,
+      "text": "Datos de ejemplo. Nombres, patentes, direcciones y cifras son inventados para mostrar la forma de cada pantalla; no salen de producción. Los mapas son dibujos: en el producto van los de Google Maps que ya usa la aplicación.",
+      "fill": "gray"
+    },
+    "n-sello": {
+      "x": 3320,
+      "y": 520,
+      "w": 360,
+      "text": "El sello «Medido» / «Estimado» usa los tonos que el sistema Booster Fleet ya define: «En orden» para lo medido y «Sin lectura» para lo estimado. Siempre con forma y palabra, además del color.",
+      "fill": "green"
+    },
+    "n-servicios": {
+      "x": -480,
+      "y": 3100,
+      "w": 400,
+      "text": "Dos servicios, una sola aplicación, bajo «Transporta más, impacta menos». Booster Spot consigue carga, empezando por el retorno; cada carga es inmediata (retiro en menos de 24 horas) o programada. Booster Fleet gestiona la flota y mide cada viaje. Con Booster Fleet solo, el menú es Inicio, Flota, Viajes propios y Empresa.",
+      "fill": "blue"
+    },
+    "t-admin": {
+      "x": 0,
+      "y": 5970,
+      "text": "Panel de administración",
+      "kind": "title1",
+      "maxW": 17600
+    },
+    "t-movil": {
+      "x": 0,
+      "y": 7550,
+      "text": "Diseño responsivo: las mismas pantallas a ancho de teléfono",
+      "kind": "title1",
+      "maxW": 2740
+    },
+    "n-resp": {
+      "x": 2900,
+      "y": 7850,
+      "w": 400,
+      "text": "Cada pantalla de operador es un solo diseño fluido: las columnas se apilan, las tablas se desplazan dentro de su caja y el menú superior pasa a una barra inferior bajo 640 px. Las de esta fila son los mismos archivos que arriba, vistos a 390 px.",
+      "fill": "blue"
+    }
+  },
+  "designSystems": [
+    {
+      "title": "Booster Fleet",
+      "namespace": "booster-fleet",
+      "artifact": "https://claude.ai/artifact/XQ7Gzh3YgJ2fPhNs3zZPsk",
+      "version": null,
+      "copiedAt": "2026-11-24T18:22:00Z"
+    }
+  ]
+}

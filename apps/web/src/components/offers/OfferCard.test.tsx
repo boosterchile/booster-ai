@@ -301,7 +301,7 @@ describe('OfferCard — eco preview', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ver impacto ambiental/ }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/offers/o1/eco-preview'));
     expect(await screen.findByText(/130 km/)).toBeInTheDocument();
-    expect(screen.getByText(/75\.0 kg CO₂e/)).toBeInTheDocument();
+    expect(screen.getByText('75,0 kg CO₂e')).toBeInTheDocument();
     expect(screen.getByText(/Google Routes API/)).toBeInTheDocument();
   });
 

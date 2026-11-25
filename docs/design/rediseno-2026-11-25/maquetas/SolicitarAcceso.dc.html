@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Solicitar acceso a Booster</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#10653a}a:hover{color:#0c4d2d}
+</style>
+</helmet>
+<div style="min-height: 720px; box-sizing: border-box; background: #faf9f7; font-family: Inter, system-ui, sans-serif; color: #1a1917; font-size: 14px; line-height: 20px; display: flex; flex-wrap: wrap">
+
+<section style="flex: 1 1 420px; min-width: 0; box-sizing: border-box; background: #0c4d2d; color: #ffffff; padding: 48px; display: flex; flex-direction: column; gap: 36px">
+<div style="font-size: 20px; font-weight: 700; letter-spacing: -0.01em">Booster<span style="color: #73d094">.</span></div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h1 style="margin: 0; font-size: 44px; line-height: 50px; font-weight: 700; letter-spacing: -0.02em">Transporta más, impacta menos.</h1>
+<div style="font-size: 17px; line-height: 26px; color: #d1f2dd; max-width: 440px">Carga por carretera en Chile. Rutas ecoeficientes y la huella de cada viaje medida, para quien envía carga y para quien la transporta.</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 20px; max-width: 460px">
+<div style="display: flex; flex-direction: column; gap: 4px; padding-top: 16px; border-top: 1px solid #10653a">
+<div style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; color: #a5e3ba">SI ENVÍAS CARGA</div>
+<div style="font-size: 16px; line-height: 24px">Publicas tu carga, sigues el camión y recibes un certificado de huella por cada viaje. Y tu guía de despacho sale con los datos de transporte que el SII exige desde 2026.</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding-top: 16px; border-top: 1px solid #10653a">
+<div style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; color: #a5e3ba">SI TRANSPORTAS</div>
+<div style="font-size: 16px; line-height: 24px">Tu flota, tus documentos y tu combustible en una pantalla. Todos tus viajes se miden, y hay carga de retorno cuando existe.</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding-top: 16px; border-top: 1px solid #10653a">
+<div style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; color: #a5e3ba">SI RECIBES</div>
+<div style="font-size: 16px; line-height: 24px">Ves venir el camión en el mapa, sin crear una cuenta.</div>
+</div>
+</div>
+</section>
+
+<section style="flex: 1 1 420px; min-width: 0; box-sizing: border-box; padding: 48px; display: flex; flex-direction: column; justify-content: center">
+<form style="max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0; font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em">Pide tu acceso</h2>
+<div style="color: #56544f">Cuatro datos. Te escribimos con tu enlace para entrar en [PLAZO DE RESPUESTA].</div>
+</div>
+
+<fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px">
+<legend style="padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 500">¿Qué haces?</legend>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<label style="height: 48px; box-sizing: border-box; border: 2px solid #168047; border-radius: 8px; background: #ecfaf1; display: flex; align-items: center; gap: 8px; padding: 0 12px; font-weight: 600; color: #10653a"><input type="radio" name="rol" checked style="accent-color: #168047">Envío carga</label>
+<label style="height: 48px; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; display: flex; align-items: center; gap: 8px; padding: 0 12px; font-weight: 500"><input type="radio" name="rol" style="accent-color: #168047">Transporto carga</label>
+</div>
+</fieldset>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="sa-nombre" style="font-size: 13px; font-weight: 500">Tu nombre</label>
+<input id="sa-nombre" type="text" autocomplete="name" style="height: 44px; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 12px; font-family: inherit; font-size: 15px; color: #1a1917">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="sa-empresa" style="font-size: 13px; font-weight: 500">Empresa</label>
+<input id="sa-empresa" type="text" autocomplete="organization" style="height: 44px; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 12px; font-family: inherit; font-size: 15px; color: #1a1917">
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="sa-correo" style="font-size: 13px; font-weight: 500">Correo</label>
+<input id="sa-correo" type="email" autocomplete="email" style="height: 44px; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 12px; font-family: inherit; font-size: 15px; color: #1a1917">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="sa-fono" style="font-size: 13px; font-weight: 500">Teléfono</label>
+<input id="sa-fono" type="tel" autocomplete="tel" placeholder="+56 9" style="height: 44px; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 12px; font-family: inherit; font-size: 15px; color: #1a1917">
+</div>
+</div>
+
+<button type="button" style="height: 48px; border: 0; border-radius: 8px; background: #168047; font-family: inherit; font-size: 15px; font-weight: 600; color: #ffffff">Pedir acceso</button>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px">
+<a href="#entrar" style="font-weight: 500; text-decoration: none">Ya tengo cuenta</a>
+<a href="#seguir" style="font-weight: 500; text-decoration: none">Tengo un código de seguimiento</a>
+</div>
+</form>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

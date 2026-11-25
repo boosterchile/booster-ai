@@ -1,14 +1,18 @@
 import {
   type ModalidadCarga,
   calcularLiquidacionV3,
+  calcularLiquidacionV4,
   resolverComisionPct,
 } from '@booster-ai/pricing-engine';
 import type { ConfiguracionComercial } from '@booster-ai/shared-schemas';
 
 /**
- * ADR-079 — piezas comerciales v3 del lado del generador: tasa que se
- * congela al publicar, si la modalidad está permitida, y el desglose que
- * solo ve el generador (§5: nunca se envía a transportista ni conductor).
+ * Piezas comerciales del lado del generador: tasa que se congela al publicar
+ * y si la modalidad está permitida (ADR-079 §2), y lo que el generador ve
+ * (nunca se envía a transportista ni conductor). En publicación y cotización
+ * rige ADR-094: el precio es el del viaje y el generador ve lo que paga con
+ * IVA. El desglose de ADR-079 §1 queda solo para los cambios de carga, hasta
+ * el frente 4 de `.specs/comision-dentro-del-precio`.
  */
 
 /** Tasa a congelar en una publicación nueva (una publicación no es retorno). */
@@ -49,7 +53,40 @@ export function modalidadPermitida(
   return modalidad === 'spot' || contratoProgramadoActivadoEn !== null;
 }
 
-/** Desglose para el generador. Claves en snake_case: es contrato de API. */
+/**
+ * ADR-094 §1 y §3 — lo que el generador ve de un viaje: su precio neto, el
+ * IVA y el total que paga. No lleva la comisión ni lo que recibe el
+ * transportista. Claves en snake_case: es contrato de API.
+ */
+export interface DesgloseViajeGenerador {
+  precio_viaje_clp: number;
+  iva_viaje_clp: number;
+  total_generador_clp: number;
+}
+
+export function desgloseViajeParaGenerador(input: {
+  precioViajeClp: number;
+  /** Tasa congelada; `numeric` de Postgres llega como texto. */
+  comisionPct: number | string;
+  ivaPct: number;
+}): DesgloseViajeGenerador {
+  const l = calcularLiquidacionV4({
+    precioViajeClp: input.precioViajeClp,
+    comisionPct: Number(input.comisionPct),
+    ivaRate: input.ivaPct / 100,
+  });
+  return {
+    precio_viaje_clp: l.precioViajeClp,
+    iva_viaje_clp: l.ivaViajeClp,
+    total_generador_clp: l.totalGeneradorClp,
+  };
+}
+
+/**
+ * Desglose de ADR-079 §1 (comisión encima del precio del transportista).
+ * Lo usa solo la propuesta de cambio de carga; ADR-094 lo deja sin efecto y
+ * el frente 4 lo retira. Claves en snake_case: es contrato de API.
+ */
 export interface DesgloseGenerador {
   precio_transportista_clp: number;
   comision_pct: number;

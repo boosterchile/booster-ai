@@ -3,8 +3,8 @@
 #
 # El api exporta cada hora la foto de viajes entregados a `observatory.viajes`
 # (load job WRITE_TRUNCATE, POST /admin/jobs/observatorio-export). Las vistas
-# materializadas `urban_flow_metrics_*` agregan esa tabla y aplican k ≥ 10
-# vehículos distintos por bucket (ADR-012 §Privacidad).
+# materializadas `urban_flow_metrics_*` agregan esa tabla y aplican el umbral
+# de anonimato: 1 vehículo distinto por bucket (ADR-096; antes 10, ADR-012).
 #
 # Sin IAM: el SA runtime de Cloud Run ya tiene bigquery.dataEditor y
 # bigquery.jobUser a nivel proyecto (iam.tf) y el job reusa
@@ -31,7 +31,7 @@ locals {
         COUNT(DISTINCT vehiculo_id) AS vehiculos
       FROM `${local.observatorio_tabla_viajes}`
       GROUP BY region, comuna, mes, tipo_dia, franja, clase_vehiculo
-      HAVING COUNT(DISTINCT vehiculo_id) >= 10
+      HAVING COUNT(DISTINCT vehiculo_id) >= 1
     SQL
     emisiones = <<-SQL
       SELECT
@@ -45,7 +45,7 @@ locals {
         COUNT(DISTINCT vehiculo_id) AS vehiculos
       FROM `${local.observatorio_tabla_viajes}`
       GROUP BY region, comuna, mes, clase_vehiculo
-      HAVING COUNT(DISTINCT vehiculo_id) >= 10
+      HAVING COUNT(DISTINCT vehiculo_id) >= 1
     SQL
     od        = <<-SQL
       SELECT
@@ -58,7 +58,7 @@ locals {
         COUNT(DISTINCT vehiculo_id) AS vehiculos
       FROM `${local.observatorio_tabla_viajes}`
       GROUP BY mes, origen_region, origen_comuna, destino_region, destino_comuna
-      HAVING COUNT(DISTINCT vehiculo_id) >= 10
+      HAVING COUNT(DISTINCT vehiculo_id) >= 1
     SQL
     activos   = <<-SQL
       SELECT
@@ -69,7 +69,7 @@ locals {
         COUNT(DISTINCT vehiculo_id) AS vehiculos
       FROM `${local.observatorio_tabla_viajes}`
       GROUP BY region, comuna, mes
-      HAVING COUNT(DISTINCT vehiculo_id) >= 10
+      HAVING COUNT(DISTINCT vehiculo_id) >= 1
     SQL
   }
 }
@@ -80,7 +80,7 @@ resource "google_bigquery_table" "observatorio_viajes" {
   dataset_id          = google_bigquery_dataset.observatory.dataset_id
   table_id            = "viajes"
   project             = google_project.booster_ai.project_id
-  description         = "Viajes entregados para el observatorio urbano (ADR-012). Uso interno: solo salen agregados k >= 10."
+  description         = "Viajes entregados para el observatorio urbano (ADR-012). Uso interno: solo salen agregados (umbral de anonimato: ADR-096)."
   deletion_protection = false
 
   schema = jsonencode([
@@ -113,7 +113,7 @@ resource "google_bigquery_table" "urban_flow_metrics" {
   dataset_id          = google_bigquery_dataset.observatory.dataset_id
   table_id            = "urban_flow_metrics_${each.key}"
   project             = google_project.booster_ai.project_id
-  description         = "Observatorio urbano (ADR-012): ${each.key}, buckets con k >= 10 vehículos."
+  description         = "Observatorio urbano (ADR-012): ${each.key}, buckets desde 1 vehículo (ADR-096)."
   deletion_protection = false
   max_staleness       = "0-0 0 1:0:0"
 

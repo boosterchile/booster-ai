@@ -157,7 +157,7 @@ describe('FlotaRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<FlotaRoute />);
     await waitFor(() => expect(screen.getByText(/1 reportando/)).toBeInTheDocument());
-    expect(screen.getByText(/1 sin posición/)).toBeInTheDocument();
+    expect(screen.getByText(/1 sin lectura/)).toBeInTheDocument();
   });
 
   it('click en card lateral selecciona ese vehículo', async () => {
@@ -209,7 +209,7 @@ describe('FlotaRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<FlotaRoute />);
     await waitFor(() => expect(screen.getByLabelText(/Patente BC·DF·12/)).toBeInTheDocument());
-    expect(screen.getByText('sin GPS')).toBeInTheDocument();
+    expect(screen.getByText('sin lectura')).toBeInTheDocument();
     expect(screen.getByText('Sin device')).toBeInTheDocument();
   });
 });

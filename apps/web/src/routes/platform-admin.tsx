@@ -10,6 +10,7 @@ import { ArrowRight, Building2, Loader2, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { NombreMiembro } from '../components/NombreMiembro.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { IndicadoresNegocio } from '../components/admin/IndicadoresNegocio.js';
 import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -140,6 +141,7 @@ function PlatformAdminPage() {
       <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
         Elige la función. Cada una abre su página y desde ahí se vuelve a este índice.
       </p>
+      <IndicadoresNegocio />
       <ul className="mt-6 space-y-3">
         {ACCESOS.map((acceso) => (
           <li key={acceso.to}>

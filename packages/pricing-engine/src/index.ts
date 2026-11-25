@@ -65,6 +65,17 @@ export {
   type ModalidadCarga,
 } from './liquidacion-v3.js';
 
+/**
+ * Modelo comercial v4 (ADR-094): la comisión se descuenta dentro del precio
+ * que paga el generador. Todavía sin callers: reemplaza a v3 por frentes.
+ */
+export {
+  calcularLiquidacionV4,
+  PRICING_METHODOLOGY_VERSION_V4,
+  type LiquidacionV4Input,
+  type LiquidacionV4Output,
+} from './liquidacion-v4.js';
+
 /** Suscripciones en UF (ADR-079 §4), neto + IVA. */
 export {
   calcularCobroSuscripcionUf,

@@ -4,12 +4,14 @@
  * - `proyectarViaje`: un viaje entregado de Cloud SQL a la fila de
  *   `observatory.viajes`. La franja, el tipo de día y el mes se calculan
  *   aquí, en hora de Chile, para que las vistas materializadas solo agrupen.
- * - `filtrarK`: privacidad (ADR-012 §Privacidad). Un bucket se publica solo
- *   con al menos 10 vehículos distintos; las vistas ya lo aplican y el API lo
- *   vuelve a aplicar como defensa en profundidad.
+ * - `filtrarK`: privacidad (ADR-012 §Privacidad, umbral de ADR-096). Un bucket
+ *   se publica desde `UMBRAL_ANONIMATO` vehículos distintos; las vistas ya lo
+ *   aplican y el API lo vuelve a aplicar como defensa en profundidad.
  */
 
-export const K_MIN_VEHICULOS = 10;
+import { UMBRAL_ANONIMATO } from '@booster-ai/shared-schemas';
+
+export const K_MIN_VEHICULOS = UMBRAL_ANONIMATO;
 
 const ZONA_CHILE = 'America/Santiago';
 

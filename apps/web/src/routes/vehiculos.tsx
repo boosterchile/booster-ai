@@ -22,6 +22,7 @@ import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
+import { etiquetaDispositivo } from '../lib/estado-dispositivo.js';
 import {
   type NumericFieldRule,
   numericFieldError,
@@ -685,7 +686,9 @@ function DispositivoSection({
           </p>
           <p className="mt-1 text-neutral-600 text-sm">
             <strong>IMEI actual:</strong>{' '}
-            <span className="font-mono">{currentImei ?? 'Sin dispositivo'}</span>
+            <span className="font-mono">
+              {currentImei ?? etiquetaDispositivo('sin_dispositivo')}
+            </span>
           </p>
         </div>
       </div>
