@@ -37,6 +37,15 @@ El lienzo vivo está en https://claude.ai/artifact/44QutQ6zQ25Tenyj1qoRNq. Esta 
 9. **Pantallas fusionadas, aprobadas:** Cumplimiento, Seguimiento de flota, Trayectos y Zonas quedan dentro de las pantallas que muestra `MAPA.md`.
 10. **Quién acepta una carga:** dueño, administrador y despachador. El conductor no.
 
+## Decisiones del PO del 2026-11-25 sobre lo verificado
+
+Responden a las contradicciones de «Verificado contra el código». Prevalecen sobre las specs anteriores en lo que contradigan.
+
+1. **Navegación: menú superior, como las maquetas**, con barra inferior bajo 640 px. Reemplaza la barra lateral de `.specs/d2-operador-shell-sidebar/`; el cambio de armazón necesita su propia spec. Las entradas actuales quedan donde las maquetas las ponen: Seguimiento de flota, Vehículos, Trayectos y Cumplimiento dentro de Flota y del detalle de vehículo; Servicios y Rutas en Viajes, con Liquidaciones («Pagos») y Cobra hoy como pestañas; Zonas y Equipo en Empresa; Conductores conserva su pantalla, a la que se llega desde Flota. Dispositivos no aparece en ninguna maqueta: la sesión de diseño supone que va en Flota, sin confirmar.
+2. **Sello «Medido»: se refiere a la huella de carbono.** Va solo cuando la huella misma fue medida (`primario_verificable`). La presentación intermedia de ADR-091 conserva su texto («Distancia medida con Teltonika · consumo modelado») y no lleva «Medido». Lo demás es «Estimado». Son tres presentaciones en pantalla, igual que en el certificado.
+3. **El generador tiene dos caminos para asignar:** elegir un transportista, o subir su requerimiento para que los transportistas ofrezcan su servicio. `GeneradorElegir` se construye. Es un cambio del modelo de asignación (hoy queda asignado el transportista que acepta primero) y necesita ADR y spec antes del código. Sin definir todavía: si los transportistas ofrecen con precio propio o aceptan el precio publicado, cómo calza eso con el precio del viaje de ADR-094, entre qué transportistas puede elegir el generador en el camino directo, y qué pasa con el matching automático actual.
+4. **Cada pantalla sale a todos los usuarios al liberarse.** Sin interruptor por rol. No cambia `PRICING_V3_ACTIVATED`, que sigue apagado hasta cerrar los frentes 3, 4 y 5 de la comisión.
+
 ## Plan de trabajo
 
 El plan son los **diez frentes** de `FRENTES.md`, no un orden por rol. Cada frente tiene su criterio «Hecho cuando». El orden recomendado: 1 y la parte de componentes del 8; después 2 y 3; el 5 antes del 6 y el 7; 4 y 10 juntos; el 9 en paralelo.
@@ -49,12 +58,12 @@ Lo que depende de la comisión (montos, carta de porte, guía de despacho, tipo 
 
 Lectura de `apps/web/src`, `apps/api/src`, `packages/` y `.specs/`. No se ejecutó la aplicación.
 
-### Contradicciones entre maquetas y lo ya decidido
+### Contradicciones entre maquetas y lo ya decidido (resueltas el 2026-11-25)
 
-1. **Navegación.** La aplicación tiene barra lateral persistente y cajón en móvil (`components/Layout.tsx`, `Sidebar.tsx`, `nav-items.ts`), decidida en `.specs/d2-operador-shell-sidebar/` (aceptada, goal del PO del 2026-07-09). Las maquetas dibujan menú superior y barra inferior bajo 640 px. El apartado «Estado actual» de `DESIGN.md` dice «sin sidebar» y está desactualizado. **Decide el PO** antes de tocar el armazón.
-2. **Cantidad de entradas del menú.** `navSectionsForMe` arma para un transportista administrador con ofertas y finanzas unas 16 entradas (3 o 4 generales y 12 o 13 bajo «Transporte»); la maqueta propone 5 (Inicio, Flota, Viajes, Ofertas, Empresa) y 4 con Booster Fleet solo. El PO aprobó fusionar Cumplimiento, Seguimiento de flota, Trayectos y Zonas; Vehículos, Conductores, Servicios, Rutas, Equipo, Dispositivos, Cobra hoy y Liquidaciones no tienen decisión explícita de dónde quedan en un menú de 5.
-3. **`GeneradorElegir` no corresponde al modelo actual.** Hoy el generador no elige: el matching envía ofertas y el transportista que acepta queda asignado (`apps/api/src/services/offer-actions.ts`; el detalle de la carga solo muestra «Hay N transportistas evaluando»). Construir esa pantalla es cambiar el modelo de asignación, no la interfaz.
-4. **El sello tiene tres presentaciones, no dos.** ADR-091 (PO, 2026-11-12) fija Primario, «Distancia medida con Teltonika · consumo modelado» y Estimado, y dice que «medida» aplica solo a la distancia. Las maquetas dibujan dos estados. El PO precisó el 2026-11-25 que «Medido» se refiere a la huella de carbono. Lectura de la sesión de diseño, a confirmar: el sello «Medido» va solo cuando la huella misma fue medida (`primario_verificable`); la presentación intermedia conserva su texto de ADR-091 y no lleva «Medido».
+1. **Navegación.** La aplicación tiene barra lateral persistente y cajón en móvil (`components/Layout.tsx`, `Sidebar.tsx`, `nav-items.ts`), decidida en `.specs/d2-operador-shell-sidebar/` (aceptada, goal del PO del 2026-07-09). Las maquetas dibujan menú superior y barra inferior bajo 640 px. El apartado «Estado actual» de `DESIGN.md` dice «sin sidebar» y está desactualizado. **Resuelto:** menú superior (decisión 1 de arriba).
+2. **Cantidad de entradas del menú.** `navSectionsForMe` arma para un transportista administrador con ofertas y finanzas unas 16 entradas (3 o 4 generales y 12 o 13 bajo «Transporte»); la maqueta propone 5 (Inicio, Flota, Viajes, Ofertas, Empresa) y 4 con Booster Fleet solo. El PO aprobó fusionar Cumplimiento, Seguimiento de flota, Trayectos y Zonas; **Resuelto** salvo Dispositivos (decisión 1).
+3. **`GeneradorElegir` no corresponde al modelo actual.** Hoy el generador no elige: el matching envía ofertas y el transportista que acepta queda asignado (`apps/api/src/services/offer-actions.ts`; el detalle de la carga solo muestra «Hay N transportistas evaluando»). Construir esa pantalla es cambiar el modelo de asignación, no la interfaz. **Resuelto:** se construye, con ADR y spec previos (decisión 3).
+4. **El sello tiene tres presentaciones, no dos.** ADR-091 (PO, 2026-11-12) fija Primario, «Distancia medida con Teltonika · consumo modelado» y Estimado, y dice que «medida» aplica solo a la distancia. Las maquetas dibujan dos estados. El PO precisó el 2026-11-25 que «Medido» se refiere a la huella de carbono. **Resuelto:** el PO confirmó que «Medido» va solo cuando la huella misma fue medida (decisión 2).
 
 ### Lo que las maquetas muestran y el código no hace
 
@@ -112,11 +121,9 @@ Todos los mapas son de Google Maps con `@vis.gl/react-google-maps`. No hay un co
 
 ## Preguntas abiertas para el PO
 
-1. **Navegación:** barra lateral (lo construido) o menú superior con barra inferior (las maquetas), y dónde quedan las entradas que el menú de 5 no nombra.
-2. **Sello «Medido»:** confirmar la lectura del punto 4 de «Verificado contra el código».
-3. **Elegir transportista:** si el generador pasa a elegir entre ofertas o la pantalla se descarta.
-4. **Con qué alcance sale cada cambio:** a todos los usuarios apenas se fusiona, o escondido tras un interruptor hasta completar un rol.
-5. **Costo de «Cobra hoy»:** no está definido.
+1. **Asignación con dos caminos:** los cuatro puntos sin definir de la decisión 3.
+2. **Dispositivos:** dónde queda en el menú nuevo.
+3. **Costo de «Cobra hoy»:** no está definido.
 
 ## Reparto entre sesiones
 
