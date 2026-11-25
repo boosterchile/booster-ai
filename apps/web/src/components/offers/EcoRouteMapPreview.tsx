@@ -16,7 +16,7 @@ import { type LatLng, boundsOf, decodePolyline } from '../../lib/polyline.js';
  *
  * Cierra el loop de la visión "Booster a través de IA sugiere la mejor
  * ruta para reducir huella de carbono": antes de PR-H4 el carrier solo
- * veía un número de emisiones (~250 kg CO₂e). Ahora ve TAMBIÉN la ruta
+ * veía una cifra de emisiones. Ahora ve TAMBIÉN la ruta
  * exacta sobre la que se calculó ese número, dibujada sobre Google Maps
  * con marker de origen (verde) y destino (rojo).
  *

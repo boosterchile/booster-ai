@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INICIO_GASTO_GENERADOR_ACTIVO } from './flags.js';
 import * as flags from './flags.js';
-import {
-  type CertificadoInicio,
-  type ViajeInicio,
-  buildGeneradorHoy,
-  textoHuella,
-} from './generador.js';
+import { type CertificadoInicio, type ViajeInicio, buildGeneradorHoy } from './generador.js';
 import type { Panel } from './generador.js';
 
 const AHORA = new Date('2026-10-19T15:00:00.000Z');
@@ -126,7 +121,7 @@ describe('buildGeneradorHoy', () => {
     const negocio = buildGeneradorHoy(listo([]), listo(certs), AHORA, { soloLectura: false });
     expect(negocio.huella).toEqual({
       estado: 'listo',
-      valor: { texto: textoHuella(4800), detalle: '2 certificados' },
+      valor: { texto: '4,80 t CO₂e', detalle: '2 certificados' },
     });
     expect(negocio.avisos[0]?.titulo).toBe('1 certificado nuevo');
   });

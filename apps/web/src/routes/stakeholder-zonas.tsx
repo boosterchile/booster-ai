@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { CO2E, formatoEmisiones } from '../lib/formato-emisiones.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -283,8 +284,8 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
             Matching: asigna viaje y camión dentro de la empresa. Aquí no se ofrece ni se acepta.
           </li>
           <li>
-            Huella y certificados: el viaje cierra con kg CO2e. Aquí el dato sale si hay al menos 5
-            viajes en la celda.
+            Huella y certificados: el viaje cierra con su huella en {CO2E}. Aquí el dato sale si hay
+            al menos 5 viajes en la celda.
           </li>
           <li className="sm:col-span-2">
             Zonas de esta pantalla: puertos, mercados y polos, con ámbito nacional o regional de tu
@@ -399,7 +400,7 @@ function ZonaCard({ zona }: { zona: ZonaPredefinida }) {
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
         <Stat label="Viajes (30 días)" value={zona.demo_viajes_30d.toLocaleString('es-CL')} />
-        <Stat label="CO₂e total" value={`${(zona.demo_co2e_kg / 1000).toFixed(1)} t`} />
+        <Stat label={`${CO2E} total`} value={formatoEmisiones(zona.demo_co2e_kg)} />
         <Stat label="Horario pico" value={zona.demo_horario_pico} className="col-span-2" />
       </dl>
 

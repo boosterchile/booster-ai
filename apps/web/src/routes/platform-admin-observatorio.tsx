@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { formatoEmisiones } from '../lib/formato-emisiones.js';
 
 /**
  * /app/platform-admin/observatorio — observatorio urbano, vista interna
@@ -204,14 +205,14 @@ function Secciones({ datos }: { datos: Respuesta }) {
       />
       <Seccion
         id="emisiones"
-        titulo="Emisiones (kgCO2e)"
+        titulo="Emisiones"
         columnas={['Mes', 'Comuna', 'Vehículo', 'Emitido', 'Evitado por matching', 'Viajes']}
         filas={datos.emisiones.map((f) => [
           f.mes,
           comuna(f.comuna),
           CLASE[f.clase_vehiculo] ?? f.clase_vehiculo,
-          n(f.kgco2e),
-          n(f.kgco2e_evitado),
+          formatoEmisiones(f.kgco2e),
+          formatoEmisiones(f.kgco2e_evitado),
           n(f.viajes),
         ])}
       />

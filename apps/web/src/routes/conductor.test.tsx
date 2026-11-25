@@ -552,7 +552,7 @@ describe('ConductorDashboardRoute', () => {
     );
   });
 
-  it('tras entregar muestra el resultado: kg CO2e, distancia, cobertura y línea de método (solo lectura)', async () => {
+  it('tras entregar muestra el resultado: huella, distancia, cobertura y línea de método (solo lectura)', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
     apiPatchSpy.mockResolvedValue({ ok: true });
@@ -590,9 +590,9 @@ describe('ConductorDashboardRoute', () => {
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
-    await screen.findByText(/kg CO2e/);
+    await screen.findByText(/kg CO₂e/);
     const panel = screen.getByTestId('resultado-viaje');
-    expect(panel).toHaveTextContent(/2,69 kg CO2e|2.69 kg CO2e/);
+    expect(panel).toHaveTextContent('2,7 kg CO₂e');
     expect(panel).toHaveTextContent(/2,5 km|2.5 km/);
     expect(panel).toHaveTextContent(/100 %/);
     expect(panel).toHaveTextContent(/Distancia medida por GPS del vehículo/);

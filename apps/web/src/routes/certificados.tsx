@@ -24,6 +24,7 @@ import {
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
+import { CO2E, formatoEmisiones, formatoFactorEmision } from '../lib/formato-emisiones.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -158,13 +159,13 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
               icon={<Award className="h-5 w-5 text-primary-600" aria-hidden />}
             />
             <SummaryCard
-              title="Total CO₂e certificado"
-              value={`${formatKg(sumKg(certsQ.data.certificates))} kg`}
+              title={`Total ${CO2E} certificado`}
+              value={formatoEmisiones(sumKg(certsQ.data.certificates))}
               icon={<Leaf className="h-5 w-5 text-emerald-600" aria-hidden />}
             />
             <SummaryCard
-              title="Ahorro CO₂e via matching"
-              value={`${formatKg(sumAhorroBackhaul(certsQ.data.certificates))} kg`}
+              title={`Ahorro ${CO2E} vía matching`}
+              value={formatoEmisiones(sumAhorroBackhaul(certsQ.data.certificates))}
               icon={<Leaf className="h-5 w-5 text-emerald-700" aria-hidden />}
             />
             <SummaryCard
@@ -181,7 +182,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                   <Th>Código</Th>
                   <Th>Trayecto</Th>
                   <Th>Carga</Th>
-                  <Th className="text-right">CO₂e</Th>
+                  <Th className="text-right">{CO2E}</Th>
                   <Th className="text-right">Ahorro matching</Th>
                   <Th>Emitido</Th>
                   <Th className="text-right">Acción</Th>
@@ -204,13 +205,13 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                     </Td>
                     <Td className="text-xs">{formatCargoType(c.cargo_type)}</Td>
                     <Td className="text-right font-semibold text-emerald-700">
-                      {c.kg_co2e ? `${formatKg(Number(c.kg_co2e))} kg` : '—'}
+                      {formatoEmisiones(c.kg_co2e)}
                     </Td>
                     <Td className="text-right">
                       {c.ahorro_co2e_vs_sin_matching_kgco2e &&
                       Number(c.ahorro_co2e_vs_sin_matching_kgco2e) > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 text-xs">
-                          −{formatKg(Number(c.ahorro_co2e_vs_sin_matching_kgco2e))} kg
+                          {formatoEmisiones(-Number(c.ahorro_co2e_vs_sin_matching_kgco2e))}
                         </span>
                       ) : (
                         <span className="text-neutral-400 text-xs">—</span>
@@ -260,7 +261,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
 /**
  * D5 — Card explicativa del método de cálculo de huella. No usa data en
  * vivo — es el "explainer" que se muestra al stakeholder y al shipper que
- * quiere entender qué hay detrás del número kg CO2e del certificado.
+ * quiere entender qué hay detrás de la huella del certificado.
  */
 function MethodologyCard() {
   return (
@@ -284,7 +285,7 @@ function MethodologyCard() {
         />
         <MethodologyItem
           step="3. Factor emisión"
-          body="Factor SEC Chile 2024 (kg CO₂e/L). Diesel: 2,68. Gasolina: 2,32. GNC: 2,07. Eléctrico: factor de la matriz CL."
+          body={`Factor SEC Chile 2024. Diésel: ${formatoFactorEmision(2.68)}. Gasolina: ${formatoFactorEmision(2.32)}. GNC: ${formatoFactorEmision(2.07)}. Eléctrico: factor de la matriz CL.`}
         />
       </div>
 
@@ -294,12 +295,14 @@ function MethodologyCard() {
           <div>distancia = 500 km</div>
           <div>consumo = 28 L/100km · diesel (camión pesado cargado)</div>
           <div>litros = 500 × 28 / 100 = 140 L</div>
-          <div>kg CO₂e = 140 × 2,68 = 375,2 kg</div>
+          <div>
+            emisiones = 140 L × {formatoFactorEmision(2.68)} = {formatoEmisiones(140 * 2.68)}
+          </div>
         </div>
       </div>
 
       <p className="mt-3 text-neutral-600 text-xs">
-        El <strong>"Ahorro CO₂e via matching"</strong> compara la emisión real del viaje contra el
+        El <strong>«Ahorro {CO2E} vía matching»</strong> compara la emisión real del viaje contra el
         escenario sin matching (vehículo regresa vacío). Con backhaul ese viaje contraflujo no
         ocurre, así que el ahorro es la emisión evitada del trip espejo.
       </p>
@@ -379,10 +382,6 @@ function sumAhorroBackhaul(items: CertificadoListItem[]): number {
       (c.ahorro_co2e_vs_sin_matching_kgco2e ? Number(c.ahorro_co2e_vs_sin_matching_kgco2e) : 0),
     0,
   );
-}
-
-function formatKg(n: number): string {
-  return n.toLocaleString('es-CL', { maximumFractionDigits: 2 });
 }
 
 function formatDate(iso: string): string {
