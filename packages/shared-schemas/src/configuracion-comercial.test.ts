@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLAVES_PRIVADAS_GENERADOR,
   CONFIGURACION_COMERCIAL_INICIAL,
   configuracionComercialSchema,
   serviciosPublicosSchema,
@@ -79,5 +80,13 @@ describe('configuracionComercialSchema (ADR-079 §3)', () => {
         spot_pct: 20,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('CLAVES_PRIVADAS_GENERADOR (ADR-079 §5, ADR-094 §3)', () => {
+  it('veda al transportista el precio del viaje y lo que paga el generador', () => {
+    expect(CLAVES_PRIVADAS_GENERADOR).toEqual(
+      expect.arrayContaining(['precio_viaje_clp', 'iva_viaje_clp', 'total_generador_clp']),
+    );
   });
 });

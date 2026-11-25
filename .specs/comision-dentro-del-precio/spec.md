@@ -1,6 +1,6 @@
 # Spec — Comisión dentro del precio del generador (ADR-094)
 
-**Estado**: en curso. Frente 1 hecho; frentes 2 a 6 sin empezar.
+**Estado**: en curso. Frentes 1 y 2 hechos; los demás sin empezar.
 **ADR**: [ADR-094](../../docs/adr/094-comision-dentro-del-precio-del-generador.md)
 
 ## Entradas
@@ -33,11 +33,16 @@
 - `packages/pricing-engine/src/liquidacion-v4.ts`: `calcularLiquidacionV4`.
 - Evidencia: tests de `pricing-engine`, `shared-schemas`, ruta admin de la API y pantalla admin de la web.
 
-### 2. Ancla en publicación y cotización
+### 2. Ancla en publicación y cotización — hecho
 
-- `GET /cotizacion` recibe `precio_viaje_clp` en vez de `precio_transportista_clp` y responde el desglose v4.
-- `trips.proposedPriceClp` pasa a significar precio del viaje solo en las cargas publicadas desde la activación. Las anteriores conservan su significado (precio del transportista); la metodología persistida en cada liquidación distingue una regla de la otra.
-- Archivos: `apps/api/src/routes/trip-requests-v2.ts`, `apps/api/src/services/cotizacion-comercial.ts`, `apps/web/src/components/comercial/SeccionComercial.tsx`, `apps/web/src/routes/cargas.tsx`.
+- `GET /trip-requests-v2/cotizacion` recibe `precio_viaje_clp` (antes `precio_transportista_clp`) y responde `precio_viaje_clp`, `iva_viaje_clp` y `total_generador_clp`. La misma forma va en `comercial` al publicar y en el detalle de la carga.
+- Este frente entrega al generador el total que paga. El desglose en las dos facturas (ADR-094 secciones 3 y 4) es el frente 4b y está pendiente: hasta entonces el generador no ve la parte de Booster.
+- `trips.proposedPriceClp` pasa a significar precio del viaje solo en las cargas publicadas desde la activación, que son las que congelan tasa (`comision_pct_aplicada`). Las anteriores conservan su significado (precio del transportista); la metodología persistida en cada liquidación distingue una regla de la otra. No hay migración.
+- `precio_viaje_clp`, `iva_viaje_clp` y `total_generador_clp` se suman a `CLAVES_PRIVADAS_GENERADOR`, para que la guardia de visibilidad vede el precio del viaje en las respuestas a transportista y conductor (criterio 5). ADR-094 dice que la guardia y la lista «siguen como están»: la ampliación queda a confirmar por el PO.
+- El interruptor sigue siendo `PRICING_V3_ACTIVATED` (apagado). Con él apagado nada cambia: la cotización responde 404 y no se congela tasa.
+- La propuesta de cambio de carga (`desglose_propuesto`) sigue con el desglose de ADR-079 hasta el frente 4.
+- Archivos: `apps/api/src/routes/trip-requests-v2.ts`, `apps/api/src/services/cotizacion-comercial.ts`, `packages/shared-schemas/src/configuracion-comercial.ts`, `apps/web/src/components/comercial/SeccionComercial.tsx`, `apps/web/src/routes/cargas.tsx`.
+- Evidencia: tests de `cotizacion-comercial`, `trip-requests-v2-comercial`, `SeccionComercial` y `configuracion-comercial`.
 
 ### 3. Ofertas y asignación
 

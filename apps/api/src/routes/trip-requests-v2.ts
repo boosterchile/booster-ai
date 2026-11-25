@@ -54,7 +54,8 @@ import {
 import { completarCoordenadasPropuesta } from '../services/coordenadas-propuesta.js';
 import {
   type DesgloseGenerador,
-  desgloseParaGenerador,
+  type DesgloseViajeGenerador,
+  desgloseViajeParaGenerador,
   modalidadPermitida,
   tasaParaPublicacion,
 } from '../services/cotizacion-comercial.js';
@@ -135,9 +136,9 @@ function generateTrackingCode(): string {
 // package (esAnulablePorGenerador — ADR-061). Una vez `asignado` o
 // posterior, el shipper coordina con el transportista (fuera del scope).
 
-/** ADR-079 §1 — cotización previa a publicar (query string). */
+/** ADR-094 §1 — cotización previa a publicar (query string). */
 const cotizacionQuerySchema = z.object({
-  precio_transportista_clp: z.coerce
+  precio_viaje_clp: z.coerce
     .number({ error: MENSAJES.numero })
     .int(MENSAJES.numero)
     .nonnegative(MENSAJES.numero),
@@ -277,9 +278,9 @@ export function createTripRequestsV2Routes(opts: {
   }
 
   // ---------------------------------------------------------------------
-  // GET /cotizacion — ADR-079 §1: desglose que el generador ve ANTES de
-  // publicar (precio del transportista + comisión + IVA = total), con la
-  // configuración vigente. Solo generadores; nunca llega a transportistas.
+  // GET /cotizacion — ADR-094 §1 y §3: lo que el generador ve ANTES de
+  // publicar (precio del viaje + IVA = total a pagar), con la configuración
+  // vigente. Solo generadores; nunca llega a transportistas.
   // ---------------------------------------------------------------------
   app.get('/cotizacion', async (c) => {
     const auth = requireShipperAuth(c);
@@ -303,8 +304,8 @@ export function createTripRequestsV2Routes(opts: {
       programada_disponible: contratoEn !== null,
       desglose: {
         modalidad_carga: query.data.modalidad_carga,
-        ...desgloseParaGenerador({
-          precioTransportistaClp: query.data.precio_transportista_clp,
+        ...desgloseViajeParaGenerador({
+          precioViajeClp: query.data.precio_viaje_clp,
           comisionPct: tasaParaPublicacion(vigente.config, query.data.modalidad_carga),
           ivaPct: vigente.config.impuestos.iva_pct,
         }),
@@ -489,7 +490,7 @@ export function createTripRequestsV2Routes(opts: {
               offer_ids: matchingResult.offers.map((o) => o.id),
             }
           : null,
-        // ADR-079 §1/§5 — desglose solo para el generador (esta ruta es de
+        // ADR-094 §1/§3 — lo que paga el generador (esta ruta es de
         // generador). Sin precio propuesto no hay monto que desglosar.
         ...(congelado
           ? {
@@ -498,8 +499,8 @@ export function createTripRequestsV2Routes(opts: {
                   ? null
                   : {
                       modalidad_carga: input.modalidad_carga,
-                      ...desgloseParaGenerador({
-                        precioTransportistaClp: input.proposed_price_clp,
+                      ...desgloseViajeParaGenerador({
+                        precioViajeClp: input.proposed_price_clp,
                         comisionPct: congelado.comisionPct,
                         ivaPct: congelado.ivaPct,
                       }),
@@ -590,9 +591,9 @@ export function createTripRequestsV2Routes(opts: {
       return c.json({ error: 'trip_not_found' }, 404);
     }
 
-    // ADR-079 §1 — desglose congelado al publicar (solo trips publicados con
-    // v3 activo). El IVA sale de la versión de configuración congelada.
-    let comercial: (DesgloseGenerador & { modalidad_carga: string }) | null = null;
+    // ADR-094 §1 — lo que paga el generador, con el IVA de la versión de
+    // configuración congelada al publicar (solo trips que congelaron tasa).
+    let comercial: (DesgloseViajeGenerador & { modalidad_carga: string }) | null = null;
     if (
       trip.comisionPctAplicada &&
       trip.configuracionComercialId &&
@@ -607,8 +608,8 @@ export function createTripRequestsV2Routes(opts: {
       if (version) {
         comercial = {
           modalidad_carga: trip.modalidadCarga,
-          ...desgloseParaGenerador({
-            precioTransportistaClp: trip.proposedPriceClp,
+          ...desgloseViajeParaGenerador({
+            precioViajeClp: trip.proposedPriceClp,
             comisionPct: trip.comisionPctAplicada,
             ivaPct: version.config.impuestos.iva_pct,
           }),
