@@ -23,30 +23,13 @@ describe('configuracionComercialSchema (ADR-079 §3)', () => {
     expect(CONFIGURACION_COMERCIAL_INICIAL.impuestos.iva_pct).toBe(19);
   });
 
-  it('invariante contractual: spot > programada (igual o menor → rechazo)', () => {
-    expect(
-      configuracionComercialSchema.safeParse(conComisiones({ spot_pct: 10, programada_pct: 10 }))
-        .success,
-    ).toBe(false);
-    expect(
-      configuracionComercialSchema.safeParse(conComisiones({ spot_pct: 9, programada_pct: 10 }))
-        .success,
-    ).toBe(false);
-    expect(
-      configuracionComercialSchema.safeParse(conComisiones({ spot_pct: 18, programada_pct: 10 }))
-        .success,
-    ).toBe(true);
-  });
-
-  it('el retorno programado queda entre programada y spot', () => {
-    const r = (retorno: number) =>
-      configuracionComercialSchema.safeParse(
-        conComisiones({ spot_pct: 20, programada_pct: 10, retorno_programada_pct: retorno }),
-      ).success;
-    expect(r(9)).toBe(false);
-    expect(r(21)).toBe(false);
-    expect(r(10)).toBe(true);
-    expect(r(20)).toBe(true);
+  it('ADR-094 §2: no hay invariante entre tasas; el PO fija cada una con libertad', () => {
+    const ok = (comisiones: Parameters<typeof conComisiones>[0]) =>
+      configuracionComercialSchema.safeParse(conComisiones(comisiones)).success;
+    expect(ok({ spot_pct: 5, programada_pct: 5 })).toBe(true);
+    expect(ok({ spot_pct: 4, programada_pct: 6 })).toBe(true);
+    expect(ok({ spot_pct: 18, programada_pct: 10 })).toBe(true);
+    expect(ok({ spot_pct: 20, programada_pct: 10, retorno_programada_pct: 25 })).toBe(true);
   });
 
   it('porcentajes en 0–100 con a lo más dos decimales', () => {

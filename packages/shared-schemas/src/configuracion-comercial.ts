@@ -35,21 +35,9 @@ export const comisionesSchema = z
     programada_pct: porcentaje,
     retorno_programada_pct: porcentaje.optional(),
   })
-  .strict()
-  // Invariante contractual de ADR-079 §2: cambiarla exige ADR nuevo.
-  .refine((c) => c.spot_pct > c.programada_pct, {
-    message: 'spot_pct debe ser mayor que programada_pct (ADR-079 §2)',
-    path: ['spot_pct'],
-  })
-  .refine(
-    (c) =>
-      c.retorno_programada_pct === undefined ||
-      (c.retorno_programada_pct >= c.programada_pct && c.retorno_programada_pct <= c.spot_pct),
-    {
-      message: 'retorno_programada_pct debe quedar entre programada_pct y spot_pct (ADR-079 §2)',
-      path: ['retorno_programada_pct'],
-    },
-  );
+  // ADR-094 §2: sin invariante entre tasas. El Product Owner fija cada una
+  // con libertad (iguales, o programada sobre spot); `porcentaje` acota 0–100.
+  .strict();
 
 /**
  * Servicios recurrentes y huella (ADR-079 §4). Es también la proyección
