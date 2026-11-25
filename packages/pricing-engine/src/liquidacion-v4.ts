@@ -24,21 +24,21 @@ export interface LiquidacionV4Output {
   comisionPct: number;
   comisionClp: number;
   ivaComisionClp: number;
-  /** `comisionClp + ivaComisionClp`: lo que Booster descuenta dentro del precio. */
-  descuentoBoosterClp: number;
-  /** `precioViajeClp - comisionClp`: el neto del transportista. Es lo único que él ve. */
+  /** `comisionClp + ivaComisionClp`: la factura de Booster al generador. */
+  totalFacturaBoosterClp: number;
+  /** `precioViajeClp - comisionClp`: el neto que el transportista factura al generador. Es lo único que él ve. */
   precioTransportistaClp: number;
-  /** `totalGeneradorClp - descuentoBoosterClp`: lo que recibe el transportista, con IVA. */
+  /** `totalGeneradorClp - totalFacturaBoosterClp`: la factura del transportista al generador, con IVA. */
   totalTransportistaClp: number;
   pricingMethodologyVersion: typeof PRICING_METHODOLOGY_VERSION_V4;
 }
 
 /**
  * Liquidación v4 (ADR-094 §1): el generador paga el precio del viaje con IVA,
- * Booster descuenta su comisión más IVA dentro de ese precio y el resto es del
- * transportista. Función PURA, determinista, HALF_UP a CLP entero.
+ * repartido en dos facturas: la de Booster por su comisión y la del
+ * transportista por el resto. Función PURA, determinista, HALF_UP a CLP entero.
  *
- * Invariante: `totalGeneradorClp === totalTransportistaClp + descuentoBoosterClp`.
+ * Invariante: `totalGeneradorClp === totalTransportistaClp + totalFacturaBoosterClp`.
  *
  * @throws Error ante entradas inválidas: es un bug del caller, nunca un
  *   monto silencioso.
@@ -64,7 +64,7 @@ export function calcularLiquidacionV4(input: LiquidacionV4Input): LiquidacionV4O
   const comisionClp = Math.round((precioViajeClp * comisionPct) / 100);
   const ivaComisionClp = Math.round(comisionClp * ivaRate);
   const totalGeneradorClp = precioViajeClp + ivaViajeClp;
-  const descuentoBoosterClp = comisionClp + ivaComisionClp;
+  const totalFacturaBoosterClp = comisionClp + ivaComisionClp;
 
   return {
     precioViajeClp,
@@ -73,9 +73,9 @@ export function calcularLiquidacionV4(input: LiquidacionV4Input): LiquidacionV4O
     comisionPct,
     comisionClp,
     ivaComisionClp,
-    descuentoBoosterClp,
+    totalFacturaBoosterClp,
     precioTransportistaClp: precioViajeClp - comisionClp,
-    totalTransportistaClp: totalGeneradorClp - descuentoBoosterClp,
+    totalTransportistaClp: totalGeneradorClp - totalFacturaBoosterClp,
     pricingMethodologyVersion: PRICING_METHODOLOGY_VERSION_V4,
   };
 }

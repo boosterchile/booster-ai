@@ -27,14 +27,14 @@ Esto revierte dos condiciones que el propio PO había fijado en ADR-079: quién 
 
 - El ancla es el **precio del viaje** (`precio_viaje_clp`): el monto neto que paga el generador.
 - El generador paga `precio_viaje_clp + IVA`.
-- Booster descuenta, dentro de ese monto, `comision_clp + IVA de la comisión`, con `comision_clp = precio_viaje_clp × comision_pct`.
+- Dentro de ese monto, a Booster le corresponde `comision_clp + IVA de la comisión`, con `comision_clp = precio_viaje_clp × comision_pct`.
 - El resto es del transportista. En neto recibe `precio_viaje_clp − comision_clp`.
 
 | Viaje de 100.000 netos con 5 % | CLP |
 |---|---|
 | El generador paga, con IVA | 119.000 |
-| Booster descuenta: comisión | 5.000 |
-| Booster descuenta: IVA de la comisión | 950 |
+| De eso, comisión de Booster | 5.000 |
+| De eso, IVA de la comisión | 950 |
 | El transportista recibe, con IVA | 113.050 |
 | Que en neto son | 95.000 |
 
@@ -44,10 +44,42 @@ Esto revierte dos condiciones que el propio PO había fijado en ADR-079: quién 
 - La tasa de retorno programado deja de usarse. La clave `retorno_programada_pct` queda opcional en el esquema hasta que una migración la retire.
 - La tasa se sigue congelando al publicar (ADR-079 sección 2).
 
-### 3. Qué ve cada uno
+### 3. Dos facturas al generador
 
-- El generador ve el total que paga.
-- El transportista ve solo lo que recibe. No ve el precio del viaje ni la comisión (ADR-079 sección 5 se mantiene).
+Decisión del PO del 2026-11-24: «Booster solo factura al generador».
+
+- El transportista factura al generador su parte: `precio_viaje_clp − comision_clp`, más IVA.
+- Booster factura al generador su comisión, más IVA. Booster no factura al transportista.
+- Las dos facturas suman exactamente lo que paga el generador. Ese es el desglose que él recibe.
+
+| Viaje de 100.000 netos con 5 % | Neto | Con IVA |
+|---|---|---|
+| Factura del transportista al generador | 95.000 | 113.050 |
+| Factura de Booster al generador | 5.000 | 5.950 |
+| Total que paga el generador | 100.000 | 119.000 |
+
+### 4. Qué ve cada uno
+
+- El generador ve el total que paga y su desglose en las dos facturas.
+- El transportista ve solo lo que recibe. No ve el precio del viaje ni la comisión: **ADR-079 sección 5 se mantiene íntegra**.
+- El conductor no ve montos.
+
+### 5. Booster Spot: carga inmediata y carga programada
+
+Decisiones del PO del 2026-11-24.
+
+- El servicio de carga se llama **Booster Spot** y reemplaza al nombre «Match de Carga». Recoge el origen del proyecto: conseguir carga para el retorno, para que no haya trayectos vacíos.
+- La modalidad la decide el plazo, no un contrato previo: la carga es **inmediata** si el retiro empieza dentro del umbral contado desde la publicación, y **programada** si empieza después. El umbral parte en 24 horas y el PO lo cambia desde el panel de administración.
+- **Deja de regir** la habilitación de «contrato programado» por generador de ADR-079 sección 2. Cualquier generador obtiene la tasa programada publicando con la anticipación del umbral.
+- La tasa de la carga inmediata es la que hoy se llama `spot_pct`; la de la programada, `programada_pct`. Que la inmediata sea mayor queda a criterio del PO al configurarlas: el sistema no lo valida (sección 2).
+- Un viaje de retorno paga la misma comisión que cualquier otro. Lo que puede ser menor es la tarifa del viaje.
+
+### 6. Una carta de porte por viaje
+
+- Cada viaje de Booster Spot tiene una carta de porte: el documento de una página, generado con los datos del viaje, que acredita el contrato de transporte entre generador y transportista. Las reglas que no cambian de un viaje a otro van en unas condiciones generales de transporte que cada empresa acepta una vez (decisión del PO, 2026-11-25). El generador lo ofrece al publicar y se perfecciona cuando el transportista acepta la oferta en la plataforma.
+- La carta de porte fija como precio del transporte lo que recibe el transportista. El servicio de Booster va en un anexo que se entrega solo al generador, para mantener la sección 4.
+- El PO informó el 2026-11-25 que el abogado y el contador aprobaron la carta de porte, las condiciones generales y el análisis de la Resolución Exenta SII N.º 144 de 2026. El texto no se ofrece para aceptación mientras tenga valores por definir (plazos, cargos, seguro, ciudad).
+- **Cumplimiento del SII como función del producto.** La Resolución Exenta SII N.º 144 de 2026 (que deja sin efecto la N.º 154 de 2025) exige en la guía de despacho o factura los datos del transporte. Booster entrega esos datos al generador al asignarse el camión, compara la guía subida con el viaje y avisa cuando un cambio de vehículo o conductor la deja desactualizada. Las pantallas citan la resolución.
 
 ## Estado de la implementación
 
@@ -56,12 +88,16 @@ Hecho en el PR que introduce este ADR:
 - `comisionesSchema` ya no valida ninguna relación entre tasas.
 - `calcularLiquidacionV4` en `packages/pricing-engine` implementa la sección 1, con sus tests. Todavía no tiene callers.
 
-Pendiente, descrito en la spec: cambiar el ancla en publicación, ofertas, asignación, liquidación, cambios de carga, cobro bajo mandato y las pantallas; decidir el interruptor de activación; retirar la tasa de retorno.
+Pendiente, descrito en la spec: la modalidad por plazo con su umbral, el contrato por viaje, el cambio de nombre en la aplicación, cambiar el ancla en publicación, ofertas, asignación, liquidación, cambios de carga, cobro bajo mandato y las pantallas; decidir el interruptor de activación; retirar la tasa de retorno.
 
 `PRICING_V3_ACTIVATED` no debe encenderse mientras eso esté pendiente: activaría el cálculo de ADR-079, que este ADR deja sin efecto.
 
 ## Consecuencias
 
-- El precio que publica el generador pasa a ser lo que él paga, no lo que recibe el transportista. Las cargas publicadas antes del cambio guardan su precio con el significado anterior; la spec fija cómo se tratan.
+- El precio que publica el generador pasa a ser lo que él paga, no lo que recibe el transportista. Las cargas publicadas antes del cambio quedan fuera (decisión del PO, 2026-11-25): se liquidan con la regla y la tasa con que se publicaron.
 - El Plan de Flujo de Caja sep-2026 → jun-2027 se construyó con las tasas de ADR-079 (20 % y 10 %) cobradas encima. Con la comisión dentro del precio y tasas a criterio del PO, sus proyecciones de ingreso dejan de corresponder al código.
-- El IVA del flete entra al cálculo. ADR-079 solo modelaba el IVA de la factura de comisión, y Booster no emite DTE (ADR-069): quién emite el documento por el flete y cómo se respalda el descuento de Booster queda como pregunta abierta en la spec.
+- El IVA del flete entra al desglose que ve el generador; ADR-079 solo modelaba el IVA de la factura de comisión.
+- Booster no emite DTE (ADR-069) y eso no cambia: la factura de comisión se emite fuera de la plataforma (decisión del PO, 2026-11-24). La plataforma muestra al generador el desglose de las dos facturas, y la factura emitida debe coincidir con él.
+- El tratamiento del IVA de las dos facturas está validado por contabilidad, según informó el PO el 2026-11-24.
+- Las tasas no se siembran de nuevo: rigen las que el PO publique a mano desde el panel de administración. La versión publicada hoy (20 % y 10 %) sigue vigente hasta que él la cambie.
+- La guardia `visibilidad-transportista` y `CLAVES_PRIVADAS_GENERADOR` siguen como están.
