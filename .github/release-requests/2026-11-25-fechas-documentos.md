@@ -17,4 +17,6 @@
 
 Este archivo dispara `Release on request`. El Environment **production** sigue exigiendo aprobación humana (ADR-076). No usa la lane `release-deploy-main`.
 
-Aprobar cuando haya terminado el release del frente 1 ([run 45717367685](https://github.com/boosterchile/booster-ai/actions/runs/45717367685)): el workflow se detiene antes de Cloud Build si otro deploy a producción está en curso.
+## Segunda solicitud (2026-11-25)
+
+La primera ([run 45720364303](https://github.com/boosterchile/booster-ai/actions/runs/45720364303)) se aprobó mientras corría el release del frente 1 y se detuvo antes de Cloud Build en «Verificar que no hay otro deploy a prod en curso»; no desplegó nada. El release del frente 1 terminó en verde (`505fbf06`, run 45717367685) y no hay otro deploy en curso.
