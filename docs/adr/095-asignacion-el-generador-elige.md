@@ -47,7 +47,7 @@ Las cuatro usan el mismo matching para decidir a quién se invita y en qué orde
 
 En «Elijo yo» y «Pido ofertas», la aceptación del transportista es un compromiso firme que no asigna. La asignación ocurre cuando el generador elige. Reclamar una carga abierta pasa a ser postular sin invitación.
 
-**La carta de porte.** El principio de ADR-094 no cambia: el contrato se perfecciona con la aceptación de ambas partes en la plataforma. Cambia quién acepta en último lugar:
+**La carta de porte.** Se perfecciona con la transacción final: la asignación del viaje a quien el generador eligió, directamente o por la forma de asignar que fijó al publicar (precisión del PO del 2026-11-25). El principio de ADR-094 se mantiene, porque en esa transacción concurren las dos aceptaciones. Cómo se llega a ella:
 
 - **Automática y directa.** Publicar es una oferta firme del generador; el contrato nace cuando un transportista la acepta. Es lo que rige hoy.
 - **«Elijo yo» y «Pido ofertas».** Publicar es una invitación a ofertar. La postulación del transportista es su oferta firme, con el precio publicado o con el que él propone; el contrato nace cuando el generador la elige. Las postulaciones no elegidas quedan sin efecto y sin costo. El transportista puede retirar la suya mientras no haya sido elegida.
@@ -94,8 +94,7 @@ Dueño, administrador y despachador de la empresa. El conductor no (decisión de
 
 **Lo que hay que revisar.**
 
-- **El límite de 5 invitaciones y los 60 minutos.** Sirven para «el primero que acepta». Para que el generador elija, 5 invitados pueden dejarlo con una sola postulación. Deben ser configurables por forma de asignar.
-- **El plazo para elegir.** Hoy no existe porque nadie elige. Una carga inmediata (retiro dentro de 24 horas) no puede esperar indefinidamente a que el generador decida.
+- **El límite de 5 invitaciones y los 60 minutos.** Hoy son constantes del código. Pasan a ser datos de cada carga: el generador decide a cuántos invita y en qué plazo elige (decisiones 9 y 10).
 - **El retorno con carga como criterio visible.** La fórmula v2 ya ordena premiando al transportista que va hacia el origen, que es el origen del proyecto y la mitad del lema. Hoy ese orden no lo ve nadie, porque gana el primero que acepta. Cuando el generador elija, el motivo «retorno con carga» tiene que mostrarse, y conviene confirmar en producción que la v2 es la que está corriendo.
 - **Las cargas que nadie toma.** El PO confirmó que pasan a `expirado`. Falta comprobar que exista el proceso que las cierra (punto 7 del contexto) y definir qué se le ofrece al generador: volver a publicar, subir el precio o cambiar de forma.
 - **El precio como criterio.** Con «Pido ofertas», el precio entra al orden por primera vez. La fórmula v2 no lo considera: hay que decidir si entra al orden o si solo se muestra.
@@ -112,8 +111,10 @@ Dueño, administrador y despachador de la empresa. El conductor no (decisión de
 | 6 | Tope de precio en «Pido ofertas» | El generador puede fijar un máximo; las ofertas no lo superan |
 | 7 | Cargas que nadie toma | Pasan a `expirado`. Las cargas publicadas hasta hoy fueron pruebas de Booster |
 | 8 | Comisión | No supera 50 % |
+| 9 | Plazo para elegir | Lo fija el generador al publicar, según el tipo de servicio |
+| 10 | A cuántos transportistas se invita | Lo decide el generador |
 
-Sin definir todavía: cuánto dura el plazo para elegir en cada tipo de carga, y a cuántos transportistas se invita en cada forma.
+Para la spec, sin decisión del PO todavía: los valores que la pantalla propone por defecto y sus límites. Propuesta de la sesión de diseño: en la carga inmediata, 30 minutos por defecto y nunca más allá de 2 horas antes del inicio de la ventana de retiro, que es el límite de la cancelación sin cargo; en la programada, 24 horas por defecto. Para los invitados, 5 por defecto (el valor actual de `MAX_OFFERS_PER_REQUEST`) con la opción de invitar a todos los que cumplen.
 
 ## Consecuencias
 
