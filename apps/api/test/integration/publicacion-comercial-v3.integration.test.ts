@@ -12,10 +12,9 @@ import {
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
- * ADR-079 §1–§2 contra Postgres real: con PRICING_V3_ACTIVATED, publicar
- * congela la tasa y la versión vigente en `viajes`; el detalle del generador
- * reconstruye el desglose desde lo congelado, aunque después se publique
- * otra configuración.
+ * ADR-079 §2 y ADR-094 §1 contra Postgres real: con PRICING_V3_ACTIVATED,
+ * publicar congela la tasa y la versión vigente en `viajes`; el detalle del
+ * generador devuelve el precio del viaje, su IVA y el total que paga.
  */
 vi.mock('../../src/services/matching.js', () => ({
   runMatching: vi.fn(async () => ({
@@ -157,11 +156,14 @@ describe('integration: publicación con modelo comercial v3', () => {
       trip_request: { modalidad_carga: string; comercial: Record<string, number | string> };
     };
     expect(body.trip_request.modalidad_carga).toBe('spot');
-    expect(body.trip_request.comercial).toMatchObject({
+    // ADR-094 §1 y §3: el precio publicado es el del viaje. El generador ve
+    // su total; ni la comisión ni lo que recibe el transportista.
+    const ivaViaje = Math.round((700_000 * vigente.config.impuestos.iva_pct) / 100);
+    expect(body.trip_request.comercial).toEqual({
       modalidad_carga: 'spot',
-      precio_transportista_clp: 700_000,
-      comision_pct: spot,
-      comision_clp: Math.round((700_000 * spot) / 100),
+      precio_viaje_clp: 700_000,
+      iva_viaje_clp: ivaViaje,
+      total_generador_clp: 700_000 + ivaViaje,
     });
   });
 });
