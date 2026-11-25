@@ -18,7 +18,7 @@ Verificado en `main` (`7ff12fb`), leyendo `apps/api/src/services/matching.ts`, `
 2. **Queda asignado el primero que acepta.** `acceptOffer` crea la asignación en la misma transacción y marca las demás ofertas como reemplazadas. El generador no interviene.
 3. **El precio lo fija el generador.** La oferta copia el precio publicado; el transportista acepta o rechaza, no propone.
 4. **Reclamar** (BARH-23, aceptada el 2026-11-16): un transportista con zona en el origen puede tomar una carga abierta que el matching no le ofreció. También asigna de inmediato.
-5. **El orden de candidatos.** Rige la fórmula v1, que solo premia que el camión no quede grande para la carga. La v2 (ADR-033), que da el mayor peso (0,35) a que el transportista ya tenga un camión yendo hacia el origen, está construida y apagada por defecto, en el código y en `infrastructure/variables.tf`. No se comprobó el valor aplicado en producción. La elegibilidad por carga sí está activa por defecto en la infraestructura (`matching_elegibilidad_modo = "activa"`).
+5. **El orden de candidatos.** Hay dos fórmulas. La v1 solo premia que el camión no quede grande para la carga. La v2 (ADR-033) da el mayor peso (0,35) a que el transportista ya tenga un camión yendo hacia el origen. El código trae la v2 apagada por defecto, pero la infraestructura la enciende (`matching_algorithm_v2_activated`, por defecto `true`, con la nota «Activado en prod desde 2026-05-07»). No se comprobó el valor aplicado en el servicio en producción. La elegibilidad por carga también está activa por defecto en la infraestructura.
 6. **Solo el generador puede cancelar** (`PATCH /trip-requests/:id/cancelar`). El enum `actor_cancelacion` ya tiene el valor `transportista`, pero no hay ruta para que un transportista desista, y la máquina de estados no tiene camino de `asignado` de vuelta a buscar transportista.
 7. **Una carga cuyas ofertas vencen todas** debería pasar a `expirado` por un proceso posterior, según el comentario de `rejectOffer`. No se encontró ese proceso en `apps/api/src/jobs` ni en los servicios.
 
@@ -81,9 +81,9 @@ Dueño, administrador y despachador de la empresa. El conductor no (decisión de
 
 - **El límite de 5 invitaciones y los 60 minutos.** Sirven para «el primero que acepta». Para que el generador elija, 5 invitados pueden dejarlo con una sola postulación. Deben ser configurables por forma de asignar.
 - **El plazo para elegir.** Hoy no existe porque nadie elige. Una carga inmediata (retiro dentro de 24 horas) no puede esperar indefinidamente a que el generador decida.
-- **La fórmula v2 está apagada.** Es la que hace del retorno con carga el criterio principal, que es el origen del proyecto y la mitad del lema. Mientras esté apagada, el orden que vería el generador no refleja «sin trayectos vacíos». Activarla es un frente aparte y necesita datos de posición reciente de la flota.
+- **El retorno con carga como criterio visible.** La fórmula v2 ya ordena premiando al transportista que va hacia el origen, que es el origen del proyecto y la mitad del lema. Hoy ese orden no lo ve nadie, porque gana el primero que acepta. Cuando el generador elija, el motivo «retorno con carga» tiene que mostrarse, y conviene confirmar en producción que la v2 es la que está corriendo.
 - **Las cargas que nadie toma.** Falta confirmar qué las cierra hoy (punto 7 del contexto) y definir qué ve el generador: volver a publicar, subir el precio o cambiar de forma.
-- **El precio como criterio.** Con «Pido ofertas», el precio entra al orden por primera vez. La fórmula v2 no lo considera.
+- **El precio como criterio.** Con «Pido ofertas», el precio entra al orden por primera vez. La fórmula v2 no lo considera: hay que decidir si entra al orden o si solo se muestra.
 
 ## Por confirmar con el PO
 
