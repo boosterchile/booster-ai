@@ -12,7 +12,8 @@
 | `maquetas/*.dc.html` | Las 56 pantallas. Cada archivo es HTML autónomo: se abre en el navegador con `file://` y solo pide la fuente Inter a Google Fonts. |
 | `maquetas/canvas.json` | Título, ancho y alto de cada pantalla, y las notas del lienzo. |
 | `capturas/*.jpg` | Una captura por maqueta, al ancho de su marco (1280 o 390 px), generada con Chrome sin interfaz el 2026-11-25. |
-| `MAPA.md` | Cada maqueta con la ruta de la aplicación de la que parte, su tanda y lo que le falta para poder construirse. |
+| `FRENTES.md` | El plan: los diez frentes del rediseño, con sus criterios de término. |
+| `MAPA.md` | Cada maqueta con la ruta de la que parte, sus frentes y lo verificado en el código. |
 
 El lienzo vivo está en https://claude.ai/artifact/44QutQ6zQ25Tenyj1qoRNq. Esta carpeta es una copia de su versión `1795625245-b6c4`; si el lienzo cambia, la sesión de diseño vuelve a copiarla.
 
@@ -36,27 +37,63 @@ El lienzo vivo está en https://claude.ai/artifact/44QutQ6zQ25Tenyj1qoRNq. Esta 
 9. **Pantallas fusionadas, aprobadas:** Cumplimiento, Seguimiento de flota, Trayectos y Zonas quedan dentro de las pantallas que muestra `MAPA.md`.
 10. **Quién acepta una carga:** dueño, administrador y despachador. El conductor no.
 
-## Lo que el repositorio ya tiene (según `docs/handoff/CURRENT.md`, sin comprobar en pantalla)
+## Plan de trabajo
 
-- **Servicios por empresa** (#1047): una empresa transportista puede quedar sin ofertas de carga y conservar Booster Fleet.
-- **Interfaz propia de Booster Fleet** (#1049): marca, Inicio y menú con «Flota» y «Viajes propios» para esa empresa. La maqueta `TransportistaSoloFleet` parte de ahí, no de cero.
-- **`/apariencia/*`**: rutas para ver el armazón y las primitivas sin sesión (por ejemplo `/apariencia/shell?rol=fleet`).
+El plan son los **diez frentes** de `FRENTES.md`, no un orden por rol. Cada frente tiene su criterio «Hecho cuando». El orden recomendado: 1 y la parte de componentes del 8; después 2 y 3; el 5 antes del 6 y el 7; 4 y 10 juntos; el 9 en paralelo.
 
-## Orden de entrega
+Lo que depende de la comisión (montos, carta de porte, guía de despacho, tipo de carga) no sale antes que los frentes 3 a 9 de `.specs/comision-dentro-del-precio/spec.md`.
 
-Cada tanda es uno o más PR liberables por separado. El detalle por pantalla está en `MAPA.md`.
+**Regla para no rehacer lo hecho:** varias pantallas ya fueron rediseñadas con specs aceptadas por el PO (lista en «Verificado contra el código»). La maqueta se aplica como diferencia sobre esa pantalla, no como reemplazo. Si la maqueta contradice una spec aceptada, se le pregunta al PO antes de construir.
 
-| Tanda | Qué entra | Depende de |
+## Verificado contra el código (`main` en `3c9881c`, 2026-11-25)
+
+Lectura de `apps/web/src`, `apps/api/src`, `packages/` y `.specs/`. No se ejecutó la aplicación.
+
+### Contradicciones entre maquetas y lo ya decidido
+
+1. **Navegación.** La aplicación tiene barra lateral persistente y cajón en móvil (`components/Layout.tsx`, `Sidebar.tsx`, `nav-items.ts`), decidida en `.specs/d2-operador-shell-sidebar/` (aceptada, goal del PO del 2026-07-09). Las maquetas dibujan menú superior y barra inferior bajo 640 px. El apartado «Estado actual» de `DESIGN.md` dice «sin sidebar» y está desactualizado. **Decide el PO** antes de tocar el armazón.
+2. **Cantidad de entradas del menú.** `navSectionsForMe` arma para un transportista administrador con ofertas y finanzas unas 16 entradas (3 o 4 generales y 12 o 13 bajo «Transporte»); la maqueta propone 5 (Inicio, Flota, Viajes, Ofertas, Empresa) y 4 con Booster Fleet solo. El PO aprobó fusionar Cumplimiento, Seguimiento de flota, Trayectos y Zonas; Vehículos, Conductores, Servicios, Rutas, Equipo, Dispositivos, Cobra hoy y Liquidaciones no tienen decisión explícita de dónde quedan en un menú de 5.
+3. **`GeneradorElegir` no corresponde al modelo actual.** Hoy el generador no elige: el matching envía ofertas y el transportista que acepta queda asignado (`apps/api/src/services/offer-actions.ts`; el detalle de la carga solo muestra «Hay N transportistas evaluando»). Construir esa pantalla es cambiar el modelo de asignación, no la interfaz.
+4. **El sello tiene tres presentaciones, no dos.** ADR-091 (PO, 2026-11-12) fija Primario, «Distancia medida con Teltonika · consumo modelado» y Estimado, y dice que «medida» aplica solo a la distancia. Las maquetas dibujan dos estados. El PO precisó el 2026-11-25 que «Medido» se refiere a la huella de carbono. Lectura de la sesión de diseño, a confirmar: el sello «Medido» va solo cuando la huella misma fue medida (`primario_verificable`); la presentación intermedia conserva su texto de ADR-091 y no lleva «Medido».
+
+### Lo que las maquetas muestran y el código no hace
+
+5. **El viaje propio con cliente externo no emite certificado.** `crear-viaje-propio.ts` deja `generadorCargaEmpresaId` en nulo para un cliente externo y `emitir-certificado-viaje.ts` se salta el viaje con motivo `no_shipper`. `TransportistaViajePropioEntregado` depende de construir eso.
+6. **El ahorro de la ruta no existe para planificar.** `apps/api/src/services/eco-route-preview.ts` entrega distancia, duración, litros y huella estimada de una oferta, sin comparar con otra ruta (su propio comentario deja el diferencial «para una iteración futura»). `packages/eco-routing/src/evaluar-alternativas.ts` sí calcula ahorro en segundos y en kg CO₂e, pero solo para sugerir una ruta alternativa durante un viaje con congestión, y detrás de `ECO_ROUTING_REALTIME_ACTIVATED` (apagado). Falta el ahorro en litros y CO₂e frente a la ruta más rápida al publicar, al ver una oferta y al crear un viaje propio. La base para construirlo existe: `routes-api.ts` ya pide consumo de combustible a Routes API.
+7. **Umbrales de anonimato.** El observatorio exige 10 vehículos (`K_MIN_VEHICULOS` en `services/observatorio/proyeccion.ts`, con un test que lo fija) y los agregados de organizaciones exigen 5 (`K_ANON` en `services/stakeholder-aggregations.ts`). El PO decidió 1.
+8. **Carta de porte.** Nada en `main`. Hay dos ramas de mayo de 2026 (`feat/carta-porte-generator` y `-mvp`), con un paquete generador de PDF, a 1.085 commits de `main`. Sirven de referencia, no de base.
+9. **Chat.** `components/chat/ChatPanel.tsx` es texto libre con foto. Las maquetas proponen mensajes cortos predefinidos.
+10. **Conductor.** Existen el panel de incidente (`components/inicio/incidente-panel.tsx`), los documentos del viaje (`components/conductor/DocumentosViajeConductor.tsx`), el resultado del viaje (`ResultadoViaje.tsx`) y el retiro con geocerca. No existen la elección de tamaño de letra, color y contraste, la evidencia de entrega con foto y receptor, ni la entrega condicionada a estar detenido en el destino.
+11. **Repetir una carga:** no existe.
+
+### Mapas
+
+Todos los mapas son de Google Maps con `@vis.gl/react-google-maps`. No hay un componente común: hay seis en `components/map/` más `components/offers/EcoRouteMapPreview.tsx`.
+
+| Componente | Lo usan |
+|---|---|
+| `LiveTrackingScreen` | seguimiento de la carga, detalle de la asignación, vehículo en vivo, tarjeta de mapa del Inicio del generador |
+| `FleetMap` | seguimiento de flota, mini mapa del Inicio del transportista, flota de la plataforma |
+| `VehicleMap` | detalle de la carga, chat, ficha del vehículo; base de `FleetMap` y de `EcoRouteMapPreview` |
+| `EcoRouteMapPreview` | tarjeta de oferta, tarjeta de ruta de la asignación, pantalla del conductor |
+| `TrazaMapPreview` | ficha e historial del vehículo, tarjeta de traza de la carga |
+| `EventoCombustibleMap` | detalle de vehículo de Booster Fleet, trayectos |
+
+`viaje-propio-nuevo.tsx` y la publicación de una carga no se revisaron para saber si ya muestran la ruta. El frente 8 pide un componente común con un mismo trazo y los mismos marcadores.
+
+### Specs aceptadas que ya rediseñaron pantallas con maqueta
+
+| Pantalla | Spec | Aceptada |
 |---|---|---|
-| 0 | Base: fusionar #1083 (botón verde y sello) y llevar el armazón al menú superior con barra inferior bajo 640 px | La decisión abierta de #1083 (ver «Preguntas abiertas») |
-| 1 | Puerta de entrada y seguimiento público (5 pantallas) | Tanda 0 |
-| 2 | Conductor (7 pantallas) | Tanda 0 |
-| 3 | Transportista con Booster Fleet (11 pantallas) | Tanda 0; el ahorro de la ruta (pregunta abierta 4) |
-| 4 | Generador (9 pantallas, sin lo de dinero) | Tanda 0 |
-| 5 | Booster Spot y dinero (11 pantallas: montos, carta de porte y guía de despacho) | Frentes 3 a 9 de `.specs/comision-dentro-del-precio/spec.md` |
-| 6 | Administración (13 pantallas) | Tanda 0; el panel de comisión depende del frente 7 |
-
-Las tandas 1 a 4 y 6 son sobre todo presentación. La tanda 5 no puede salir antes que su código: muestra cifras que hoy la aplicación calcula de otra forma.
+| Armazón del operador | `d2-operador-shell-sidebar` | 2026-07-09 |
+| Conductor: tarjeta guiada, ruta y resultado | `conductor-tarjeta-guiada`, `conductor-vista-ruta-resultado`, `ui-conductor-operativa` | 2026-08 a 2026-09 |
+| Inicio del conductor, del generador, del transportista y mixto | `inicio-conductor`, `inicio-generador`, `inicio-transportista`, `inicio-negocio-hoy`, `inicio-mixta` | 2026-10-19 |
+| Seguimiento en vivo | `tracking-live-unificado` | 2026-09-20 |
+| Documentos del viaje | `gestor-documental-viaje` | 2026-09-21 |
+| Servicios del transportista | `servicios-del-transportista` | 2026-08-03 |
+| Viaje propio | `viaje-propio-transportista` | 2026-11-16 |
+| Booster Fleet: panel por severidad y detalle sobre eje de tiempo | `booster-fleet-rediseno`, `booster-fleet-ventana-completa` | 2026-11-17 |
+| Booster Fleet como producto propio | `booster-fleet-interfaz` | 2026-11-23 |
 
 ## Criterios de éxito por pantalla
 
@@ -69,16 +106,17 @@ Las tandas 1 a 4 y 6 son sobre todo presentación. La tanda 5 no puede salir ant
 
 ## Lo que la sesión de diseño no comprobó
 
-- **El mapa maqueta → ruta se hizo por nombre y propósito.** No se comparó cada maqueta con el código actual de su ruta. Antes de cada pantalla hay que leer las dos cosas y listar las diferencias.
+- **No se comparó cada maqueta con el marcado de su pantalla.** Se verificó que cada ruta existe, qué es, y los puntos de «Verificado contra el código». Antes de cada pantalla hay que poner la captura al lado de la pantalla real y listar las diferencias.
 - **No se revisaron en producción** la vista móvil, el seguimiento público, un viaje con camión en movimiento ni la voz. El PO dejó esa revisión para después.
 - **Defectos conocidos de las maquetas:** el mapa de `MovilTransportistaOfertas` queda cortado a la derecha; la etiqueta del gráfico de combustible de `TransportistaVehiculo` sale deformada; los montos de `TransportistaCobraHoy` son de relleno.
 
 ## Preguntas abiertas para el PO
 
-1. **Qué lleva el sello «Medido»** (pendiente desde #1083): la presentación «Distancia medida con Teltonika» de ADR-091 mide la distancia pero modela el consumo.
-2. **Costo de «Cobra hoy»:** no está definido; la maqueta no puede mostrar cifras reales.
-3. **Con o sin interruptor:** si el rediseño sale tanda por tanda a todos los usuarios, o detrás de un interruptor hasta completar un rol.
-4. **Ahorro de la ruta:** el PO indicó que hay que construirlo y verificarlo después. Las bandas de «ruta ecoeficiente» de las maquetas dependen de ese cálculo. `packages/eco-routing/src/evaluar-alternativas.ts` ya habla de ahorro: falta revisar qué cubre y qué falta para mostrarlo en pantalla.
+1. **Navegación:** barra lateral (lo construido) o menú superior con barra inferior (las maquetas), y dónde quedan las entradas que el menú de 5 no nombra.
+2. **Sello «Medido»:** confirmar la lectura del punto 4 de «Verificado contra el código».
+3. **Elegir transportista:** si el generador pasa a elegir entre ofertas o la pantalla se descarta.
+4. **Con qué alcance sale cada cambio:** a todos los usuarios apenas se fusiona, o escondido tras un interruptor hasta completar un rol.
+5. **Costo de «Cobra hoy»:** no está definido.
 
 ## Reparto entre sesiones
 
