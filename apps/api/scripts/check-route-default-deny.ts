@@ -83,6 +83,9 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // Flota de todas las empresas, solo lectura (.specs/flota-plataforma).
   // firebaseAuth + userContext preceden el mount; gate adicional requirePlatformAdmin.
   createAdminFlotaPlataformaRoutes: { category: 'ENFORCED', rationale: '' },
+  // Indicadores del negocio, solo lectura (.specs/una-sola-verdad-por-dato).
+  // firebaseAuth + userContext preceden el mount; gate adicional requirePlatformAdmin.
+  createAdminIndicadoresRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminCobraHoyRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
   // T10-24 — firebaseAuth + userContext preceden el mount; gate requirePlatformAdmin.
