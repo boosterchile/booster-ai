@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { UMBRAL_ANONIMATO } from '@booster-ai/shared-schemas';
 import { type SQL, and, arrayContains, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -44,7 +45,8 @@ import {
  *  - Estado terminal `entregado` únicamente (ADR-042 §5): no borradores,
  *    no cancelados, no estados intermedios.
  *  - k-anonymity a 3 niveles (ADR-042 §6):
- *      1. dataset-level: total < 5 → `insufficient_data: true` SIN buckets.
+ *      1. dataset-level: total bajo el umbral de anonimato (ADR-096) →
+ *         `insufficient_data: true` SIN buckets.
  *      2. por_hora_del_dia: 24 buckets cerrados, sub-k enmascarado (hora se
  *         preserva).
  *      3. por_tipo_carga / por_combustible: quasi-identifier, sub-k se DROPEA.
@@ -263,10 +265,10 @@ export function createStakeholderZonasRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     // 5. Gate dataset-level (ADR-042 §6 nivel 1): si el total de viajes que
-    //    matchean < K_ANON (5), NO bucketizar. Devolver shell con
+    //    matchean está bajo el umbral de anonimato, NO bucketizar. Devolver shell con
     //    insufficient_data — evita el bucket-existence leak.
     const totalViajes = viajes.length;
-    const K_ANON = 5;
+    const K_ANON = UMBRAL_ANONIMATO;
 
     const payload =
       totalViajes < K_ANON

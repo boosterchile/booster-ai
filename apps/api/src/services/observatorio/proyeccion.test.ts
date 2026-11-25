@@ -108,16 +108,16 @@ describe('proyectarViaje', () => {
   });
 });
 
-describe('filtrarK (ADR-012 §Privacidad)', () => {
-  it('descarta buckets con menos de 10 vehículos y nunca deja pasar IDs', () => {
-    expect(K_MIN_VEHICULOS).toBe(10);
+describe('filtrarK (ADR-096: umbral de anonimato único)', () => {
+  it('publica desde 1 vehículo, descarta el grupo vacío y nunca deja pasar IDs', () => {
+    expect(K_MIN_VEHICULOS).toBe(1);
     const filas = [
-      { region: 'IV', vehiculos: 10, viajes: 30 },
-      { region: 'IV', vehiculos: 9, viajes: 90 },
-      { region: 'V', vehiculos: 25, viajes: 40, vehiculo_id: 'x' },
+      { region: 'IV', vehiculos: 1, viajes: 3 },
+      { region: 'IV', vehiculos: 0, viajes: 0 },
+      { region: 'V', vehiculos: 25, viajes: 40, vehiculo_id: 'x', viaje_id: 'y' },
     ];
     expect(filtrarK(filas)).toEqual([
-      { region: 'IV', vehiculos: 10, viajes: 30 },
+      { region: 'IV', vehiculos: 1, viajes: 3 },
       { region: 'V', vehiculos: 25, viajes: 40 },
     ]);
   });
