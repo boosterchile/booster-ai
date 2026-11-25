@@ -56,7 +56,7 @@ Verificado contra `main` en `3c9881c` el 2026-11-25. Los componentes están bajo
 | `TransportistaViajePropio` | Transportista · Nuevo viaje propio | `/app/viajes-propios/nuevo` | viaje-propio-nuevo.tsx | 2, 7 | Existe (`viaje-propio-transportista`, 2026-11-16) con cliente registrado o externo. No se revisó si muestra la ruta. Nuevo: ahorro de ruta y aviso de si la huella saldrá medida. |
 | `TransportistaViajePropioEntregado` | Transportista · Viaje propio entregado y certificado | sin ruta propia | — | 2, 7 | **Depende de código que no existe:** el viaje propio con cliente externo no emite certificado; ver README, punto 5. |
 | `TransportistaPagos` | Transportista · Pagos | `/app/liquidaciones` | liquidaciones.tsx | 5; ADR-094 4 | Ruta existe; pantalla no comparada con la maqueta. |
-| `TransportistaCobraHoy` | Transportista · Cobra hoy | `/app/cobra-hoy/historial` | cobra-hoy-historial.tsx | 5 | En espera: depende de activar el módulo y de definir su costo. Montos de relleno. |
+| `TransportistaCobraHoy` | Transportista · Cobra hoy | `/app/cobra-hoy/historial` | cobra-hoy-historial.tsx | 5 | **Pendiente, no construir:** factoring para adelantar el pago; no está desarrollado. Montos de relleno. |
 
 ## Puerta de entrada y seguimiento público (5)
 
