@@ -89,15 +89,15 @@ describe('agregarPorHoraDelDia', () => {
 });
 
 describe('aplicarKAnonymityHorario', () => {
-  it('preserva buckets con count >= 5, enmascara los demás manteniendo hora', () => {
+  it('publica desde 1 viaje (ADR-096) y enmascara la hora sin viajes', () => {
     const buckets = [
       { hora: 8, viajes: 6, co2e_kg: 120 },
-      { hora: 9, viajes: 3, co2e_kg: 60 },
+      { hora: 9, viajes: 1, co2e_kg: 20 },
       { hora: 10, viajes: 0, co2e_kg: 0 },
     ];
     const r = aplicarKAnonymityHorario(buckets);
     expect(r[0]).toEqual({ hora: 8, viajes: 6, co2e_kg: 120 });
-    expect(r[1]).toEqual({ hora: 9, viajes: null, co2e_kg: null });
+    expect(r[1]).toEqual({ hora: 9, viajes: 1, co2e_kg: 20 });
     expect(r[2]).toEqual({ hora: 10, viajes: null, co2e_kg: null });
   });
 
@@ -108,8 +108,9 @@ describe('aplicarKAnonymityHorario', () => {
 });
 
 describe('calcularHorarioPico', () => {
-  it('null cuando <5 viajes (k-anonymity dataset)', () => {
-    expect(calcularHorarioPico(repeat(4, () => mk('2026-05-17T12:00:00Z')))).toBeNull();
+  it('null sin viajes; con 1 viaje ya hay ventana (ADR-096)', () => {
+    expect(calcularHorarioPico([])).toBeNull();
+    expect(calcularHorarioPico([mk('2026-05-17T12:00:00Z')])).toEqual({ inicio: 5, fin: 8 });
   });
 
   it('5 viajes concentrados a 8 CL → ventana 5..8 más temprana', () => {
@@ -117,7 +118,7 @@ describe('calcularHorarioPico', () => {
     expect(r).toEqual({ inicio: 5, fin: 8 });
   });
 
-  it('null cuando 5 viajes distribuidos uno-por-hora (ventana ganadora <k)', () => {
+  it('5 viajes distribuidos uno-por-hora: gana la ventana más temprana con más viajes', () => {
     const viajes = [
       mk('2026-05-17T12:00:00Z'), // 8 CL
       mk('2026-05-17T20:00:00Z'), // 16 CL
@@ -125,9 +126,8 @@ describe('calcularHorarioPico', () => {
       mk('2026-05-17T15:00:00Z'), // 11 CL
       mk('2026-05-17T18:00:00Z'), // 14 CL
     ];
-    // total 5 → pasa el guard dataset. Pero la ventana máxima de 4h sólo
-    // captura 1-2 viajes → ventana ganadora < k → null.
-    expect(calcularHorarioPico(viajes)).toBeNull();
+    // 8 CL y 11 CL caen en la misma ventana de 4 h (8..11): 2 viajes.
+    expect(calcularHorarioPico(viajes)).toEqual({ inicio: 8, fin: 11 });
   });
 
   it('pico claro vs ruido', () => {
@@ -217,14 +217,17 @@ describe('agregarPorCombustible', () => {
 });
 
 describe('aplicarKAnonymityQuasiId (ADR-042 §6 nivel 3)', () => {
-  it('filtra (drop) buckets con count < k — preserva privacy de quasi-identifier', () => {
+  it('publica desde 1 viaje (ADR-096) y descarta el grupo vacío', () => {
     const buckets = [
       { tipo: 'carga_seca', viajes: 6, co2e_kg: 600 },
-      { tipo: 'refrigerada', viajes: 3, co2e_kg: 150 }, // < k, debe DROP
-      { tipo: 'gnv', viajes: 1, co2e_kg: 30 }, // < k, debe DROP
+      { tipo: 'gnv', viajes: 1, co2e_kg: 30 },
+      { tipo: 'refrigerada', viajes: 0, co2e_kg: 0 },
     ];
     const r = aplicarKAnonymityQuasiId(buckets);
-    expect(r).toEqual([{ tipo: 'carga_seca', viajes: 6, co2e_kg: 600 }]);
+    expect(r).toEqual([
+      { tipo: 'carga_seca', viajes: 6, co2e_kg: 600 },
+      { tipo: 'gnv', viajes: 1, co2e_kg: 30 },
+    ]);
   });
 
   it('todos buckets >= k → no filtra', () => {
@@ -235,10 +238,10 @@ describe('aplicarKAnonymityQuasiId (ADR-042 §6 nivel 3)', () => {
     expect(aplicarKAnonymityQuasiId(buckets)).toEqual(buckets);
   });
 
-  it('all sub-k → array vacío (zona sin tipos con suficientes viajes)', () => {
+  it('todos vacíos → array vacío', () => {
     const buckets = [
-      { tipo: 'a', viajes: 2, co2e_kg: 20 },
-      { tipo: 'b', viajes: 3, co2e_kg: 30 },
+      { tipo: 'a', viajes: 0, co2e_kg: 0 },
+      { tipo: 'b', viajes: 0, co2e_kg: 0 },
     ];
     expect(aplicarKAnonymityQuasiId(buckets)).toEqual([]);
   });

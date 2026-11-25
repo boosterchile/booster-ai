@@ -10,7 +10,7 @@ import { createStakeholderZonasRoutes } from './stakeholder-zonas.js';
  * Privacy-critical (Ley 19.628) → estos tests blindan los INVARIANTES de
  * privacidad y RBAC del endpoint, no solo el happy path:
  *
- *  - Gate dataset-level: total de viajes que matchean < 5 (K_ANON) →
+ *  - Gate dataset-level: total de viajes bajo el umbral de anonimato (1, ADR-096) →
  *    `insufficient_data: true` SIN buckets (ADR-042 §6 nivel 1).
  *  - Filtro por comuna: solo viajes con originComunaCode ∈ zona.comunaCodes.
  *  - Ventana 30d sobre pickupWindowStart.
@@ -268,13 +268,29 @@ describe('GET /me/stakeholder/zonas/:slug/agregaciones — zona lookup', () => {
 });
 
 describe('GET /me/stakeholder/zonas/:slug/agregaciones — gate dataset-level k-anon', () => {
-  it('total de viajes < 5 (K_ANON) → insufficient_data:true SIN buckets', async () => {
-    const viajeRows = [
-      viaje({ hourUtc: 8 }),
-      viaje({ hourUtc: 8 }),
-      viaje({ hourUtc: 9 }),
-      viaje({ hourUtc: 9 }),
-    ]; // 4 < 5
+  it('1 viaje alcanza el umbral (ADR-096) → entrega el dato', async () => {
+    const { db } = makeDb({
+      userRow: { id: USER_ID },
+      membershipRows: ACTIVE_MEMBERSHIP,
+      zonaRow: ZONA,
+      viajeRows: [viaje({ hourUtc: 8, tipoCarga: 'carga_seca', fuelType: 'diesel' })],
+    });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      insufficient_data: boolean;
+      total_viajes: number;
+      por_tipo_carga: Array<{ tipo: string; viajes: number }>;
+    };
+    expect(json.insufficient_data).toBe(false);
+    expect(json.total_viajes).toBe(1);
+    expect(json.por_tipo_carga).toEqual([
+      expect.objectContaining({ tipo: 'carga_seca', viajes: 1 }),
+    ]);
+  });
+
+  it('sin viajes → insufficient_data:true SIN buckets', async () => {
+    const viajeRows: ReturnType<typeof viaje>[] = [];
     const { db } = makeDb({
       userRow: { id: USER_ID },
       membershipRows: ACTIVE_MEMBERSHIP,
@@ -315,8 +331,9 @@ describe('GET /me/stakeholder/zonas/:slug/agregaciones — gate dataset-level k-
 });
 
 describe('GET /me/stakeholder/zonas/:slug/agregaciones — agregaciones con k-anon por bucket', () => {
-  it('total >= 5 → insufficient_data:false + buckets k-anonimizados', async () => {
-    // 6 viajes: 5 carga_seca/diesel (sobre umbral) + 1 perecible/electrico (sub-umbral).
+  it('con viajes → insufficient_data:false + buckets desde 1 viaje', async () => {
+    // 6 viajes: 5 carga_seca/diesel + 1 perecible/electrico. Desde ADR-096 el
+    // grupo de 1 también se publica.
     const viajeRows = [
       viaje({ hourUtc: 8, tipoCarga: 'carga_seca', fuelType: 'diesel' }),
       viaje({ hourUtc: 8, tipoCarga: 'carga_seca', fuelType: 'diesel' }),
@@ -344,25 +361,20 @@ describe('GET /me/stakeholder/zonas/:slug/agregaciones — agregaciones con k-an
     expect(json.insufficient_data).toBe(false);
     expect(json.total_viajes).toBe(6);
 
-    // por_tipo_carga: 'carga_seca' (5) sobrevive, 'perecible' (1) se DROPEA (quasi-id).
     const tipos = json.por_tipo_carga.map((b) => b.tipo);
     expect(tipos).toContain('carga_seca');
-    expect(tipos).not.toContain('perecible');
+    expect(tipos).toContain('perecible');
 
-    // por_combustible: 'diesel' (5) sobrevive, 'electrico' (1) se DROPEA.
     const fuels = json.por_combustible.map((b) => b.fuel_type);
     expect(fuels).toContain('diesel');
-    expect(fuels).not.toContain('electrico');
+    expect(fuels).toContain('electrico');
 
-    // por_hora_del_dia: universo cerrado de 24 buckets; los sub-k se enmascaran
-    // (viajes:null) pero la hora se preserva (no se dropea).
+    // por_hora_del_dia: universo cerrado de 24 buckets. Las horas con viajes
+    // muestran su cifra; las horas sin viajes quedan enmascaradas (viajes:null).
     expect(json.por_hora_del_dia).toHaveLength(24);
-    // Ninguna hora individual llega a 5 → todas enmascaradas (viajes:null),
-    // pero el array completo de 24 sigue presente.
-    for (const b of json.por_hora_del_dia) {
-      expect(b).toHaveProperty('hora');
-      expect(b.viajes).toBeNull();
-    }
+    const conViajes = json.por_hora_del_dia.filter((b) => b.viajes !== null);
+    expect(conViajes.reduce((acc, b) => acc + (b.viajes ?? 0), 0)).toBe(6);
+    expect(json.por_hora_del_dia.some((b) => b.viajes === null)).toBe(true);
   });
 
   it('fuelType null se mapea a sentinel "desconocido" (NO se inventa diesel)', async () => {

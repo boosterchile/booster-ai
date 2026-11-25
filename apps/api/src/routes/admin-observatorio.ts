@@ -18,7 +18,7 @@ import { filtrarK } from '../services/observatorio/proyeccion.js';
  *
  * Solo platform-admin (`requirePlatformAdmin`). `:region` es el código romano de
  * `viajes` (IV = Coquimbo). Los datos salen de las vistas materializadas
- * `urban_flow_metrics_*` (k ≥ 10 vehículos por bucket); esta ruta vuelve a
+ * `urban_flow_metrics_*` (umbral de anonimato por bucket, ADR-096); esta ruta vuelve a
  * aplicar `filtrarK` antes de responder. Sin dataset configurado, 503.
  */
 const regionSchema = z.string().regex(/^[IVX]{1,4}$/, 'región: código romano');

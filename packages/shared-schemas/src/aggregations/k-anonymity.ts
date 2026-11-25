@@ -1,5 +1,6 @@
 /**
- * @booster-ai/shared-schemas — k-anonymity invariant (D11 / ADR-041, ADR-042).
+ * @booster-ai/shared-schemas — umbral de anonimato en agregados (D11 / ADR-041,
+ * ADR-042; el valor del umbral lo fija ADR-096).
  *
  * Helper puro: garantiza k-anonymity ≥ k en buckets de agregación.
  *
@@ -15,9 +16,9 @@
  * misma del bucket leak información — e.g. `por_tipo_carga`,
  * `por_combustible` donde la clave de agrupación es el identificador.
  *
- * Throw si k < 2: k=0 o k=1 no provee garantía de anonimato.
- * Estándar industria k ≥ 5 (Samarati 1998). Permitimos k=2..4 solo
- * para flexibilidad de tests.
+ * Throw si k < 1 o no es entero. El valor vigente es `UMBRAL_ANONIMATO`
+ * (1, ADR-096): con k=1 se publica todo grupo con al menos un elemento y
+ * solo se enmascara o descarta el grupo vacío o con conteo inválido.
  *
  * Fail-closed: si `countField` no es número finito (NaN, Infinity,
  * undefined, string), el bucket se trata como riesgoso → se enmascara
@@ -72,10 +73,8 @@ export function aplicarKAnonymity<T extends Record<string, unknown>>(
   countField: keyof T,
   options: KAnonymityOptions<T> = {},
 ): KAnonymized<T>[] {
-  if (!Number.isInteger(k) || k < 2) {
-    throw new Error(
-      `aplicarKAnonymity: k debe ser entero >= 2 (recibido ${String(k)}). k=0 o k=1 no provee garantía de anonimato. Estándar industria: k >= 5 (Samarati 1998).`,
-    );
+  if (!Number.isInteger(k) || k < 1) {
+    throw new Error(`aplicarKAnonymity: k debe ser entero >= 1 (recibido ${String(k)}).`);
   }
   const preserve = new Set<keyof T>(options.preserveFields ?? []);
   const drop = options.dropSubKBuckets ?? false;

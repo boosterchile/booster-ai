@@ -70,6 +70,7 @@ export * from './configuracion-comercial.js';
 
 // Aggregations — privacy invariants compartidos backend/frontend (D11/ADR-041)
 export * from './aggregations/k-anonymity.js';
+export * from './aggregations/umbral-anonimato.js';
 
 // SEC-001 Sprint 2b H1.2 — solicitudes de registro signup gate (ADR-052)
 export * from './domain/signup-request.js';

@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { aplicarKAnonymity } from '@booster-ai/shared-schemas';
+import { UMBRAL_ANONIMATO, aplicarKAnonymity } from '@booster-ai/shared-schemas';
 
 /**
  * Helpers puros para endpoints /stakeholder/zonas — D11 / ADR-041 + ADR-042.
@@ -50,11 +50,8 @@ export interface HorarioPico {
   fin: number;
 }
 
-/**
- * k-anonymity threshold compartido para D11. Cambiar aquí, no en cada
- * call site, para garantizar consistencia (ADR-041 §2, ADR-042 §6).
- */
-const K_ANON = 5;
+/** Umbral de anonimato único (ADR-096). Se cambia en `shared-schemas`. */
+const K_ANON = UMBRAL_ANONIMATO;
 
 /** Hora 0..23 en America/Santiago para un timestamp UTC. */
 export function horaEnChile(ts: Date): number {
@@ -136,10 +133,9 @@ export function aplicarKAnonymityHorario(buckets: readonly BucketHora[]): Bucket
 /**
  * Ventana 4h consecutivas con más pickups dentro de [0..20]. Aplica k-anonymity
  * a NIVEL DATASET: si el total de viajes < k, retorna null. Plus: requiere que
- * la ventana ganadora tenga >= k viajes en agregado (evita la trampa de "5
- * viajes totales pero distribuidos uno-por-hora → ventana de 4h con 1-2 viajes").
+ * la ventana ganadora tenga >= k viajes en agregado.
  *
- * Empate → más temprana (estable). Si <5 viajes en TODA la ventana ganadora, null.
+ * Empate → más temprana (estable). Si la ventana ganadora tiene menos de k viajes, null.
  */
 export function calcularHorarioPico(viajes: readonly ViajeAgregable[]): HorarioPico | null {
   if (viajes.length < K_ANON) {
@@ -160,8 +156,6 @@ export function calcularHorarioPico(viajes: readonly ViajeAgregable[]): HorarioP
     }
   }
   // Defensa adicional: la ventana ganadora debe tener >= k viajes.
-  // Si todos los viajes están distribuidos uno-por-hora, ninguna ventana
-  // de 4h llega a k=5, así que el horario "pico" no es identificable.
   if (total < K_ANON) {
     return null;
   }
