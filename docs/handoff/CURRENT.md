@@ -13,7 +13,7 @@
 
 **Staging**: el deploy falla en el paso 32 de Cloud Build en todas las corridas desde `c89cc91`; sin diagnosticar.
 
-**Rediseño** (pedido del PO el 2026-11-25: «necesito que las maquetas entren a producción»): las 56 maquetas, sus capturas, el mapa a las rutas y el orden por tandas están en [`docs/design/rediseno-2026-11-25/`](../design/rediseno-2026-11-25/README.md). Nada del rediseño está implementado; #1083 (botón verde y sello) es su base y sigue abierto. Implementa una sola sesión, en este repositorio.
+**Rediseño** (pedido del PO el 2026-11-25: «necesito que las maquetas entren a producción»): las 56 maquetas, sus capturas, el plan en diez frentes y el mapa verificado contra el código están en [`docs/design/rediseno-2026-11-25/`](../design/rediseno-2026-11-25/README.md). Varias pantallas ya tienen spec aceptada: la maqueta se aplica como diferencia, no como reemplazo. Antes de tocar el armazón, el sello o «Elegir transportista» faltan decisiones del PO (README, «Preguntas abiertas»). #1083 (botón verde y sello) sigue abierto. Implementa una sola sesión, en este repositorio.
 
 ## Servicios por empresa (primer cliente solo con Booster Fleet)
 
