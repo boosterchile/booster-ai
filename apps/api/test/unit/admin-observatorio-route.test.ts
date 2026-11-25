@@ -85,7 +85,7 @@ describe('GET /admin/observatorio/:region (T10-24)', () => {
       porRegion: vi.fn(async () => ({
         ...DATOS,
         od: [
-          { mes: '2026-10', vehiculos: 3, viajes: 5 },
+          { mes: '2026-10', vehiculos: 0, viajes: 0 },
           { mes: '2026-10', vehiculos: 11, viajes: 20, vehiculo_id: 'v1' },
         ],
       })),
