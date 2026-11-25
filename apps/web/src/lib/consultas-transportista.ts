@@ -57,13 +57,23 @@ const asignacionesSchema = z.object({
   ),
 });
 
-const docEstadoSchema = z.enum(['vencido', 'por_vencer', 'vigente']);
+/** Estados del cálculo único de documentos (`calcularDocumental`). */
+const docEstadoSchema = z.enum([
+  'vencido',
+  'faltante',
+  'sin_fecha',
+  'sin_archivo',
+  'por_vencer',
+  'vigente',
+]);
 
 const cumplimientoSchema = z.object({
   resumen: z
     .object({
       vencidos: z.number(),
       por_vencer_30d: z.number(),
+      /** Todo documento no vigente: la cifra «documentos pendientes». */
+      total_pendientes: z.number(),
     })
     .passthrough(),
   vehiculos: z.array(

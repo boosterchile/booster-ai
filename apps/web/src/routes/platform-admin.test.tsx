@@ -48,6 +48,26 @@ vi.mock('../lib/api-client.js', () => ({
       if (path === '/admin/personal-booster') {
         return { personal: [] };
       }
+      if (typeof path === 'string' && path.startsWith('/admin/plataforma/indicadores')) {
+        return {
+          empresa_id: null,
+          empresas: [],
+          indicadores: {
+            empresas_activas: 0,
+            cargas: 0,
+            camiones: 0,
+            camiones_con_huella_medida: 0,
+            certificados: {
+              certificados: 0,
+              medidos: 0,
+              estimados: 0,
+              kgco2e: 0,
+              ahorro_kgco2e: 0,
+            },
+            documentos_pendientes: 0,
+          },
+        };
+      }
       return { organizations: [] };
     }),
     post: vi.fn(),

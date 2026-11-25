@@ -81,7 +81,11 @@ function respuesta(path: string): unknown {
     return { assignments: [] };
   }
   if (path === '/cumplimiento') {
-    return { resumen: { vencidos: 0, por_vencer_30d: 0 }, vehiculos: [], conductores: [] };
+    return {
+      resumen: { vencidos: 0, por_vencer_30d: 0, total_pendientes: 0 },
+      vehiculos: [],
+      conductores: [],
+    };
   }
   if (path === '/vehiculos/flota') {
     return { fleet: [] };

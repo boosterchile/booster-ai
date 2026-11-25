@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { cuentaEstadoFlota, etiquetaDispositivo } from '../../lib/estado-dispositivo.js';
 import { FleetMap } from '../map/FleetMap.js';
 import type { MapaNegocio } from './negocio.js';
 
@@ -18,9 +19,12 @@ export function MiniMapaFlota({ mapa }: { mapa: MapaNegocio }) {
       <FleetMap vehicles={mapa.vehiculos} height={330} />
       <p className="mt-2 text-neutral-600 text-sm">
         <span className="font-semibold text-neutral-900 tabular-nums">{mapa.conectados}</span>
-        <span>/{mapa.total} conectados</span>
+        <span data-testid="inicio-camiones">
+          /{mapa.total} {etiquetaDispositivo('conectado').toLowerCase()}
+        </span>
         <span className="ml-3">
-          {mapa.sinSenal} sin señal · {mapa.sinGps} sin GPS
+          {cuentaEstadoFlota('sin_senal', mapa.sinSenal)} ·{' '}
+          {cuentaEstadoFlota('sin_dispositivo', mapa.sinGps)}
         </span>
       </p>
     </div>

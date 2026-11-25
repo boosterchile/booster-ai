@@ -1,13 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import {
   CONFIGURACION_BOOSTER_FLEET,
-  type ConductorBoosterFleet,
-  type DocumentoBoosterFleet,
   type MantencionBoosterFleet,
   type MantencionEntrada,
   type PanelBoosterFleet,
   type ProgramarMantencionInput,
-  type VehiculoBoosterFleet,
   clasificarMantencion,
   componerPanelBoosterFleet,
   fechaEnZona,
@@ -15,16 +12,9 @@ import {
 } from '@booster-ai/shared-schemas';
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import {
-  conductores,
-  documentosConductor,
-  documentosVehiculo,
-  empresas,
-  mantencionesVehiculo,
-  users,
-  vehicles,
-} from '../db/schema.js';
+import { mantencionesVehiculo, vehicles } from '../db/schema.js';
 import { getBusinessHistogram } from '../observability/business-metrics.js';
+import { leerEntradaDocumental, leerZonaEmpresa } from './documental-flota.js';
 import { PRESUPUESTO_PUNTOS_PANEL, leerTrayectosDeLaFlota } from './listar-trayectos-teltonika.js';
 
 const MS_DIA = 86_400_000;
@@ -37,38 +27,14 @@ const duracionLectura = getBusinessHistogram('booster_fleet_lectura_combustible_
   unit: 'ms',
 });
 const TOPE_MANTENCIONES = 500;
-const ZONA_FALLBACK = 'America/Santiago';
 
 type FilaMantencion = typeof mantencionesVehiculo.$inferSelect;
-
-function aFecha(valor: Date | string | null): string | null {
-  if (valor == null) {
-    return null;
-  }
-  if (typeof valor === 'string') {
-    return valor.slice(0, 10);
-  }
-  if (Number.isNaN(valor.getTime())) {
-    return null;
-  }
-  return valor.toISOString().slice(0, 10);
-}
 
 function aIso(valor: Date | null): string | null {
   if (valor == null || Number.isNaN(valor.getTime())) {
     return null;
   }
   return valor.toISOString();
-}
-
-async function leerZona(db: Db, empresaId: string): Promise<string> {
-  const filas = await db
-    .select({ timezone: empresas.timezone })
-    .from(empresas)
-    .where(eq(empresas.id, empresaId))
-    .limit(1);
-  const zona = filas[0]?.timezone;
-  return zona && zona.length > 0 ? zona : ZONA_FALLBACK;
 }
 
 function filaMantencion(fila: FilaMantencion, patente: string): MantencionEntrada {
@@ -98,53 +64,11 @@ export async function armarPanelBoosterFleet(opts: {
   combustibleGuardado?: boolean | undefined;
 }): Promise<PanelBoosterFleet> {
   const ahora = opts.ahora ?? new Date();
-  const zona = await leerZona(opts.db, opts.empresaId);
-  const hoy = fechaEnZona(ahora, zona);
+  const documentos = await leerEntradaDocumental({ db: opts.db, empresaId: opts.empresaId, ahora });
   const hasta = ahora;
   const desde = new Date(
     hasta.getTime() - CONFIGURACION_BOOSTER_FLEET.ventanaCombustibleDias * MS_DIA,
   );
-
-  const flota = await opts.db
-    .select({
-      id: vehicles.id,
-      patente: vehicles.plate,
-      estado: vehicles.vehicleStatus,
-      teltonikaImei: vehicles.teltonikaImei,
-    })
-    .from(vehicles)
-    .where(and(eq(vehicles.empresaId, opts.empresaId), ne(vehicles.vehicleStatus, 'retirado')));
-
-  const docsVehiculo = await opts.db
-    .select({
-      duenoId: documentosVehiculo.vehicleId,
-      tipo: documentosVehiculo.tipo,
-      fechaVencimiento: documentosVehiculo.fechaVencimiento,
-    })
-    .from(documentosVehiculo)
-    .innerJoin(vehicles, eq(vehicles.id, documentosVehiculo.vehicleId))
-    .where(eq(vehicles.empresaId, opts.empresaId));
-
-  const fichas = await opts.db
-    .select({
-      id: conductores.id,
-      nombre: users.fullName,
-      rut: users.rut,
-      licenciaVencimiento: conductores.licenseExpiry,
-    })
-    .from(conductores)
-    .innerJoin(users, eq(users.id, conductores.userId))
-    .where(and(eq(conductores.empresaId, opts.empresaId), isNull(conductores.deletedAt)));
-
-  const docsConductor = await opts.db
-    .select({
-      duenoId: documentosConductor.conductorId,
-      tipo: documentosConductor.tipo,
-      fechaVencimiento: documentosConductor.fechaVencimiento,
-    })
-    .from(documentosConductor)
-    .innerJoin(conductores, eq(conductores.id, documentosConductor.conductorId))
-    .where(and(eq(conductores.empresaId, opts.empresaId), isNull(conductores.deletedAt)));
 
   const filasMantencion = await opts.db
     .select({
@@ -185,34 +109,12 @@ export async function armarPanelBoosterFleet(opts: {
   });
   puntosLeidos.record(lectura.puntosLeidos, { resultado });
 
-  const vehiculos: VehiculoBoosterFleet[] = flota.map((fila) => ({
-    id: fila.id,
-    patente: fila.patente,
-    estado: fila.estado,
-    tieneTeltonika: fila.teltonikaImei != null,
-  }));
-  const documentosVehiculoEntrada: DocumentoBoosterFleet[] = docsVehiculo.map((fila) => ({
-    duenoId: fila.duenoId,
-    tipo: fila.tipo,
-    fechaVencimiento: aFecha(fila.fechaVencimiento),
-  }));
-  const conductoresEntrada: ConductorBoosterFleet[] = fichas.map((fila) => ({
-    id: fila.id,
-    nombre: fila.nombre,
-    rut: fila.rut ?? '',
-    licenciaVencimiento: fila.licenciaVencimiento,
-  }));
-  const documentosConductorEntrada: DocumentoBoosterFleet[] = docsConductor.map((fila) => ({
-    duenoId: fila.duenoId,
-    tipo: fila.tipo,
-    fechaVencimiento: aFecha(fila.fechaVencimiento),
-  }));
   const mantenciones = filasMantencion
     .slice(0, TOPE_MANTENCIONES)
     .map((fila) => filaMantencion(fila.mantencion, fila.patente));
 
   return componerPanelBoosterFleet({
-    hoy,
+    ...documentos,
     desde: lectura.desde,
     hasta: lectura.hasta,
     truncado: lectura.truncado,
@@ -220,7 +122,6 @@ export async function armarPanelBoosterFleet(opts: {
     leidoEn,
     alDia,
     mantencionesTruncadas: filasMantencion.length > TOPE_MANTENCIONES,
-    vehiculos,
     trayectos: lectura.trayectos.map((trayecto) => ({
       id: trayecto.id,
       inicio: trayecto.inicio,
@@ -240,9 +141,6 @@ export async function armarPanelBoosterFleet(opts: {
       ctaCapacidadEstanque: trayecto.ctaCapacidadEstanque,
       fuenteCombustible: trayecto.fuenteCombustible,
     })),
-    documentosVehiculo: documentosVehiculoEntrada,
-    conductores: conductoresEntrada,
-    documentosConductor: documentosConductorEntrada,
     mantenciones,
   });
 }
@@ -298,7 +196,7 @@ export async function programarMantencion(opts: {
   if (!fila) {
     throw new Error('booster-fleet: la mantención no volvió después de insertarla');
   }
-  const zona = await leerZona(opts.db, opts.empresaId);
+  const zona = await leerZonaEmpresa(opts.db, opts.empresaId);
   const clasificada = clasificarMantencion(
     filaMantencion(fila, vehiculo.plate),
     fechaEnZona(ahora, zona),
@@ -364,7 +262,7 @@ export async function cerrarMantencion(opts: {
   }
 
   const patente = await patenteDe(opts.db, opts.empresaId, fila.vehiculoId);
-  const zona = await leerZona(opts.db, opts.empresaId);
+  const zona = await leerZonaEmpresa(opts.db, opts.empresaId);
   const clasificada = clasificarMantencion(filaMantencion(fila, patente), fechaEnZona(ahora, zona));
   opts.logger.info(
     {

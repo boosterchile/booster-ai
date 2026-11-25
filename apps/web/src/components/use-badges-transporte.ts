@@ -20,8 +20,9 @@ export function contarSinConductor(filas: readonly { driver: unknown; status: st
   return filas.filter((fila) => fila.driver == null && fila.status !== 'cancelado').length;
 }
 
-function contarVencidos(data: { resumen: { vencidos: number } }): number {
-  return data.resumen.vencidos;
+/** La cifra de documentos pendientes, la misma de Flota, el Inicio y Cumplimiento. */
+function contarPendientes(data: { resumen: { total_pendientes: number } }): number {
+  return data.resumen.total_pendientes;
 }
 
 function badge(n: number | undefined, tono: BadgeNav['tono']): BadgeNav | null {
@@ -62,7 +63,7 @@ export function useBadgesTransporte(enabled: boolean): {
   const cumplimientoQ = useQuery({
     queryKey: scope.key('cumplimiento'),
     queryFn: () => fetchCumplimiento(scope.init),
-    select: contarVencidos,
+    select: contarPendientes,
     enabled,
     retry: false,
   });

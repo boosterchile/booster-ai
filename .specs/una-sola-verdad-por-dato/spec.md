@@ -25,6 +25,11 @@ que la misma cifra salga del mismo cálculo y se escriba igual en todas.
 4. **Umbral de anonimato, dos valores.** 10 vehículos en el observatorio y 5
    viajes en los agregados de organizaciones.
 5. **El Inicio del panel de administración no muestra cifras.**
+6. **Las fechas de vencimiento se leían inválidas.** `fecha_vencimiento` es
+   `date` en la base y el esquema de drizzle la declara `timestamp`: leída
+   tal cual llega como `Invalid Date`. Booster Fleet marcaba todo documento
+   con fecha como «Sin fecha de vencimiento». Se encontró al correr la prueba
+   del criterio 4 contra Postgres real.
 
 ## 2. Decisiones del PO
 
@@ -71,8 +76,8 @@ textos de la web. ADR-096 registra la decisión.
 - **Indicadores del negocio** en el Inicio del panel: empresas activas,
   cargas, certificados medidos y estimados, camiones con huella medida,
   documentos pendientes y emisiones certificadas. `GET /admin/indicadores`.
-- **Glosario.** Un formato de patente, uno de fecha y uno de hora en
-  `apps/web/src/lib/`, usados por las pantallas de este frente.
+- **Fechas de documentos.** El lector único lee `fecha_vencimiento` como
+  texto `AAAA-MM-DD`. Una prueba de integración lo fija.
 
 ## 4. Criterios de éxito
 
@@ -83,14 +88,26 @@ textos de la web. ADR-096 registra la decisión.
 3. Con 1 vehículo o 1 viaje, el observatorio y los agregados de
    organizaciones entregan el dato; un test por cada uno lo fija.
 4. Una prueba Playwright (`apps/web/e2e-conductor/una-sola-verdad.spec.ts`)
-   siembra una empresa, la carga en Flota, en el Inicio con servicio
-   completo, en el Inicio con Booster Fleet solo, en Conductores, en
-   Certificados y en el Inicio del panel, y falla si dos pantallas muestran
-   valores distintos para documentos pendientes, camiones, certificados o
-   emisiones certificadas.
+   siembra una empresa (`apps/api/scripts/seed-una-verdad-e2e.ts`), la carga
+   en Flota, en el Inicio con servicio completo, en Cumplimiento, en
+   Conductores, en el Inicio con Booster Fleet solo, en Certificados y en el
+   Inicio del panel, y falla si dos pantallas muestran valores distintos para
+   documentos pendientes, camiones, conductores con documentos pendientes,
+   certificados o emisiones certificadas. Las pantallas se excluyen entre sí
+   por las banderas de la empresa (el Inicio con servicio completo exige que
+   reciba ofertas, el de Booster Fleet que no, Certificados que sea
+   generadora): la siembra cambia solo esas banderas entre una carga y otra;
+   camiones, documentos y certificados son los mismos.
 5. `pnpm run ci` en verde en cada PR.
 
 ## 5. Fuera de alcance
+
+- El glosario de «retiro», «publicar carga» y los formatos de patente,
+  fecha y hora en todas las pantallas. Este frente deja un solo
+  vocabulario de estado de flota y un solo formato de emisiones; el
+  glosario completo va con el sistema visual (frente 8).
+- `GET /documentos/vehiculo/:id` y `/documentos/conductor/:id` serializan la
+  fecha con el mismo esquema de drizzle y no se tocaron aquí.
 
 - El sello «Medido» / «Estimado» junto a cada cifra (frente 2).
 - El resto del Inicio del panel: pendientes con antigüedad (frente 10).

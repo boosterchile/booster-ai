@@ -10,6 +10,9 @@ import { FleetMap, type FleetMapVehicle } from '../components/map/FleetMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
+import { cuentaEstadoFlota, etiquetaDispositivo } from '../lib/estado-dispositivo.js';
+
+const SIN_LECTURA = etiquetaDispositivo('sin_senal').toLowerCase();
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -131,12 +134,12 @@ function FlotaPage({ me }: { me: MeOnboarded }) {
           <div className="mt-4 flex flex-wrap items-center gap-2 text-neutral-600 text-sm">
             <span className="inline-flex items-center gap-1 rounded-md bg-success-50 px-2 py-1 font-medium text-success-700 text-xs">
               <Radio className="h-3.5 w-3.5" aria-hidden />
-              {reportingCount} reportando
+              {cuentaEstadoFlota('conectado', reportingCount)}
             </span>
             {noPosCount > 0 && (
               <span className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-600 text-xs">
                 <MapPin className="h-3.5 w-3.5" aria-hidden />
-                {noPosCount} sin posición
+                {cuentaEstadoFlota('sin_senal', noPosCount)}
               </span>
             )}
           </div>
@@ -204,10 +207,10 @@ function FlotaPage({ me }: { me: MeOnboarded }) {
                             {hasPos ? (
                               <RelativeTime
                                 date={v.position?.timestamp_device ?? null}
-                                fallback="sin GPS"
+                                fallback={SIN_LECTURA}
                               />
                             ) : (
-                              <span className="text-neutral-400">sin GPS</span>
+                              <span className="text-neutral-400">{SIN_LECTURA}</span>
                             )}
                           </div>
                         </div>

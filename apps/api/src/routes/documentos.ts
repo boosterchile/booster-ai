@@ -1,18 +1,13 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import {
-  conductores,
-  documentosConductor,
-  documentosVehiculo,
-  users as usersTable,
-  vehicles,
-} from '../db/schema.js';
+import { conductores, documentosConductor, documentosVehiculo, vehicles } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { calcularEstadoDocumento } from '../services/compliance-estado.js';
+import { documentalDeEmpresa } from '../services/documental-flota.js';
 
 /**
  * D6 — Endpoints de documentos vehículo + conductor + dashboard de
@@ -458,8 +453,10 @@ export function createDocumentosRoutes(opts: { db: Db; logger: Logger }) {
 }
 
 /**
- * D6 — Endpoint dashboard `/cumplimiento`. Devuelve resumen + listas
- * priorizadas por urgencia (vencido > por_vencer > vigente).
+ * D6 — Endpoint dashboard `/cumplimiento`. Devuelve el resumen y la lista de
+ * documentos pendientes de la flota, con el cálculo único de
+ * `packages/shared-schemas` (`.specs/una-sola-verdad-por-dato`): vencidos,
+ * faltantes, sin fecha, sin archivo y por vencer.
  *
  * Mantenido en un router aparte para que se monte en `/cumplimiento` raíz
  * en server.ts (sin colisionar con `/documentos/*`).
@@ -489,88 +486,43 @@ export function createCumplimientoRoutes(opts: { db: Db; logger: Logger }) {
     }
     const empresaId = auth.activeMembership.empresa.id;
 
-    // 1. Vehicle docs: solo de vehículos no retirados de esta empresa, no
-    //    vigentes (vencidos o por vencer).
-    const vehicleDocs = await opts.db
-      .select({
-        id: documentosVehiculo.id,
-        vehicleId: documentosVehiculo.vehicleId,
-        plate: vehicles.plate,
-        tipo: documentosVehiculo.tipo,
-        estado: documentosVehiculo.estado,
-        fechaVencimiento: documentosVehiculo.fechaVencimiento,
-      })
-      .from(documentosVehiculo)
-      .innerJoin(vehicles, eq(vehicles.id, documentosVehiculo.vehicleId))
-      .where(
-        and(
-          eq(vehicles.empresaId, empresaId),
-          ne(vehicles.vehicleStatus, 'retirado'),
-          isNotNull(documentosVehiculo.fechaVencimiento),
-          ne(documentosVehiculo.estado, 'vigente'),
-        ),
-      )
-      .orderBy(asc(documentosVehiculo.fechaVencimiento));
-
-    // 2. Driver docs: solo conductores no eliminados.
-    const driverDocs = await opts.db
-      .select({
-        id: documentosConductor.id,
-        conductorId: documentosConductor.conductorId,
-        fullName: usersTable.fullName,
-        rut: usersTable.rut,
-        tipo: documentosConductor.tipo,
-        estado: documentosConductor.estado,
-        fechaVencimiento: documentosConductor.fechaVencimiento,
-      })
-      .from(documentosConductor)
-      .innerJoin(conductores, eq(conductores.id, documentosConductor.conductorId))
-      .innerJoin(usersTable, eq(usersTable.id, conductores.userId))
-      .where(
-        and(
-          eq(conductores.empresaId, empresaId),
-          isNotNull(documentosConductor.fechaVencimiento),
-          ne(documentosConductor.estado, 'vigente'),
-        ),
-      )
-      .orderBy(asc(documentosConductor.fechaVencimiento));
-
-    const vencidoCount =
-      vehicleDocs.filter((d) => d.estado === 'vencido').length +
-      driverDocs.filter((d) => d.estado === 'vencido').length;
-    const porVencerCount =
-      vehicleDocs.filter((d) => d.estado === 'por_vencer').length +
-      driverDocs.filter((d) => d.estado === 'por_vencer').length;
+    // El mismo cálculo que Booster Fleet (`calcularDocumental`): un documento
+    // obligatorio que falta es pendiente, igual que el vencido y el por vencer.
+    const { documental, resumen } = await documentalDeEmpresa({ db: opts.db, empresaId });
 
     return c.json({
       resumen: {
-        vencidos: vencidoCount,
-        por_vencer_30d: porVencerCount,
-        total_pendientes: vencidoCount + porVencerCount,
+        vencidos: resumen.vencidos,
+        por_vencer_30d: resumen.por_vencer,
+        faltantes: resumen.faltantes,
+        incompletos: resumen.incompletos,
+        de_vehiculos: resumen.de_vehiculos,
+        de_conductores: resumen.de_conductores,
+        total_pendientes: resumen.pendientes,
       },
-      vehiculos: vehicleDocs.map((d) => ({
-        documento_id: d.id,
-        vehiculo_id: d.vehicleId,
-        plate: d.plate,
-        tipo: d.tipo,
-        estado: d.estado,
-        fecha_vencimiento:
-          d.fechaVencimiento instanceof Date
-            ? d.fechaVencimiento.toISOString().slice(0, 10)
-            : d.fechaVencimiento,
-      })),
-      conductores: driverDocs.map((d) => ({
-        documento_id: d.id,
-        conductor_id: d.conductorId,
-        full_name: d.fullName,
-        rut: d.rut,
-        tipo: d.tipo,
-        estado: d.estado,
-        fecha_vencimiento:
-          d.fechaVencimiento instanceof Date
-            ? d.fechaVencimiento.toISOString().slice(0, 10)
-            : d.fechaVencimiento,
-      })),
+      vehiculos: documental.vehiculos.flatMap((vehiculo) =>
+        vehiculo.documentos
+          .filter((doc) => doc.estado !== 'vigente')
+          .map((doc) => ({
+            vehiculo_id: vehiculo.vehiculo_id,
+            plate: vehiculo.patente,
+            tipo: doc.tipo,
+            estado: doc.estado,
+            fecha_vencimiento: doc.fecha_vencimiento,
+          })),
+      ),
+      conductores: documental.conductores.flatMap((conductor) =>
+        conductor.documentos
+          .filter((doc) => doc.estado !== 'vigente')
+          .map((doc) => ({
+            conductor_id: conductor.conductor_id,
+            full_name: conductor.nombre,
+            rut: conductor.rut,
+            tipo: doc.tipo,
+            estado: doc.estado,
+            fecha_vencimiento: doc.fecha_vencimiento,
+          })),
+      ),
     });
   });
 

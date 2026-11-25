@@ -392,7 +392,7 @@ function TarjetaUltimo({
         puedeConfigurar,
         onAbrirConfig,
         onReintentar,
-        'Sin dispositivo no hay trayectos.',
+        'Sin equipo no hay trayectos.',
       )}
       {conImei && !cargando && !error && ultimo == null ? (
         <div className="mt-2">
@@ -523,7 +523,7 @@ function TarjetaAlertas({
         puedeConfigurar,
         onAbrirConfig,
         onReintentar,
-        'Sin dispositivo no hay alertas.',
+        'Sin equipo no hay alertas.',
       )}
       {conImei && !cargando && !error && total === 0 ? (
         <p className="mt-2 text-neutral-800 text-sm">Sin alertas de combustible en 30 días.</p>

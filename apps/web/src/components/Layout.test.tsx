@@ -14,7 +14,11 @@ function respuestaNav(path: string): unknown {
     return { assignments: [] };
   }
   if (path === '/cumplimiento') {
-    return { resumen: { vencidos: 0, por_vencer_30d: 0 }, vehiculos: [], conductores: [] };
+    return {
+      resumen: { vencidos: 0, por_vencer_30d: 0, total_pendientes: 0 },
+      vehiculos: [],
+      conductores: [],
+    };
   }
   return {};
 }
@@ -222,7 +226,11 @@ describe('Layout — shell con sidebar', () => {
         };
       }
       if (path === '/cumplimiento') {
-        return { resumen: { vencidos: 4, por_vencer_30d: 0 }, vehiculos: [], conductores: [] };
+        return {
+          resumen: { vencidos: 4, por_vencer_30d: 0, total_pendientes: 4 },
+          vehiculos: [],
+          conductores: [],
+        };
       }
       return respuestaNav(path);
     });

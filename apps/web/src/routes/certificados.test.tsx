@@ -87,6 +87,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const RESUMEN = { certificados: 1, medidos: 0, estimados: 1, kgco2e: 375.2, ahorro_kgco2e: 0 };
+
 describe('CertificadosRoute', () => {
   it('no onboarded → no renderiza Layout', () => {
     const { container } = renderRoute();
@@ -101,6 +103,7 @@ describe('CertificadosRoute', () => {
 
   it('shipper + sin certificados → EmptyState', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: { certificados: 0, medidos: 0, estimados: 0, kgco2e: 0, ahorro_kgco2e: 0 },
       certificates: [],
       pagination: { limit: 100, offset: 0, returned: 0 },
     });
@@ -111,6 +114,7 @@ describe('CertificadosRoute', () => {
 
   it('shipper + certificados → renderiza tracking codes', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: RESUMEN,
       certificates: [
         {
           trip_id: 't1',
@@ -136,6 +140,7 @@ describe('CertificadosRoute', () => {
 
   it('muestra la línea de método que entrega el API (ADR-077 §4) junto al kg CO₂e, sin reconstruirla', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: RESUMEN,
       certificates: [
         {
           trip_id: 't1',
@@ -170,6 +175,7 @@ describe('CertificadosRoute', () => {
   it('click Descargar → invoca descargarCertificadoDeViaje', async () => {
     descargarMock.mockResolvedValueOnce(undefined);
     vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: RESUMEN,
       certificates: [
         {
           trip_id: 't1',

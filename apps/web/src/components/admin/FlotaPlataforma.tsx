@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { api } from '../../lib/api-client.js';
+import { etiquetaDispositivo } from '../../lib/estado-dispositivo.js';
 import { ChileanPlate } from '../ChileanPlate.js';
 import { RelativeTime } from '../RelativeTime.js';
 import { FleetMap, type FleetMapVehicle } from '../map/FleetMap.js';
@@ -393,7 +394,9 @@ function Ficha({ vehiculoId, resumen }: { vehiculoId: string; resumen: VehiculoD
         <dl className="mt-2 grid grid-cols-2 gap-3">
           <Dato etiqueta="IMEI Teltonika">
             <span className="font-mono text-xs">
-              {v.teltonika_imei ?? v.teltonika_imei_espejo ?? 'Sin equipo'}
+              {v.teltonika_imei ??
+                v.teltonika_imei_espejo ??
+                etiquetaDispositivo('sin_dispositivo')}
             </span>
           </Dato>
           <Dato etiqueta="Última posición">

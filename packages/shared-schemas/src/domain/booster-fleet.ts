@@ -725,7 +725,21 @@ function peorDe(items: readonly { estado: EstadoDocumentoControl }[]): EstadoDoc
   return peor;
 }
 
-function armarDocumental(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet['documental'] {
+/** Lo que hace falta para calcular los documentos de una flota. */
+export type EntradaDocumental = Pick<
+  EntradaPanelBoosterFleet,
+  'hoy' | 'vehiculos' | 'documentosVehiculo' | 'conductores' | 'documentosConductor'
+>;
+
+export type DocumentalFlota = PanelBoosterFleet['documental'];
+
+/**
+ * El único cálculo de documentos de una flota (`.specs/una-sola-verdad-por-dato`).
+ * Lo usan Booster Fleet, Cumplimiento, el Inicio del transportista, Conductores
+ * y los indicadores del panel: por cada vehículo no retirado y cada conductor,
+ * sus documentos obligatorios y los demás que no estén vigentes.
+ */
+export function calcularDocumental(entrada: EntradaDocumental): DocumentalFlota {
   const flota = entrada.vehiculos.filter((v) => v.estado !== 'retirado');
   const vehiculos = flota
     .map((vehiculo) => {
@@ -780,6 +794,66 @@ function armarDocumental(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet['
     vehiculos,
     conductores,
   };
+}
+
+export interface ResumenDocumental {
+  /** Todo documento que no está vigente. Es la cifra «documentos pendientes». */
+  pendientes: number;
+  vencidos: number;
+  por_vencer: number;
+  /** Obligatorios que no se han subido. */
+  faltantes: number;
+  /** Subidos sin fecha de vencimiento, o con fecha y sin archivo. */
+  incompletos: number;
+  de_vehiculos: number;
+  de_conductores: number;
+}
+
+/**
+ * Cuenta los documentos pendientes de un `calcularDocumental`. Un documento
+ * es pendiente cuando su estado no es `vigente`: vencido, faltante, sin
+ * fecha, sin archivo o por vencer.
+ */
+export function resumirDocumental(
+  documental: Pick<DocumentalFlota, 'vehiculos' | 'conductores'>,
+): ResumenDocumental {
+  const resumen: ResumenDocumental = {
+    pendientes: 0,
+    vencidos: 0,
+    por_vencer: 0,
+    faltantes: 0,
+    incompletos: 0,
+    de_vehiculos: 0,
+    de_conductores: 0,
+  };
+  const sumar = (
+    documentos: readonly { estado: EstadoDocumentoControl }[],
+    clase: 'de_vehiculos' | 'de_conductores',
+  ) => {
+    for (const doc of documentos) {
+      if (doc.estado === 'vigente') {
+        continue;
+      }
+      resumen.pendientes += 1;
+      resumen[clase] += 1;
+      if (doc.estado === 'vencido') {
+        resumen.vencidos += 1;
+      } else if (doc.estado === 'por_vencer') {
+        resumen.por_vencer += 1;
+      } else if (doc.estado === 'faltante') {
+        resumen.faltantes += 1;
+      } else {
+        resumen.incompletos += 1;
+      }
+    }
+  };
+  for (const vehiculo of documental.vehiculos) {
+    sumar(vehiculo.documentos, 'de_vehiculos');
+  }
+  for (const conductor of documental.conductores) {
+    sumar(conductor.documentos, 'de_conductores');
+  }
+  return resumen;
 }
 
 /** null si está cancelada: el panel no la muestra. */
@@ -852,7 +926,7 @@ export function componerPanelBoosterFleet(entrada: EntradaPanelBoosterFleet): Pa
       ventana_combustible_dias: CONFIGURACION_BOOSTER_FLEET.ventanaCombustibleDias,
     },
     combustible: armarCombustible(entrada),
-    documental: armarDocumental(entrada),
+    documental: calcularDocumental(entrada),
     mantenciones: armarMantenciones(entrada),
   };
 }
