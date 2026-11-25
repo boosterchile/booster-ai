@@ -57,6 +57,7 @@ import {
   etiquetaEvento,
   regionLabel,
 } from '../lib/etiquetas-carga.js';
+import { formatoEmisiones } from '../lib/formato-emisiones.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 import { logger } from '../lib/logger.js';
 
@@ -1826,14 +1827,10 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     : '—'}
                 </DataRow>
                 <DataRow label="Emisiones estimadas">
-                  {tripQ.data.metrics.carbon_emissions_kgco2e_estimated
-                    ? `${tripQ.data.metrics.carbon_emissions_kgco2e_estimated} kg CO₂e`
-                    : '—'}
+                  {formatoEmisiones(tripQ.data.metrics.carbon_emissions_kgco2e_estimated)}
                 </DataRow>
                 <DataRow label="Emisiones reales">
-                  {tripQ.data.metrics.carbon_emissions_kgco2e_actual
-                    ? `${tripQ.data.metrics.carbon_emissions_kgco2e_actual} kg CO₂e`
-                    : '—'}
+                  {formatoEmisiones(tripQ.data.metrics.carbon_emissions_kgco2e_actual)}
                 </DataRow>
                 {tripQ.data.metrics.consolidacion && (
                   <div className="sm:col-span-2">

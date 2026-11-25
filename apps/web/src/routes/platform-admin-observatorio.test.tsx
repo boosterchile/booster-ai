@@ -86,7 +86,7 @@ describe('/app/platform-admin/observatorio (T10-24)', () => {
     expect(get).toHaveBeenCalledWith('/admin/observatorio/IV');
     expect(screen.getByRole('combobox', { name: 'Región' })).toHaveValue('IV');
     expect(screen.getByText('09-12')).toBeInTheDocument();
-    expect(screen.getByText('1.234,5')).toBeInTheDocument();
+    expect(screen.getByText('1,23 t CO₂e')).toBeInTheDocument();
     expect(screen.getByText('Sin comuna')).toBeInTheDocument();
     // OD sin buckets que pasen k.
     expect(screen.getByTestId('observatorio-od-vacio')).toHaveTextContent(
