@@ -109,10 +109,11 @@
 - **Retorno.** Misma comisión; lo que puede ser menor es la tarifa del viaje.
 - **Contrato.** Uno por viaje, perfeccionado por la aceptación de ambas partes en la plataforma.
 - **Cargas ya publicadas (2026-11-25).** Quedan fuera: la regla nueva rige solo para las cargas que se publiquen desde su activación. Las anteriores se liquidan con la regla y la tasa con que se publicaron; no hay conversión ni migración de montos.
+- **Tope de la comisión (2026-11-25).** La comisión no supera 50 %, en ninguna de las dos tasas. El esquema acepta hoy hasta 100: hay que bajar el máximo a 50 y comprobar que la configuración vigente lo cumple.
 - **Condiciones generales (2026-11-25).** Valores fijados según lo habitual en Chile y confirmados por el PO: pago a 30 días corridos desde la recepción de la factura (Ley 21.131), reclamo de daños no visibles y objeción de la entrega en 24 horas, 2 horas de espera incluidas, sobreestadía de 5 % del porte por hora con tope de 50 %, falso flete de 50 %, cancelación sin cargo hasta 2 horas antes de la ventana. Valor declarado obligatorio al publicar. Aceptan una carga o una carta de porte solo los roles de decisión u operativos (`dueno`, `admin`, `despachador`); `conductor` no puede, y tampoco los roles de solo lectura (`visualizador`, `stakeholder_sostenibilidad`).
 
 ## Preguntas abiertas para el PO
 
 1. (Sin preguntas abiertas sobre cargas ya publicadas: ver respondidas.)
-2. **Contrato por viaje.** Las decisiones de producto que el borrador deja abiertas: cargos por cancelación, retiro fallido, carga y descarga, evidencia de entrega, plazo para objetar, valor declarado obligatorio, seguro y quién puede aceptar.
+2. **Contrato por viaje.** Resuelto: los valores de las condiciones generales están en «Condiciones generales (2026-11-25)», más arriba; la cancelación por el transportista y el momento en que nace el contrato según la forma de asignar están en [ADR-095](../../docs/adr/095-asignacion-el-generador-elige.md).
 3. **Plan de caja.** Las proyecciones del plan sep-2026 → jun-2027 usan las tasas y la base de ADR-079.

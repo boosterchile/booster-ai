@@ -1,6 +1,6 @@
 # ADR-095 — Asignación en Booster Spot: el generador elige, con precio fijo o con ofertas de precio
 
-**Estado**: Propuesta. Recoge lo que el PO indicó el 2026-11-25; los puntos de la sección «Por confirmar» no están decididos. No rige hasta que el PO la acepte.
+**Estado**: Vigente. El PO la aceptó en el chat del 2026-11-25 («Me parece bien tu propuesta») y cerró los seis puntos de la sección «Decisiones del PO».
 **Fecha**: 2026-11-25
 **Decider**: Felipe Vicencio (Product Owner).
 **Acota a**:
@@ -30,7 +30,7 @@ Verificado en `main` (`7ff12fb`), leyendo `apps/api/src/services/matching.ts`, `
 - El generador elige entre las ofertas recibidas según la modalidad. Todas las opciones deben ser posibles.
 - El modelo que se replica es el de Uber: el viaje se puede cancelar, también por el transportista.
 
-## Decisión propuesta
+## Decisión
 
 ### 1. Cuatro formas de asignar, que el generador elige al publicar
 
@@ -47,7 +47,12 @@ Las cuatro usan el mismo matching para decidir a quién se invita y en qué orde
 
 En «Elijo yo» y «Pido ofertas», la aceptación del transportista es un compromiso firme que no asigna. La asignación ocurre cuando el generador elige. Reclamar una carga abierta pasa a ser postular sin invitación.
 
-La carta de porte se perfecciona con las dos aceptaciones, igual que hoy: el transportista acepta sus términos al postular y el generador al elegir.
+**La carta de porte.** El principio de ADR-094 no cambia: el contrato se perfecciona con la aceptación de ambas partes en la plataforma. Cambia quién acepta en último lugar:
+
+- **Automática y directa.** Publicar es una oferta firme del generador; el contrato nace cuando un transportista la acepta. Es lo que rige hoy.
+- **«Elijo yo» y «Pido ofertas».** Publicar es una invitación a ofertar. La postulación del transportista es su oferta firme, con el precio publicado o con el que él propone; el contrato nace cuando el generador la elige. Las postulaciones no elegidas quedan sin efecto y sin costo. El transportista puede retirar la suya mientras no haya sido elegida.
+
+En las cuatro formas la carta de porte se emite al asignar, con los datos del transportista asignado. Está escrito en las cláusulas 1.4 y 1.5 de las condiciones generales.
 
 ### 3. La comisión cuando el transportista propone el precio
 
@@ -61,11 +66,21 @@ Ejemplo con tasa de 5 %: el transportista oferta recibir 95.000; el generador ve
 
 La tasa es la congelada al publicar (`comisionPctAplicada`), así que todas las ofertas de una carga se comparan con la misma tasa.
 
+**La comisión no supera 50 %** (decisión del PO del 2026-11-25). Vale para las dos tasas y para todas las formas de asignar, y deja la fórmula siempre definida. Hoy `packages/shared-schemas/src/configuracion-comercial.ts` acepta hasta 100: hay que bajar ese máximo a 50.
+
 ### 4. Cancelación por el transportista
 
-Un transportista asignado puede desistir antes del retiro. La carga vuelve a buscar transportista con las mismas condiciones, y el generador recibe el aviso. Las consecuencias son las de las condiciones generales de transporte ya aprobadas: sin costo hasta 2 horas antes de la ventana de retiro y antes de que el camión salga; después, no cobra, responde por los perjuicios y puede ser suspendido. Cada desistimiento queda registrado y cuenta para su orden en el matching.
+Un transportista asignado puede desistir antes del retiro. La carga vuelve a buscar transportista con las mismas condiciones.
 
-Necesita una transición nueva en la máquina de estados (`asignado` → `esperando_match`), la ruta para desistir y la anulación de la carta de porte de esa asignación.
+- **Sin costo** hasta 2 horas antes del inicio de la ventana de retiro y mientras el camión no haya salido.
+- **Después, o si no se presenta:** no cobra nada. Booster busca reemplazo de inmediato y avisa al generador, que puede aceptar el reemplazo o cancelar sin cargo.
+- **Responsabilidad ante el generador:** los perjuicios directos que este acredite, con tope igual al precio del viaje. Se reclama y se paga entre las partes; Booster no lo cobra ni lo retiene.
+- **Causa justificada**, acreditada en la plataforma dentro de 24 horas (avería o accidente del vehículo, orden de autoridad, corte de ruta, enfermedad o accidente del conductor): sin consecuencia.
+- **Consecuencia en la plataforma**, contando los últimos 90 días: la primera cancelación tardía genera un aviso; la segunda suspende por 7 días la recepción de cargas de Booster Spot; la tercera la suspende por 30 días y abre una revisión de la cuenta. No presentarse sin avisar cuenta como dos. Cada una baja su posición en el orden del matching.
+
+El PO pidió resolverlo «de la mejor forma en términos comerciales». El criterio: que el generador no quede sin camión ni sin recurso, que un transportista serio no arriesgue más que el valor del viaje por un imprevisto, y que Booster no tenga que cobrar ni custodiar dinero ajeno. Está escrito en las cláusulas 11.5 a 11.8 de las condiciones generales; son cláusulas nuevas respecto del borrador que revisó el abogado.
+
+Necesita una transición nueva en la máquina de estados (`asignado` → `esperando_match`), la ruta para desistir, el registro de cancelaciones tardías con su causa, y la anulación de la carta de porte de esa asignación.
 
 ### 5. Quién puede postular, elegir y desistir
 
@@ -82,17 +97,23 @@ Dueño, administrador y despachador de la empresa. El conductor no (decisión de
 - **El límite de 5 invitaciones y los 60 minutos.** Sirven para «el primero que acepta». Para que el generador elija, 5 invitados pueden dejarlo con una sola postulación. Deben ser configurables por forma de asignar.
 - **El plazo para elegir.** Hoy no existe porque nadie elige. Una carga inmediata (retiro dentro de 24 horas) no puede esperar indefinidamente a que el generador decida.
 - **El retorno con carga como criterio visible.** La fórmula v2 ya ordena premiando al transportista que va hacia el origen, que es el origen del proyecto y la mitad del lema. Hoy ese orden no lo ve nadie, porque gana el primero que acepta. Cuando el generador elija, el motivo «retorno con carga» tiene que mostrarse, y conviene confirmar en producción que la v2 es la que está corriendo.
-- **Las cargas que nadie toma.** Falta confirmar qué las cierra hoy (punto 7 del contexto) y definir qué ve el generador: volver a publicar, subir el precio o cambiar de forma.
+- **Las cargas que nadie toma.** El PO confirmó que pasan a `expirado`. Falta comprobar que exista el proceso que las cierra (punto 7 del contexto) y definir qué se le ofrece al generador: volver a publicar, subir el precio o cambiar de forma.
 - **El precio como criterio.** Con «Pido ofertas», el precio entra al orden por primera vez. La fórmula v2 no lo considera: hay que decidir si entra al orden o si solo se muestra.
 
-## Por confirmar con el PO
+## Decisiones del PO (2026-11-25)
 
-1. **Forma por defecto.** Propuesta: automática para la carga inmediata y «Elijo yo» para la programada, con las otras disponibles en ambas.
-2. **Plazo para elegir y qué pasa si vence.** Propuesta: en la carga inmediata, se asigna al primero del orden; en la programada, la carga vuelve a quedar abierta y se avisa al generador.
-3. **Ofertas de precio cerradas.** Propuesta: cada transportista ve solo la suya.
-4. **Qué ve el generador de cada postulante antes de elegir.** Propuesta: empresa, viajes hechos en Booster, si es un retorno con carga, huella esperada con su sello y, en «Pido ofertas», el precio.
-5. **Forma directa: entre quiénes elige.** Propuesta: entre los transportistas con los que ya hizo viajes en Booster.
-6. **Tope de precio en «Pido ofertas».** Si el generador puede fijar un máximo que las ofertas no superen.
+| # | Pregunta | Decisión |
+|---|---|---|
+| 1 | Forma por defecto | Automática para la carga inmediata y «Elijo yo» para la programada; las demás quedan disponibles en ambas |
+| 2 | Si el generador no elige dentro del plazo | Carga inmediata: se asigna al primero del orden. Programada: vuelve a quedar abierta y se avisa al generador |
+| 3 | Ofertas de precio | Cerradas: cada transportista ve solo la suya |
+| 4 | Qué ve el generador de cada postulante | Toda la información que le sirva para decidir bien: «Booster depende del buen servicio al generador de carga». Como mínimo: empresa, viajes hechos en Booster, cancelaciones tardías, si es un retorno con carga, huella esperada con su sello y, en «Pido ofertas», el precio |
+| 5 | Forma directa | El generador elige entre transportistas con los que ya hizo viajes en Booster |
+| 6 | Tope de precio en «Pido ofertas» | El generador puede fijar un máximo; las ofertas no lo superan |
+| 7 | Cargas que nadie toma | Pasan a `expirado`. Las cargas publicadas hasta hoy fueron pruebas de Booster |
+| 8 | Comisión | No supera 50 % |
+
+Sin definir todavía: cuánto dura el plazo para elegir en cada tipo de carga, y a cuántos transportistas se invita en cada forma.
 
 ## Consecuencias
 
