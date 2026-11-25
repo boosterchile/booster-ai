@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Generador: mis cargas</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#10653a}a:hover{color:#0c4d2d}
+.bn{display:none}@media(max-width:640px){.tn{display:none!important}.bn{display:flex!important}[role="img"]:has(> svg[viewBox="0 0 600 260"]){height:auto!important;aspect-ratio:600/260}}
+</style>
+</helmet>
+<div style="min-height: 720px; box-sizing: border-box; background: #faf9f7; font-family: Inter, system-ui, sans-serif; color: #1a1917; font-size: 14px; line-height: 20px">
+
+<header style="background: #ffffff; border-bottom: 1px solid #e7e4dd; padding: 12px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em">Booster<span style="color: #1fa058">.</span></div>
+<nav class="tn" aria-label="Principal" style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="InicioGenerador.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Inicio</a>
+<a href="GeneradorMisCargas.dc.html" style="padding: 8px 12px; border-radius: 8px; background: #f4f2ee; font-size: 13px; font-weight: 600; color: #1a1917; text-decoration: none">Mis cargas</a>
+<a href="GeneradorCertificados.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Huella y certificados</a>
+<a href="GeneradorEmpresa.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Empresa</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #56544f">Frutas del Elqui SpA</div>
+</header>
+
+<main style="max-width: 1180px; margin: 0 auto; padding: 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<h1 style="margin: 0; font-size: 30px; line-height: 38px; font-weight: 600; letter-spacing: -0.02em; min-width: 0">3 cargas activas. Una espera que elijas transportista.</h1>
+<a href="GeneradorPublicar.dc.html" style="height: 40px; padding: 0 16px; border-radius: 8px; background: #168047; font-size: 13px; font-weight: 500; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center">Publicar carga</a>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+<div role="tablist" aria-label="Estado" style="display: flex; flex-wrap: wrap; gap: 4px">
+<button role="tab" aria-selected="true" style="height: 36px; padding: 0 14px; border: 1px solid #168047; border-radius: 8px; background: #ecfaf1; font-family: inherit; font-size: 13px; font-weight: 600; color: #10653a">Activas · 3</button>
+<button role="tab" aria-selected="false" style="height: 36px; padding: 0 14px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Entregadas · 9</button>
+<button role="tab" aria-selected="false" style="height: 36px; padding: 0 14px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Borradores · 1</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px"><label for="mc-buscar" style="font-size: 12px; font-weight: 500; color: #56544f">Buscar por código o lugar</label><input id="mc-buscar" type="search" style="height: 36px; width: 260px; max-width: 100%; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 12px; font-family: inherit; font-size: 13px; color: #1a1917"></div>
+</div>
+
+<section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; overflow-x: auto">
+<table style="width: 100%; min-width: 860px; border-collapse: collapse; font-size: 14px">
+<thead>
+<tr style="background: #faf9f7">
+<th scope="col" style="text-align: left; padding: 10px 20px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Carga</th>
+<th scope="col" style="text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Estado</th>
+<th scope="col" style="text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Qué pasa ahora</th>
+<th scope="col" style="text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Transportista</th>
+<th scope="col" style="text-align: right; padding: 10px 20px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Acción</th>
+</tr>
+</thead>
+<tbody>
+<tr style="background: #fff7eb">
+<td style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd"><div style="font-weight: 600">La Serena → Vicuña</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-K7M2PA</div></td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: #ffeac9; font-size: 12px; line-height: 16px; font-weight: 600; color: #7a4100; white-space: nowrap"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="#7a4100"><path d="M5 1 9 5 5 9 1 5z"></path></svg>Te toca a ti</span></td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd">2 transportistas ofrecieron. El retiro es mañana a las 09:00.</td>
+<td style="padding: 12px; color: #56544f; border-bottom: 1px solid #e7e4dd">Por elegir</td>
+<td style="padding: 12px 20px; text-align: right; border-bottom: 1px solid #e7e4dd"><a href="#elegir" style="font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap">Elegir transportista</a></td>
+</tr>
+<tr>
+<td style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd"><div style="font-weight: 600">Coquimbo → La Serena</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-QSJHEI</div></td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: #ffeac9; font-size: 12px; line-height: 16px; font-weight: 600; color: #7a4100; white-space: nowrap"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="#7a4100"><path d="M5 1 9 5 5 9 1 5z"></path></svg>En camino</span></td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd">Retiró a las 15:12. Llega entre 17:00 y 19:00.</td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd">Transportes del Norte</td>
+<td style="padding: 12px 20px; text-align: right; border-bottom: 1px solid #e7e4dd"><a href="GeneradorCargaEnCamino.dc.html" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Ver en el mapa</a></td>
+</tr>
+<tr>
+<td style="padding: 12px 20px"><div style="font-weight: 600">Coquimbo → Puerto de Coquimbo</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-T4X9RL</div></td>
+<td style="padding: 12px"><span style="display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 4px; background: #f4f2ee; font-size: 12px; line-height: 16px; font-weight: 600; color: #3f3d39; white-space: nowrap">Buscando transportista</span></td>
+<td style="padding: 12px">Publicada hace 20 min. Te avisamos con la primera oferta.</td>
+<td style="padding: 12px; color: #56544f">Sin asignar</td>
+<td style="padding: 12px 20px; text-align: right"><a href="#ver" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Ver</a></td>
+</tr>
+</tbody>
+</table>
+</section>
+
+<section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; padding: 16px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<div style="font-weight: 600">Última entrega: Coquimbo → Santiago, 19 nov</div>
+<div style="color: #56544f">590,75 kg CO₂e, con distancia medida por GPS. El certificado está listo.</div>
+</div>
+<a href="GeneradorCargaEntregada.dc.html" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Ver resultado</a>
+</section>
+
+</main>
+<nav class="bn" aria-label="Principal, móvil" style="position: sticky; bottom: 0; background: #ffffff; border-top: 1px solid #e7e4dd; padding: 0 4px">
+<a href="InicioGenerador.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Inicio</a>
+<a href="GeneradorMisCargas.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 700; color: #10653a; text-decoration: none; border-top: 3px solid #168047; box-sizing: border-box">Mis cargas</a>
+<a href="GeneradorCertificados.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Huella</a>
+<a href="GeneradorEmpresa.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Empresa</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Generador: huella y certificados</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#10653a}a:hover{color:#0c4d2d}
+.bn{display:none}@media(max-width:640px){.tn{display:none!important}.bn{display:flex!important}[role="img"]:has(> svg[viewBox="0 0 600 260"]){height:auto!important;aspect-ratio:600/260}}
+</style>
+</helmet>
+<div style="min-height: 735px; box-sizing: border-box; background: #faf9f7; font-family: Inter, system-ui, sans-serif; color: #1a1917; font-size: 14px; line-height: 20px">
+
+<header style="background: #ffffff; border-bottom: 1px solid #e7e4dd; padding: 12px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em">Booster<span style="color: #1fa058">.</span></div>
+<nav class="tn" aria-label="Principal" style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="InicioGenerador.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Inicio</a>
+<a href="GeneradorMisCargas.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Mis cargas</a>
+<a href="GeneradorCertificados.dc.html" style="padding: 8px 12px; border-radius: 8px; background: #f4f2ee; font-size: 13px; font-weight: 600; color: #1a1917; text-decoration: none">Huella y certificados</a>
+<a href="GeneradorEmpresa.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Empresa</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #56544f">Frutas del Elqui SpA</div>
+</header>
+
+<main style="max-width: 1180px; margin: 0 auto; padding: 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+<h1 style="margin: 0; font-size: 30px; line-height: 38px; font-weight: 600; letter-spacing: -0.02em">9 viajes certificados en noviembre: 2 medidos y 7 estimados.</h1>
+<div style="color: #56544f">Cada certificado dice cómo se calculó. Metodología GLEC v3.0, factores SEC Chile 2024.</div>
+</div>
+<button style="height: 40px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Descargar los 9</button>
+</div>
+
+<section aria-label="Resumen del mes" style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr))">
+<div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #e7e4dd">
+<span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: #ecfdf5; font-size: 12px; line-height: 16px; font-weight: 600; color: #0a6247"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0a6247" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.500 5.500 4 8 8.500 2.500"></path></svg>Medido</span>
+<div style="font-size: 28px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">0,6 <span style="font-size: 14px; font-weight: 400; color: #56544f">t CO₂e · 2 viajes</span></div>
+<div style="font-size: 12px; font-weight: 500; color: #56544f">Distancia y combustible leídos del camión</div>
+</div>
+<div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; border-right: 1px solid #e7e4dd">
+<span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; padding: 3px 8px; border: 1px dashed #cc6f00; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; color: #a05500"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#a05500" stroke-width="1.6"><path d="M5 1 9 5 5 9 1 5z"></path></svg>Estimado</span>
+<div style="font-size: 28px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">1,5 <span style="font-size: 14px; font-weight: 400; color: #56544f">t CO₂e · 7 viajes</span></div>
+<div style="font-size: 12px; font-weight: 500; color: #56544f">Al menos un dato salió de un factor por defecto</div>
+</div>
+<div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 12px; font-weight: 500; color: #56544f">Cómo subir lo medido</div>
+<div style="font-weight: 600">5 de tus 7 viajes estimados fueron en camiones sin lectura de combustible.</div>
+<a href="#como" style="font-size: 13px; font-weight: 500; text-decoration: none">Preferir camiones con lectura al elegir</a>
+</div>
+</section>
+
+<section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; overflow-x: auto">
+<table style="width: 100%; min-width: 900px; border-collapse: collapse; font-size: 14px">
+<thead>
+<tr style="background: #faf9f7">
+<th scope="col" style="text-align: left; padding: 10px 20px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Viaje</th>
+<th scope="col" style="text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Entregado</th>
+<th scope="col" style="text-align: right; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Huella</th>
+<th scope="col" style="text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Clase</th>
+<th scope="col" style="text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Qué se midió</th>
+<th scope="col" style="text-align: right; padding: 10px 20px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Certificado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd"><div style="font-weight: 600">Coquimbo → La Serena</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-QSJHEI</div></td>
+<td style="padding: 12px; white-space: nowrap; border-bottom: 1px solid #e7e4dd">24 nov</td>
+<td style="padding: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; border-bottom: 1px solid #e7e4dd">12,4 kg</td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px dashed #cc6f00; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; color: #a05500; white-space: nowrap"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#a05500" stroke-width="1.6"><path d="M5 1 9 5 5 9 1 5z"></path></svg>Estimado</span></td>
+<td style="padding: 12px; color: #56544f; border-bottom: 1px solid #e7e4dd">Distancia por GPS. Combustible por factor.</td>
+<td style="padding: 12px 20px; text-align: right; border-bottom: 1px solid #e7e4dd"><a href="#d1" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Descargar</a></td>
+</tr>
+<tr>
+<td style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd"><div style="font-weight: 600">Coquimbo → Santiago, Quinta Normal</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-YWKZWR</div></td>
+<td style="padding: 12px; white-space: nowrap; border-bottom: 1px solid #e7e4dd">19 nov</td>
+<td style="padding: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; border-bottom: 1px solid #e7e4dd">312,6 kg</td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; background: #ecfdf5; font-size: 12px; line-height: 16px; font-weight: 600; color: #0a6247; white-space: nowrap"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0a6247" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.500 5.500 4 8 8.500 2.500"></path></svg>Medido</span></td>
+<td style="padding: 12px; color: #56544f; border-bottom: 1px solid #e7e4dd">Distancia por GPS y combustible leído del camión.</td>
+<td style="padding: 12px 20px; text-align: right; border-bottom: 1px solid #e7e4dd"><a href="#d2" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Descargar</a></td>
+</tr>
+<tr>
+<td style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd"><div style="font-weight: 600">Coquimbo → Santiago, Ñuñoa</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-KY7G69</div></td>
+<td style="padding: 12px; white-space: nowrap; border-bottom: 1px solid #e7e4dd">19 nov</td>
+<td style="padding: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; border-bottom: 1px solid #e7e4dd">539,3 kg</td>
+<td style="padding: 12px; border-bottom: 1px solid #e7e4dd"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px dashed #cc6f00; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; color: #a05500; white-space: nowrap"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#a05500" stroke-width="1.6"><path d="M5 1 9 5 5 9 1 5z"></path></svg>Estimado</span></td>
+<td style="padding: 12px; color: #56544f; border-bottom: 1px solid #e7e4dd">Nada. Distancia por ruta y combustible por factor.</td>
+<td style="padding: 12px 20px; text-align: right; border-bottom: 1px solid #e7e4dd"><a href="#d3" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Descargar</a></td>
+</tr>
+<tr>
+<td style="padding: 12px 20px"><div style="font-weight: 600">Valparaíso → Viña del Mar</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: #56544f; white-space: nowrap">BOO-VZYIN2</div></td>
+<td style="padding: 12px; white-space: nowrap">18 nov</td>
+<td style="padding: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600">8,1 kg</td>
+<td style="padding: 12px"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px dashed #cc6f00; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; color: #a05500; white-space: nowrap"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#a05500" stroke-width="1.6"><path d="M5 1 9 5 5 9 1 5z"></path></svg>Estimado</span></td>
+<td style="padding: 12px; color: #56544f">Nada. Distancia por ruta y combustible por factor.</td>
+<td style="padding: 12px 20px; text-align: right"><a href="#d4" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Descargar</a></td>
+</tr>
+</tbody>
+</table>
+<div style="padding: 12px 20px; border-top: 1px solid #e7e4dd; color: #56544f">Mostrando 4 de 9. <a href="#todos" style="font-weight: 500; text-decoration: none">Ver los 5 restantes</a></div>
+</section>
+
+</main>
+<nav class="bn" aria-label="Principal, móvil" style="position: sticky; bottom: 0; background: #ffffff; border-top: 1px solid #e7e4dd; padding: 0 4px">
+<a href="InicioGenerador.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Inicio</a>
+<a href="GeneradorMisCargas.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Mis cargas</a>
+<a href="GeneradorCertificados.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 700; color: #10653a; text-decoration: none; border-top: 3px solid #168047; box-sizing: border-box">Huella</a>
+<a href="GeneradorEmpresa.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Empresa</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
