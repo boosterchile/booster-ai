@@ -358,8 +358,8 @@ describe('AppRoute', () => {
     expect(screen.getByText('Sin retiros próximos')).toBeInTheDocument();
     expect(screen.queryByText(/ofertas por responder/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sin conductor/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/documento vencido/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/vehículo sin señal/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/documentos? pendientes?/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/vehículo sin lectura/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('Cobra hoy').length).toBeGreaterThan(0);
   });
@@ -482,13 +482,13 @@ describe('AppRoute', () => {
     expect(await screen.findByText('1 oferta nueva')).toBeInTheDocument();
     expect(screen.getAllByText('Sin conductor').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Quilicura/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('1 documento vencido').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/\+2 por vencer en 30 días/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('1 sin señal').length).toBeGreaterThan(0);
-    expect(screen.getByText(/sin GPS/)).toBeInTheDocument();
+    expect(screen.getAllByText('3 documentos pendientes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1 vencido/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 sin lectura').length).toBeGreaterThan(0);
+    expect(screen.getByText(/sin equipo/)).toBeInTheDocument();
     expect(screen.getByTestId('dashboard-link-ofertas')).toHaveTextContent('1');
     expect(screen.getByTestId('dashboard-link-servicios')).toHaveTextContent('1');
-    expect(screen.getByTestId('dashboard-link-cumplimiento')).toHaveTextContent('1');
+    expect(screen.getByTestId('dashboard-link-cumplimiento')).toHaveTextContent('3');
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
   });
 

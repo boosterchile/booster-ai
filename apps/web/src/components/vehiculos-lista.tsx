@@ -68,8 +68,8 @@ const FILTROS: Array<{ id: FiltroVehiculos; label: string }> = [
   { id: 'activos', label: 'Activos' },
   { id: 'mantencion', label: 'Mantención' },
   { id: 'retirados', label: 'Retirados' },
-  { id: 'sin_dispositivo', label: 'Sin dispositivo' },
-  { id: 'sin_senal', label: 'Sin señal' },
+  { id: 'sin_dispositivo', label: etiquetaDispositivo('sin_dispositivo') },
+  { id: 'sin_senal', label: etiquetaDispositivo('sin_senal') },
 ];
 
 const vehiculoSchema = z.object({

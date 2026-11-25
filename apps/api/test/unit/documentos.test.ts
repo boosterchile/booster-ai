@@ -472,37 +472,32 @@ describe('cumplimiento dashboard', () => {
     expect(res.status).toBe(403);
   });
 
-  it('GET / agrega counts y devuelve listas', async () => {
+  // Orden de lecturas de `leerEntradaDocumental`: zona de la empresa,
+  // vehículos, documentos de vehículos, conductores, documentos de conductores.
+  const enDias = (dias: number) =>
+    new Date(Date.now() + dias * 86_400_000).toISOString().slice(0, 10);
+
+  it('GET / usa el cálculo único: lo que falta también es pendiente', async () => {
     const stub = makeDbStub({
       selectQueue: [
+        [{ timezone: 'America/Santiago' }],
+        [{ id: VEHICLE_ID, patente: 'AB1234', estado: 'activo', teltonikaImei: null }],
         [
-          {
-            id: 'd1',
-            vehicleId: VEHICLE_ID,
-            plate: 'AB1234',
-            tipo: 'soap',
-            estado: 'vencido',
-            fechaVencimiento: new Date('2026-04-01T00:00:00Z'),
-          },
-          {
-            id: 'd2',
-            vehicleId: VEHICLE_ID,
-            plate: 'AB1234',
-            tipo: 'revision_tecnica',
-            estado: 'por_vencer',
-            fechaVencimiento: '2026-06-01',
-          },
+          { duenoId: VEHICLE_ID, tipo: 'soap', fechaVencimiento: new Date('2020-04-01T00:00:00Z') },
+          { duenoId: VEHICLE_ID, tipo: 'revision_tecnica', fechaVencimiento: enDias(10) },
+          // Falta el permiso de circulación.
         ],
         [
           {
-            id: 'dc1',
-            conductorId: CONDUCTOR_ID,
-            fullName: 'Juan Pérez',
+            id: CONDUCTOR_ID,
+            nombre: 'Juan Pérez',
             rut: '12345678-5',
-            tipo: 'licencia_conducir',
-            estado: 'vencido',
-            fechaVencimiento: new Date('2026-03-01T00:00:00Z'),
+            licenciaVencimiento: '2020-03-01',
           },
+        ],
+        [
+          { duenoId: CONDUCTOR_ID, tipo: 'licencia_conducir', fechaVencimiento: '2020-03-01' },
+          { duenoId: CONDUCTOR_ID, tipo: 'examen_psicotecnico', fechaVencimiento: '2099-01-01' },
         ],
       ],
     });
@@ -510,21 +505,38 @@ describe('cumplimiento dashboard', () => {
     const res = await app.request('/cumplimiento');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      resumen: { vencidos: number; por_vencer_30d: number; total_pendientes: number };
-      vehiculos: Array<{ plate: string; fecha_vencimiento: string }>;
-      conductores: Array<{ full_name: string; rut: string; fecha_vencimiento: string }>;
+      resumen: Record<string, number>;
+      vehiculos: Array<{ plate: string; tipo: string; estado: string; fecha_vencimiento: string }>;
+      conductores: Array<{ full_name: string; rut: string; tipo: string; estado: string }>;
     };
-    expect(body.resumen.vencidos).toBe(2);
-    expect(body.resumen.por_vencer_30d).toBe(1);
-    expect(body.resumen.total_pendientes).toBe(3);
-    expect(body.vehiculos[0]?.fecha_vencimiento).toBe('2026-04-01');
-    expect(body.vehiculos[1]?.fecha_vencimiento).toBe('2026-06-01');
-    expect(body.conductores[0]?.full_name).toBe('Juan Pérez');
-    expect(body.conductores[0]?.rut).toBe('12345678-5');
+    expect(body.resumen).toEqual({
+      vencidos: 2,
+      por_vencer_30d: 1,
+      faltantes: 1,
+      incompletos: 0,
+      de_vehiculos: 3,
+      de_conductores: 1,
+      total_pendientes: 4,
+    });
+    expect(body.vehiculos.map((d) => [d.tipo, d.estado])).toEqual([
+      ['soap', 'vencido'],
+      ['permiso_circulacion', 'faltante'],
+      ['revision_tecnica', 'por_vencer'],
+    ]);
+    expect(body.vehiculos[0]?.fecha_vencimiento).toBe('2020-04-01');
+    expect(body.vehiculos[0]?.plate).toBe('AB1234');
+    expect(body.conductores).toEqual([
+      expect.objectContaining({
+        full_name: 'Juan Pérez',
+        rut: '12345678-5',
+        tipo: 'licencia_conducir',
+        estado: 'vencido',
+      }),
+    ]);
   });
 
-  it('GET / sin docs pendientes → totales en 0', async () => {
-    const stub = makeDbStub({ selectQueue: [[], []] });
+  it('GET / sin vehículos ni conductores → totales en 0', async () => {
+    const stub = makeDbStub({ selectQueue: [[], [], [], [], []] });
     const app = await buildCumplimientoApp(stub.db);
     const res = await app.request('/cumplimiento');
     expect(res.status).toBe(200);

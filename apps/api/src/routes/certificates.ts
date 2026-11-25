@@ -32,6 +32,7 @@ import { zValidator } from '../lib/validation.js';
 import { obtenerVigente } from '../services/certificados-versionados.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
+import { resumenCertificados } from '../services/resumen-certificados.js';
 
 export function createCertificatesRoutes(opts: {
   db: Db;
@@ -122,7 +123,12 @@ export function createCertificatesRoutes(opts: {
       .limit(limit)
       .offset(offset);
 
+    // Totales sobre todos los certificados de la empresa, no solo los de
+    // esta página (`.specs/una-sola-verdad-por-dato`).
+    const resumen = await resumenCertificados({ db: opts.db, empresaId });
+
     return c.json({
+      resumen,
       certificates: rows.map((r) => ({
         trip_id: r.tripId,
         tracking_code: r.trackingCode,

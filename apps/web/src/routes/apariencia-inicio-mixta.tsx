@@ -89,6 +89,7 @@ function datosPreview(): DatosInicio {
     cumplimiento: {
       estado: 'listo',
       valor: {
+        pendientes: 1,
         vencidos: 0,
         porVencer30d: 1,
         documentos: [

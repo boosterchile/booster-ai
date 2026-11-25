@@ -29,7 +29,10 @@ function datosVacios(sobre: Partial<DatosInicio> = {}): DatosInicio {
   return {
     ofertas: { estado: 'listo', valor: [] },
     servicios: { estado: 'listo', valor: [] },
-    cumplimiento: { estado: 'listo', valor: { vencidos: 0, porVencer30d: 0, documentos: [] } },
+    cumplimiento: {
+      estado: 'listo',
+      valor: { pendientes: 0, vencidos: 0, porVencer30d: 0, documentos: [] },
+    },
     flota: { estado: 'listo', valor: [] },
     vehiculos: { estado: 'listo', valor: 4 },
     conductores: { estado: 'listo', valor: 2 },
@@ -316,6 +319,7 @@ describe('buildInicioVista', () => {
         cumplimiento: {
           estado: 'listo',
           valor: {
+            pendientes: 7,
             vencidos: 4,
             porVencer30d: 3,
             documentos: [
@@ -355,12 +359,12 @@ describe('buildInicioVista', () => {
     ).toEqual([
       '3 ofertas por responder',
       '2 servicios sin conductor',
-      '4 documentos vencidos',
-      '2 vehículos sin señal',
+      '7 documentos pendientes',
+      '2 vehículos sin lectura',
     ]);
     const docs = vista.atencion.filas[2];
     if (docs?.kind === 'dato') {
-      expect(docs.subtitulo).toContain('+3 por vencer en 30 días');
+      expect(docs.subtitulo).toContain('4 vencidos');
       expect(docs.subtitulo).toContain('SOAP');
     }
     const senal = vista.atencion.filas[3];
@@ -378,7 +382,7 @@ describe('buildInicioVista', () => {
     });
     expect(vista.accesos.find((acceso) => acceso.id === 'ofertas')?.badge).toBe(3);
     expect(vista.accesos.find((acceso) => acceso.id === 'servicios')?.badge).toBe(2);
-    expect(vista.accesos.find((acceso) => acceso.id === 'cumplimiento')?.badge).toBe(4);
+    expect(vista.accesos.find((acceso) => acceso.id === 'cumplimiento')?.badge).toBe(7);
     expect(vista.accesos.find((acceso) => acceso.id === 'flota')?.testId).toBe(
       'dashboard-link-flota',
     );
@@ -403,7 +407,7 @@ describe('buildInicioVista', () => {
     }
   });
 
-  it('dos vehículos sin señal son una fila y un pendiente', () => {
+  it('dos vehículos sin lectura son una fila y un pendiente', () => {
     const ahora = ctx.ahora.getTime();
     const vista = buildInicioVista(
       datosVacios({
@@ -434,7 +438,7 @@ describe('buildInicioVista', () => {
     }
     expect(vista.atencion.filas).toHaveLength(1);
     expect(vista.atencion.filas[0]?.kind === 'dato' && vista.atencion.filas[0].titulo).toBe(
-      '2 vehículos sin señal',
+      '2 vehículos sin lectura',
     );
     expect(vista.atencion.pendientes).toBe(1);
   });

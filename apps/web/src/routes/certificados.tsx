@@ -52,7 +52,17 @@ interface CertificadoListItem {
   ahorro_co2e_vs_sin_matching_kgco2e: string | null;
 }
 
+/** Totales de todos los certificados de la empresa (`resumenCertificados` del API). */
+interface ResumenCertificados {
+  certificados: number;
+  medidos: number;
+  estimados: number;
+  kgco2e: number;
+  ahorro_kgco2e: number;
+}
+
 interface CertificadosResponse {
+  resumen: ResumenCertificados;
   certificates: CertificadoListItem[];
   pagination: { limit: number; offset: number; returned: number };
 }
@@ -155,17 +165,19 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-4">
             <SummaryCard
               title="Certificados emitidos"
-              value={certsQ.data.certificates.length.toString()}
+              value={certsQ.data.resumen.certificados.toString()}
+              testId="certificados-emitidos"
               icon={<Award className="h-5 w-5 text-primary-600" aria-hidden />}
             />
             <SummaryCard
               title={`Total ${CO2E} certificado`}
-              value={formatoEmisiones(sumKg(certsQ.data.certificates))}
+              value={formatoEmisiones(certsQ.data.resumen.kgco2e)}
+              testId="certificados-emisiones"
               icon={<Leaf className="h-5 w-5 text-emerald-600" aria-hidden />}
             />
             <SummaryCard
               title={`Ahorro ${CO2E} vía matching`}
-              value={formatoEmisiones(sumAhorroBackhaul(certsQ.data.certificates))}
+              value={formatoEmisiones(certsQ.data.resumen.ahorro_kgco2e)}
               icon={<Leaf className="h-5 w-5 text-emerald-700" aria-hidden />}
             />
             <SummaryCard
@@ -357,7 +369,17 @@ function Td({ children, className = '' }: { children: ReactNode; className?: str
   );
 }
 
-function SummaryCard({ title, value, icon }: { title: string; value: string; icon: ReactNode }) {
+function SummaryCard({
+  title,
+  value,
+  icon,
+  testId,
+}: {
+  title: string;
+  value: string;
+  icon: ReactNode;
+  testId?: string;
+}) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
@@ -366,21 +388,10 @@ function SummaryCard({ title, value, icon }: { title: string; value: string; ico
         </span>
         {icon}
       </div>
-      <div className="mt-2 font-semibold text-2xl text-neutral-900">{value}</div>
+      <div className="mt-2 font-semibold text-2xl text-neutral-900" data-testid={testId}>
+        {value}
+      </div>
     </div>
-  );
-}
-
-function sumKg(items: CertificadoListItem[]): number {
-  return items.reduce((acc, c) => acc + (c.kg_co2e ? Number(c.kg_co2e) : 0), 0);
-}
-
-function sumAhorroBackhaul(items: CertificadoListItem[]): number {
-  return items.reduce(
-    (acc, c) =>
-      acc +
-      (c.ahorro_co2e_vs_sin_matching_kgco2e ? Number(c.ahorro_co2e_vs_sin_matching_kgco2e) : 0),
-    0,
   );
 }
 

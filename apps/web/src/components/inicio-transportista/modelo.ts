@@ -64,12 +64,14 @@ export interface AsignacionInicio {
 
 export interface DocInicio {
   tipo: string;
-  estado: 'vencido' | 'por_vencer' | 'vigente';
+  estado: 'vencido' | 'faltante' | 'sin_fecha' | 'sin_archivo' | 'por_vencer' | 'vigente';
   referencia: string;
   clase: 'vehiculo' | 'conductor';
 }
 
 export interface CumplimientoInicio {
+  /** La cifra de documentos pendientes, la misma de Flota y Cumplimiento. */
+  pendientes: number;
   vencidos: number;
   porVencer30d: number;
   documentos: DocInicio[];
@@ -640,8 +642,8 @@ function primerVencido(docs: DocInicio[]): string | null {
 
 function subtituloDocumentos(data: CumplimientoInicio): string | null {
   const partes: string[] = [];
-  if (data.porVencer30d > 0) {
-    partes.push(`+${data.porVencer30d} por vencer en 30 días`);
+  if (data.vencidos > 0) {
+    partes.push(cuenta(data.vencidos, 'vencido', 'vencidos'));
   }
   const primero = primerVencido(data.documentos);
   if (primero) {
@@ -660,13 +662,13 @@ function filaDocumentos(carga: Carga<CumplimientoInicio>): FilaAtencion | null {
   if (carga.estado === 'error') {
     return { kind: 'error', id: 'cumplimiento', bloque: 'Cumplimiento', fuente: 'cumplimiento' };
   }
-  if (carga.valor.vencidos <= 0) {
+  if (carga.valor.pendientes <= 0) {
     return null;
   }
   return {
     kind: 'dato',
     id: 'documentos',
-    titulo: cuenta(carga.valor.vencidos, 'documento vencido', 'documentos vencidos'),
+    titulo: cuenta(carga.valor.pendientes, 'documento pendiente', 'documentos pendientes'),
     subtitulo: subtituloDocumentos(carga.valor),
     urgente: false,
     tono: 'danger',
@@ -704,7 +706,7 @@ function filaSenal(carga: Carga<VehiculoFlotaInicio[]>, ahoraMs: number): FilaAt
   return {
     kind: 'dato',
     id: 'sin-senal',
-    titulo: cuenta(conteo.sinSenal, 'vehículo sin señal', 'vehículos sin señal'),
+    titulo: cuenta(conteo.sinSenal, 'vehículo sin lectura', 'vehículos sin lectura'),
     subtitulo: patentes.length > 0 ? `${base} · ${patentes}` : base,
     urgente: false,
     tono: 'neutral',
@@ -808,7 +810,8 @@ function buildAccesos(datos: DatosInicio, ctx: ContextoInicio): AccesoVista[] {
     datos.servicios.estado === 'listo'
       ? datos.servicios.valor.filter((item) => item.sinConductor).length
       : null;
-  const vencidos = datos.cumplimiento.estado === 'listo' ? datos.cumplimiento.valor.vencidos : null;
+  const pendientes =
+    datos.cumplimiento.estado === 'listo' ? datos.cumplimiento.valor.pendientes : null;
   const accesos: AccesoVista[] = [
     acceso({
       id: 'flota',
@@ -853,7 +856,7 @@ function buildAccesos(datos: DatosInicio, ctx: ContextoInicio): AccesoVista[] {
       label: 'Cumplimiento',
       to: '/app/cumplimiento',
       testId: 'dashboard-link-cumplimiento',
-      badge: vencidos,
+      badge: pendientes,
       badgeTono: 'danger',
     }),
   ];
