@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Panel de Booster: entrar como un usuario</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#10653a}a:hover{color:#0c4d2d}
+.bn{display:none}@media(max-width:640px){.tn{display:none!important}.bn{display:flex!important}[role="img"]:has(> svg[viewBox="0 0 600 260"]){height:auto!important;aspect-ratio:600/260}}
+</style>
+</helmet>
+<div style="min-height: 760px; box-sizing: border-box; background: #faf9f7; font-family: Inter, system-ui, sans-serif; color: #1a1917; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #ffffff; border-bottom: 1px solid #e7e4dd; padding: 12px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em">Booster<span style="color: #1fa058">.</span></div>
+<nav class="tn" aria-label="Principal" style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="AdminInicio.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Inicio</a>
+<a href="AdminSolicitudes.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Solicitudes</a>
+<a href="AdminEmpresas.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Empresas</a>
+<a href="AdminFlota.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Flota</a>
+<a href="AdminSalud.dc.html" style="padding: 8px 12px; border-radius: 8px; background: #f4f2ee; font-size: 13px; font-weight: 600; color: #1a1917; text-decoration: none">Plataforma</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #56544f">Panel de Booster</div>
+</header>
+<main style="flex: 1 1 auto; width: 100%; max-width: 1180px; margin: 0 auto; padding: 32px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 30px; line-height: 38px; font-weight: 600; letter-spacing: -0.02em">Mira la plataforma como la ve un cliente, con una cuenta de prueba.</h1><div style="color: #56544f">Solo cuentas de prueba. Queda registrado quién entró como quién y cuándo.</div>
+</div>
+</div><div style="display: flex; flex-wrap: wrap; gap: 24px"><section style="flex: 1 1 260px; min-width: 0; background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 8px"><div style="font-size: 16px; line-height: 22px; font-weight: 600">Generador de prueba</div><div style="color: #56544f">Prueba Generador SpA</div><div><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #f4f2ee; color: #3f3d39">Dueño</span></div><div style="padding-top: 6px"><button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Entrar como esta cuenta</button></div></section><section style="flex: 1 1 260px; min-width: 0; background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 8px"><div style="font-size: 16px; line-height: 22px; font-weight: 600">Transportista de prueba</div><div style="color: #56544f">Prueba Transportista SpA</div><div><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #f4f2ee; color: #3f3d39">Dueño</span></div><div style="padding-top: 6px"><button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Entrar como esta cuenta</button></div></section><section style="flex: 1 1 260px; min-width: 0; background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 8px"><div style="font-size: 16px; line-height: 22px; font-weight: 600">Conductor de prueba</div><div style="color: #56544f">Prueba Transportista SpA</div><div><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #f4f2ee; color: #3f3d39">Conductor</span></div><div style="padding-top: 6px"><button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Entrar como esta cuenta</button></div></section></div><section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: flex; flex-direction: column"><div style="padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #e7e4dd"><h2 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600">Mientras estás dentro</h2></div><div style="padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px"><div style="background: #fff7eb; border: 1px solid #ffd489; border-radius: 8px; padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; color: #7a4100"><span style="font-weight: 600">Estás viendo Booster como Generador de prueba.</span><button type="button" style="height: 36px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Volver al panel</button></div><div style="color: #56544f">Esa franja queda fija arriba de cada pantalla, para que nunca dudes de qué cuenta estás usando.</div></div></section><section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: flex; flex-direction: column"><div style="padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #e7e4dd"><h2 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600">Últimos ingresos</h2></div><div style="padding: 12px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div style="font-weight: 600">Conductor de prueba</div><div style="color: #56544f">24 nov, 13:52 · 9 minutos</div></div><span style="color: #56544f">correo@boosterchile.com</span></div></section>
+</main>
+<nav class="bn" aria-label="Principal, móvil" style="position: sticky; bottom: 0; background: #ffffff; border-top: 1px solid #e7e4dd; padding: 0 4px">
+<a href="AdminInicio.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Inicio</a>
+<a href="AdminSolicitudes.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Solicitudes</a>
+<a href="AdminEmpresas.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Empresas</a>
+<a href="AdminFlota.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Flota</a>
+<a href="AdminSalud.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 700; color: #10653a; text-decoration: none; border-top: 3px solid #168047; box-sizing: border-box">Plataforma</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
