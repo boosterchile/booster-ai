@@ -5,7 +5,7 @@ import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMe } from '../../hooks/use-me.js';
 import { ApiError, setActiveEmpresaId } from '../../lib/api-client.js';
-import { Sidebar } from '../Sidebar.js';
+import { Layout } from '../Layout.js';
 import { InicioTransportista } from './inicio-transportista.js';
 
 /**
@@ -128,15 +128,14 @@ function Shell() {
     return null;
   }
   return (
-    <>
-      <Sidebar me={me.data} />
+    <Layout me={me.data} title="Inicio">
       <InicioTransportista
         nombreCompleto={me.data.user.full_name}
         legalName={empresa.legal_name}
         esAdmin
         veFinanzas
       />
-    </>
+    </Layout>
   );
 }
 

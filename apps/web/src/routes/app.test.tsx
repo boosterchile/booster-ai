@@ -31,7 +31,7 @@ vi.mock('@tanstack/react-router', () => ({
   // D9 — el dashboard renderiza <Navigate to="/app/conductor" /> cuando
   // el rol activo es conductor. Stub que no crashea en tests sin router real.
   Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
-  // Layout → Sidebar usa useRouterState para el item activo.
+  // Layout usa useRouterState para la entrada activa del menú.
   useRouterState: () => '/app',
 }));
 
@@ -337,16 +337,12 @@ describe('AppRoute', () => {
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
   });
 
-  it('click Salir (vía menú mobile) → signOutUser', async () => {
+  it('click Salir (vía menú de cuenta) → signOutUser', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     renderWithQueryClient(<AppRoute />);
     await screen.findByText('Sin ofertas nuevas');
-    // En mobile, el botón Salir vive dentro del panel del menú
-    // hamburguesa. Abrir menú primero.
-    const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
-    menuButton.click();
-    // El botón Salir del menú mobile tiene el texto literal "Salir".
-    const salir = screen.getByRole('button', { name: /Salir/i });
+    screen.getByTestId('menu-cuenta').click();
+    const salir = await screen.findByRole('button', { name: /Salir/i });
     salir.click();
     expect(signOutUserMock).toHaveBeenCalled();
   });
