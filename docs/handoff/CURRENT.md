@@ -12,7 +12,7 @@
 - Pruebas: el guardián `sin-cifras-de-emisiones-sueltas.test.ts` falla si otro archivo llama al formateador; `e2e-conductor/sello-huella.spec.ts` recorre Certificados y el Inicio del panel y falla con una cifra visible sin sello (en el CI: 7 y 3 cifras, las tres presentaciones, ninguna sin sello).
 - Certificados en el teléfono: tarjetas (`ListaCertificados`); referencias visuales a 1.280 y 390 px aprobadas por el PO. `/apariencia` muestra cifras, total y lista de muestra.
 - «Estimado» con motivo donde el API no clasifica: la oferta y la emisión previa al viaje (proyecciones) y el observatorio (la vista de BigQuery no guarda la presentación). Separar el observatorio exige cambiar la vista y un `apply` del PO.
-- #1111 (mes en curso en «Gasto …» y «Huella …» del Inicio del generador; antes decía «octubre» fijo) está en `main` y entra en el próximo release.
+- #1111 (mes en curso en «Gasto …» y «Huella …» del Inicio del generador; antes decía «octubre» fijo) está en `main`; release pedido en `.github/release-requests/2026-11-26-mes-inicio-generador.md`, esperando la aprobación del PO.
 - Fuera: lo que depende de T10-05 y el resto del frente 2 (tabla de qué se midió, nivel con lo que falta, anticipar la huella, «Pedir a Booster», viaje propio certificado).
 
 ## Rediseño, frente 8: un solo sistema visual
