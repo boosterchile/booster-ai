@@ -1,4 +1,4 @@
-import type { TipoSolicitudBooster } from '@booster-ai/shared-schemas';
+import type { FuenteCombustibleCan, TipoSolicitudBooster } from '@booster-ai/shared-schemas';
 import { and, asc, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { pgErrorCode } from '../db/pg-error.js';
@@ -114,22 +114,44 @@ export async function resolverSolicitud(opts: {
   db: Db;
   id: string;
   resueltaPor: string;
+  /**
+   * Fuente CAN que el personal de Booster configuró al resolver una solicitud
+   * `configurar_fuente_combustible`. Se escribe en el vehículo de la
+   * solicitud en la misma transacción: el dueño ya no la edita y la
+   * impersonación no escribe en empresas reales.
+   */
+  fuenteCombustibleCan?: FuenteCombustibleCan | undefined;
 }): Promise<ResultadoResolver> {
-  const { db, id, resueltaPor } = opts;
-  // rls-allowlist: el personal de Booster resuelve solicitudes de cualquier empresa — la ruta exige requirePlatformAdmin.
-  const [resuelta] = await db
-    .update(solicitudesBooster)
-    .set({ estado: 'resuelta', resueltaEn: new Date(), resueltaPor })
-    .where(and(eq(solicitudesBooster.id, id), eq(solicitudesBooster.estado, 'abierta')))
-    .returning();
-  if (resuelta) {
-    return { resultado: 'resuelta', solicitud: resuelta };
-  }
-  // rls-allowlist: distingue una ya resuelta de una que no existe, por id — la ruta exige requirePlatformAdmin.
-  const [existe] = await db
-    .select({ id: solicitudesBooster.id })
-    .from(solicitudesBooster)
-    .where(eq(solicitudesBooster.id, id))
-    .limit(1);
-  return existe ? { resultado: 'ya_resuelta' } : { resultado: 'no_existe' };
+  const { db, id, resueltaPor, fuenteCombustibleCan } = opts;
+  return await db.transaction(async (tx) => {
+    // rls-allowlist: el personal de Booster resuelve solicitudes de cualquier empresa — la ruta exige requirePlatformAdmin.
+    const [resuelta] = await tx
+      .update(solicitudesBooster)
+      .set({ estado: 'resuelta', resueltaEn: new Date(), resueltaPor })
+      .where(and(eq(solicitudesBooster.id, id), eq(solicitudesBooster.estado, 'abierta')))
+      .returning();
+    if (resuelta) {
+      if (
+        fuenteCombustibleCan &&
+        resuelta.tipo === 'configurar_fuente_combustible' &&
+        resuelta.vehiculoId
+      ) {
+        // rls-allowlist: el vehículo es el de la solicitud recién resuelta (misma empresa); la ruta exige requirePlatformAdmin.
+        await tx
+          .update(vehicles)
+          .set({ fuenteCombustibleCan, updatedAt: new Date() })
+          .where(
+            and(eq(vehicles.id, resuelta.vehiculoId), eq(vehicles.empresaId, resuelta.empresaId)),
+          );
+      }
+      return { resultado: 'resuelta', solicitud: resuelta };
+    }
+    // rls-allowlist: distingue una ya resuelta de una que no existe, por id — la ruta exige requirePlatformAdmin.
+    const [existe] = await tx
+      .select({ id: solicitudesBooster.id })
+      .from(solicitudesBooster)
+      .where(eq(solicitudesBooster.id, id))
+      .limit(1);
+    return existe ? { resultado: 'ya_resuelta' } : { resultado: 'no_existe' };
+  });
 }

@@ -129,6 +129,46 @@ describe('GET / — las solicitudes abiertas de todas las empresas', () => {
   });
 });
 
+describe('POST /:id/resolver — con la fuente CAN configurada (.specs/frente2-cierre D3)', () => {
+  it('pasa la fuente CAN al servicio para escribirla en el camión', async () => {
+    resolver.mockResolvedValue({
+      resultado: 'resuelta',
+      solicitud: {
+        id: SOLICITUD,
+        tipo: 'configurar_fuente_combustible',
+        estado: 'resuelta',
+        vehiculoId: VEHICULO,
+        creadaEn,
+        resueltaEn: new Date('2026-11-26T13:00:00Z'),
+        resueltaPor: 'admin-id',
+      },
+    });
+    const res = await (await app()).request(`/${SOLICITUD}/resolver`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fuente_combustible_can: '83' }),
+    });
+    expect(res.status).toBe(200);
+    expect(resolver).toHaveBeenCalledWith({
+      db,
+      id: SOLICITUD,
+      resueltaPor: 'admin-id',
+      fuenteCombustibleCan: '83',
+    });
+  });
+
+  it('una fuente CAN fuera del conjunto: 400 sin resolver', async () => {
+    resolver.mockReset();
+    const res = await (await app()).request(`/${SOLICITUD}/resolver`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fuente_combustible_can: '99' }),
+    });
+    expect(res.status).toBe(400);
+    expect(resolver).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /:id/resolver — marcarla resuelta', () => {
   it('la marca resuelta con quién y cuándo', async () => {
     const resueltaEn = new Date('2026-11-26T13:00:00Z');

@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { fuenteCombustibleCanSchema } from '@booster-ai/shared-schemas';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
@@ -17,6 +18,10 @@ import { listarSolicitudesAbiertas, resolverSolicitud } from '../services/solici
 const idSchema = z.string().uuid();
 const consultas = getBusinessCounter('solicitudes_booster_consultas_total');
 const resueltas = getBusinessCounter('solicitud_booster_resuelta_total');
+
+const resolverBodySchema = z
+  .object({ fuente_combustible_can: fuenteCombustibleCanSchema.optional() })
+  .strict();
 
 export function createAdminSolicitudesBoosterRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
@@ -54,11 +59,35 @@ export function createAdminSolicitudesBoosterRoutes(opts: { db: Db; logger: Logg
     if (!id.success) {
       return noExiste();
     }
+    // Cuerpo opcional (`.specs/frente2-cierre` D3): la fuente CAN que el
+    // personal de Booster configuró; se escribe en el camión al resolver.
+    const crudo = await c.req.text();
+    let json: unknown = {};
+    if (crudo.trim() !== '') {
+      try {
+        json = JSON.parse(crudo);
+      } catch {
+        return c.json({ error: 'cuerpo_invalido', code: 'cuerpo_invalido' }, 400);
+      }
+    }
+    const cuerpo = resolverBodySchema.safeParse(json);
+    if (!cuerpo.success) {
+      return c.json(
+        { error: 'cuerpo_invalido', code: 'cuerpo_invalido', issues: cuerpo.error.issues },
+        400,
+      );
+    }
+    const fuente = cuerpo.data.fuente_combustible_can;
     return withBusinessSpan(
       { name: 'solicitudes_booster.resolver', attributes: { 'booster.solicitud_id': id.data } },
       async (span) => {
         const resueltaPor = admin.userContext.user.id;
-        const r = await resolverSolicitud({ db: opts.db, id: id.data, resueltaPor });
+        const r = await resolverSolicitud({
+          db: opts.db,
+          id: id.data,
+          resueltaPor,
+          ...(fuente ? { fuenteCombustibleCan: fuente } : {}),
+        });
         setResultAttributes(span, { 'booster.solicitud.resultado': r.resultado });
         if (r.resultado === 'no_existe') {
           return noExiste();

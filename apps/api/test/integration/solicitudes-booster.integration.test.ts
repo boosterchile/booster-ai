@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getTableColumns } from 'drizzle-orm';
+import { eq, getTableColumns } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import * as schema from '../../src/db/schema.js';
 import {
@@ -263,6 +263,53 @@ describe('integration: solicitudes a Booster (0091)', () => {
       });
       expect(nueva.creada).toBe(true);
       expect(nueva.solicitud.id).not.toBe(solicitud.id);
+    });
+
+    test('resolver con la fuente CAN la deja configurada en el camión, en la misma transacción', async () => {
+      const { empresa, vehiculo } = await crearFlota();
+      const { solicitud } = await pedirABooster({
+        db: handle.db,
+        empresaId: empresa.id,
+        vehiculoId: vehiculo.id,
+        tipo: 'configurar_fuente_combustible',
+        creadaPor: duenoId,
+      });
+      const r = await resolverSolicitud({
+        db: handle.db,
+        id: solicitud.id,
+        resueltaPor: adminId,
+        fuenteCombustibleCan: '83',
+      });
+      expect(r.resultado).toBe('resuelta');
+      const [v] = await handle.db
+        .select({ fuente: schema.vehicles.fuenteCombustibleCan })
+        .from(schema.vehicles)
+        .where(eq(schema.vehicles.id, vehiculo.id));
+      expect(v?.fuente).toBe('83');
+    });
+
+    test('una solicitud ya resuelta no vuelve a escribir la fuente CAN', async () => {
+      const { empresa, vehiculo } = await crearFlota();
+      const { solicitud } = await pedirABooster({
+        db: handle.db,
+        empresaId: empresa.id,
+        vehiculoId: vehiculo.id,
+        tipo: 'configurar_fuente_combustible',
+        creadaPor: duenoId,
+      });
+      await resolverSolicitud({ db: handle.db, id: solicitud.id, resueltaPor: adminId });
+      const r = await resolverSolicitud({
+        db: handle.db,
+        id: solicitud.id,
+        resueltaPor: adminId,
+        fuenteCombustibleCan: '89',
+      });
+      expect(r.resultado).toBe('ya_resuelta');
+      const [v] = await handle.db
+        .select({ fuente: schema.vehicles.fuenteCombustibleCan })
+        .from(schema.vehicles)
+        .where(eq(schema.vehicles.id, vehiculo.id));
+      expect(v?.fuente).not.toBe('89');
     });
   });
 });

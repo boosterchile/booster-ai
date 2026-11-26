@@ -92,6 +92,28 @@ describe('PlatformAdminSolicitudesRoute', () => {
     expect(await screen.findByText('No hay solicitudes abiertas.')).toBeInTheDocument();
   });
 
+  it('con la fuente CAN elegida, «Marcar resuelta» la manda para dejarla en el camión (D3)', async () => {
+    vi.spyOn(api, 'get')
+      .mockResolvedValueOnce({ solicitudes: [solicitud({})] })
+      .mockResolvedValueOnce({ solicitudes: [] });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      solicitud: {
+        id: '33333333-3333-4333-8333-333333333333',
+        tipo: 'configurar_fuente_combustible',
+        estado: 'resuelta',
+        resuelta_en: '2026-11-26T16:00:00.000Z',
+        resuelta_por: 'admin',
+      },
+    });
+    wrap(<PlatformAdminSolicitudesRoute />);
+    await userEvent.selectOptions(await screen.findByTestId('solicitud-fuente-can'), '83');
+    await userEvent.click(screen.getByRole('button', { name: 'Marcar resuelta' }));
+    expect(post).toHaveBeenCalledWith(
+      '/admin/plataforma/solicitudes/33333333-3333-4333-8333-333333333333/resolver',
+      { fuente_combustible_can: '83' },
+    );
+  });
+
   it('«Marcar resuelta» la resuelve y vuelve a leer la lista', async () => {
     const get = vi
       .spyOn(api, 'get')

@@ -1,5 +1,7 @@
 import {
   ETIQUETA_TIPO_SOLICITUD_BOOSTER,
+  FUENTES_COMBUSTIBLE_CAN,
+  type FuenteCombustibleCan,
   type SolicitudBoosterAbierta,
   listaSolicitudesBoosterSchema,
 } from '@booster-ai/shared-schemas';
@@ -25,8 +27,9 @@ export function PlatformAdminSolicitudesRoute() {
             Solicitudes a Booster
           </h1>
           <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-            Lo que las empresas piden con «Pedir a Booster», la más antigua primero. Cuando quede
-            configurado, márcalo resuelto.
+            Lo que las empresas piden con «Pedir a Booster», la más antigua primero. En una fuente
+            de combustible, elige la fuente CAN que configuraste: al marcarla resuelta queda
+            guardada en el camión.
           </p>
           <SolicitudesBooster />
         </PlatformAdminFrame>
@@ -68,8 +71,13 @@ function SolicitudesBooster() {
   });
 
   const resolver = useMutation({
-    mutationFn: async (id: string) =>
-      api.post<unknown>(`/admin/plataforma/solicitudes/${id}/resolver`, {}),
+    // `.specs/frente2-cierre` D3: la fuente CAN que se configuró se guarda en
+    // el camión al resolver; el dueño ya no la edita.
+    mutationFn: async (v: { id: string; fuente: FuenteCombustibleCan | null }) =>
+      api.post<unknown>(
+        `/admin/plataforma/solicitudes/${v.id}/resolver`,
+        v.fuente ? { fuente_combustible_can: v.fuente } : {},
+      ),
     onSuccess: () => {
       setAviso(null);
     },
@@ -129,8 +137,8 @@ function SolicitudesBooster() {
                 <FilaSolicitud
                   key={s.id}
                   solicitud={s}
-                  resolviendo={resolver.isPending && resolver.variables === s.id}
-                  onResolver={() => resolver.mutate(s.id)}
+                  resolviendo={resolver.isPending && resolver.variables?.id === s.id}
+                  onResolver={(fuente) => resolver.mutate({ id: s.id, fuente })}
                 />
               ))}
             </tbody>
@@ -148,8 +156,11 @@ function FilaSolicitud({
 }: {
   solicitud: SolicitudBoosterAbierta;
   resolviendo: boolean;
-  onResolver: () => void;
+  onResolver: (fuente: FuenteCombustibleCan | null) => void;
 }) {
+  const pideFuente =
+    solicitud.tipo === 'configurar_fuente_combustible' && solicitud.vehiculo !== null;
+  const [fuente, setFuente] = useState<FuenteCombustibleCan | ''>('');
   return (
     <tr data-testid="solicitud-booster">
       <td className="px-3 py-2 text-neutral-800">{solicitud.empresa.nombre}</td>
@@ -167,9 +178,34 @@ function FilaSolicitud({
         {formatoFecha(solicitud.creada_en)}
       </td>
       <td className="px-3 py-2 text-right">
-        <Button variant="secondary" size="sm" loading={resolviendo} onClick={onResolver}>
-          Marcar resuelta
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {pideFuente ? (
+            <label className="flex items-center gap-1 text-neutral-700 text-xs">
+              Fuente CAN
+              <select
+                value={fuente}
+                onChange={(e) => setFuente(e.target.value as FuenteCombustibleCan | '')}
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+                data-testid="solicitud-fuente-can"
+              >
+                <option value="">Sin cambiarla</option>
+                {FUENTES_COMBUSTIBLE_CAN.map((f) => (
+                  <option key={f} value={f}>
+                    {f === 'sin_sensor' ? 'Sin sensor' : `IO ${f}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={resolviendo}
+            onClick={() => onResolver(fuente === '' ? null : fuente)}
+          >
+            Marcar resuelta
+          </Button>
+        </div>
       </td>
     </tr>
   );

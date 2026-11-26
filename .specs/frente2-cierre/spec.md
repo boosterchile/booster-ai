@@ -71,6 +71,10 @@ edición de la fuente CAN pasa al personal de Booster.
   (gestor, idempotente: 201 nueva, 200 la abierta), `GET /admin/plataforma/solicitudes` y
   `POST /admin/plataforma/solicitudes/:id/resolver`; `fuente_combustible_can` en el alta o el
   `PATCH` de vehículos responde 403 `fuente_can_solo_booster` fuera del personal de Booster.
+Al marcar resuelta una solicitud de fuente de combustible, el personal de
+Booster elige la fuente CAN y queda guardada en el camión en la misma
+transacción (`POST /admin/plataforma/solicitudes/:id/resolver` con
+`fuente_combustible_can`): la impersonación no escribe en empresas reales.
 
 ## 4. Criterios de éxito
 
