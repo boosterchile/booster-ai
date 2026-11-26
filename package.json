@@ -12,9 +12,10 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "biome check . && pnpm lint:rls",
+    "lint": "biome check . && pnpm lint:rls && pnpm lint:botones",
     "lint:fix": "biome check --write .",
     "lint:rls": "node scripts/lint-rls.mjs",
+    "lint:botones": "node --test scripts/lint-botones.test.mjs && node scripts/lint-botones.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "typecheck": "turbo run typecheck",
