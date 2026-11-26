@@ -73,6 +73,32 @@ describe('contraste · botón de acento (bg-600) usa BLANCO, nunca negro', () =>
   }
 });
 
+/**
+ * D-18 (DESIGN.md §8.1): el verde Booster es la acción principal en toda la
+ * plataforma y el dato ambiental se marca con sello. Cubre el `Button` primary
+ * (`bg-primary-600` + blanco) y los dos sellos de `MeasurementSeal`.
+ */
+describe('contraste · D-18 — botón verde de marca y sello Medido/Estimado', () => {
+  it('botón: blanco ≥ 4.5 Y blanco mejor que negro sobre primary-600', () => {
+    expect(ratio2(WHITE, colors.primary[600])).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
+    expect(contrastRatio(WHITE, colors.primary[600])).toBeGreaterThanOrEqual(
+      contrastRatio(BLACK, colors.primary[600]),
+    );
+  });
+  it('botón hover/active: blanco ≥ 4.5 sobre primary-700 y primary-800', () => {
+    expect(ratio2(WHITE, colors.primary[700])).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
+    expect(ratio2(WHITE, colors.primary[800])).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
+  });
+  it('sello Medido: texto primary-800 sobre primary-50 ≥ 4.5; borde primary-600 ≥ 3', () => {
+    expect(ratio2(colors.primary[800], colors.primary[50])).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
+    expect(ratio2(colors.primary[600], SURFACE_LIGHT)).toBeGreaterThanOrEqual(WCAG_AA_UI);
+  });
+  it('sello Estimado: texto neutral-700 sobre blanco ≥ 4.5; borde neutral-500 ≥ 3', () => {
+    expect(ratio2(colors.neutral[700], SURFACE_LIGHT)).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
+    expect(ratio2(colors.neutral[500], SURFACE_LIGHT)).toBeGreaterThanOrEqual(WCAG_AA_UI);
+  });
+});
+
 describe('contraste · semánticos (success/warning/danger/info) FIJOS', () => {
   const semantics = {
     success: colors.success,

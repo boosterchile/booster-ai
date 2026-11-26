@@ -4,15 +4,15 @@ import { cn } from './cn.js';
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Intención visual. `primary` usa el acento (tematiza por rol); `danger` el semántico D1. */
+  /** Intención visual. `primary` usa el verde Booster (D-18, no tematiza); `danger` el semántico D1. */
   variant?: ButtonVariant;
   /** Estado de carga: muestra spinner, marca `aria-busy` y deshabilita la acción. */
   loading?: boolean;
 }
 
-/** Clases de color por variante — SOLO tokens D1 (acento + neutrales + semántico danger). */
+/** Clases de color por variante — SOLO tokens D1 (verde de marca + neutrales + semántico danger). */
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: 'bg-accent-600 text-white hover:bg-accent-700 active:bg-accent-800',
+  primary: 'bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800',
   secondary:
     'border border-neutral-300 bg-neutral-0 text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200',
   ghost: 'bg-transparent text-neutral-700 hover:bg-neutral-100 active:bg-neutral-200',
@@ -23,8 +23,9 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
  * Botón primitivo (grupo **dual**): el tamaño lo dictan las custom properties de
  * registro/densidad de Ola 0 (`--touch-min`, `--pad-y`, `--pad-x`) — no
  * reimplementa la lógica; bajo `[data-register=conductor]` el touch target
- * resuelve ≥44px (WCAG). Colores desde tokens D1: el acento en `primary`
- * (tematiza por rol) y el semántico en `danger`. **Sin personalidad**: el copy
+ * resuelve ≥44px (WCAG). Colores desde tokens D1: el verde Booster en `primary`
+ * (DESIGN.md §8.1 / D-18: acción principal en toda la plataforma, no cambia
+ * con el acento elegido) y el semántico en `danger`. **Sin personalidad**: el copy
  * lo pone quien lo usa. El foco visible lo aporta el `*:focus-visible` global de
  * la app (token `focusRing` de marca) sobre el `<button>` nativo focusable.
  */

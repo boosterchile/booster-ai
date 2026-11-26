@@ -1,3 +1,4 @@
+import { FootprintSeal } from '@booster-ai/ui-components';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Inbox, Plus, Truck, UserRound, X } from 'lucide-react';
@@ -68,11 +69,6 @@ interface Violacion {
   capacidad_kg?: number;
 }
 
-const ETIQUETA_HUELLA = {
-  primario: 'Combustible medido por CAN',
-  medido_teltonika: 'Distancia medida con Teltonika',
-  estimado: 'Estimado',
-} as const;
 const kg = (n: number) => `${n.toLocaleString('es-CL')} kg`;
 const porcentaje = (valor: string) => {
   const n = Number(valor);
@@ -448,9 +444,9 @@ function DetalleDeRuta({
         >
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="font-semibold text-base text-neutral-900">Huella de la ruta</h2>
-            <p className="text-neutral-600 text-sm">
-              {ruta.huella.es_estimacion ? 'Estimación' : ETIQUETA_HUELLA[ruta.huella.presentacion]}
-            </p>
+            <FootprintSeal
+              presentacion={ruta.huella.es_estimacion ? 'estimado' : ruta.huella.presentacion}
+            />
           </div>
           <p className="mt-2 text-neutral-800 text-sm">
             Total de la ruta: {formatoEmisiones(ruta.huella.emisiones_kgco2e)}
