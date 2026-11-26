@@ -5,10 +5,10 @@ import type { MeResponse } from '../hooks/use-me.js';
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
- * /apariencia/shell — preview del shell de operador (sidebar D2) con `me` MOCK
+ * /apariencia/shell — preview del armazón de operador (menú superior) con `me` MOCK
  * por rol (`?rol=transportista|fleet|generador|dual|stakeholder`). `fleet` es
  * la empresa solo de flota: el producto Booster Fleet (`.specs/booster-fleet-interfaz`). Ruta pública sin
- * datos reales: sirve para la revisión visual del PO y para el E2E del sidebar
+ * datos reales: sirve para la revisión visual del PO y para el E2E del armazón
  * (que no puede autenticarse contra el backend en e2e-local). Demostrador, como
  * `/apariencia`.
  */
@@ -66,8 +66,8 @@ export function AparienciaShellRoute() {
         Preview del shell operador
       </h1>
       <p className="mt-2 text-neutral-600 text-sm">
-        Sidebar D2 role-aware (registro operador) con datos mock. Rol activo:{' '}
-        <span className="font-medium">{rol}</span>. En móvil, el sidebar colapsa a drawer.
+        Menú superior role-aware (registro operador) con datos mock. Rol activo:{' '}
+        <span className="font-medium">{rol}</span>. Bajo 640 px el menú pasa a la barra inferior.
       </p>
     </Layout>
   );
