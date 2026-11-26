@@ -16,6 +16,7 @@ import {
   getResultadoAsignacion,
 } from '../../services/assignment-resultado.js';
 import { CifraHuella } from '../huella/CifraHuella.js';
+import { TablaMedicion } from '../huella/TablaMedicion.js';
 
 const REINTENTO_MS = 3_000;
 const MAX_REINTENTOS = 20;
@@ -244,11 +245,20 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
                 : textoPorcentaje(m?.coverage_pct ?? null)}
             </dd>
           </div>
-          {nivel && (
+          {m.medicion ? (
             <div className="col-span-2">
-              <dt className="text-neutral-500 text-xs">Nivel de certificación</dt>
-              <dd className="font-medium">{nivel}</dd>
+              <dt className="text-neutral-500 text-xs">Qué se midió</dt>
+              <dd>
+                <TablaMedicion medicion={m.medicion} data-testid="resultado-medicion" />
+              </dd>
             </div>
+          ) : (
+            nivel && (
+              <div className="col-span-2">
+                <dt className="text-neutral-500 text-xs">Nivel de certificación</dt>
+                <dd className="font-medium">{nivel}</dd>
+              </div>
+            )
           )}
           {m.linea_metodo && (
             <div className="col-span-2">

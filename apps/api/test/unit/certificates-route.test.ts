@@ -220,6 +220,11 @@ describe('GET /certificates (lista)', () => {
       resumen: { por_presentacion: Record<string, unknown> };
     };
     expect(body.certificates[0]?.presentacion).toBe('medido_teltonika');
+    // .specs/frente2-cierre §3.1 — lo medido y el nivel viajan con cada certificado.
+    expect(
+      (body.certificates[0] as unknown as { medicion: { nivel: { nombre: string } } }).medicion
+        .nivel.nombre,
+    ).toBe('Secundario modelado');
     expect(Object.keys(body.resumen.por_presentacion)).toEqual([
       'primario',
       'medido_teltonika',

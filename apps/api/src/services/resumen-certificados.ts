@@ -1,7 +1,7 @@
 import type { Presentacion } from '@booster-ai/certificate-generator';
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { type SQL, and, eq, isNotNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { tripMetrics, trips } from '../db/schema.js';
+import { assignments, tripMetrics, trips } from '../db/schema.js';
 import { presentacionDesdeMetricas } from './presentacion-huella.js';
 
 /**
@@ -38,9 +38,27 @@ export async function resumenCertificados(opts: {
   db: Db;
   /** Empresa generadora. Sin ella, toda la plataforma. */
   empresaId?: string | undefined;
+  /**
+   * Empresa transportista que hizo el viaje (`.specs/frente2-cierre` §3.1):
+   * la huella del mes en su Inicio y en Booster Fleet.
+   */
+  transportistaEmpresaId?: string | undefined;
+  /** Solo los certificados emitidos en el mes de esta fecha, en hora de Santiago. */
+  mesDe?: Date | undefined;
 }): Promise<ResumenCertificados> {
-  const emitido = isNotNull(tripMetrics.certificateIssuedAt);
-  // rls-allowlist: sin `empresaId` es el total de plataforma, que solo pide el panel de administración (requirePlatformAdmin).
+  const condiciones: SQL[] = [isNotNull(tripMetrics.certificateIssuedAt)];
+  if (opts.empresaId) {
+    condiciones.push(eq(trips.generadorCargaEmpresaId, opts.empresaId));
+  }
+  if (opts.transportistaEmpresaId) {
+    condiciones.push(eq(assignments.empresaId, opts.transportistaEmpresaId));
+  }
+  if (opts.mesDe) {
+    condiciones.push(
+      sql`date_trunc('month', ${tripMetrics.certificateIssuedAt} AT TIME ZONE 'America/Santiago') = date_trunc('month', ${opts.mesDe.toISOString()}::timestamptz AT TIME ZONE 'America/Santiago')`,
+    );
+  }
+  // rls-allowlist: sin `empresaId` ni `transportistaEmpresaId` es el total de plataforma, que solo pide el panel de administración (requirePlatformAdmin).
   const filas = await opts.db
     .select({
       certificationLevel: tripMetrics.certificationLevel,
@@ -54,9 +72,8 @@ export async function resumenCertificados(opts: {
     })
     .from(tripMetrics)
     .innerJoin(trips, eq(trips.id, tripMetrics.tripId))
-    .where(
-      opts.empresaId ? and(eq(trips.generadorCargaEmpresaId, opts.empresaId), emitido) : emitido,
-    )
+    .leftJoin(assignments, eq(assignments.tripId, trips.id))
+    .where(and(...condiciones))
     .groupBy(tripMetrics.certificationLevel, tripMetrics.routeDataSource, tripMetrics.coveragePct);
 
   const porPresentacion = Object.fromEntries(

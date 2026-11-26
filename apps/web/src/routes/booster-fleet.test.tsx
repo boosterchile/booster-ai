@@ -247,9 +247,13 @@ describe('BoosterFleetRoute', () => {
     datos.combustible.al_dia = true;
     entrar(datos);
     expect(await screen.findByText(/Combustible leído a las \d\d:\d\d/)).toBeInTheDocument();
-    expect(vi.mocked(api.get).mock.calls.map((c) => c[0])).toEqual([
-      '/booster-fleet?combustible=guardada',
-    ]);
+    // La huella del mes (`.specs/frente2-cierre`) se pide aparte.
+    expect(
+      vi
+        .mocked(api.get)
+        .mock.calls.map((c) => c[0])
+        .filter((url) => url.startsWith('/booster-fleet')),
+    ).toEqual(['/booster-fleet?combustible=guardada']);
     expect(screen.queryByText(/actualizando/)).not.toBeInTheDocument();
   });
 
@@ -277,10 +281,9 @@ describe('BoosterFleetRoute', () => {
     expect(await screen.findByText(/actualizando…/)).toBeInTheDocument();
     expect(screen.getByText('77,7')).toBeInTheDocument();
     await waitFor(() =>
-      expect(get.mock.calls.map((c) => c[0])).toEqual([
-        '/booster-fleet?combustible=guardada',
-        '/booster-fleet',
-      ]),
+      expect(
+        get.mock.calls.map((c) => c[0]).filter((url) => url.startsWith('/booster-fleet')),
+      ).toEqual(['/booster-fleet?combustible=guardada', '/booster-fleet']),
     );
 
     soltar(nueva);

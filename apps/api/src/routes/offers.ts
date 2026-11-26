@@ -1,11 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
+import { anticipoHuella } from '@booster-ai/shared-schemas';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { denegarAceptarOferta } from '../auth/capacidades.js';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
-import { offers, trips } from '../db/schema.js';
+import { offers, trips, vehicles } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import {
   OfferForbiddenForPreviewError,
@@ -83,9 +84,17 @@ export function createOfferRoutes(opts: {
         : 'pendiente';
 
     const rows = await opts.db
-      .select({ offer: offers, trip: trips })
+      .select({
+        offer: offers,
+        trip: trips,
+        // `.specs/frente2-cierre` D4 — el camión sugerido anticipa la huella.
+        vehiculoId: vehicles.id,
+        teltonikaImei: vehicles.teltonikaImei,
+        teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+      })
       .from(offers)
       .innerJoin(trips, eq(offers.tripId, trips.id))
+      .leftJoin(vehicles, eq(vehicles.id, offers.suggestedVehicleId))
       .where(and(eq(offers.empresaId, active.empresa.id), eq(offers.status, status)))
       .orderBy(desc(offers.sentAt));
 
@@ -113,6 +122,9 @@ export function createOfferRoutes(opts: {
           pickup_window_start: r.trip.pickupWindowStart,
           pickup_window_end: r.trip.pickupWindowEnd,
         },
+        anticipo_huella: anticipoHuella({
+          tieneTeltonika: r.vehiculoId ? Boolean(r.teltonikaImei || r.teltonikaImeiEspejo) : null,
+        }),
       })),
     });
   });

@@ -2,8 +2,9 @@ import { Button } from '@booster-ai/ui-components';
 import { Download } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { CO2E } from '../../lib/formato-emisiones.js';
-import type { PresentacionHuella } from '../../lib/presentacion-huella.js';
+import type { Medicion, PresentacionHuella } from '../../lib/presentacion-huella.js';
 import { CifraHuella } from '../huella/CifraHuella.js';
+import { TablaMedicion } from '../huella/TablaMedicion.js';
 
 /** Una fila de `GET /certificates`. */
 export interface CertificadoListItem {
@@ -23,6 +24,8 @@ export interface CertificadoListItem {
   linea_metodo?: string | null;
   /** ADR-091, calculada por el API (la misma función que el PDF). Ausente en respuestas viejas. */
   presentacion?: PresentacionHuella;
+  /** Qué se midió y el nivel (`.specs/frente2-cierre` §3.1). Ausente en respuestas viejas. */
+  medicion?: Medicion;
   certificate_sha256?: string | null;
   certificate_kms_key_version?: string | null;
   certificate_issued_at: string | null;
@@ -122,6 +125,16 @@ function Trayecto({ c, className = '' }: { c: CertificadoListItem; className?: s
         <span className="text-neutral-500" title="Método de cálculo (ADR-077)">
           {c.linea_metodo}
         </span>
+      )}
+      {c.medicion && (
+        <details className="mt-1">
+          <summary className="cursor-pointer font-medium text-neutral-700">
+            Qué se midió · {c.medicion.nivel.nombre}
+          </summary>
+          <div className="mt-2">
+            <TablaMedicion medicion={c.medicion} />
+          </div>
+        </details>
       )}
     </div>
   );
