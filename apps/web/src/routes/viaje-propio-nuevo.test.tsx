@@ -92,3 +92,23 @@ describe('ViajePropioNuevoRoute', () => {
     expect(screen.getByRole('button', { name: 'Crear viaje propio' })).toBeInTheDocument();
   });
 });
+
+describe('formToBody — correo del cliente externo (.specs/frente2-cierre D2)', () => {
+  it('lleva el correo al cuerpo cuando se escribe, y no lo manda vacío', async () => {
+    const { formToBody, VALORES_INICIALES } = await import('./viaje-propio-nuevo.js');
+    const base = {
+      ...VALORES_INICIALES,
+      origin_address_raw: 'Av. Apoquindo 3000',
+      origin_region_code: 'XIII' as const,
+      destination_address_raw: 'Puerto San Antonio',
+      destination_region_code: 'V' as const,
+      cliente_tipo: 'externo' as const,
+      externo_nombre: 'Viña Santa Clara SpA',
+    };
+    expect(formToBody({ ...base, externo_correo: ' compras@vina.cl ' }).cliente).toMatchObject({
+      tipo: 'externo',
+      correo: 'compras@vina.cl',
+    });
+    expect(formToBody({ ...base, externo_correo: '' }).cliente).not.toHaveProperty('correo');
+  });
+});

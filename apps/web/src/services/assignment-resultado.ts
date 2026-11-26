@@ -5,7 +5,7 @@
  */
 import { ApiError, api } from '../lib/api-client.js';
 import { CertDisabledError, CertNotIssuedError } from '../lib/cert-download.js';
-import type { Medicion, PresentacionHuella } from '../lib/presentacion-huella.js';
+import type { Medicion, PorPresentacion, PresentacionHuella } from '../lib/presentacion-huella.js';
 
 export interface MetricasResultado {
   distance_km_estimated: string | null;
@@ -59,6 +59,31 @@ export interface ResultadoAsignacion {
   /** Ausente en respuestas viejas. `null` si la cobertura persistida ya es > 0. */
   cobertura?: CoberturaExplicada | null;
   certificate: { issued_at: string | null; sha256: string | null; verify_url: string } | null;
+  /**
+   * Viaje propio (`.specs/frente2-cierre` §3.3): el cliente, su correo (solo
+   * cliente externo) y su huella del mes por presentación. Null en un servicio
+   * del marketplace; ausente en respuestas viejas.
+   */
+  viaje_propio?: ViajePropioResultado | null;
+}
+
+export interface ViajePropioResultado {
+  cliente_nombre: string | null;
+  cliente_correo: string | null;
+  total_mes_cliente: { certificados: number; por_presentacion: PorPresentacion };
+}
+
+/**
+ * Envía el certificado al correo del cliente externo de un viaje propio
+ * (`POST /assignments/:id/certificate/enviar-cliente`).
+ */
+export async function enviarCertificadoAlCliente(
+  assignmentId: string,
+): Promise<{ enviado: true; correo: string }> {
+  return await api.post<{ enviado: true; correo: string }>(
+    `/assignments/${assignmentId}/certificate/enviar-cliente`,
+    {},
+  );
 }
 
 export async function getResultadoAsignacion(assignmentId: string): Promise<ResultadoAsignacion> {

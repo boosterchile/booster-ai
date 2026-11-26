@@ -45,6 +45,8 @@ export async function resumenCertificados(opts: {
   transportistaEmpresaId?: string | undefined;
   /** Solo los certificados emitidos en el mes de esta fecha, en hora de Santiago. */
   mesDe?: Date | undefined;
+  /** Cliente externo de los viajes propios (`.specs/frente2-cierre` §3.3): su total del mes. */
+  clienteExternoNombre?: string | undefined;
 }): Promise<ResumenCertificados> {
   const condiciones: SQL[] = [isNotNull(tripMetrics.certificateIssuedAt)];
   if (opts.empresaId) {
@@ -52,6 +54,9 @@ export async function resumenCertificados(opts: {
   }
   if (opts.transportistaEmpresaId) {
     condiciones.push(eq(assignments.empresaId, opts.transportistaEmpresaId));
+  }
+  if (opts.clienteExternoNombre) {
+    condiciones.push(eq(trips.clienteExternoNombre, opts.clienteExternoNombre));
   }
   if (opts.mesDe) {
     condiciones.push(

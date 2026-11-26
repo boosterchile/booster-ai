@@ -1502,6 +1502,8 @@ export const trips = pgTable(
     clienteExternoNombre: text('cliente_externo_nombre'),
     clienteExternoRut: text('cliente_externo_rut'),
     clienteExternoContacto: text('cliente_externo_contacto'),
+    /** Correo del cliente externo (`.specs/frente2-cierre` D2): ahí se le envía el certificado. */
+    clienteExternoCorreo: varchar('cliente_externo_correo', { length: 254 }),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),

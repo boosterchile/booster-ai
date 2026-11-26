@@ -28,7 +28,7 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 type ClienteTipo = 'generador' | 'externo';
 
-interface ViajePropioFormValues {
+export interface ViajePropioFormValues {
   origin_address_raw: string;
   origin_region_code: RegionCode | '';
   origin_comuna_code: string;
@@ -44,9 +44,10 @@ interface ViajePropioFormValues {
   externo_nombre: string;
   externo_rut: string;
   externo_contacto: string;
+  externo_correo: string;
 }
 
-const VALORES_INICIALES: ViajePropioFormValues = {
+export const VALORES_INICIALES: ViajePropioFormValues = {
   origin_address_raw: '',
   origin_region_code: '',
   origin_comuna_code: '',
@@ -62,6 +63,7 @@ const VALORES_INICIALES: ViajePropioFormValues = {
   externo_nombre: '',
   externo_rut: '',
   externo_contacto: '',
+  externo_correo: '',
 };
 
 const RUTA_ISSUE_A_CAMPO: Record<string, keyof ViajePropioFormValues> = {
@@ -79,6 +81,7 @@ const RUTA_ISSUE_A_CAMPO: Record<string, keyof ViajePropioFormValues> = {
   'cliente.nombre': 'externo_nombre',
   'cliente.rut': 'externo_rut',
   'cliente.contacto': 'externo_contacto',
+  'cliente.correo': 'externo_correo',
 };
 
 function mensajeApi(err: unknown): string {
@@ -97,7 +100,7 @@ function mensajeApi(err: unknown): string {
   return 'No pudimos crear el viaje. Intenta de nuevo en unos segundos.';
 }
 
-function formToBody(values: ViajePropioFormValues): CrearViajePropioBody {
+export function formToBody(values: ViajePropioFormValues): CrearViajePropioBody {
   const peso = values.cargo_weight_kg.trim();
   const volumen = values.cargo_volume_m3.trim();
   const origen: CrearViajePropioBody['origen'] = {
@@ -125,6 +128,7 @@ function formToBody(values: ViajePropioFormValues): CrearViajePropioBody {
             ? { rut: ensureRutHasDash(values.externo_rut.replace(/\./g, '').trim()) }
             : {}),
           ...(values.externo_contacto.trim() ? { contacto: values.externo_contacto.trim() } : {}),
+          ...(values.externo_correo.trim() ? { correo: values.externo_correo.trim() } : {}),
         };
 
   const body: CrearViajePropioBody = {
@@ -545,10 +549,27 @@ function ViajePropioForm({
                     id={id}
                     aria-describedby={describedBy}
                     type="text"
-                    placeholder="Correo o teléfono"
+                    placeholder="Teléfono o nombre de quien recibe"
                     {...register('externo_contacto')}
                     className={fieldInputClass(!!errors.externo_contacto)}
                     maxLength={200}
+                  />
+                )}
+              />
+              <FormField
+                label="Correo para el certificado (opcional)"
+                hint="Al entregar el viaje podrás enviarle ahí su certificado de huella."
+                error={errors.externo_correo?.message}
+                render={({ id, describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="email"
+                    autoComplete="email"
+                    {...register('externo_correo')}
+                    className={fieldInputClass(!!errors.externo_correo)}
+                    maxLength={254}
+                    data-testid="viaje-propio-correo-cliente"
                   />
                 )}
               />

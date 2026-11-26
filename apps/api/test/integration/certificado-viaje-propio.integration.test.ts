@@ -122,7 +122,12 @@ describe('integration: certificado de un viaje propio con cliente externo', () =
         cargo_type: 'agricola',
         cargo_weight_kg: 1200,
         pickup_date_raw: '2026-11-20',
-        cliente: { tipo: 'externo', nombre: 'Viña Santa Clara SpA', rut: rutCliente },
+        cliente: {
+          tipo: 'externo',
+          nombre: 'Viña Santa Clara SpA',
+          rut: rutCliente,
+          correo: 'compras@vinasantaclara.cl',
+        },
       },
     });
     await db
@@ -168,5 +173,28 @@ describe('integration: certificado de un viaje propio con cliente externo', () =
       rut: r.trip.clienteExternoRut,
     });
     expect(r.trip.clienteExternoRut).toBeTruthy();
+    // Migración 0090: el correo del cliente externo queda guardado.
+    expect(r.trip.clienteExternoCorreo).toBe('compras@vinasantaclara.cl');
+  });
+});
+
+describe('integration: migración 0090 — correo del cliente externo', () => {
+  let handle: TestDbHandle;
+  beforeAll(() => {
+    handle = createTestDb();
+  });
+  afterAll(async () => {
+    await handle.pool.end();
+  });
+
+  test('viajes.cliente_externo_correo existe, es varchar(254) y anulable', async () => {
+    const r = await handle.pool.query(
+      `SELECT data_type, character_maximum_length, is_nullable
+         FROM information_schema.columns
+        WHERE table_name = 'viajes' AND column_name = 'cliente_externo_correo'`,
+    );
+    expect(r.rows).toEqual([
+      { data_type: 'character varying', character_maximum_length: 254, is_nullable: 'YES' },
+    ]);
   });
 });

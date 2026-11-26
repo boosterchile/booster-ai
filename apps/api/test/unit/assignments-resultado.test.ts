@@ -54,6 +54,7 @@ function makeDb(selects: unknown[][]) {
     where: vi.fn(() => chain),
     innerJoin: vi.fn(() => chain),
     leftJoin: vi.fn(() => chain),
+    groupBy: vi.fn(() => chain),
     orderBy: vi.fn(() => chain),
     limit: vi.fn(async () => queue.shift() ?? []),
     then: (resolve: (v: unknown) => unknown) => resolve(queue.shift() ?? []),
@@ -103,7 +104,7 @@ const ROW = {
   metricsTripId: TRIP_ID,
 };
 
-async function buildApp(db: unknown, certConfig?: unknown) {
+async function buildApp(db: unknown, certConfig?: unknown, emailSender?: unknown) {
   const { createAssignmentsRoutes } = await import('../../src/routes/assignments.js');
   const app = new Hono();
   app.use('*', async (c, next) => {
@@ -120,6 +121,7 @@ async function buildApp(db: unknown, certConfig?: unknown) {
       logger: noopLogger,
       certConfig: certConfig as never,
       geofenceRadiusM: 150,
+      ...(emailSender ? { emailSender: emailSender as never } : {}),
     }),
   );
   return app;
@@ -340,5 +342,121 @@ describe('GET /assignments/:id/certificate/download', () => {
       headers: { 'x-test-userctx': ctx('otro-user', 'conductor') },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+/** `.specs/frente2-cierre` §3.3 (D2): viaje propio con cliente externo. */
+const PROPIO = {
+  ...ROW,
+  generadorEmpresaId: null,
+  origenAlta: 'propio_transportista',
+  clienteExternoNombre: 'Viña Santa Clara SpA',
+  clienteExternoCorreo: 'compras@vinasantaclara.cl',
+  certificatePdfUrl: 'gs://bucket/certificates/carrier-emp/BOO-BKAXIK.pdf',
+};
+const CERT_CONFIG = {
+  certificatesBucket: 'bucket-prod',
+  kmsKeyId: 'k',
+  verifyBaseUrl: 'https://api.boosterchile.com',
+};
+
+describe('viaje propio entregado y certificado (.specs/frente2-cierre §3.3)', () => {
+  it('el resultado trae el cliente y su huella del mes por presentación', async () => {
+    const db = makeDb([
+      [PROPIO],
+      [
+        {
+          certificationLevel: 'secundario_modeled',
+          routeDataSource: 'teltonika_gps',
+          coveragePct: '100.00',
+          certificados: '3',
+          kgco2e: '42.500',
+          ahorro: null,
+        },
+      ],
+    ]);
+    const app = await buildApp(db);
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/resultado`, {
+      headers: { 'x-test-userctx': ctx('gestor', 'despachador') },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      viaje_propio: {
+        cliente_nombre: string;
+        cliente_correo: string | null;
+        total_mes_cliente: {
+          certificados: number;
+          por_presentacion: Record<string, { kgco2e: number }>;
+        };
+      } | null;
+    };
+    expect(body.viaje_propio?.cliente_nombre).toBe('Viña Santa Clara SpA');
+    expect(body.viaje_propio?.cliente_correo).toBe('compras@vinasantaclara.cl');
+    expect(body.viaje_propio?.total_mes_cliente.certificados).toBe(3);
+    expect(body.viaje_propio?.total_mes_cliente.por_presentacion.medido_teltonika?.kgco2e).toBe(
+      42.5,
+    );
+  });
+
+  it('un servicio del marketplace no trae viaje_propio', async () => {
+    const app = await buildApp(makeDb([[ROW]]));
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/resultado`, {
+      headers: { 'x-test-userctx': ctx(DRIVER_USER, 'conductor') },
+    });
+    expect(((await res.json()) as { viaje_propio: unknown }).viaje_propio).toBeNull();
+  });
+
+  it('enviar al cliente: el gestor manda el enlace del PDF y el de verificación', async () => {
+    signedUrlSpy.mockClear();
+    const send = vi.fn(async () => ({ enviado: true, id: 'mail-1' }));
+    const app = await buildApp(makeDb([[PROPIO]]), CERT_CONFIG, { send });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/enviar-cliente`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': ctx('gestor', 'despachador') },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enviado: true, correo: 'compras@vinasantaclara.cl' });
+    expect(signedUrlSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: CARRIER_EMP, ttlSeconds: 7 * 24 * 3600 }),
+    );
+    const mensaje = (send.mock.calls[0] as unknown as [{ to: string; text: string }])[0];
+    expect(mensaje.to).toBe('compras@vinasantaclara.cl');
+    expect(mensaje.text).toContain('https://storage.example/signed/BOO-BKAXIK.pdf');
+    expect(mensaje.text).toContain('https://api.boosterchile.com/certificates/BOO-BKAXIK/verify');
+  });
+
+  it('enviar al cliente: el conductor no puede (403)', async () => {
+    const send = vi.fn();
+    const app = await buildApp(makeDb([[PROPIO]]), CERT_CONFIG, { send });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/enviar-cliente`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': ctx(DRIVER_USER, 'conductor') },
+    });
+    expect(res.status).toBe(403);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('enviar al cliente sin correo del cliente: 409 sin_correo_cliente', async () => {
+    const send = vi.fn();
+    const app = await buildApp(makeDb([[{ ...PROPIO, clienteExternoCorreo: null }]]), CERT_CONFIG, {
+      send,
+    });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/enviar-cliente`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': ctx('gestor', 'despachador') },
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('sin_correo_cliente');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('el proveedor de correo falla: 502 y no dice que se envió', async () => {
+    const send = vi.fn(async () => ({ enviado: false, motivo: 'error_proveedor' }));
+    const app = await buildApp(makeDb([[PROPIO]]), CERT_CONFIG, { send });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/enviar-cliente`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': ctx('gestor', 'despachador') },
+    });
+    expect(res.status).toBe(502);
   });
 });

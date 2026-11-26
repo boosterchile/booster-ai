@@ -33,6 +33,8 @@ const clienteExternoSchema = z.object({
     .max(200, 'El nombre es demasiado largo'),
   rut: rutSchema.optional(),
   contacto: z.string().trim().min(1).max(200).optional(),
+  /** Ahí se le envía el certificado (`.specs/frente2-cierre` D2). */
+  correo: z.string().trim().toLowerCase().email('Ingresa un correo válido').max(254).optional(),
 });
 
 export const crearViajePropioBodySchema = z.object({
