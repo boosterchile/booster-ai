@@ -1,3 +1,4 @@
+import { FootprintSeal } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
@@ -100,12 +101,6 @@ const TEXTO_FUENTE_CAN: Record<string, string> = {
   '84': 'Nivel de estanque en litros (84)',
   '89': 'Nivel de estanque en % (89)',
   sin_sensor: 'Sin configurar',
-};
-/** ADR-091: quién midió la distancia del certificado. */
-const TEXTO_PRESENTACION: Record<PresentacionCertificado, string> = {
-  primario: 'combustible medido por CAN',
-  medido_teltonika: 'distancia medida con Teltonika',
-  estimado: 'estimado',
 };
 const TEXTO_ESTADO_VIAJE: Record<string, string> = {
   asignado: 'Asignado',
@@ -496,11 +491,13 @@ function Ficha({ vehiculoId, resumen }: { vehiculoId: string; resumen: VehiculoD
                   </span>
                 </div>
                 {u.estado === 'entregado' ? (
-                  <p className="text-neutral-600 text-xs">
-                    {u.presentacion_certificado
-                      ? `Certificado: ${TEXTO_PRESENTACION[u.presentacion_certificado]}`
-                      : 'Sin certificado emitido'}
-                  </p>
+                  u.presentacion_certificado ? (
+                    <p className="flex items-center gap-2 text-neutral-600 text-xs">
+                      Certificado: <FootprintSeal presentacion={u.presentacion_certificado} />
+                    </p>
+                  ) : (
+                    <p className="text-neutral-600 text-xs">Sin certificado emitido</p>
+                  )
                 ) : null}
               </li>
             ))}

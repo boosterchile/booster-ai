@@ -17,11 +17,21 @@ describe('Button', () => {
     expect(await axeCheck(container)).toHaveNoViolations();
   });
 
-  it('primary usa el acento + texto blanco (blindaje #576: nunca texto negro sobre el fill)', () => {
+  it('primary usa el verde Booster + texto blanco (D-18; blindaje #576: nunca texto negro)', () => {
     render(<Button variant="primary">Ir</Button>);
     const cls = screen.getByRole('button').className;
-    expect(cls).toContain('bg-accent-600');
+    expect(cls).toContain('bg-primary-600');
+    expect(cls).toContain('hover:bg-primary-700');
+    expect(cls).toContain('active:bg-primary-800');
     expect(cls).toContain('text-white');
+  });
+
+  it('ninguna variante usa el acento: el botón no cambia con el color elegido (D-18)', () => {
+    for (const variant of ['primary', 'secondary', 'ghost', 'danger'] as const) {
+      const { unmount } = render(<Button variant={variant}>Ir</Button>);
+      expect(screen.getByRole('button').className).not.toContain('accent');
+      unmount();
+    }
   });
 
   it('danger usa el semántico danger + texto blanco (no el acento)', () => {
