@@ -1,3 +1,4 @@
+import { UMBRAL_ANONIMATO } from '@booster-ai/shared-schemas';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -5,14 +6,15 @@ import { z } from 'zod';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { formatoEmisiones } from '../lib/formato-emisiones.js';
 
 /**
  * /app/platform-admin/observatorio — observatorio urbano, vista interna
  * (T10-24, ADR-012 Capa 2; el ADR la nombra `/admin/observatory/coquimbo`).
  *
- * Lee `GET /admin/observatorio/:region`: agregados de BigQuery con k ≥ 10
- * vehículos distintos por grupo. Nunca muestra vehículos ni viajes
- * individuales. Coquimbo (IV) es el piloto y la región por defecto.
+ * Lee `GET /admin/observatorio/:region`: agregados de BigQuery, desde
+ * `UMBRAL_ANONIMATO` vehículos distintos por grupo (ADR-096). Nunca muestra
+ * vehículos ni viajes individuales. Coquimbo (IV) es el piloto y la región por defecto.
  */
 const REGIONES: Array<[string, string]> = [
   ['XV', 'Arica y Parinacota'],
@@ -70,6 +72,7 @@ const respuestaSchema = z.object({
 type Respuesta = z.infer<typeof respuestaSchema>;
 
 const n = (v: number) => v.toLocaleString('es-CL', { maximumFractionDigits: 2 });
+const DESDE_CAMIONES = UMBRAL_ANONIMATO === 1 ? '1 camión' : `${UMBRAL_ANONIMATO} camiones`;
 const comuna = (c: string) => (c === 'sin_comuna' ? 'Sin comuna' : c);
 const TIPO_DIA: Record<string, string> = { laboral: 'Laboral', fin_semana: 'Fin de semana' };
 const CLASE: Record<string, string> = { liviano: 'Liviano', pesado: 'Pesado' };
@@ -99,8 +102,8 @@ function Observatorio() {
     <>
       <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Observatorio urbano</h1>
       <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-        Flujos, emisiones y orígenes-destinos de la carga entregada. Solo se muestran grupos con al
-        menos 10 vehículos distintos; nunca vehículos ni viajes individuales.
+        Flujos, emisiones y orígenes-destinos de la carga entregada. Cada grupo se muestra desde{' '}
+        {DESDE_CAMIONES}; nunca una empresa, una patente, un conductor ni un viaje individual.
       </p>
       <label className="mt-4 flex items-center gap-2 text-sm">
         <span className="font-medium text-neutral-800">Región</span>
@@ -145,7 +148,7 @@ function Seccion(props: {
       <h2 className="font-semibold text-lg text-neutral-900">{props.titulo}</h2>
       {props.filas.length === 0 ? (
         <p data-testid={`observatorio-${props.id}-vacio`} className="mt-2 text-neutral-600 text-sm">
-          Sin datos suficientes (menos de 10 vehículos por grupo).
+          Sin datos en esta región.
         </p>
       ) : (
         <div className="mt-2 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
@@ -204,14 +207,14 @@ function Secciones({ datos }: { datos: Respuesta }) {
       />
       <Seccion
         id="emisiones"
-        titulo="Emisiones (kgCO2e)"
+        titulo="Emisiones"
         columnas={['Mes', 'Comuna', 'Vehículo', 'Emitido', 'Evitado por matching', 'Viajes']}
         filas={datos.emisiones.map((f) => [
           f.mes,
           comuna(f.comuna),
           CLASE[f.clase_vehiculo] ?? f.clase_vehiculo,
-          n(f.kgco2e),
-          n(f.kgco2e_evitado),
+          formatoEmisiones(f.kgco2e),
+          formatoEmisiones(f.kgco2e_evitado),
           n(f.viajes),
         ])}
       />

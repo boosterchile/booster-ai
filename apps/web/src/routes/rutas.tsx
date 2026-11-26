@@ -11,6 +11,7 @@ import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
+import { formatoEmisiones } from '../lib/formato-emisiones.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -73,16 +74,6 @@ const ETIQUETA_HUELLA = {
   estimado: 'Estimado',
 } as const;
 const kg = (n: number) => `${n.toLocaleString('es-CL')} kg`;
-const kgCo2 = (valor: string | null) => {
-  if (valor == null) {
-    return '—';
-  }
-  const n = Number(valor);
-  if (!Number.isFinite(n)) {
-    return valor;
-  }
-  return `${n.toLocaleString('es-CL', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg CO₂e`;
-};
 const porcentaje = (valor: string) => {
   const n = Number(valor);
   if (!Number.isFinite(n)) {
@@ -462,7 +453,7 @@ function DetalleDeRuta({
             </p>
           </div>
           <p className="mt-2 text-neutral-800 text-sm">
-            Total de la ruta: {kgCo2(ruta.huella.emisiones_kgco2e)}
+            Total de la ruta: {formatoEmisiones(ruta.huella.emisiones_kgco2e)}
           </p>
           <ul className="mt-3 space-y-1 text-sm">
             {ruta.huella.servicios.map((s) => (
@@ -472,7 +463,7 @@ function DetalleDeRuta({
               >
                 <span className="font-mono text-xs">{s.codigo_seguimiento}</span>
                 <span>
-                  {porcentaje(s.participacion_pct)} · {kgCo2(s.emisiones_kgco2e)}
+                  {porcentaje(s.participacion_pct)} · {formatoEmisiones(s.emisiones_kgco2e)}
                 </span>
               </li>
             ))}

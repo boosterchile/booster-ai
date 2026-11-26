@@ -31,8 +31,8 @@ import {
 } from '../components/cargas/ContactoYNotasCard.js';
 import { RecepcionYPagoCard } from '../components/comercial/RecepcionYPagoCard.js';
 import {
-  DesgloseGenerador,
-  type DesgloseGeneradorDto,
+  DesgloseViaje,
+  type DesgloseViajeDto,
   type ModalidadCarga,
   SeccionComercial,
 } from '../components/comercial/SeccionComercial.js';
@@ -57,6 +57,7 @@ import {
   etiquetaEvento,
   regionLabel,
 } from '../lib/etiquetas-carga.js';
+import { formatoEmisiones } from '../lib/formato-emisiones.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 import { logger } from '../lib/logger.js';
 
@@ -97,8 +98,8 @@ interface TripSummary {
 }
 
 interface TripDetail extends TripSummary {
-  /** ADR-079 §1 — desglose congelado al publicar (solo con modelo v3). */
-  comercial?: DesgloseGeneradorDto | null;
+  /** ADR-094 §1 — lo que paga el generador (solo viajes que congelaron tasa). */
+  comercial?: DesgloseViajeDto | null;
   origin_comuna_code: string | null;
   destination_comuna_code: string | null;
   cargo_description: string | null;
@@ -1778,7 +1779,7 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
             </DataRow>
             {trip.comercial && (
               <div className="mt-3">
-                <DesgloseGenerador desglose={trip.comercial} />
+                <DesgloseViaje desglose={trip.comercial} />
               </div>
             )}
           </DataCard>
@@ -1826,14 +1827,10 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     : '—'}
                 </DataRow>
                 <DataRow label="Emisiones estimadas">
-                  {tripQ.data.metrics.carbon_emissions_kgco2e_estimated
-                    ? `${tripQ.data.metrics.carbon_emissions_kgco2e_estimated} kg CO₂e`
-                    : '—'}
+                  {formatoEmisiones(tripQ.data.metrics.carbon_emissions_kgco2e_estimated)}
                 </DataRow>
                 <DataRow label="Emisiones reales">
-                  {tripQ.data.metrics.carbon_emissions_kgco2e_actual
-                    ? `${tripQ.data.metrics.carbon_emissions_kgco2e_actual} kg CO₂e`
-                    : '—'}
+                  {formatoEmisiones(tripQ.data.metrics.carbon_emissions_kgco2e_actual)}
                 </DataRow>
                 {tripQ.data.metrics.consolidacion && (
                   <div className="sm:col-span-2">

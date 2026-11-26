@@ -4,6 +4,7 @@ import {
   coincideBusqueda,
   coincideFiltro,
   contarFiltros,
+  cuentaEstadoFlota,
   estadoDispositivo,
   etiquetaDispositivo,
 } from './estado-dispositivo.js';
@@ -65,9 +66,12 @@ describe('estadoDispositivo', () => {
   });
 
   it('las etiquetas no incluyen el IMEI', () => {
-    expect(etiquetaDispositivo('sin_dispositivo')).toBe('Sin dispositivo');
-    expect(etiquetaDispositivo('conectado')).toBe('Conectado');
-    expect(etiquetaDispositivo('sin_senal')).toBe('Sin señal');
+    expect(etiquetaDispositivo('sin_dispositivo')).toBe('Sin equipo');
+    expect(etiquetaDispositivo('conectado')).toBe('Reportando');
+    expect(etiquetaDispositivo('sin_senal')).toBe('Sin lectura');
+    expect(cuentaEstadoFlota('conectado', 3)).toBe('3 reportando');
+    expect(cuentaEstadoFlota('sin_senal', 1)).toBe('1 sin lectura');
+    expect(cuentaEstadoFlota('sin_dispositivo', 2)).toBe('2 sin equipo');
   });
 });
 

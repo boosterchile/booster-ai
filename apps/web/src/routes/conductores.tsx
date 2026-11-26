@@ -40,6 +40,7 @@ import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
+import { fetchCumplimiento } from '../lib/consultas-transportista.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -151,6 +152,18 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
       return res.conductores;
     },
   });
+  // Mismo cálculo y misma caché que Flota, el Inicio y Cumplimiento
+  // (`.specs/una-sola-verdad-por-dato`).
+  const cumplimientoQ = useQuery({
+    queryKey: scope.key('cumplimiento'),
+    queryFn: () => fetchCumplimiento(scope.init),
+    retry: false,
+  });
+  const pendientesPorConductor = new Map<string, number>();
+  for (const doc of cumplimientoQ.data?.conductores ?? []) {
+    const id = String(doc.conductor_id ?? '');
+    pendientesPorConductor.set(id, (pendientesPorConductor.get(id) ?? 0) + 1);
+  }
 
   return (
     <Layout me={me} title="Conductores">
@@ -161,6 +174,19 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
             Crea y administra los conductores de tu empresa. Cada uno tiene una licencia con su
             clase y vencimiento.
           </p>
+          {cumplimientoQ.data ? (
+            <p className="mt-2 text-sm">
+              <Link
+                to="/app/cumplimiento"
+                className="font-medium text-primary-700 hover:underline"
+                data-testid="conductores-con-documentos-pendientes"
+              >
+                {pendientesPorConductor.size === 1
+                  ? '1 conductor con documentos pendientes'
+                  : `${pendientesPorConductor.size} conductores con documentos pendientes`}
+              </Link>
+            </p>
+          ) : null}
         </div>
         {canWrite && (
           <Link
@@ -205,6 +231,7 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                   <Th>RUT</Th>
                   <Th>Licencia</Th>
                   <Th>Vencimiento</Th>
+                  <Th>Documentos</Th>
                   <Th>Estado</Th>
                   <Th>{''}</Th>
                 </tr>
@@ -242,6 +269,19 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
                       </Td>
                       <Td>
                         <ExpirySpan ymd={c.license_expiry} level={expLevel} />
+                      </Td>
+                      <Td className="text-sm">
+                        {(pendientesPorConductor.get(c.id) ?? 0) > 0 ? (
+                          <span className="font-medium text-danger-700">
+                            {pendientesPorConductor.get(c.id) === 1
+                              ? '1 pendiente'
+                              : `${pendientesPorConductor.get(c.id)} pendientes`}
+                          </span>
+                        ) : cumplimientoQ.data ? (
+                          <span className="text-neutral-600">Al día</span>
+                        ) : (
+                          <span className="text-neutral-400">—</span>
+                        )}
                       </Td>
                       <Td>
                         <span

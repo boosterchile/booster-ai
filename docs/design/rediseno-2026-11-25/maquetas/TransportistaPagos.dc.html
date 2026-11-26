@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Transportista: pagos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#10653a}a:hover{color:#0c4d2d}
+.bn{display:none}@media(max-width:640px){.tn{display:none!important}.bn{display:flex!important}[role="img"]:has(> svg[viewBox="0 0 600 260"]){height:auto!important;aspect-ratio:600/260}}
+</style>
+</helmet>
+<div style="min-height: 720px; box-sizing: border-box; background: #faf9f7; font-family: Inter, system-ui, sans-serif; color: #1a1917; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #ffffff; border-bottom: 1px solid #e7e4dd; padding: 12px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em">Booster<span style="color: #1fa058">.</span></div>
+<nav class="tn" aria-label="Principal" style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="InicioTransportista.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Inicio</a>
+<a href="TransportistaFlota.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Flota</a>
+<a href="TransportistaViajes.dc.html" style="padding: 8px 12px; border-radius: 8px; background: #f4f2ee; font-size: 13px; font-weight: 600; color: #1a1917; text-decoration: none">Viajes</a>
+<a href="TransportistaOfertas.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Ofertas</a>
+<a href="TransportistaEmpresa.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Empresa</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #56544f">Transportes del Norte</div>
+</header>
+<main style="flex: 1 1 auto; width: 100%; max-width: 1180px; margin: 0 auto; padding: 32px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 30px; line-height: 38px; font-weight: 600; letter-spacing: -0.02em">5 viajes por cobrar. A uno le falta tu factura.</h1><div style="color: #56544f">Lo que recibes por cada viaje de Booster Spot, ya descontada la comisión de Booster. Los viajes propios no aparecen aquí.</div>
+</div>
+</div><div role="tablist" style="display: flex; flex-wrap: wrap; gap: 4px"><button type="button" role="tab" aria-selected="false" style="height: 36px; padding: 0 14px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Hoy · 3</button><button type="button" role="tab" aria-selected="false" style="height: 36px; padding: 0 14px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Próximos · 5</button><button type="button" role="tab" aria-selected="false" style="height: 36px; padding: 0 14px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Entregados · 24</button><button type="button" role="tab" aria-selected="true" style="height: 36px; padding: 0 14px; border: 1px solid #168047; border-radius: 8px; background: #ecfaf1; font-family: inherit; font-size: 13px; font-weight: 600; color: #10653a">Pagos</button></div><section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: flex; flex-direction: column"><div style="overflow-x: auto"><table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 14px"><thead><tr style="background: #faf9f7"><th scope="col" style="text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Viaje</th><th scope="col" style="text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Entregado</th><th scope="col" style="text-align: left; padding: 10px 14px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Estado</th><th scope="col" style="text-align: right; padding: 10px 14px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd">Monto</th><th scope="col" style="text-align: right; padding: 10px 14px; font-size: 12px; font-weight: 500; color: #56544f; border-bottom: 1px solid #e7e4dd"></th></tr></thead><tbody><tr style="background: #fff7eb"><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top"><div style="font-weight: 600">Coquimbo → La Serena</div><div style="color: #56544f"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 0.02em; font-size: 13px; color: #56544f; white-space: nowrap">BOO-QSJHEI</span></div></td><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top">24 nov</td><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #ffeac9; color: #7a4100"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="#7a4100"><path d="M5 1 9 5 5 9 1 5z"></path></svg>Falta tu factura</span></td><td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e7e4dd; vertical-align: top">$57.000 + IVA</td><td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e7e4dd; vertical-align: top"><a href="#" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Subir factura</a></td></tr><tr><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top"><div style="font-weight: 600">Coquimbo → Santiago</div><div style="color: #56544f"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 0.02em; font-size: 13px; color: #56544f; white-space: nowrap">BOO-YWKZWR</span></div></td><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top">19 nov</td><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #f4f2ee; color: #3f3d39">Facturado, por pagar</span></td><td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e7e4dd; vertical-align: top">$608.000 + IVA</td><td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e7e4dd; vertical-align: top"><a href="#" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Ver</a></td></tr><tr><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top"><div style="font-weight: 600">Valparaíso → Viña del Mar</div><div style="color: #56544f"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 0.02em; font-size: 13px; color: #56544f; white-space: nowrap">BOO-VZYIN2</span></div></td><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top">18 nov</td><td style="padding: 12px 14px; text-align: left; border-bottom: 1px solid #e7e4dd; vertical-align: top"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #ecfdf5; color: #0a6247"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0a6247" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.500 5.500 4 8 8.500 2.500"></path></svg>Pagado el 22 nov</span></td><td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e7e4dd; vertical-align: top">$38.000 + IVA</td><td style="padding: 12px 14px; text-align: right; border-bottom: 1px solid #e7e4dd; vertical-align: top"><a href="#" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Ver</a></td></tr></tbody></table></div></section>
+</main>
+<nav class="bn" aria-label="Principal, móvil" style="position: sticky; bottom: 0; background: #ffffff; border-top: 1px solid #e7e4dd; padding: 0 4px">
+<a href="InicioTransportista.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Inicio</a>
+<a href="TransportistaFlota.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Flota</a>
+<a href="TransportistaViajes.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 700; color: #10653a; text-decoration: none; border-top: 3px solid #168047; box-sizing: border-box">Viajes</a>
+<a href="TransportistaOfertas.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Ofertas</a>
+<a href="TransportistaEmpresa.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Empresa</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

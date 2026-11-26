@@ -74,24 +74,26 @@ describe('aplicarKAnonymity — SECURITY: quasi-identifier strings', () => {
 
 describe('aplicarKAnonymity — SECURITY: k validation', () => {
   it('throw si k = 0', () => {
-    expect(() => aplicarKAnonymity([], 0, 'viajes')).toThrow(/k debe ser entero >= 2/);
-  });
-
-  it('throw si k = 1', () => {
-    expect(() => aplicarKAnonymity([], 1, 'viajes')).toThrow(/k debe ser entero >= 2/);
+    expect(() => aplicarKAnonymity([], 0, 'viajes')).toThrow(/k debe ser entero >= 1/);
   });
 
   it('throw si k es negativo', () => {
-    expect(() => aplicarKAnonymity([], -5, 'viajes')).toThrow(/k debe ser entero >= 2/);
+    expect(() => aplicarKAnonymity([], -5, 'viajes')).toThrow(/k debe ser entero >= 1/);
   });
 
   it('throw si k no es entero (e.g. 2.5)', () => {
-    expect(() => aplicarKAnonymity([], 2.5, 'viajes')).toThrow(/k debe ser entero >= 2/);
+    expect(() => aplicarKAnonymity([], 2.5, 'viajes')).toThrow(/k debe ser entero >= 1/);
   });
 
-  it('acepta k = 2 (mínimo)', () => {
-    const buckets = [{ viajes: 3 }];
-    expect(() => aplicarKAnonymity(buckets, 2, 'viajes')).not.toThrow();
+  it('acepta k = 1, el mínimo (ADR-096): publica el grupo de 1 y enmascara el vacío', () => {
+    const buckets = [
+      { hora: 8, viajes: 1 },
+      { hora: 9, viajes: 0 },
+    ];
+    expect(aplicarKAnonymity(buckets, 1, 'viajes', { preserveFields: ['hora'] })).toEqual([
+      { hora: 8, viajes: 1 },
+      { hora: 9, viajes: null },
+    ]);
   });
 });
 

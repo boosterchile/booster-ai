@@ -81,15 +81,15 @@ describe('PlatformAdminConfiguracionComercialRoute (ADR-079 §3)', () => {
     expect(screen.getByTestId('ejemplo-spot')).toHaveTextContent('126.000');
   });
 
-  it('invariante rota (spot ≤ programada) → muestra el error y no deja publicar', async () => {
+  it('ADR-094 §2: spot bajo programada se puede publicar', async () => {
     const user = userEvent.setup();
     render(<PlatformAdminConfiguracionComercialRoute />);
     const spot = await screen.findByLabelText('Comisión carga spot (%)');
     await user.clear(spot);
     await user.type(spot, '9');
     await user.type(screen.getByLabelText('Nota del cambio'), 'prueba');
-    expect(screen.getByText(/spot_pct debe ser mayor que programada_pct/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Publicar versión nueva' })).toBeDisabled();
+    expect(screen.queryByText(/debe ser mayor que/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publicar versión nueva' })).toBeEnabled();
   });
 
   it('sin nota no deja publicar; con nota publica y recarga', async () => {

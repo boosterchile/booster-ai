@@ -75,7 +75,10 @@ function datosBase(): DatosInicio {
   return {
     ofertas: { estado: 'listo', valor: [] },
     servicios: { estado: 'listo', valor: [] },
-    cumplimiento: { estado: 'listo', valor: { vencidos: 0, porVencer30d: 0, documentos: [] } },
+    cumplimiento: {
+      estado: 'listo',
+      valor: { pendientes: 0, vencidos: 0, porVencer30d: 0, documentos: [] },
+    },
     flota: { estado: 'listo', valor: [] },
     vehiculos: { estado: 'listo', valor: 0 },
     conductores: { estado: 'listo', valor: 0 },

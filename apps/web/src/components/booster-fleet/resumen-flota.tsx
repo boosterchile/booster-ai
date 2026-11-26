@@ -33,12 +33,14 @@ export function CifraFlota({
   unidad,
   nota,
   critica = false,
+  testId,
 }: {
   etiqueta: string;
   valor: string;
   unidad?: string;
   nota?: string;
   critica?: boolean;
+  testId?: string;
 }) {
   return (
     <div className="min-w-0 px-4 py-3.5">
@@ -49,11 +51,19 @@ export function CifraFlota({
             'font-semibold text-2xl tabular-nums tracking-tight',
             critica ? 'text-danger-700' : 'text-neutral-900',
           )}
+          data-testid={testId}
         >
           {valor}
         </span>
         {unidad ? <span className="ml-1.5 text-neutral-600 text-sm">{unidad}</span> : null}
-        {nota ? <span className="mt-1 block text-neutral-500 text-xs">{nota}</span> : null}
+        {nota ? (
+          <span
+            className="mt-1 block text-neutral-500 text-xs"
+            data-testid={testId ? `${testId}-nota` : undefined}
+          >
+            {nota}
+          </span>
+        ) : null}
       </dd>
     </div>
   );
@@ -107,7 +117,10 @@ export function ResumenFlota({
                 />
               ))}
             </div>
-            <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-neutral-600 text-xs">
+            <p className="mt-2 text-neutral-600 text-xs" data-testid="flota-camiones">
+              {contar(combustible.vehiculos.length, 'camión', 'camiones')}
+            </p>
+            <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-neutral-600 text-xs">
               {grupos.map((grupo) => (
                 <li key={grupo.tono}>
                   <span className="font-semibold text-neutral-900">{grupo.vehiculos.length}</span>{' '}
@@ -145,6 +158,7 @@ export function ResumenFlota({
           etiqueta="Documentos"
           valor={String(documentosPendientes)}
           unidad={documentosPendientes === 1 ? 'pendiente' : 'pendientes'}
+          testId="flota-documentos-pendientes"
           nota={`${contar(documental.vehiculos_con_hallazgo, 'vehículo', 'vehículos')} · ${contar(documental.conductores_con_hallazgo, 'conductor', 'conductores')}`}
         />
         <CifraFlota

@@ -13,7 +13,7 @@ import { K_MIN_VEHICULOS, type ViajeEntregado, filtrarK, proyectarViaje } from '
  *
  * Lectura: `crearLectorObservatorio` consulta las vistas materializadas
  * `urban_flow_metrics_*` (Terraform, `infrastructure/observatorio.tf`), que
- * ya aplican k ≥ 10, y vuelve a aplicar `filtrarK` como defensa.
+ * ya aplican el umbral de anonimato, y vuelve a aplicar `filtrarK` como defensa.
  */
 
 /** Subconjunto del cliente de `@google-cloud/bigquery` que usa el observatorio. */

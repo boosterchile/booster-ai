@@ -186,7 +186,7 @@ describe('VehiculosListRoute', () => {
     mockLista([vehiculoLista({ teltonika_imei: null })]);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosListRoute />);
-    await waitFor(() => expect(screen.getAllByText('Sin dispositivo').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Sin equipo').length).toBeGreaterThan(0));
     expect(screen.queryByText(/IMEI/i)).toBeNull();
     expect(screen.queryByRole('columnheader', { name: 'Combustible' })).toBeNull();
     expect(screen.getByRole('columnheader', { name: 'Dispositivo' })).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('VehiculosListRoute', () => {
     );
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosListRoute />);
-    await waitFor(() => expect(screen.getAllByText('Conectado').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Reportando').length).toBeGreaterThan(0));
     expect(screen.queryByText(IMEI_LISTA)).toBeNull();
     expect(screen.getAllByText('Volvo FH').length).toBeGreaterThan(0);
     const cards = screen.getByTestId('vehiculos-cards');
@@ -243,7 +243,7 @@ describe('VehiculosListRoute', () => {
     mockLista([vehiculoLista({ teltonika_imei: IMEI_LISTA })], [{ id: 'v1', position: null }]);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosListRoute />);
-    await waitFor(() => expect(screen.getAllByText('Sin señal').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Sin lectura').length).toBeGreaterThan(0));
     expect(screen.queryByText(IMEI_LISTA)).toBeNull();
   });
 
@@ -310,7 +310,7 @@ describe('VehiculosListRoute', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/no pudimos cargar los vehículos/i);
     fallar = false;
     fireEvent.click(reintentar);
-    await waitFor(() => expect(screen.getAllByText('Sin dispositivo').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Sin equipo').length).toBeGreaterThan(0));
   });
 
   it('mientras carga muestra skeleton y no la tabla', () => {
@@ -336,7 +336,7 @@ describe('VehiculosListRoute', () => {
       } as MeOnboarded,
     };
     wrap(<VehiculosListRoute />);
-    await waitFor(() => expect(screen.getAllByText('Conectado').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Reportando').length).toBeGreaterThan(0));
     expect(screen.queryByRole('link', { name: /nuevo vehículo/i })).toBeNull();
     expect(screen.getByRole('link', { name: /ver mapa/i })).toHaveAttribute('to', '/app/flota');
     expect(
@@ -589,7 +589,7 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
     mockDetalleGet(null);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosDetalleRoute />);
-    await waitFor(() => expect(screen.getAllByText(/sin dispositivo/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/sin equipo/i).length).toBeGreaterThan(0));
     expect(screen.queryByText(/ver en vivo/i)).toBeNull();
     expect(screen.queryByText(/recorrido/i)).toBeNull();
   });
@@ -618,7 +618,7 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
       } as MeOnboarded,
     };
     wrap(<VehiculosDetalleRoute />);
-    await waitFor(() => expect(screen.getAllByText(/sin dispositivo/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/sin equipo/i).length).toBeGreaterThan(0));
     expect(screen.queryByPlaceholderText('15 dígitos')).toBeNull();
   });
 
@@ -719,7 +719,7 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
         teltonika_imei: null,
       }),
     );
-    await waitFor(() => expect(screen.getAllByText(/sin dispositivo/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/sin equipo/i).length).toBeGreaterThan(0));
 
     // El input debe quedar vacío, no conservar el IMEI recién quitado.
     await waitFor(() => expect(input.value).toBe(''));
@@ -978,7 +978,7 @@ describe('VehiculoDetallePage — hub', () => {
     expect(resumen.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const dispositivo = screen.getByTestId('hub-estado');
     expect(dispositivo).toHaveTextContent(/dispositivo/i);
-    expect(dispositivo).toHaveTextContent(/sin dispositivo/i);
+    expect(dispositivo).toHaveTextContent(/sin equipo/i);
     expect(dispositivo).toHaveAttribute('aria-live', 'polite');
     const flota = screen.getByTestId('hub-flota');
     expect(flota).toHaveTextContent(/flota/i);
@@ -1079,7 +1079,7 @@ describe('VehiculoDetallePage — hub', () => {
 
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('AB·CD·12');
     expect(screen.getByText('Volvo FH')).toBeInTheDocument();
-    expect(await screen.findByText(/conectado/i)).toBeInTheDocument();
+    expect(await screen.findByText(/reportando/i)).toBeInTheDocument();
     expect(screen.getAllByText(/42,5 km/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/10,0 L/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Combustible').length).toBeGreaterThan(0);
@@ -1170,7 +1170,7 @@ describe('VehiculoDetallePage — hub', () => {
     expect(config).toHaveAttribute('open');
     expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
     expect(screen.queryByText(/km\/L/)).toBeNull();
-    expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin señal/i);
+    expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin lectura/i);
   });
 
   it('con litros y sin km/L la tarjeta dice dato no confiable', async () => {
@@ -1333,8 +1333,8 @@ describe('VehiculoDetallePage — hub', () => {
   });
 
   it.each([
-    { caso: 'dentro', edadS: CONECTADO_HASTA_S - 60, valor: /conectado/i, edad: /hace 29 min/ },
-    { caso: 'fuera', edadS: CONECTADO_HASTA_S + 60, valor: /sin señal/i, edad: /hace 31 min/ },
+    { caso: 'dentro', edadS: CONECTADO_HASTA_S - 60, valor: /reportando/i, edad: /hace 29 min/ },
+    { caso: 'fuera', edadS: CONECTADO_HASTA_S + 60, valor: /sin lectura/i, edad: /hace 31 min/ },
   ])(
     'la píldora de dispositivo usa la ventana de conexión de la lista ($caso)',
     async ({ edadS, valor, edad }) => {

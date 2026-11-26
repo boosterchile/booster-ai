@@ -43,15 +43,29 @@ export function estadoDispositivo(input: {
   return 'sin_senal';
 }
 
+/**
+ * Vocabulario único del estado de la flota (`.specs/una-sola-verdad-por-dato`):
+ * «reportando», «sin equipo» y «sin lectura». Ninguna pantalla escribe estas
+ * palabras por su cuenta.
+ *
+ * - Reportando: el camión tiene equipo y su último punto es de los últimos
+ *   30 minutos.
+ * - Sin lectura: tiene equipo y no hay un punto reciente.
+ * - Sin equipo: no tiene equipo asignado.
+ */
+export const ETIQUETA_ESTADO_FLOTA: Record<EstadoDispositivo, string> = {
+  conectado: 'Reportando',
+  sin_senal: 'Sin lectura',
+  sin_dispositivo: 'Sin equipo',
+};
+
 export function etiquetaDispositivo(estado: EstadoDispositivo): string {
-  switch (estado) {
-    case 'conectado':
-      return 'Conectado';
-    case 'sin_senal':
-      return 'Sin señal';
-    case 'sin_dispositivo':
-      return 'Sin dispositivo';
-  }
+  return ETIQUETA_ESTADO_FLOTA[estado];
+}
+
+/** «3 reportando», «1 sin lectura», «2 sin equipo». */
+export function cuentaEstadoFlota(estado: EstadoDispositivo, cantidad: number): string {
+  return `${cantidad} ${ETIQUETA_ESTADO_FLOTA[estado].toLowerCase()}`;
 }
 
 export interface VehiculoParaFiltro {

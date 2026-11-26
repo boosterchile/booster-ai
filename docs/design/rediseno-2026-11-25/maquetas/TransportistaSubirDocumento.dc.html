@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Transportista: subir un documento</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#10653a}a:hover{color:#0c4d2d}
+.bn{display:none}@media(max-width:640px){.tn{display:none!important}.bn{display:flex!important}[role="img"]:has(> svg[viewBox="0 0 600 260"]){height:auto!important;aspect-ratio:600/260}}
+</style>
+</helmet>
+<div style="min-height: 754px; box-sizing: border-box; background: #faf9f7; font-family: Inter, system-ui, sans-serif; color: #1a1917; font-size: 14px; line-height: 20px; display: flex; flex-direction: column">
+<header style="background: #ffffff; border-bottom: 1px solid #e7e4dd; padding: 12px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em">Booster<span style="color: #1fa058">.</span></div>
+<nav class="tn" aria-label="Principal" style="display: flex; flex-wrap: wrap; gap: 4px">
+<a href="InicioTransportista.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Inicio</a>
+<a href="TransportistaFlota.dc.html" style="padding: 8px 12px; border-radius: 8px; background: #f4f2ee; font-size: 13px; font-weight: 600; color: #1a1917; text-decoration: none">Flota</a>
+<a href="TransportistaViajes.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Viajes</a>
+<a href="TransportistaOfertas.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Ofertas</a>
+<a href="TransportistaEmpresa.dc.html" style="padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: #56544f; text-decoration: none">Empresa</a>
+</nav>
+<div style="margin-left: auto; font-size: 13px; color: #56544f">Transportes del Norte</div>
+</header>
+<main style="flex: 1 1 auto; width: 100%; max-width: 1180px; margin: 0 auto; padding: 32px 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><a href="TransportistaVehiculo.dc.html" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">← BKTR42</a></div><div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 30px; line-height: 38px; font-weight: 600; letter-spacing: -0.02em">Sube el permiso de circulación de <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: 0.02em; font-size: 26px; color: #1a1917; white-space: nowrap">BKTR42</span>.</h1><div style="color: #56544f">Queda guardado en la ficha del camión y deja de contar entre los pendientes.</div>
+</div>
+</div><div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<div style="flex: 3 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 24px"><section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: flex; flex-direction: column"><div style="padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #e7e4dd"><h2 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600">El documento</h2></div><div style="padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px"><div style="border: 2px dashed #d5d1c7; border-radius: 12px; background: #faf9f7; padding: 32px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center"><svg aria-hidden="true" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10653a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V5"></path><path d="M7.500 9.500 12 5l4.500 4.500"></path><path d="M5 19h14"></path></svg><div style="font-weight: 600">Arrastra el archivo aquí</div><div style="color: #56544f">PDF o foto, hasta 10 MB.</div><div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px"><button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Elegir archivo</button><button type="button" style="height: 40px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Tomar una foto</button></div></div><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px"><div style="display: flex; flex-direction: column; gap: 6px"><label for="sd-vence" style="font-size: 13px; font-weight: 500">Vence el</label><input id="sd-vence" type="date" style="height: 44px; box-sizing: border-box; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 12px; font-family: inherit; font-size: 14px; color: #1a1917"><div style="font-size: 12px; color: #56544f">Te avisamos 30 días antes.</div></div><div style="display: flex; flex-direction: column; gap: 6px"><label for="sd-tipo" style="font-size: 13px; font-weight: 500">Tipo</label><select id="sd-tipo" style="height: 44px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; padding: 0 10px; font-family: inherit; font-size: 14px; color: #1a1917"><option>Permiso de circulación</option><option>Revisión técnica</option><option>SOAP</option></select></div></div><div style="display: flex; flex-wrap: wrap; gap: 8px"><button type="button" style="height: 44px; padding: 0 16px; border: 0; border-radius: 8px; background: #168047; font-family: inherit; font-size: 13px; font-weight: 600; color: #ffffff">Guardar documento</button><button type="button" style="height: 44px; padding: 0 16px; border: 1px solid #d5d1c7; border-radius: 8px; background: #ffffff; font-family: inherit; font-size: 13px; font-weight: 500; color: #1a1917">Cancelar</button></div></div></section></div>
+<div style="flex: 2 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 24px"><section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: flex; flex-direction: column"><div style="padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #e7e4dd"><h2 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600">Documentos de este camión</h2></div><div style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd; background: #ecfaf1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div>Permiso de circulación</div></div><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #b91c1c; color: #ffffff"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="#ffffff"><path d="M5 1 9.500 9H.500z"></path></svg>Falta</span></div><div style="padding: 12px 20px; border-bottom: 1px solid #e7e4dd; display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div>Revisión técnica</div></div><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #b91c1c; color: #ffffff"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="#ffffff"><path d="M5 1 9.500 9H.500z"></path></svg>Falta</span><a href="#" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Subir después</a></div><div style="padding: 12px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><div style="flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px"><div>SOAP</div></div><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; background: #ecfdf5; color: #0a6247"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0a6247" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.500 5.500 4 8 8.500 2.500"></path></svg>Vigente hasta mar 2027</span></div></section><section style="background: #ffffff; border: 1px solid #e7e4dd; border-radius: 12px; display: flex; flex-direction: column"><div style="padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px"><div style="color: #56544f">Después de este quedan 51 pendientes en la flota. </div><div><a href="TransportistaFlota.dc.html" style="font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap">Ver los que siguen</a></div></div></section></div>
+</div>
+</main>
+<nav class="bn" aria-label="Principal, móvil" style="position: sticky; bottom: 0; background: #ffffff; border-top: 1px solid #e7e4dd; padding: 0 4px">
+<a href="InicioTransportista.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Inicio</a>
+<a href="TransportistaFlota.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 700; color: #10653a; text-decoration: none; border-top: 3px solid #168047; box-sizing: border-box">Flota</a>
+<a href="TransportistaViajes.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Viajes</a>
+<a href="TransportistaOfertas.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Ofertas</a>
+<a href="TransportistaEmpresa.dc.html" style="flex: 1 1 0; min-width: 0; min-height: 56px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: 500; color: #56544f; text-decoration: none; border-top: 3px solid #ffffff; box-sizing: border-box">Empresa</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
