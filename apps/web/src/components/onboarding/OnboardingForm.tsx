@@ -790,6 +790,12 @@ function SummaryReview({ values }: { values: EmpresaOnboardingFormValues }) {
           <dt className="text-neutral-500">Plan</dt>
           <dd className="text-neutral-900 capitalize">{values.plan_slug}</dd>
         </div>
+        <div>
+          <dt className="text-neutral-500">Huella de carbono</dt>
+          <dd className="text-neutral-900" data-testid="onboarding-medicion-huella">
+            Se mide en cada viaje. Puedes apagarla en Empresa.
+          </dd>
+        </div>
       </dl>
     </div>
   );
