@@ -47,6 +47,26 @@ describe('serializeTripMetrics — línea de método en el detalle del viaje', (
     );
   });
 
+  it('expone lo medido y el nivel con lo que falta (.specs/frente2-cierre §3.1)', () => {
+    const m = serializeTripMetrics(
+      { ...base, routeDataSource: 'teltonika_gps' },
+      { pesoDeclaradoKg: 8000 },
+    );
+    expect(m.medicion.filas).toEqual([
+      { magnitud: 'distancia', fuente: 'Teltonika del camión (cobertura 96 %)', clase: 'medido' },
+      {
+        magnitud: 'combustible',
+        fuente: 'Modelo GLEC v3.0 con el perfil del vehículo',
+        clase: 'modelado',
+      },
+      { magnitud: 'peso', fuente: 'Declarado en la carga (8.000 kg)', clase: 'declarado' },
+    ]);
+    expect(m.medicion.nivel.nombre).toBe('Secundario modelado');
+    expect(m.medicion.nivel.falta).toEqual(['medir el consumo con el CAN del camión']);
+    // Sin peso informado por el llamador: la fila de peso dice que no hay.
+    expect(serializeTripMetrics(base).medicion.filas[2]?.clase).toBe('sin_dato');
+  });
+
   it('sin fuente de ruta o sin cobertura (métricas legacy) → linea_metodo null', () => {
     expect(serializeTripMetrics({ ...base, routeDataSource: null }).linea_metodo).toBeNull();
     expect(serializeTripMetrics({ ...base, coveragePct: null }).linea_metodo).toBeNull();

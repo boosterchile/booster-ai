@@ -22,6 +22,7 @@ const SAMPLE_VEHICULOS = [
     type: 'camion_pesado',
     unit_category: 'motriz',
     status: 'activo',
+    teltonika_imei: '356307042441013',
   },
   {
     id: 'v-arrastre',
@@ -689,5 +690,27 @@ describe('DriverAssignmentCard', () => {
     expect(await screen.findByText(/No tienes conductores activos/)).toBeInTheDocument();
     // Y NO se muestra el form (no se debería poder asignar).
     expect(screen.queryByTestId('driver-assignment-select')).toBeNull();
+  });
+});
+
+describe('DriverAssignmentCard — anticipo de la huella (.specs/frente2-cierre D4)', () => {
+  it('al elegir un camión con Teltonika anticipa la distancia medida, sin prometer «Medido»', async () => {
+    mockListas();
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName={null}
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+    const vehicle = (await screen.findByTestId('vehicle-assignment-select')) as HTMLSelectElement;
+    expect(screen.queryByTestId('asignacion-anticipo-huella')).toBeNull();
+    fireEvent.change(vehicle, { target: { value: 'v-1' } });
+    const anticipo = await screen.findByTestId('asignacion-anticipo-huella');
+    expect(anticipo).toHaveTextContent('Distancia medida con Teltonika · consumo modelado');
+    expect(anticipo).toHaveTextContent('Sale «Medido» solo si el camión envía su consumo por CAN.');
   });
 });

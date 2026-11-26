@@ -109,7 +109,9 @@ async function capturar(page: Page, url: string, nombre: string, listo: string):
       scroll: 0,
       fuera: [],
     });
-    await expect(page).toHaveScreenshot(`${nombre}-${ancho.nombre}.png`, {
+    // Blanda: una diferencia no corta la prueba, así una corrida deja todas las
+    // capturas nuevas en el artefacto; la prueba igual falla al final.
+    await expect.soft(page).toHaveScreenshot(`${nombre}-${ancho.nombre}.png`, {
       fullPage: true,
       animations: 'disabled',
       maxDiffPixelRatio: 0.01,

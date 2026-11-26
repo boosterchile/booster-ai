@@ -96,6 +96,11 @@ export {
   calcularFactorIncertidumbre,
   lineaMetodoCertificacion,
   type LineaMetodoInput,
+  medicionHuella,
+  type ClaseMedicion,
+  type FilaMedicion,
+  type MedicionHuella,
+  type NivelExplicado,
   THRESHOLD_PRIMARIO_PCT,
   THRESHOLD_SECUNDARIO_MODELED_PCT,
 } from './certificacion/index.js';

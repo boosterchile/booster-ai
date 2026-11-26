@@ -32,6 +32,7 @@ import { zValidator } from '../lib/validation.js';
 import { obtenerVigente } from '../services/certificados-versionados.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
+import { medicionDesdeMetricas } from '../services/medicion-huella-metricas.js';
 import { presentacionDesdeMetricas } from '../services/presentacion-huella.js';
 import { resumenCertificados } from '../services/resumen-certificados.js';
 
@@ -95,6 +96,7 @@ export function createCertificatesRoutes(opts: {
         originAddress: trips.originAddressRaw,
         destinationAddress: trips.destinationAddressRaw,
         cargoType: trips.cargoType,
+        cargoWeightKg: trips.cargoWeightKg,
         kgco2eEstimated: tripMetrics.carbonEmissionsKgco2eEstimated,
         kgco2eActual: tripMetrics.carbonEmissionsKgco2eActual,
         distanceKmEstimated: tripMetrics.distanceKmEstimated,
@@ -150,6 +152,8 @@ export function createCertificatesRoutes(opts: {
         linea_metodo: lineaMetodoDesdeMetricas(r),
         // ADR-091 — el sello de la cifra en la web (`.specs/sello-huella-toda-la-web`).
         presentacion: presentacionDesdeMetricas(r),
+        // `.specs/frente2-cierre` §3.1 — qué se midió y qué le falta al nivel.
+        medicion: medicionDesdeMetricas(r, r.cargoWeightKg),
         certificate_sha256: r.certificateSha256,
         certificate_kms_key_version: r.certificateKmsKeyVersion,
         certificate_issued_at: r.certificateIssuedAt,

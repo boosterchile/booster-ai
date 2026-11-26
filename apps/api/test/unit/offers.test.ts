@@ -122,8 +122,10 @@ function makeStubDbForList(rows: unknown[]): Db {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         innerJoin: vi.fn(() => ({
-          where: vi.fn(() => ({
-            orderBy: vi.fn(async () => rows),
+          leftJoin: vi.fn(() => ({
+            where: vi.fn(() => ({
+              orderBy: vi.fn(async () => rows),
+            })),
           })),
         })),
       })),
@@ -218,6 +220,9 @@ describe('GET /offers/mine', () => {
           pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
           pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
         },
+        vehiculoId: 'veh-1',
+        teltonikaImei: '356307042441013',
+        teltonikaImeiEspejo: null,
       },
     ];
     const app = await buildAppWith({
@@ -227,8 +232,15 @@ describe('GET /offers/mine', () => {
     const res = await app.request('/offers/mine');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      offers: Array<{ id: string; score: number; trip_request: { tracking_code: string } }>;
+      offers: Array<{
+        id: string;
+        score: number;
+        trip_request: { tracking_code: string };
+        anticipo_huella: { presentacion: string } | null;
+      }>;
     };
+    // .specs/frente2-cierre D4 — el camión sugerido tiene Teltonika.
+    expect(body.offers[0]?.anticipo_huella?.presentacion).toBe('medido_teltonika');
     expect(body.offers.length).toBe(1);
     expect(body.offers[0]?.id).toBe('off-1');
     expect(body.offers[0]?.score).toBe(0.85);

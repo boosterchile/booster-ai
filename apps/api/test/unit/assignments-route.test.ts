@@ -95,6 +95,7 @@ function makeDb(queues: DbQueues = {}) {
       where: vi.fn(() => chain),
       innerJoin: vi.fn(() => chain),
       leftJoin: vi.fn(() => chain),
+      groupBy: vi.fn(() => chain),
       orderBy: vi.fn(() => chain),
       limit: vi.fn(async () => selects.shift() ?? []),
       // Las queries de listado terminan en `.orderBy()` (sin `limit`), así que
@@ -949,6 +950,51 @@ const LISTA_ROW = {
   pickupWindowStart: null,
   pickupWindowEnd: null,
 };
+
+describe('GET /assignments/huella-mes (.specs/frente2-cierre §3.1)', () => {
+  it('suma la huella del mes de la transportista por presentación', async () => {
+    const db = makeDb({
+      selects: [
+        [
+          {
+            certificationLevel: 'secundario_modeled',
+            routeDataSource: 'teltonika_gps',
+            coveragePct: '91.00',
+            certificados: '2',
+            kgco2e: '120.500',
+            ahorro: null,
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request('/assignments/huella-mes', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      resumen: { certificados: number; por_presentacion: Record<string, { kgco2e: number }> };
+    };
+    expect(body.resumen.certificados).toBe(2);
+    expect(body.resumen.por_presentacion.medido_teltonika?.kgco2e).toBe(120.5);
+    expect(counterSpies.get('huella_mes_transportista_consultas_total')?.add).toHaveBeenCalledWith(
+      1,
+    );
+  });
+
+  it('un generador no la pide: 403', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request('/assignments/huella-mes', {
+      headers: {
+        'x-test-userctx': JSON.stringify({
+          user: { id: USER_ID },
+          activeMembership: { empresa: { id: 'g', isTransportista: false, status: 'activa' } },
+        }),
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+});
 
 describe('GET /assignments', () => {
   it('sin userContext → 401', async () => {

@@ -29,6 +29,11 @@ export interface OfferPayload {
   score: number;
   proposed_price_clp: number;
   suggested_vehicle_id: string | null;
+  /**
+   * Cómo saldrá la huella con el camión sugerido (`.specs/frente2-cierre` D4).
+   * Null sin camión sugerido; ausente en respuestas viejas.
+   */
+  anticipo_huella?: { presentacion: 'medido_teltonika' | 'estimado'; frase: string } | null;
   sent_at: string;
   expires_at: string;
   responded_at: string | null;
