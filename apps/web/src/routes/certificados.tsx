@@ -9,6 +9,7 @@
  * de download (signed URL TTL 5 min) y abre en pestaña nueva.
  */
 
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Award, Download, Leaf, ShieldCheck } from 'lucide-react';
@@ -233,17 +234,17 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                       {c.certificate_issued_at ? formatDate(c.certificate_issued_at) : '—'}
                     </Td>
                     <Td className="text-right">
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => downloadM.mutate(c.trip_id)}
                         disabled={downloadM.isPending && downloadM.variables === c.trip_id}
-                        className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 font-medium text-primary-700 text-xs transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Download className="h-3.5 w-3.5" aria-hidden />
                         {downloadM.isPending && downloadM.variables === c.trip_id
                           ? 'Abriendo…'
                           : 'Descargar'}
-                      </button>
+                      </Button>
                     </Td>
                   </tr>
                 ))}

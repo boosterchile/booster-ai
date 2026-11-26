@@ -4,6 +4,7 @@ import {
   ensureRutHasDash,
   rutSchema,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -557,13 +558,9 @@ function ViajePropioForm({
       </section>
 
       <div className="flex flex-wrap items-center gap-3 border-neutral-200 border-t pt-6">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={submitting}>
           {submitting ? 'Creando…' : 'Crear viaje propio'}
-        </button>
+        </Button>
         <Link to="/app/rutas" className="text-neutral-600 text-sm hover:text-neutral-900">
           Cancelar
         </Link>

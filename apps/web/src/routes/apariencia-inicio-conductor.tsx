@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { TripHeroCard } from '../components/inicio/trip-hero-card.js';
 
 /**
@@ -19,12 +20,9 @@ export function AparienciaInicioConductorRoute() {
           }}
           entrega={{ lugar: 'Puerto San Antonio', detalle: 'Ventana 19:00–20:00' }}
         >
-          <button
-            type="button"
-            className="inline-flex w-full items-center justify-center rounded-md bg-white px-3 py-2.5 font-semibold text-primary-800 text-sm"
-          >
+          <Button variant="secondary" className="w-full">
             Iniciar viaje
-          </button>
+          </Button>
         </TripHeroCard>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-2">

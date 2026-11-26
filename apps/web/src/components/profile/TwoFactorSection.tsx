@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import type { Auth } from 'firebase/auth';
 import { Loader2, ShieldCheck, ShieldOff, Smartphone } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -137,11 +138,11 @@ export function TwoFactorSection({
                 <Smartphone className="h-4 w-4" aria-hidden />
                 {f.displayName ?? 'Teléfono'} ({f.factorId})
               </span>
-              <button
-                type="button"
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => handleUnenroll(f.uid)}
                 disabled={unenrolling === f.uid}
-                className="inline-flex items-center gap-1 rounded border border-red-300 bg-white px-2 py-1 text-red-700 text-xs transition hover:bg-red-50 disabled:opacity-50"
               >
                 {unenrolling === f.uid ? (
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -149,7 +150,7 @@ export function TwoFactorSection({
                   <ShieldOff className="h-3 w-3" aria-hidden />
                 )}
                 Desactivar
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -171,19 +172,14 @@ export function TwoFactorSection({
           placeholder="+56912345678"
           className="mt-1 block w-full rounded border border-neutral-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
         />
-        <button
-          type="button"
-          onClick={handleEnroll}
-          disabled={enrolling}
-          className="mt-3 inline-flex items-center gap-2 rounded bg-amber-600 px-4 py-2 font-medium text-sm text-white transition hover:bg-amber-700 disabled:opacity-50"
-        >
+        <Button variant="primary" onClick={handleEnroll} disabled={enrolling} className="mt-3">
           {enrolling ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           ) : (
             <ShieldCheck className="h-4 w-4" aria-hidden />
           )}
           Activar 2FA por SMS
-        </button>
+        </Button>
       </div>
 
       {error && (
@@ -225,21 +221,12 @@ export function TwoFactorSection({
               className="mt-3 block w-full rounded border border-neutral-300 px-3 py-2 text-center text-lg tracking-widest focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={handleSmsCodeCancel}
-                className="rounded border border-neutral-300 bg-white px-3 py-2 text-neutral-700 text-sm hover:bg-neutral-50"
-              >
+              <Button variant="secondary" onClick={handleSmsCodeCancel}>
                 Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSmsCodeConfirm}
-                disabled={!smsCode}
-                className="rounded bg-amber-600 px-3 py-2 font-medium text-sm text-white hover:bg-amber-700 disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="primary" onClick={handleSmsCodeConfirm} disabled={!smsCode}>
                 Confirmar
-              </button>
+              </Button>
             </div>
           </div>
         </dialog>

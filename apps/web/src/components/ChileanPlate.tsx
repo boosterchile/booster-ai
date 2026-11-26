@@ -1,4 +1,5 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
+import { PressableArea } from '@booster-ai/ui-components';
 
 type Size = 'sm' | 'md' | 'lg';
 
@@ -75,14 +76,14 @@ export function ChileanPlate({ plate, size = 'md', onClick, label, className }: 
 
   if (onClick) {
     return (
-      <button
+      <PressableArea
         type="button"
         onClick={onClick}
         aria-label={ariaLabel}
-        className={`inline-block rounded-md outline-none transition hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${className ?? ''}`}
+        className={`inline-block rounded-md transition hover:scale-[1.02] ${className ?? ''}`}
       >
         <span className={`block aspect-[3/1] ${widthClass} select-none`}>{svg}</span>
-      </button>
+      </PressableArea>
     );
   }
 

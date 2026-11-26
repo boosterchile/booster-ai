@@ -16,7 +16,7 @@ export {
 
 // Primitivas D2 Ola 1 (tontas, token-driven, sin personalidad).
 export { Badge, type BadgeProps, type BadgeVariant } from './badge.js';
-export { Button, type ButtonProps, type ButtonVariant } from './button.js';
+export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './button.js';
 export { Card, CardBody, CardFooter, CardHeader, type CardProps } from './card.js';
 export {
   type FootprintPresentation,
@@ -24,6 +24,7 @@ export {
   type FootprintSealProps,
 } from './footprint-seal.js';
 export { Input, type InputProps } from './input.js';
+export { PressableArea, type PressableAreaProps } from './pressable-area.js';
 export {
   MeasurementSeal,
   type MeasurementSealKind,

@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -114,28 +115,26 @@ export function CambioPropuestoCard({
       )}
       {puedeResponder && !rechazando && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
+          <Button
+            variant="primary"
             disabled={ocupado}
             onClick={() => {
               setError(null);
               aceptar.mutate();
             }}
-            className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-60"
           >
             {aceptar.isPending ? 'Aceptando…' : 'Aceptar cambio'}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="secondary"
             disabled={ocupado}
             onClick={() => {
               setError(null);
               setRechazando(true);
             }}
-            className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-800 text-sm"
           >
             Rechazar
-          </button>
+          </Button>
         </div>
       )}
       {puedeResponder && rechazando && (
@@ -151,27 +150,25 @@ export function CambioPropuestoCard({
             />
           </label>
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="danger"
               disabled={ocupado}
               onClick={() => {
                 setError(null);
                 rechazar.mutate();
               }}
-              className="rounded-md bg-danger-600 px-4 py-2 font-medium text-sm text-white disabled:opacity-60"
             >
               {rechazar.isPending ? 'Rechazando…' : 'Rechazar cambio'}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => {
                 setRechazando(false);
                 setMotivo('');
               }}
-              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-neutral-700 text-sm"
             >
               Volver
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { BarChart, DonutChart } from '@tremor/react';
 import {
   useObservabilityCostsByProject,
@@ -341,13 +342,9 @@ function ErrorBox({
     <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900 text-sm">
       <div className="font-medium">{empty ? 'Sin datos disponibles' : 'No se pudo cargar'}</div>
       {error && <div className="mt-1 font-mono text-xs">{error.message}</div>}
-      <button
-        type="button"
-        onClick={() => retry()}
-        className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-1 font-medium text-xs hover:bg-amber-100"
-      >
+      <Button variant="secondary" size="sm" type="button" onClick={() => retry()} className="mt-2">
         Reintentar
-      </button>
+      </Button>
     </div>
   );
 }

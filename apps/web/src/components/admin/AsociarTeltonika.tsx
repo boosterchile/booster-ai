@@ -1,4 +1,5 @@
 import { chileanPlateSchema, normalizePlate } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Cpu, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -534,27 +535,25 @@ export function AsociarTeltonika() {
             </label>
             <div className="sm:col-span-2">
               {modo === 'existente' ? (
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   disabled={!puedeAsignar}
                   onClick={() => void asignar()}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                   data-testid="teltonika-asociar"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
                   Asignar IMEI
-                </button>
+                </Button>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   disabled={!puedeHabilitar}
                   onClick={() => void habilitar()}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                   data-testid="teltonika-habilitar"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
                   Habilitar para la empresa
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -588,16 +587,16 @@ export function AsociarTeltonika() {
                       : ''}
                   </span>
                 </div>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   disabled={rechazando !== null}
                   onClick={() => void rechazar(d)}
-                  className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50 disabled:opacity-50"
                   data-testid={`teltonika-rechazar-${d.imei}`}
                 >
                   {rechazando === d.id && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
                   Rechazar
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

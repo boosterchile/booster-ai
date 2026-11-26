@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { FirebaseError } from 'firebase/app';
 import { EmailAuthProvider, GoogleAuthProvider, type User } from 'firebase/auth';
@@ -182,26 +183,26 @@ function ProviderRow({
         </div>
         <div className="flex items-center gap-2">
           {status === 'unlinked' && onAdd && (
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void safeRun(onAdd, 'vincular')}
               disabled={busy}
-              className="flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden />
               Vincular
-            </button>
+            </Button>
           )}
           {status === 'linked' && canRemove && onRemove && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => void safeRun(onRemove, 'quitar')}
               disabled={busy}
-              className="flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm transition hover:border-danger-300 hover:bg-danger-50 hover:text-danger-700 disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" aria-hidden />
               Quitar
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -311,14 +312,10 @@ function PasswordLinkForm({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700"
-          >
+          <Button variant="primary" size="sm" onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4" aria-hidden />
             Agregar
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -377,31 +374,17 @@ function PasswordLinkForm({
           </div>
         )}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={closeAndReset}
-            disabled={isSubmitting}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:opacity-50"
-          >
+          <Button variant="secondary" onClick={closeAndReset} disabled={isSubmitting}>
             Cancelar
-          </button>
+          </Button>
           {needsReauth ? (
-            <button
-              type="button"
-              onClick={() => void handleReauth()}
-              disabled={isSubmitting}
-              className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
-            >
+            <Button variant="primary" onClick={() => void handleReauth()} disabled={isSubmitting}>
               Re-autenticar y vincular
-            </button>
+            </Button>
           ) : (
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" disabled={isSubmitting}>
               {isSubmitting ? 'Vinculando…' : 'Vincular'}
-            </button>
+            </Button>
           )}
         </div>
       </form>
@@ -493,13 +476,9 @@ function ChangePasswordForm({ user }: { user: User }) {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100"
-          >
+          <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
             Cambiar
-          </button>
+          </Button>
         </div>
         {savedAt && (
           <div className="mt-3 rounded-md border border-success-200 bg-success-50 p-2 text-sm text-success-700">
@@ -579,21 +558,12 @@ function ChangePasswordForm({ user }: { user: User }) {
           </div>
         )}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={closeAndReset}
-            disabled={isSubmitting}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:opacity-50"
-          >
+          <Button variant="secondary" onClick={closeAndReset} disabled={isSubmitting}>
             Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
-          >
+          </Button>
+          <Button type="submit" variant="primary" disabled={isSubmitting}>
             {isSubmitting ? 'Cambiando…' : 'Cambiar contraseña'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

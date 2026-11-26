@@ -1,4 +1,5 @@
 import { type RegionCode, comunasDeRegion } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -433,20 +434,12 @@ export function SolicitarCambioForm({
         </p>
       )}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={enviar.isPending}
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-60"
-        >
+        <Button variant="primary" type="submit" disabled={enviar.isPending}>
           {enviar.isPending ? 'Enviando…' : 'Enviar al transportista'}
-        </button>
-        <button
-          type="button"
-          onClick={onListo}
-          className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onListo}>
           Volver
-        </button>
+        </Button>
       </div>
     </form>
   );

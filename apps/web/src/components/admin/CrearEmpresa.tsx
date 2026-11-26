@@ -1,4 +1,5 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Building2, Loader2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -218,14 +219,10 @@ export function CrearEmpresa({ onCreated }: { onCreated: (empresaId: string) => 
         )}
 
         <div className="sm:col-span-2">
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button variant="primary" type="submit" disabled={!canSubmit}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
             Crear empresa
-          </button>
+          </Button>
         </div>
       </form>
 

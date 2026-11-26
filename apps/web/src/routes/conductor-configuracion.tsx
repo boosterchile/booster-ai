@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Link, Navigate } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -171,17 +172,15 @@ function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
               "Salir"), así que la salida vive acá, junto al resto de lo que el
               conductor gestiona de su dispositivo. Solo cierra sesión:
               ProtectedRoute redirige a /login cuando el user queda null. */}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => {
               void signOutUser();
             }}
-            className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-neutral-600 text-sm hover:bg-neutral-100 hover:text-neutral-900"
-            style={{ minHeight: 'var(--touch-min)' }}
           >
             <LogOut className="h-4 w-4 shrink-0" aria-hidden />
             Salir
-          </button>
+          </Button>
           <Link
             to="/app/conductor"
             className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
@@ -328,15 +327,14 @@ function PermissionRow({
       </div>
       <div className="sm:shrink-0">
         {(status === 'prompt' || status === 'unknown') && (
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={onRequest}
             disabled={requesting}
-            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
             data-testid={`${testIdPrefix}-request-btn`}
           >
             {requesting ? 'Solicitando…' : 'Permitir'}
-          </button>
+          </Button>
         )}
         {status === 'denied' && (
           <p

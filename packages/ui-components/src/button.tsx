@@ -1,11 +1,19 @@
-import { type ButtonHTMLAttributes, forwardRef } from 'react';
+import { type ButtonHTMLAttributes, type CSSProperties, forwardRef } from 'react';
 import { cn } from './cn.js';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link';
+
+/**
+ * Tamaño. `md` (defecto) sigue el registro; `sm` es la acción secundaria en
+ * una fila o tarjeta; `icon` es cuadrado (exige `aria-label`); `inline` va
+ * dentro de un texto, sin alto mínimo ni relleno.
+ */
+export type ButtonSize = 'md' | 'sm' | 'icon' | 'inline';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Intención visual. `primary` usa el verde Booster (D-18, no tematiza); `danger` el semántico D1. */
   variant?: ButtonVariant;
+  size?: ButtonSize;
   /** Estado de carga: muestra spinner, marca `aria-busy` y deshabilita la acción. */
   loading?: boolean;
 }
@@ -17,6 +25,25 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
     'border border-neutral-300 bg-neutral-0 text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200',
   ghost: 'bg-transparent text-neutral-700 hover:bg-neutral-100 active:bg-neutral-200',
   danger: 'bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-700',
+  link: 'bg-transparent text-primary-700 underline-offset-2 hover:underline active:text-primary-800',
+};
+
+const SIZE_CLASS: Record<ButtonSize, string> = {
+  md: 'inline-flex rounded-md text-sm',
+  sm: 'inline-flex rounded-md text-xs',
+  icon: 'inline-flex shrink-0 rounded-md text-sm',
+  inline: 'inline rounded-sm',
+};
+
+const SIZE_STYLE: Record<ButtonSize, CSSProperties | undefined> = {
+  md: {
+    minHeight: 'var(--touch-min)',
+    paddingBlock: 'var(--pad-y)',
+    paddingInline: 'var(--pad-x)',
+  },
+  sm: { minHeight: '2rem', paddingBlock: '0.25rem', paddingInline: '0.75rem' },
+  icon: { minHeight: 'var(--touch-min)', minWidth: 'var(--touch-min)', padding: 0 },
+  inline: undefined,
 };
 
 /**
@@ -30,7 +57,17 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
  * la app (token `focusRing` de marca) sobre el `<button>` nativo focusable.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', loading = false, disabled, type, className, children, ...rest },
+  {
+    variant = 'primary',
+    size = 'md',
+    loading = false,
+    disabled,
+    type,
+    className,
+    style,
+    children,
+    ...rest
+  },
   ref,
 ) {
   return (
@@ -41,15 +78,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        'inline-flex select-none items-center justify-center gap-2 rounded-md font-medium text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        'select-none items-center justify-center gap-2 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        SIZE_CLASS[size],
         VARIANT_CLASS[variant],
+        // Un enlace dentro de un texto se distingue por algo más que el color (WCAG 1.4.1).
+        variant === 'link' && size === 'inline' && 'underline',
         className,
       )}
-      style={{
-        minHeight: 'var(--touch-min)',
-        paddingBlock: 'var(--pad-y)',
-        paddingInline: 'var(--pad-x)',
-      }}
+      style={{ ...SIZE_STYLE[size], ...style }}
       {...rest}
     >
       {loading && <Spinner />}

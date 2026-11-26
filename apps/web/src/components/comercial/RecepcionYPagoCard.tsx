@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ShieldAlert, Wallet } from 'lucide-react';
 import { useState } from 'react';
@@ -159,18 +160,19 @@ export function RecepcionYPagoCard({ tripId, status }: { tripId: string; status:
             Cuando la carga llegue a destino, confirma que la recibiste. Si hay guía o factura del
             viaje, súbela antes en «Documentos».
           </p>
-          <button
+          <Button
+            variant="primary"
             type="button"
             onClick={() => {
               setAviso(null);
               confirmarM.mutate();
             }}
             disabled={confirmarM.isPending}
-            className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            className="mt-3"
           >
             <CheckCircle2 className="h-4 w-4" aria-hidden />
             {confirmarM.isPending ? 'Confirmando…' : 'Confirmar recepción'}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -196,14 +198,16 @@ export function RecepcionYPagoCard({ tripId, status }: { tripId: string; status:
       )}
 
       {puedeObjetar && !objetando && (
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           type="button"
           onClick={() => setObjetando(true)}
-          className="mt-4 inline-flex items-center gap-2 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
+          className="mt-4"
         >
           <ShieldAlert className="h-4 w-4" aria-hidden />
           Objetar recepción
-        </button>
+        </Button>
       )}
 
       {objetando && (
@@ -223,24 +227,21 @@ export function RecepcionYPagoCard({ tripId, status }: { tripId: string; status:
             Mientras se revisa, el pago al transportista queda detenido. Mínimo 10 caracteres.
           </p>
           <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setObjetando(false)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-            >
+            <Button variant="secondary" size="sm" type="button" onClick={() => setObjetando(false)}>
               Volver
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
               type="button"
               onClick={() => {
                 setAviso(null);
                 disputaM.mutate();
               }}
               disabled={motivo.trim().length < 10 || disputaM.isPending}
-              className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
             >
               {disputaM.isPending ? 'Enviando…' : 'Enviar objeción'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

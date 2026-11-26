@@ -5,6 +5,7 @@ import {
   comunasDeRegion,
   tieneComaDecimal,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { MapPin } from 'lucide-react';
 import {
@@ -534,15 +535,15 @@ export function SelectorLugar({
 
       {mapasDisponibles ? (
         <div>
-          <button
-            type="button"
-            className="mb-2 flex min-h-11 items-center gap-1.5 font-medium text-neutral-700 text-sm"
+          <Button
+            variant="ghost"
+            className="mb-2"
             aria-expanded={mapaAbierto}
             onClick={() => setMapaAbierto((abierto) => !abierto)}
           >
             <MapPin className="h-4 w-4" aria-hidden />
             {mapaAbierto ? 'Ocultar mapa' : 'Elige el punto en el mapa'}
-          </button>
+          </Button>
           {mapaAbierto && (
             <MapaPinLugar
               latitude={latitude}

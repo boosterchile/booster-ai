@@ -1,4 +1,5 @@
 import { STAKEHOLDER_ORG_TYPE_LABEL, UMBRAL_ANONIMATO } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Link, Navigate } from '@tanstack/react-router';
 import { ArrowLeft, Building2, Info, MapPin, Shield, Star, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -405,13 +406,9 @@ function ZonaCard({ zona }: { zona: ZonaPredefinida }) {
         <Stat label="Horario pico" value={zona.demo_horario_pico} className="col-span-2" />
       </dl>
 
-      <button
-        type="button"
-        disabled
-        className="mt-4 inline-flex w-full items-center justify-center rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-500 text-xs"
-      >
+      <Button variant="secondary" size="sm" disabled className="mt-4 w-full">
         Drill-down — próximamente
-      </button>
+      </Button>
     </div>
   );
 }

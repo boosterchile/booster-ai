@@ -1,3 +1,4 @@
+import { PressableArea } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp, Loader2, Route as RouteIcon } from 'lucide-react';
 import { useState } from 'react';
@@ -53,8 +54,7 @@ export function TrazaCargaCard({ assignmentId }: TrazaCargaCardProps) {
       className="border-neutral-200 border-b bg-white px-4 py-3"
       data-testid="traza-carga-card"
     >
-      <button
-        type="button"
+      <PressableArea
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between gap-2 text-left"
         aria-expanded={expanded}
@@ -69,7 +69,7 @@ export function TrazaCargaCard({ assignmentId }: TrazaCargaCardProps) {
         ) : (
           <ChevronDown className="h-4 w-4 text-neutral-500" aria-hidden />
         )}
-      </button>
+      </PressableArea>
 
       {expanded && (
         <div className="mt-3" data-testid="traza-carga-body">

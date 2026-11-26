@@ -1,4 +1,5 @@
 import type { PanelBoosterFleet } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { FileText } from 'lucide-react';
 import { useState } from 'react';
@@ -92,14 +93,15 @@ export function DocumentosFlota({
       )}
       <div className="flex items-center justify-between gap-3 border-neutral-200 border-t px-4 py-2.5">
         {hallazgos.length > VISIBLES ? (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             aria-expanded={todos}
             onClick={() => setTodos((valor) => !valor)}
-            className="font-medium text-primary-700 text-sm hover:underline"
+            className="text-sm"
           >
             {todos ? 'Ver menos' : `Ver los ${hallazgos.length} pendientes`}
-          </button>
+          </Button>
         ) : (
           <span />
         )}

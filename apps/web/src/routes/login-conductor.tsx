@@ -1,4 +1,5 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Headphones } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -252,13 +253,9 @@ export function LoginConductorRoute() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white transition hover:bg-primary-700 disabled:opacity-50"
-          >
+          <Button variant="primary" type="submit" disabled={submitting} className="w-full">
             {submitting ? 'Activando…' : 'Activar mi cuenta'}
-          </button>
+          </Button>
         </form>
       </div>
     </main>

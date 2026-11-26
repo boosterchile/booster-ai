@@ -6,6 +6,7 @@ import {
   normalizePlate,
   teltonikaImeiSchema,
 } from '@booster-ai/shared-schemas';
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, ChevronDown, MoreHorizontal, Trash2 } from 'lucide-react';
@@ -375,7 +376,9 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
         </Link>
         {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' ? (
           <div ref={menuRetiroRef} className="relative shrink-0">
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               type="button"
               aria-label="Más acciones"
               aria-haspopup="menu"
@@ -383,10 +386,9 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
               onClick={() =>
                 setMenuRetiro((actual) => (actual === 'cerrado' ? 'abierto' : 'cerrado'))
               }
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
             >
               <MoreHorizontal className="h-4 w-4" aria-hidden />
-            </button>
+            </Button>
             {menuRetiro !== 'cerrado' ? (
               <div
                 role="menu"
@@ -394,34 +396,36 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
                 className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
               >
                 {menuRetiro === 'abierto' ? (
-                  <button
+                  <PressableArea
                     type="button"
                     role="menuitem"
                     onClick={() => setMenuRetiro('confirmar')}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-danger-700 text-sm hover:bg-danger-50"
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden />
                     Retirar
-                  </button>
+                  </PressableArea>
                 ) : (
                   <div className="px-2 py-2">
                     <p className="text-neutral-800 text-sm">¿Retirar este vehículo?</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <button
+                      <Button
+                        variant="danger"
+                        size="sm"
                         type="button"
                         onClick={() => deleteM.mutate()}
                         disabled={deleteM.isPending}
-                        className="rounded-md bg-danger-600 px-2.5 py-1 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                       >
                         Sí, retirar
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         type="button"
                         onClick={() => setMenuRetiro('cerrado')}
-                        className="rounded-md border border-neutral-300 px-2.5 py-1 text-neutral-700 text-sm hover:bg-neutral-100"
                       >
                         Cancelar
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -741,7 +745,8 @@ function DispositivoSection({
                 formas?
               </p>
               <div className="mt-2 flex gap-2">
-                <button
+                <Button
+                  variant="primary"
                   type="button"
                   onClick={() =>
                     submitDispositivo({
@@ -750,17 +755,12 @@ function DispositivoSection({
                     })
                   }
                   disabled={dispositivoM.isPending}
-                  className="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-700 disabled:opacity-50"
                 >
                   Sí, reasociar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRechazoConfirm(null)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-                >
+                </Button>
+                <Button variant="secondary" type="button" onClick={() => setRechazoConfirm(null)}>
                   Cancelar
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -770,39 +770,31 @@ function DispositivoSection({
               (confirmQuitar ? (
                 <>
                   <span className="text-neutral-700 text-sm">¿Quitar el dispositivo?</span>
-                  <button
+                  <Button
+                    variant="danger"
                     type="button"
                     onClick={() => submitDispositivo({ teltonika_imei: null })}
                     disabled={dispositivoM.isPending}
-                    className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                   >
                     Sí, quitar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmQuitar(false)}
-                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-                  >
+                  </Button>
+                  <Button variant="secondary" type="button" onClick={() => setConfirmQuitar(false)}>
                     Cancelar
-                  </button>
+                  </Button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmQuitar(true)}
-                  className="rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
-                >
+                <Button variant="secondary" type="button" onClick={() => setConfirmQuitar(true)}>
                   Quitar
-                </button>
+                </Button>
               ))}
-            <button
+            <Button
+              variant="primary"
               type="button"
               onClick={handleGuardar}
               disabled={dispositivoM.isPending}
-              className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
             >
               {dispositivoM.isPending ? 'Guardando…' : 'Guardar'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -1373,13 +1365,9 @@ function VehicleForm({
             Cancelar
           </Link>
           {!disabled && (
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-            >
+            <Button variant="primary" type="submit" disabled={submitting}>
               {submitting ? 'Guardando…' : submitLabel}
-            </button>
+            </Button>
           )}
         </div>
       </fieldset>

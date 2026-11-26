@@ -1,3 +1,4 @@
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -200,14 +201,10 @@ function PlatformAdminMatchingPage() {
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Volver a Platform Admin
             </Link>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-neutral-600 text-sm transition hover:bg-neutral-100"
-            >
+            <Button variant="ghost" size="sm" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" aria-hidden />
               Salir
-            </button>
+            </Button>
           </div>
         </div>
       </header>
@@ -436,10 +433,11 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
           )}
         </fieldset>
 
-        <button
+        <Button
           type="submit"
+          variant="primary"
           disabled={state.kind === 'loading'}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+          className="w-full"
           data-testid="run-backtest-button"
         >
           {state.kind === 'loading' ? (
@@ -453,7 +451,7 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
               Lanzar simulación
             </>
           )}
-        </button>
+        </Button>
 
         {state.kind === 'error' && (
           <div className="rounded-md border border-danger-200 bg-danger-50 p-3 text-danger-700 text-sm">
@@ -568,14 +566,9 @@ function RunsList({
     <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-neutral-900">Simulaciones recientes</h2>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="text-primary-700 text-xs hover:underline disabled:opacity-50"
-        >
+        <Button variant="link" size="sm" onClick={onRefresh} disabled={loading}>
           {loading ? 'Cargando…' : 'Actualizar'}
-        </button>
+        </Button>
       </div>
 
       {error && (
@@ -598,8 +591,7 @@ function RunsList({
         <ul className="mt-3 divide-y divide-neutral-200">
           {runs.map((run) => (
             <li key={run.id}>
-              <button
-                type="button"
+              <PressableArea
                 onClick={() => onSelect(run.id)}
                 className={`flex w-full items-center justify-between gap-3 px-2 py-3 text-left hover:bg-neutral-50 ${
                   selectedRunId === run.id ? 'bg-primary-50' : ''
@@ -634,7 +626,7 @@ function RunsList({
                   <div className="mt-0.5 text-neutral-400 text-xs">por {run.createdByEmail}</div>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
-              </button>
+              </PressableArea>
             </li>
           ))}
         </ul>
@@ -968,17 +960,13 @@ function ResultadosTable({ resultados }: { resultados: ResultadoTrip[] }) {
           Detalle viaje por viaje ({resultados.length.toLocaleString('es-CL')})
         </h3>
         {resultados.length > 10 && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="inline-flex items-center gap-1 text-primary-700 text-xs hover:underline"
-          >
+          <Button variant="link" size="sm" onClick={() => setExpanded((v) => !v)}>
             {expanded ? 'Mostrar primeros 10' : `Ver todos (${resultados.length})`}
             <ChevronDown
               className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
               aria-hidden
             />
-          </button>
+          </Button>
         )}
       </div>
       <p className="mt-1 text-neutral-500 text-xs">

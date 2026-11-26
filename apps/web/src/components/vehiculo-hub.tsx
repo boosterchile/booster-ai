@@ -1,4 +1,5 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
@@ -228,9 +229,14 @@ export function VehiculoHub({
             </Link>
           ) : null}
           {!conImei && puedeConfigurar ? (
-            <button type="button" onClick={onAbrirConfig} className={BTN_LLENO}>
+            <Button
+              variant="primary"
+              type="button"
+              onClick={onAbrirConfig}
+              className="w-full sm:w-auto"
+            >
               Configurar dispositivo
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -465,18 +471,26 @@ function TarjetaConsumo({
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}
           </p>
           {resumen.cta_sensor ? (
-            <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
-              Conecta el sensor
-            </button>
-          ) : null}
-          {resumen.cta_capacidad_estanque ? (
-            <button
+            <Button
+              variant="link"
+              size="inline"
               type="button"
               onClick={onAbrirConfig}
-              className="mt-2 block text-left text-primary-700 text-sm underline"
+              className="mt-2 text-sm"
+            >
+              Conecta el sensor
+            </Button>
+          ) : null}
+          {resumen.cta_capacidad_estanque ? (
+            <Button
+              variant="link"
+              size="inline"
+              type="button"
+              onClick={onAbrirConfig}
+              className="mt-2 block text-left text-sm"
             >
               Completa la capacidad del estanque
-            </button>
+            </Button>
           ) : null}
           {resumen.km_por_litro == null && resumen.motivo_km_por_litro ? (
             <p className="mt-2 text-neutral-600 text-xs">{resumen.motivo_km_por_litro}</p>
@@ -577,9 +591,15 @@ function cuerpoTarjeta(
       <div className="mt-2">
         <p className="text-neutral-800 text-sm">{sinImei}</p>
         {puedeConfigurar ? (
-          <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
+          <Button
+            variant="link"
+            size="inline"
+            type="button"
+            onClick={onAbrirConfig}
+            className="mt-2 text-sm"
+          >
             Configurar dispositivo
-          </button>
+          </Button>
         ) : null}
       </div>
     );
@@ -593,9 +613,15 @@ function cuerpoTarjeta(
         <p className="text-neutral-700 text-sm" role="alert">
           No pudimos cargar los trayectos.
         </p>
-        <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+        <Button
+          variant="link"
+          size="inline"
+          type="button"
+          onClick={onReintentar}
+          className="mt-2 text-sm"
+        >
           Reintentar
-        </button>
+        </Button>
       </div>
     );
   }
@@ -687,9 +713,15 @@ function MapaPreview({
           >
             <p className="font-medium text-neutral-900 text-sm">No pudimos cargar la posición.</p>
             <p className="mt-1 text-neutral-700 text-sm">Reintenta en un momento.</p>
-            <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+            <Button
+              variant="link"
+              size="inline"
+              type="button"
+              onClick={onReintentar}
+              className="mt-2 text-sm"
+            >
               Reintentar
-            </button>
+            </Button>
           </div>
         ) : null}
         {!hayTraza && !hayPunto && !ubicacionCargando && !ubicacionError ? (
@@ -704,9 +736,15 @@ function MapaPreview({
                 : 'Asocia un dispositivo para ver la posición.'}
             </p>
             {!conImei && puedeConfigurar ? (
-              <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
+              <Button
+                variant="link"
+                size="inline"
+                type="button"
+                onClick={onAbrirConfig}
+                className="mt-2 text-sm"
+              >
                 Configurar dispositivo
-              </button>
+              </Button>
             ) : null}
             {conImei ? <LinkEnVivo vehicleId={vehicleId} /> : null}
           </div>
@@ -745,9 +783,9 @@ function ListaTrayectos({
           {puedeConfigurar ? (
             <>
               {' '}
-              <button type="button" onClick={onAbrirConfig} className="text-primary-700 underline">
+              <Button variant="link" size="inline" type="button" onClick={onAbrirConfig}>
                 Configurar dispositivo
-              </button>
+              </Button>
             </>
           ) : null}
         </p>
@@ -758,9 +796,15 @@ function ListaTrayectos({
           <p className="text-neutral-700 text-sm" role="alert">
             No pudimos cargar los trayectos.
           </p>
-          <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+          <Button
+            variant="link"
+            size="inline"
+            type="button"
+            onClick={onReintentar}
+            className="mt-2 text-sm"
+          >
             Reintentar
-          </button>
+          </Button>
         </div>
       ) : null}
       {conImei && !cargando && !error && recientes.length === 0 ? (

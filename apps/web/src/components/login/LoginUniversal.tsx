@@ -5,6 +5,7 @@ import {
   loginRutSchema,
   rutSchema,
 } from '@booster-ai/shared-schemas';
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
   ArrowRight,
@@ -324,9 +325,8 @@ function SelectorView({ onSelect }: { onSelect: (t: UserTypeHint) => void }) {
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {USER_TYPE_OPTIONS.map((opt) => (
-            <button
+            <PressableArea
               key={opt.value}
-              type="button"
               onClick={() => onSelect(opt.value)}
               className="flex items-start gap-3 rounded-lg border border-neutral-200 bg-white p-4 text-left transition hover:border-primary-500 hover:bg-primary-50"
               data-testid={`login-tipo-${opt.value}`}
@@ -338,7 +338,7 @@ function SelectorView({ onSelect }: { onSelect: (t: UserTypeHint) => void }) {
                 <div className="font-semibold text-neutral-900">{opt.label}</div>
                 <div className="mt-0.5 text-neutral-600 text-xs">{opt.description}</div>
               </div>
-            </button>
+            </PressableArea>
           ))}
         </div>
 
@@ -453,10 +453,11 @@ function EmailFormView(props: EmailFormViewProps) {
             </div>
           )}
 
-          <button
+          <Button
+            variant="primary"
             type="submit"
             disabled={props.submitting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            className="w-full"
             data-testid="login-submit"
           >
             {props.submitting ? (
@@ -470,16 +471,16 @@ function EmailFormView(props: EmailFormViewProps) {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </>
             )}
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={props.onBack}
-            className="w-full text-center text-neutral-500 text-sm hover:text-neutral-700"
+            className="w-full"
             data-testid="login-back-to-selector"
           >
             Cambiar tipo de usuario
-          </button>
+          </Button>
         </form>
       </div>
     </div>
@@ -590,10 +591,11 @@ function FormView(props: FormViewProps) {
             </div>
           )}
 
-          <button
+          <Button
+            variant="primary"
             type="submit"
             disabled={props.submitting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            className="w-full"
             data-testid="login-submit"
           >
             {props.submitting ? (
@@ -607,16 +609,17 @@ function FormView(props: FormViewProps) {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </>
             )}
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={props.onBack}
-            className="block w-full text-center text-neutral-500 text-xs hover:text-neutral-700"
+            className="w-full"
             data-testid="login-back-to-selector"
           >
             Cambiar tipo de usuario
-          </button>
+          </Button>
         </form>
       </div>
     </div>
@@ -694,13 +697,9 @@ function NeedsActivationView({
           >
             {esConductor ? '¿Te dio de alta Booster o tu empresa?' : '¿Eres conductor?'}
           </a>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-center text-neutral-500 text-sm hover:text-neutral-700"
-          >
+          <Button variant="ghost" onClick={onBack}>
             Cambiar tipo de usuario
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -732,13 +731,9 @@ function NeedsRotationView({ onBack, message }: { onBack: () => void; message: s
           >
             Usar método anterior
           </a>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-center text-neutral-500 text-sm hover:text-neutral-700"
-          >
+          <Button variant="ghost" onClick={onBack}>
             Cambiar tipo de usuario
-          </button>
+          </Button>
         </div>
       </div>
     </div>

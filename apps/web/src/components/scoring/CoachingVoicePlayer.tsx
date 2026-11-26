@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Pause, Volume2 } from 'lucide-react';
 import { type ChangeEvent, useEffect, useMemo, useState } from 'react';
 import {
@@ -152,16 +153,13 @@ export function CoachingVoicePlayer({
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-3" data-testid="coaching-voice-player">
-      <button
+      <Button
+        variant={isSpeaking ? 'primary' : 'secondary'}
+        size="sm"
         type="button"
         onClick={handleToggle}
         aria-pressed={isSpeaking}
         aria-label={isSpeaking ? 'Detener reproducción' : 'Escuchar coaching por voz'}
-        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium text-xs transition ${
-          isSpeaking
-            ? 'bg-primary-700 text-white hover:bg-primary-800'
-            : 'bg-primary-50 text-primary-700 ring-1 ring-primary-700/20 hover:bg-primary-100'
-        }`}
       >
         {isSpeaking ? (
           <>
@@ -174,7 +172,7 @@ export function CoachingVoicePlayer({
             <span>Escuchar</span>
           </>
         )}
-      </button>
+      </Button>
 
       <label className="inline-flex cursor-pointer items-center gap-1.5 text-neutral-600 text-xs">
         <input

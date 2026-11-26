@@ -1,3 +1,4 @@
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Banknote, Loader2 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -113,18 +114,17 @@ function AdminCobraHoyPage({ me }: { me: MeOnboarded }) {
         <>
           <div className="mt-6 flex flex-wrap items-center gap-2">
             {STATUS_FILTERS.map((opt) => (
-              <button
+              <PressableArea
                 key={opt.value}
-                type="button"
                 onClick={() => setStatusFilter(opt.value)}
-                className={`rounded-full px-3 py-1 font-medium text-xs transition ${
+                className={`rounded-full border px-3 py-1 font-medium text-xs transition ${
                   statusFilter === opt.value
-                    ? 'bg-primary-600 text-white'
-                    : 'border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                    ? 'border-primary-500 bg-primary-50 text-primary-800'
+                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
                 }`}
               >
                 {opt.label}
-              </button>
+              </PressableArea>
             ))}
           </div>
 
@@ -220,15 +220,15 @@ function AdelantoRow({ adelanto }: { adelanto: AdelantoAdminRow }) {
           {allowed.length > 0 && (
             <div className="flex flex-wrap justify-end gap-1">
               {allowed.map((target) => (
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   key={target}
-                  type="button"
                   onClick={() => setConfirming(target)}
                   disabled={transicionM.isPending}
-                  className="rounded-md border border-neutral-300 px-2 py-1 font-medium text-neutral-700 text-xs transition hover:bg-neutral-100 disabled:opacity-60"
                 >
                   {LABEL_TRANSICION[target]}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -250,27 +250,25 @@ function AdelantoRow({ adelanto }: { adelanto: AdelantoAdminRow }) {
                 className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
               />
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={() => confirmTransition(confirming)}
                   disabled={transicionM.isPending}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-60"
                 >
                   {transicionM.isPending && (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   )}
                   Confirmar
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() => {
                     setConfirming(null);
                     setNotas('');
                   }}
-                  className="rounded-md border border-neutral-300 px-3 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-100"
                 >
                   Cancelar
-                </button>
+                </Button>
                 {transicionM.isError && (
                   <span role="alert" className="text-danger-700 text-sm">
                     No pudimos aplicar la transición. Revisa los logs.

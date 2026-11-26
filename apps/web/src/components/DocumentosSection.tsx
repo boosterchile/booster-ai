@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle, Clock, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -136,14 +137,10 @@ export function DocumentosSection({ entityType, entityId, canWrite }: Documentos
           </p>
         </div>
         {canWrite && !showForm && (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700"
-          >
+          <Button variant="primary" onClick={() => setShowForm(true)}>
             <Plus className="h-4 w-4" aria-hidden />
             Agregar documento
-          </button>
+          </Button>
         )}
       </div>
 
@@ -186,15 +183,16 @@ export function DocumentosSection({ entityType, entityId, canWrite }: Documentos
                 {d.notas && <div className="mt-1 text-neutral-500 text-xs">{d.notas}</div>}
               </div>
               {canWrite && (
-                <button
-                  type="button"
+                <Button
+                  variant="danger"
+                  size="icon"
                   onClick={() => deleteM.mutate(d.id)}
                   disabled={deleteM.isPending && deleteM.variables === d.id}
-                  className="shrink-0 rounded-md border border-danger-300 px-2 py-1 text-danger-700 text-xs hover:bg-danger-50 disabled:opacity-50"
+                  className="shrink-0"
                   aria-label="Eliminar documento"
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                </button>
+                </Button>
               )}
             </li>
           ))}
@@ -281,24 +279,18 @@ export function DocumentosSection({ entityType, entityId, canWrite }: Documentos
           )}
 
           <div className="mt-3 flex justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => {
                 setShowForm(false);
                 setFormError(null);
               }}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
             >
               Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => createM.mutate()}
-              disabled={createM.isPending}
-              className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-            >
+            </Button>
+            <Button variant="primary" onClick={() => createM.mutate()} disabled={createM.isPending}>
               {createM.isPending ? 'Guardando…' : 'Guardar documento'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

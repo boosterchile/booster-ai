@@ -1,4 +1,5 @@
 import { DEFAULT_SITE_CONFIG, type SiteConfig, siteConfigSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Link, Navigate } from '@tanstack/react-router';
 import {
   ArrowLeft,
@@ -362,25 +363,17 @@ function Page() {
         />
 
         <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-end gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-md">
-          <button
-            type="button"
-            onClick={handleRestoreDefaults}
-            className="rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-50"
-          >
+          <Button variant="secondary" type="button" onClick={handleRestoreDefaults}>
             Restaurar defaults
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || !dirty}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-4 py-2 font-semibold text-sm text-white shadow-sm hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="primary" type="submit" disabled={submitting || !dirty}>
             {submitting ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             ) : (
               <Save className="h-4 w-4" aria-hidden />
             )}
             Guardar y publicar
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -539,13 +532,15 @@ function IdentitySection({
             />
           </label>
           {config.identity.logo_url && (
-            <button
+            <Button
+              variant="link"
+              size="inline"
               type="button"
               onClick={() => onChange({ logo_url: undefined })}
-              className="ml-2 text-rose-700 text-sm hover:underline"
+              className="ml-2 text-sm"
             >
               Restaurar logo default
-            </button>
+            </Button>
           )}
           <InputField
             label="Texto alternativo (alt)"
@@ -750,14 +745,16 @@ function HistorySection({
               <td className="py-2 text-neutral-600">{row.notaPublicacion ?? '—'}</td>
               <td className="py-2 text-right">
                 {!row.publicada && (
-                  <button
+                  <Button
+                    variant="link"
+                    size="inline"
                     type="button"
                     onClick={() => onRollback(row.version)}
                     disabled={submitting}
-                    className="text-primary-700 text-sm hover:underline disabled:opacity-50"
+                    className="text-sm"
                   >
                     Rollback
-                  </button>
+                  </Button>
                 )}
               </td>
             </tr>
@@ -803,14 +800,10 @@ function AdminShell({
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Volver a Platform Admin
             </Link>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
-            >
+            <Button variant="ghost" size="sm" type="button" onClick={onSignOut}>
               <LogOut className="h-4 w-4" aria-hidden />
               Salir
-            </button>
+            </Button>
           </div>
         </div>
       </header>

@@ -1,3 +1,4 @@
+import { PressableArea } from '@booster-ai/ui-components';
 import { ChevronDown, ChevronUp, Leaf, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useAssignmentEcoRoute } from '../../hooks/use-assignment-eco-route.js';
@@ -40,8 +41,7 @@ export function AssignmentEcoRouteCard({ assignmentId }: AssignmentEcoRouteCardP
       className="border-success-700/15 border-b bg-success-50/30 px-4 py-3"
       data-testid="assignment-eco-route-card"
     >
-      <button
-        type="button"
+      <PressableArea
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between gap-2 text-left"
         aria-expanded={expanded}
@@ -56,7 +56,7 @@ export function AssignmentEcoRouteCard({ assignmentId }: AssignmentEcoRouteCardP
         ) : (
           <ChevronDown className="h-4 w-4 text-success-700" aria-hidden />
         )}
-      </button>
+      </PressableArea>
 
       {expanded && (
         <div className="mt-3" data-testid="assignment-eco-route-body">

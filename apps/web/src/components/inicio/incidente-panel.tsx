@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useState } from 'react';
 import {
   INCIDENT_TYPES,
@@ -57,20 +58,12 @@ export function IncidentePanel({
         </p>
       ) : null}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={reporte.isPending}
-          className="rounded-md bg-primary-600 px-3 py-2 font-semibold text-sm text-white disabled:opacity-60"
-        >
+        <Button variant="primary" type="submit" disabled={reporte.isPending}>
           {reporte.isPending ? 'Avisando…' : 'Avisar'}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onClose}>
           Cerrar
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -84,4 +84,57 @@ describe('Button', () => {
     expect(cls).toContain('rounded-none');
     expect(cls).not.toContain('rounded-md');
   });
+
+  it('link: se ve como enlace de texto, sin relleno', () => {
+    render(<Button variant="link">Ver detalle</Button>);
+    const btn = screen.getByRole('button', { name: 'Ver detalle' });
+    expect(btn.className).toContain('text-primary-700');
+    expect(btn.className).toContain('hover:underline');
+    expect(btn.className).not.toMatch(/\bbg-primary-/);
+  });
+
+  it('size sm: más compacto, con un mínimo táctil de 2rem', () => {
+    render(<Button size="sm">Editar</Button>);
+    const btn = screen.getByRole('button', { name: 'Editar' });
+    expect(btn.className).toContain('text-xs');
+    expect(btn.style.minHeight).toBe('2rem');
+    expect(btn.style.paddingInline).toBe('0.75rem');
+  });
+
+  it('size icon: cuadrado del tamaño táctil del registro, exige nombre accesible por aria-label', () => {
+    render(
+      <Button size="icon" variant="ghost" aria-label="Cerrar">
+        <svg aria-hidden="true" />
+      </Button>,
+    );
+    const btn = screen.getByRole('button', { name: 'Cerrar' });
+    expect(btn.style.minHeight).toBe('var(--touch-min)');
+    expect(btn.style.minWidth).toBe('var(--touch-min)');
+    expect(btn.style.padding).toBe('0px');
+  });
+
+  it('size inline: dentro de un texto, sin alto mínimo ni relleno', () => {
+    render(
+      <Button size="inline" variant="link">
+        reenviar
+      </Button>,
+    );
+    const btn = screen.getByRole('button', { name: 'reenviar' });
+    expect(btn.style.minHeight).toBe('');
+    expect(btn.style.paddingInline).toBe('');
+    expect(btn.className).toContain('inline');
+  });
+
+  it('link inline va subrayado siempre: dentro de un texto no se distingue solo por color (WCAG 1.4.1)', () => {
+    render(
+      <p>
+        Sin dispositivo no hay historial.{' '}
+        <Button size="inline" variant="link">
+          Configurar dispositivo
+        </Button>
+      </p>,
+    );
+    const btn = screen.getByRole('button', { name: 'Configurar dispositivo' });
+    expect(btn.className).toMatch(/(^|\s)underline(\s|$)/);
+  });
 });

@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Banknote, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
 import {
@@ -31,14 +32,10 @@ export function CobraHoyButton({ asignacionId }: { asignacionId: string }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={open}
-        className="inline-flex items-center gap-2 rounded-md bg-success-700 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-success-700/90"
-      >
+      <Button variant="primary" onClick={open}>
         <Banknote className="h-4 w-4" aria-hidden />
         Cobra hoy
-      </button>
+      </Button>
       {modalOpen && <CobraHoyModal asignacionId={asignacionId} onClose={close} />}
     </>
   );
@@ -82,14 +79,9 @@ function CobraHoyModal({
           <h2 id="cobra-hoy-modal-title" className="font-semibold text-lg text-neutral-900">
             Cobra hoy
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 text-neutral-500 transition hover:bg-neutral-100"
-            aria-label="Cerrar"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Cerrar">
             <X className="h-5 w-5" aria-hidden />
-          </button>
+          </Button>
         </div>
 
         {cotizQ.isLoading && (
@@ -155,19 +147,14 @@ function CobraHoyModal({
         )}
 
         <div className="mt-6 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-neutral-300 px-3 py-2 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100"
-          >
+          <Button variant="secondary" onClick={onClose}>
             {solicitarM.isSuccess ? 'Cerrar' : 'Cancelar'}
-          </button>
+          </Button>
           {cotizacion && !solicitarM.isSuccess && !postApagado && (
-            <button
-              type="button"
+            <Button
+              variant="primary"
               onClick={() => solicitarM.mutate()}
               disabled={solicitarM.isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-success-700 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-success-700/90 disabled:opacity-60"
             >
               {solicitarM.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -175,7 +162,7 @@ function CobraHoyModal({
                 <Banknote className="h-4 w-4" aria-hidden />
               )}
               {solicitarM.isPending ? 'Solicitando…' : 'Confirmar y recibir hoy'}
-            </button>
+            </Button>
           )}
         </div>
       </div>

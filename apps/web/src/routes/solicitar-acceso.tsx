@@ -1,4 +1,5 @@
 import { signupRequestSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Send } from 'lucide-react';
 import { useState } from 'react';
@@ -166,14 +167,10 @@ export function SolicitarAccesoRoute() {
                 )}
               />
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-500 px-4 py-3 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+              <Button variant="primary" type="submit" disabled={isSubmitting} className="w-full">
                 <Send className="h-4 w-4" aria-hidden />
                 {isSubmitting ? 'Enviando…' : 'Solicitar acceso'}
-              </button>
+              </Button>
             </form>
           )}
 

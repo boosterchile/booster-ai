@@ -1,3 +1,4 @@
+import { PressableArea } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { MapPin, Navigation, Radio, Truck } from 'lucide-react';
@@ -160,8 +161,7 @@ function FlotaPage({ me }: { me: MeOnboarded }) {
                 const hasPos = v.position?.latitude != null && v.position?.longitude != null;
                 return (
                   <li key={v.id}>
-                    <button
-                      type="button"
+                    <PressableArea
                       onClick={() => setSelectedId(v.id)}
                       onDoubleClick={() =>
                         void navigate({
@@ -230,7 +230,7 @@ function FlotaPage({ me }: { me: MeOnboarded }) {
                           Ver en vivo
                         </Link>
                       </div>
-                    </button>
+                    </PressableArea>
                   </li>
                 );
               })}

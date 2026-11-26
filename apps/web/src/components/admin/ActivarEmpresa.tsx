@@ -1,3 +1,4 @@
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { Building2, Copy, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { urlActivar } from '../../lib/activar-url.js';
@@ -233,21 +234,20 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
 
       <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Filtro de estado">
         {FILTROS.map((f) => (
-          <button
+          <PressableArea
             key={f.value || 'todas'}
-            type="button"
             role="tab"
             aria-selected={filtro === f.value}
             onClick={() => setFiltro(f.value)}
-            className={`rounded-md px-3 py-1.5 font-medium text-sm ${
+            className={`rounded-md border px-3 py-1.5 font-medium text-sm ${
               filtro === f.value
-                ? 'bg-primary-600 text-white'
-                : 'border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100'
+                ? 'border-primary-500 bg-primary-50 text-primary-800'
+                : 'border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100'
             }`}
             data-testid={`empresa-filtro-${f.value || 'todas'}`}
           >
             {f.label}
-          </button>
+          </PressableArea>
         ))}
       </div>
 
@@ -288,37 +288,34 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                   </div>
                   <div className="flex shrink-0 gap-2">
                     {e.estado !== 'activa' && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="primary"
                         disabled={pendingId === e.id}
                         onClick={() => void cambiarEstado(e.id, 'activa')}
-                        className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                         data-testid={`empresa-activar-${e.id}`}
                       >
                         {pendingId === e.id ? 'Activando…' : 'Activar'}
-                      </button>
+                      </Button>
                     )}
                     {e.es_transportista && !e.es_generador_carga && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
                         disabled={generandoId === e.id}
                         onClick={() => void activarGenerador(e.id)}
-                        className="rounded-md border border-primary-300 bg-primary-50 px-3 py-1.5 font-medium text-primary-800 text-sm hover:bg-primary-100 disabled:opacity-50"
                         data-testid={`empresa-generar-carga-${e.id}`}
                       >
                         {generandoId === e.id ? 'Activando rol…' : 'Generar carga'}
-                      </button>
+                      </Button>
                     )}
                     {e.estado !== 'suspendida' && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
                         disabled={pendingId === e.id}
                         onClick={() => void cambiarEstado(e.id, 'suspendida')}
-                        className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-50 disabled:opacity-50"
                         data-testid={`empresa-suspender-${e.id}`}
                       >
                         {pendingId === e.id ? 'Suspendiendo…' : 'Suspender'}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -345,17 +342,16 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                                 {fechaCorta(m.expira_en)}
                               </div>
                             </div>
-                            <button
-                              type="button"
+                            <Button
+                              variant="secondary"
                               disabled={reemitirId === m.membership_id}
                               onClick={() => void reemitirCodigo(e.id, m)}
-                              className="rounded-md border border-amber-400 bg-amber-50 px-3 py-1.5 font-medium text-amber-950 text-sm hover:bg-amber-100 disabled:opacity-50"
                               data-testid={`reemitir-codigo-${m.membership_id}`}
                             >
                               {reemitirId === m.membership_id
                                 ? 'Generando…'
                                 : 'Generar código nuevo'}
-                            </button>
+                            </Button>
                           </div>
                           {reemitirError?.membershipId === m.membership_id && (
                             <p role="alert" className="mt-2 text-danger-700 text-sm">
@@ -385,33 +381,35 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                                 <div className="min-w-0 flex-1 select-all break-all rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-sm">
                                   {urlActivar()}
                                 </div>
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="primary"
+                                  size="sm"
                                   onClick={() =>
                                     void copiarCodigo(`${m.membership_id}-direccion`, urlActivar())
                                   }
-                                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+                                  className="shrink-0"
                                 >
                                   <Copy className="h-3 w-3" aria-hidden />
                                   {copiadoId === `${m.membership_id}-direccion`
                                     ? 'Copiada ✓'
                                     : 'Copiar dirección'}
-                                </button>
+                                </Button>
                               </div>
                               <div className="mt-2 flex items-center gap-2">
                                 <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
                                   {codigo.codigo_activacion}
                                 </div>
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="primary"
+                                  size="sm"
                                   onClick={() =>
                                     void copiarCodigo(m.membership_id, codigo.codigo_activacion)
                                   }
-                                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+                                  className="shrink-0"
                                 >
                                   <Copy className="h-3 w-3" aria-hidden />
                                   {copiadoId === m.membership_id ? 'Copiado ✓' : 'Copiar código'}
-                                </button>
+                                </Button>
                               </div>
                             </div>
                           )}

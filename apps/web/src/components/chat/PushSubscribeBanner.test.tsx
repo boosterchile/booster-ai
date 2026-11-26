@@ -91,8 +91,10 @@ describe('PushSubscribeBanner — visibilidad', () => {
     expect(banner.className).not.toMatch(/\bpy-/);
     const activar = screen.getByRole('button', { name: 'Activar' });
     const descartar = screen.getByRole('button', { name: 'Descartar banner' });
-    expect(activar).toHaveClass('min-h-11', 'min-w-11');
-    expect(descartar).toHaveClass('h-11', 'w-11');
+    // Button toma el alto táctil del registro (--touch-min, 44px por defecto).
+    expect(activar.style.minHeight).toBe('var(--touch-min)');
+    expect(descartar.style.minHeight).toBe('var(--touch-min)');
+    expect(descartar.style.minWidth).toBe('var(--touch-min)');
   });
 });
 

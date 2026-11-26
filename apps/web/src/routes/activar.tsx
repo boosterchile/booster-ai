@@ -1,4 +1,5 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useNavigate } from '@tanstack/react-router';
 import { signInWithCustomToken } from 'firebase/auth';
 import { KeyRound, Loader2 } from 'lucide-react';
@@ -214,11 +215,7 @@ export function ActivarRoute() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={enviando}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-          >
+          <Button variant="primary" type="submit" disabled={enviando} className="w-full">
             {enviando ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -227,7 +224,7 @@ export function ActivarRoute() {
             ) : (
               'Activar mi cuenta'
             )}
-          </button>
+          </Button>
 
           <p className="text-center text-neutral-600 text-sm">
             <a

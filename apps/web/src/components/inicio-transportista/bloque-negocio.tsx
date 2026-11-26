@@ -1,4 +1,4 @@
-import { Card } from '@booster-ai/ui-components';
+import { Button, Card } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { RotateCw } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -47,15 +47,16 @@ export function ErrorBloque({
     <div>
       <p className="font-medium text-neutral-900 text-sm">No cargó {nombre}</p>
       <p className="mt-0.5 text-neutral-600 text-sm">El resto del Inicio sigue funcionando</p>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
         data-testid={`reintentar-${fuente}`}
         onClick={() => onReintentar(fuente)}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1 font-medium text-neutral-800 text-xs hover:bg-neutral-50"
+        className="mt-3"
       >
         <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
         Reintentar
-      </button>
+      </Button>
     </div>
   );
 }

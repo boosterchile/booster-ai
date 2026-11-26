@@ -6,6 +6,7 @@
  * (fire-and-forget tras la entrega): mientras no exista se reconsulta cada
  * 3 s durante un minuto y se dice «Certificado en proceso».
  */
+import { Button } from '@booster-ai/ui-components';
 import { Download, Leaf, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatoEmisiones } from '../../lib/formato-emisiones.js';
@@ -262,15 +263,16 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
       )}
       <div className="mt-3">
         {resultado.certificate ? (
-          <button
+          <Button
+            variant="secondary"
             type="button"
             onClick={() => void descargar()}
             disabled={descargando}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-success-300 bg-white px-4 py-3 font-medium text-base text-success-800 disabled:opacity-50"
+            className="w-full"
           >
             <Download className="h-4 w-4" aria-hidden />
             {descargando ? 'Abriendo…' : 'Descargar certificado'}
-          </button>
+          </Button>
         ) : (
           <output className="flex items-center gap-2 text-neutral-600">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

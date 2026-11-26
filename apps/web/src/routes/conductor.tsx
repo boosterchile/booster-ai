@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Link, Navigate } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -383,14 +384,14 @@ function AssignmentsSection() {
         >
           {error}
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => void cargarServicios()}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50"
+          className="w-full text-base"
         >
           <RefreshCw className="h-4 w-4" aria-hidden />
           Reintentar
-        </button>
+        </Button>
       </section>
     );
   }
@@ -410,15 +411,15 @@ function AssignmentsSection() {
         </div>
         {/* El conductor recibe servicios con la pantalla abierta: sin esto
             tendría que saber recargar la app para verlos. */}
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => void cargarServicios()}
           disabled={refrescando}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-60"
+          className="mt-4 w-full text-base"
         >
           <RefreshCw className="h-4 w-4" aria-hidden />
           {refrescando ? 'Actualizando…' : 'Actualizar'}
-        </button>
+        </Button>
         <ChipGps permiso={geoPermission} />
       </section>
     );
@@ -458,15 +459,15 @@ function AssignmentsSection() {
           </ul>
         </div>
       ) : null}
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         onClick={() => void cargarServicios()}
         disabled={refrescando}
-        className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-60"
+        className="w-full text-base"
       >
         <RefreshCw className="h-4 w-4" aria-hidden />
         {refrescando ? 'Actualizando…' : 'Actualizar'}
-      </button>
+      </Button>
       <ChipGps permiso={geoPermission} />
       {INICIO_LICENCIA_CONDUCTOR_ACTIVA ? (
         <p data-testid="licencia-conductor" className="mt-2 text-neutral-600 text-sm">
@@ -631,7 +632,6 @@ function NavegacionEnPantalla({
   polylineEncoded,
   cargandoRuta,
   pausaGps,
-  className,
   abrirSignal = 0,
 }: {
   etiqueta: string;
@@ -642,7 +642,6 @@ function NavegacionEnPantalla({
   polylineEncoded: string | null;
   cargandoRuta: boolean;
   pausaGps: boolean;
-  className: string;
   abrirSignal?: number;
 }) {
   const [abierta, setAbierta] = useState(false);
@@ -668,16 +667,16 @@ function NavegacionEnPantalla({
 
   return (
     <div className="space-y-2">
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         data-testid={testId}
-        className={className}
+        className="w-full text-base"
         aria-expanded={abierta}
         onClick={() => setAbierta((v) => !v)}
       >
         <MapPin className="h-4 w-4" aria-hidden />
         {etiqueta}
-      </button>
+      </Button>
       {abierta && (
         <section
           ref={panelRef}
@@ -740,20 +739,12 @@ function ConfirmacionInline({
     >
       <p className="font-medium text-neutral-900 text-sm">{pregunta}</p>
       <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={onConfirmar}
-          className="flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white transition hover:bg-primary-700"
-        >
+        <Button variant="primary" onClick={onConfirmar} className="text-base">
           Sí, confirmar
-        </button>
-        <button
-          type="button"
-          onClick={onCancelar}
-          className="flex items-center justify-center rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-100"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onCancelar} className="text-base">
           No
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -767,26 +758,24 @@ function ConfirmacionInline({
 function ConductorChat({
   assignmentId,
   readOnly,
-  buttonClassName,
 }: {
   assignmentId: string;
   readOnly: boolean;
-  buttonClassName: string;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         onClick={() => setOpen(true)}
         data-testid="abrir-chat-viaje"
         aria-label="Abrir chat con el generador de carga"
-        className={buttonClassName}
+        className="w-full text-base"
       >
         <MessageCircle className="h-4 w-4" aria-hidden />
         Chat con el generador
-      </button>
+      </Button>
       {open ? (
         <div
           className="fixed inset-0 z-40 flex flex-col bg-white pt-safe"
@@ -935,11 +924,6 @@ export function AssignmentCard({
     }
   }
 
-  const botonPrimario =
-    'flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 font-medium text-base text-white transition disabled:opacity-50';
-  const botonSecundario =
-    'flex w-full items-center justify-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-4 py-3 font-medium text-base text-primary-700';
-
   return (
     <article
       className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
@@ -1047,15 +1031,15 @@ export function AssignmentCard({
               No estamos recibiendo tu posición. Permite la ubicación para app.boosterchile.com y
               vuelve a intentar.
             </div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => reporter.start(a.id)}
               data-testid="gps-retry"
-              className={botonSecundario}
+              className="w-full text-base"
             >
               <Navigation className="h-4 w-4" aria-hidden />
               Reintentar ubicación
-            </button>
+            </Button>
           </div>
         ) : null}
         {!hasTeltonika && fase !== 'entregada' && (
@@ -1117,16 +1101,16 @@ export function AssignmentCard({
                 onCancelar={() => setConfirmando(null)}
               />
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 onClick={() => setConfirmando('recogida')}
                 disabled={recogida.recogiendo || recogida.bloqueadaPorCambio}
                 data-testid="confirmar-recogida"
-                className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
+                className="w-full text-base"
               >
                 <PackageCheck className="h-4 w-4" aria-hidden />
                 {recogida.recogiendo ? 'Registrando…' : 'Iniciar viaje'}
-              </button>
+              </Button>
             )}
             {destacado ? (
               <AccionesViaje
@@ -1148,7 +1132,6 @@ export function AssignmentCard({
               polylineEncoded={polylineEncoded}
               cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
               pausaGps={!hasTeltonika}
-              className={botonSecundario}
               abrirSignal={senalRuta}
             />
             {recogida.error && (
@@ -1173,16 +1156,16 @@ export function AssignmentCard({
                   onCancelar={() => setConfirmando(null)}
                 />
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={() => setConfirmando('entrega')}
                   disabled={entregando}
                   aria-label="Confirmar entrega sin haber confirmado la recogida"
                   data-testid="entrega-sin-recogida"
-                  className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
+                  className="w-full"
                 >
                   {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
-                </button>
+                </Button>
               ))}
           </>
         )}
@@ -1209,16 +1192,16 @@ export function AssignmentCard({
                   onCancelar={() => setConfirmando(null)}
                 />
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={() => setConfirmando('entrega')}
                   disabled={entregando}
                   data-testid="confirmar-entrega"
-                  className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
+                  className="w-full text-base"
                 >
                   <CheckCircle2 className="h-4 w-4" aria-hidden />
                   {entregando ? 'Confirmando…' : 'Confirmar entrega'}
-                </button>
+                </Button>
               ))}
             <NavegacionEnPantalla
               etiqueta="Ir al destino"
@@ -1229,7 +1212,6 @@ export function AssignmentCard({
               polylineEncoded={polylineEncoded}
               cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
               pausaGps={!hasTeltonika}
-              className={botonSecundario}
               abrirSignal={senalRuta}
             />
           </>
@@ -1254,11 +1236,7 @@ export function AssignmentCard({
             <ResultadoViaje assignmentId={a.id} />
           </>
         )}
-        <ConductorChat
-          assignmentId={a.id}
-          readOnly={fase === 'entregada'}
-          buttonClassName={botonSecundario}
-        />
+        <ConductorChat assignmentId={a.id} readOnly={fase === 'entregada'} />
       </div>
     </article>
   );
@@ -1313,27 +1291,15 @@ function AccionesViaje({
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-2">
-        <button
-          type="button"
-          onClick={onRuta}
-          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
-        >
+        <Button variant="secondary" onClick={onRuta} className="text-xs">
           Cómo llegar
-        </button>
-        <button
-          type="button"
-          onClick={onDocumentos}
-          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onDocumentos} className="text-xs">
           Documentos
-        </button>
-        <button
-          type="button"
-          onClick={onIncidente}
-          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onIncidente} className="text-xs">
           Incidente
-        </button>
+        </Button>
       </div>
       {documentosAbiertos ? <DocumentosViajeConductor tripId={tripId} /> : null}
       {incidenteAbierto ? (

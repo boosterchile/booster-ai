@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { humanizeRotarClaveError, useRotarClave } from '../../hooks/use-rotar-clave.js';
@@ -126,10 +127,11 @@ export function RotarClaveModal({ message, onSuccess }: RotarClaveModalProps) {
             </div>
           )}
 
-          <button
+          <Button
+            variant="primary"
             type="submit"
             disabled={rotarClave.isPending}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            className="w-full"
             data-testid="rotar-clave-submit"
           >
             {rotarClave.isPending ? (
@@ -140,7 +142,7 @@ export function RotarClaveModal({ message, onSuccess }: RotarClaveModalProps) {
             ) : (
               'Crear clave y continuar'
             )}
-          </button>
+          </Button>
 
           <p className="text-center text-neutral-500 text-xs">
             Anota tu clave en un lugar seguro. Si la olvidas, podrás recuperarla por WhatsApp.

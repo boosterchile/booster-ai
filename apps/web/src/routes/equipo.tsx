@@ -4,6 +4,7 @@ import {
   ensureRutHasDash,
   rutSchema,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Copy, Loader2, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
@@ -132,14 +133,10 @@ function EquipoPage({ me }: { me: MeOnboarded }) {
             </div>
           </div>
           {puedeInvitar && !mostrarForm && (
-            <button
-              type="button"
-              onClick={() => setMostrarForm(true)}
-              className="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
-            >
+            <Button variant="primary" onClick={() => setMostrarForm(true)} className="shrink-0">
               <UserPlus className="h-4 w-4" aria-hidden />
               Agregar persona
-            </button>
+            </Button>
           )}
         </div>
 
@@ -276,26 +273,18 @@ function CodigoEntregable({
             Vence el {alta.expira_en ? new Date(alta.expira_en).toLocaleDateString('es-CL') : '—'}.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onCerrar}
-          className="cursor-pointer text-amber-700 text-xs underline hover:text-amber-900"
-        >
+        <Button variant="link" size="inline" onClick={onCerrar} className="text-xs">
           Ocultar
-        </button>
+        </Button>
       </div>
       <div className="mt-3 flex items-center gap-2">
         <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
           {codigo}
         </div>
-        <button
-          type="button"
-          onClick={() => void copiar()}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs hover:bg-amber-700"
-        >
+        <Button variant="primary" size="sm" onClick={() => void copiar()} className="shrink-0">
           <Copy className="h-3 w-3" aria-hidden />
           {copiado ? 'Copiado ✓' : 'Copiar código'}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -477,11 +466,7 @@ function FormAlta({
       )}
 
       <div className="flex items-center gap-2 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={!puedeEnviar}
-          className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-        >
+        <Button variant="primary" type="submit" disabled={!puedeEnviar}>
           {enviando ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -493,14 +478,10 @@ function FormAlta({
               Agregar a mi equipo
             </>
           )}
-        </button>
-        <button
-          type="button"
-          onClick={onCancelar}
-          className="text-neutral-500 text-sm hover:text-neutral-700"
-        >
+        </Button>
+        <Button variant="ghost" onClick={onCancelar}>
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );

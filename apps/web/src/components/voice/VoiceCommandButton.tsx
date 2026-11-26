@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Mic, MicOff, Square } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useVoiceCommand } from '../../hooks/use-voice-command.js';
@@ -119,21 +120,14 @@ export function VoiceCommandButton({
 
   return (
     <div className="flex flex-col items-center gap-2" data-testid="voice-command-button">
-      <button
-        type="button"
+      <Button
+        variant={isListening ? 'primary' : 'secondary'}
+        size="icon"
         onClick={handleClick}
         aria-pressed={isListening}
         aria-label={ariaLabel}
         disabled={isProcessing}
-        className={[
-          'flex h-20 w-20 items-center justify-center rounded-full transition',
-          'shadow-lg',
-          isListening
-            ? 'animate-pulse bg-primary-700 text-white'
-            : isError
-              ? 'bg-amber-100 text-amber-800 ring-2 ring-amber-500'
-              : 'bg-primary-50 text-primary-700 ring-2 ring-primary-700/30 hover:bg-primary-100',
-        ].join(' ')}
+        className={`h-20 w-20 rounded-full shadow-lg${isListening ? ' animate-pulse' : ''}`}
       >
         {isError ? (
           <MicOff className="h-8 w-8" aria-hidden />
@@ -142,7 +136,7 @@ export function VoiceCommandButton({
         ) : (
           <Mic className="h-8 w-8" aria-hidden />
         )}
-      </button>
+      </Button>
 
       <p className="font-medium text-neutral-800 text-sm">{buttonLabel}</p>
       {!isListening && !isError && !isProcessing && (

@@ -3,6 +3,7 @@ import {
   empresaOnboardingInputSchema,
   ensureRutHasDash,
 } from '@booster-ai/shared-schemas';
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -624,33 +625,25 @@ export function OnboardingForm({
         )}
 
         <div className="mt-8 flex items-center justify-between">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={prevStep}
             disabled={step === 1 || mutation.isPending}
-            className="flex items-center gap-1 rounded-md px-3 py-2 text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:invisible"
+            className="disabled:invisible"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Atrás
-          </button>
+          </Button>
           {step < 4 ? (
-            <button
-              type="button"
-              onClick={nextStep}
-              className="flex items-center gap-2 rounded-md bg-primary-500 px-5 py-2.5 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600"
-            >
+            <Button variant="primary" onClick={nextStep}>
               Siguiente
               <ArrowRight className="h-4 w-4" aria-hidden />
-            </button>
+            </Button>
           ) : (
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="flex items-center gap-2 rounded-md bg-primary-500 px-5 py-2.5 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <Button type="submit" variant="primary" disabled={mutation.isPending}>
               {mutation.isPending ? 'Creando empresa…' : 'Crear empresa'}
               {!mutation.isPending && <Check className="h-4 w-4" aria-hidden />}
-            </button>
+            </Button>
           )}
         </div>
       </form>
@@ -705,8 +698,7 @@ function OperationToggle(props: {
   onChange: (next: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
+    <PressableArea
       onClick={() => props.onChange(!props.checked)}
       className={`w-full rounded-lg border p-4 text-left transition ${
         props.checked
@@ -731,7 +723,7 @@ function OperationToggle(props: {
           <div className="mt-1 text-neutral-600 text-sm">{props.description}</div>
         </div>
       </div>
-    </button>
+    </PressableArea>
   );
 }
 
@@ -741,8 +733,7 @@ function PlanCard(props: {
   onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <PressableArea
       onClick={props.onSelect}
       className={`relative rounded-lg border p-4 text-left transition ${
         props.selected
@@ -767,7 +758,7 @@ function PlanCard(props: {
           </li>
         ))}
       </ul>
-    </button>
+    </PressableArea>
   );
 }
 

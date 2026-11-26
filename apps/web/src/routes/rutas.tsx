@@ -1,4 +1,4 @@
-import { FootprintSeal } from '@booster-ai/ui-components';
+import { Button, FootprintSeal, PressableArea } from '@booster-ai/ui-components';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Inbox, Plus, Truck, UserRound, X } from 'lucide-react';
@@ -236,8 +236,7 @@ function RutasContenido({ me }: { me: MeOnboarded }) {
           <ul className="space-y-2">
             {rutas.map((r) => (
               <li key={r.id}>
-                <button
-                  type="button"
+                <PressableArea
                   aria-label={`${r.vehiculo?.patente ?? 'Sin camión'} · ${cargas(r.servicios)}`}
                   aria-pressed={seleccionada === r.id}
                   onClick={() => setSeleccionada(r.id)}
@@ -266,7 +265,7 @@ function RutasContenido({ me }: { me: MeOnboarded }) {
                       ? '1 parada pendiente'
                       : `${r.paradas_pendientes} paradas pendientes`}
                   </span>
-                </button>
+                </PressableArea>
               </li>
             ))}
           </ul>
@@ -569,16 +568,16 @@ function DetalleDeRuta({
                     <p className="text-neutral-500 text-xs">{kg(s.peso_kg)}</p>
                   )}
                 </div>
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   aria-label={`Agregar ${s.codigo_seguimiento} a la ruta`}
                   disabled={cambio.isPending}
                   onClick={() => agregar(s.asignacion_id)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                  className="shrink-0"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                   Agregar
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -739,8 +738,8 @@ function CamionYConductor({
         </p>
       )}
       <div className="mt-3 flex justify-end">
-        <button
-          type="button"
+        <Button
+          variant="primary"
           disabled={
             !cambio || guardando || flotaQ.isError || conductoresQ.isError || !elegido.vehiculo
           }
@@ -751,10 +750,9 @@ function CamionYConductor({
               conductor_id: elegido.conductor || null,
             })
           }
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
         >
           Guardar
-        </button>
+        </Button>
       </div>
     </fieldset>
   );
@@ -779,15 +777,15 @@ function BotonIcono({
   children,
 }: { etiqueta: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
+      size="icon"
       aria-label={etiqueta}
       title={etiqueta}
       disabled={disabled}
       onClick={onClick}
-      className="rounded-md border border-neutral-300 bg-white p-2 text-neutral-700 hover:bg-neutral-100 disabled:opacity-40"
     >
       {children}
-    </button>
+    </Button>
   );
 }

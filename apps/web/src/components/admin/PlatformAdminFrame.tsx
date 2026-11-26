@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Building2, LogOut, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -80,14 +81,10 @@ export function PlatformAdminFrame({
               <ArrowLeft className="h-4 w-4" aria-hidden />
               {volver.label}
             </Link>
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-neutral-600 text-sm transition hover:bg-neutral-100"
-            >
+            <Button variant="ghost" size="sm" type="button" onClick={() => void handleSignOut()}>
               <LogOut className="h-4 w-4" aria-hidden />
               Salir
-            </button>
+            </Button>
           </div>
         </div>
       </header>

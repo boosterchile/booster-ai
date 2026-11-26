@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import type { FirebaseError } from 'firebase/app';
 import { LogIn, Mail } from 'lucide-react';
@@ -281,10 +282,11 @@ export function LoginRoute() {
               />
             )}
 
-            <button
+            <Button
               type="submit"
+              variant="primary"
               disabled={isSubmitting || loading}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-500 px-4 py-3 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full"
             >
               {mode === 'sign-up' ? (
                 <>Crear cuenta</>
@@ -299,7 +301,7 @@ export function LoginRoute() {
                   {isSubmitting ? 'Conectando…' : 'Entrar'}
                 </>
               )}
-            </button>
+            </Button>
           </form>
 
           {mode === 'sign-in' && (
@@ -309,14 +311,14 @@ export function LoginRoute() {
                 <span className="h-px flex-1 bg-neutral-200" />
               </div>
 
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={handleGoogleSignIn}
                 disabled={isSubmitting || loading}
-                className="flex w-full items-center justify-center gap-3 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-neutral-900 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full"
               >
                 Continuar con Google
-              </button>
+              </Button>
             </>
           )}
 
@@ -325,22 +327,14 @@ export function LoginRoute() {
               <>
                 <p>
                   ¿Sin cuenta?{' '}
-                  <button
-                    type="button"
-                    onClick={() => changeMode('sign-up')}
-                    className="font-medium text-primary-600 hover:underline"
-                  >
+                  <Button variant="link" size="inline" onClick={() => changeMode('sign-up')}>
                     Crea una
-                  </button>
+                  </Button>
                 </p>
                 <p>
-                  <button
-                    type="button"
-                    onClick={() => changeMode('reset')}
-                    className="font-medium text-primary-600 hover:underline"
-                  >
+                  <Button variant="link" size="inline" onClick={() => changeMode('reset')}>
                     Olvidé mi contraseña
-                  </button>
+                  </Button>
                 </p>
                 {/* D9 — Link al login dedicado de conductores (RUT + PIN).
                     Es una surface distinta porque los conductores no tienen
@@ -385,24 +379,16 @@ export function LoginRoute() {
             {mode === 'sign-up' && (
               <p>
                 ¿Ya tienes cuenta?{' '}
-                <button
-                  type="button"
-                  onClick={() => changeMode('sign-in')}
-                  className="font-medium text-primary-600 hover:underline"
-                >
+                <Button variant="link" size="inline" onClick={() => changeMode('sign-in')}>
                   Inicia sesión
-                </button>
+                </Button>
               </p>
             )}
             {mode === 'reset' && (
               <p>
-                <button
-                  type="button"
-                  onClick={() => changeMode('sign-in')}
-                  className="font-medium text-primary-600 hover:underline"
-                >
+                <Button variant="link" size="inline" onClick={() => changeMode('sign-in')}>
                   Volver al inicio de sesión
-                </button>
+                </Button>
               </p>
             )}
           </div>

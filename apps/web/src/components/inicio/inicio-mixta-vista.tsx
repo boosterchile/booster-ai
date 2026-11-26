@@ -1,4 +1,4 @@
-import { cn } from '@booster-ai/ui-components';
+import { PressableArea, cn } from '@booster-ai/ui-components';
 import { useState } from 'react';
 import type { NegocioHoy } from '../inicio-transportista/negocio.js';
 import type { NavItem } from '../nav-items.js';
@@ -94,9 +94,8 @@ function FiltroRol({
       {FILTROS.map((filtro) => {
         const activo = value === filtro.id;
         return (
-          <button
+          <PressableArea
             key={filtro.id}
-            type="button"
             aria-pressed={activo}
             onClick={() => onChange(filtro.id)}
             className={cn(
@@ -105,7 +104,7 @@ function FiltroRol({
             )}
           >
             {filtro.label}
-          </button>
+          </PressableArea>
         );
       })}
     </fieldset>
