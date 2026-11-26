@@ -34,6 +34,14 @@ Que el código compartido cumpla D-18: el botón principal es verde Booster en t
 - Blanco sobre `primary-600` ≥ 4.5, y mejor que negro.
 - Texto del sello sobre su fondo ≥ 4.5; borde del sello sobre superficie clara ≥ 3.
 
+**Sello de la huella** (`FootprintSeal`; decisión 2 del PO del 2026-11-25, `docs/design/rediseno-2026-11-25/README.md`)
+
+- Recibe la presentación de ADR-091 que ya calcula `presentacionNivel` (`primario`, `medido_teltonika`, `estimado`). Son tres presentaciones, igual que en el certificado.
+- `primario` (la huella misma fue medida, `primario_verificable`) → sello «Medido».
+- `medido_teltonika` conserva su texto, «Distancia medida con Teltonika · consumo modelado», con forma propia, y no lleva «Medido» ni «Estimado».
+- `estimado` → sello «Estimado».
+- Se usa donde la web ya recibe esa presentación: la huella de una ruta (`/app/rutas`) y los últimos viajes de la ficha de Flota de la plataforma. Una ruta todavía sin cerrar (`es_estimacion`) es «Estimado».
+
 **Demostrable**: el sello aparece en `/apariencia` junto a las demás primitivas.
 
 ## Verificación
@@ -42,6 +50,6 @@ Que el código compartido cumpla D-18: el botón principal es verde Booster en t
 
 ## Fuera de alcance
 
-- Usar el sello en pantallas de producto (rutas, flota, certificados). Qué presentación de ADR-091 lleva «Medido» lo decide el PO: «Distancia medida con Teltonika» mide la distancia pero modela el consumo.
+- Llevar el sello al resto de las pantallas con cifras de huella (frente 2 del rediseño).
 - Botones que no usan el `Button` compartido.
 - El PDF del certificado (`certificate-generator`).

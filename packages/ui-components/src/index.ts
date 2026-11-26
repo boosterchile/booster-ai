@@ -18,6 +18,11 @@ export {
 export { Badge, type BadgeProps, type BadgeVariant } from './badge.js';
 export { Button, type ButtonProps, type ButtonVariant } from './button.js';
 export { Card, CardBody, CardFooter, CardHeader, type CardProps } from './card.js';
+export {
+  type FootprintPresentation,
+  FootprintSeal,
+  type FootprintSealProps,
+} from './footprint-seal.js';
 export { Input, type InputProps } from './input.js';
 export {
   MeasurementSeal,

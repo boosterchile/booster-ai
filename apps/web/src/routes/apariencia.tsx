@@ -5,6 +5,7 @@ import {
   CardBody,
   CardFooter,
   CardHeader,
+  FootprintSeal,
   Input,
   MeasurementSeal,
   Modal,
@@ -266,6 +267,7 @@ function PrimitivasDemo() {
       <div className="flex flex-wrap items-center gap-2">
         <MeasurementSeal kind="measured" />
         <MeasurementSeal kind="estimated" />
+        <FootprintSeal presentacion="medido_teltonika" />
       </div>
       <Card className="max-w-sm">
         <CardHeader>Carga #1234</CardHeader>

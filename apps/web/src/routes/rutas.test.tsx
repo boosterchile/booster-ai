@@ -272,8 +272,8 @@ describe('/app/rutas', () => {
     });
     await abrir();
     const huella = await screen.findByRole('region', { name: 'Huella de la ruta' });
-    expect(huella).toHaveTextContent('Estimación');
-    expect(huella).not.toHaveTextContent('Medida');
+    expect(huella).toHaveTextContent('Estimado');
+    expect(huella).not.toHaveTextContent('Medid');
     expect(huella).toHaveTextContent('100,0 kg CO₂e');
     expect(huella).toHaveTextContent('BOO-AAA111');
     expect(huella).toHaveTextContent('40,00 %');
@@ -306,6 +306,31 @@ describe('/app/rutas', () => {
     expect(huella).toHaveTextContent('Estimado');
     expect(huella).not.toHaveTextContent('Medida');
     expect(huella).not.toHaveTextContent('Estimación');
+  });
+
+  it.each([
+    ['primario', 'Medido'],
+    ['medido_teltonika', 'Distancia medida con Teltonika · consumo modelado'],
+  ] as const)('una ruta cerrada con presentación %s muestra «%s»', async (presentacion, texto) => {
+    servir({
+      detalle: {
+        'ruta-a': {
+          ...RUTA_A,
+          huella: {
+            es_estimacion: false,
+            presentacion,
+            emisiones_kgco2e: '98.000',
+            servicios: [],
+          },
+        },
+      },
+    });
+    await abrir();
+    const huella = await screen.findByRole('region', { name: 'Huella de la ruta' });
+    expect(huella).toHaveTextContent(texto);
+    if (presentacion === 'medido_teltonika') {
+      expect(within(huella).queryByText('Medido')).not.toBeInTheDocument();
+    }
   });
 
   it('lista las rutas con su camión, conductor y cargas', async () => {

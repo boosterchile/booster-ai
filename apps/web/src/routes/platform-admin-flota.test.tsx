@@ -233,7 +233,9 @@ describe('/app/platform-admin/flota', () => {
     expect(ficha).toHaveTextContent('9.832 registros');
     expect(ficha).toHaveTextContent('BOO-AAA111');
     expect(ficha).toHaveTextContent('En camino');
-    expect(ficha).toHaveTextContent('Certificado: distancia medida con Teltonika');
+    expect(ficha).toHaveTextContent(
+      'Certificado: Distancia medida con Teltonika · consumo modelado',
+    );
     expect(ficha).not.toHaveTextContent('Estimado (modelado)');
     expect(within(ficha).getByTestId('cert-primario')).toHaveTextContent('0');
     expect(within(ficha).getByTestId('cert-medido-teltonika')).toHaveTextContent('1');
