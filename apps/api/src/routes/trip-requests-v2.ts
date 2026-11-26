@@ -76,6 +76,7 @@ import {
 } from '../services/mandato-cobro/eventos-pago.js';
 import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
+import { medicionDesdeMetricas } from '../services/medicion-huella-metricas.js';
 import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import {
@@ -172,7 +173,7 @@ export function serializeTripMetrics(
     | 'certificateKmsKeyVersion'
     | 'certificateIssuedAt'
   > & { participacion?: string | null },
-  opts?: { readonly compartida?: boolean },
+  opts?: { readonly compartida?: boolean; readonly pesoDeclaradoKg?: number | null },
 ) {
   return {
     distance_km_estimated: m.distanceKmEstimated,
@@ -187,6 +188,8 @@ export function serializeTripMetrics(
     linea_metodo: lineaMetodoDesdeMetricas(m),
     // ADR-091 — el sello de la cifra en la web (`.specs/sello-huella-toda-la-web`).
     presentacion: presentacionDesdeMetricas(m),
+    // `.specs/frente2-cierre` §3.1 — qué se midió y qué le falta al nivel.
+    medicion: medicionDesdeMetricas(m, opts?.pesoDeclaradoKg ?? null),
     certificate_pdf_url: m.certificatePdfUrl,
     certificate_sha256: m.certificateSha256,
     certificate_kms_key_version: m.certificateKmsKeyVersion,
@@ -803,7 +806,10 @@ export function createTripRequestsV2Routes(opts: {
           }
         : null,
       metrics: metricsRow
-        ? serializeTripMetrics(metricsRow, { compartida: viajaConsolidada })
+        ? serializeTripMetrics(metricsRow, {
+            compartida: viajaConsolidada,
+            pesoDeclaradoKg: trip.cargoWeightKg,
+          })
         : null,
     });
   });

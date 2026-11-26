@@ -80,6 +80,7 @@ import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
+import { resumenCertificados } from '../services/resumen-certificados.js';
 import { rutaCompartidaDelViaje } from '../services/ruta-compartida.js';
 import { safeIsoString } from '../services/safe-iso-string.js';
 import {
@@ -90,6 +91,7 @@ import {
 import { serializeTripMetrics } from './trip-requests-v2.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
+const huellaMesConsultasCounter = getBusinessCounter('huella_mes_transportista_consultas_total');
 /**
  * T7 (medicion-huella-segmento): recogidas confirmadas por el endpoint. Atributos
  * `via` (conductor|carrier), `picked_up_at_source` (cliente = cruce del geofence
@@ -207,6 +209,34 @@ export function createAssignmentsRoutes(opts: {
   // eso cambia se agrega un `limit` explícito — un tope implícito acá sería
   // peor que ninguno, porque escondería servicios sin avisar.
   // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // GET /assignments/huella-mes — huella de los viajes de la empresa
+  // transportista certificados en el mes en curso (hora de Santiago),
+  // separada por presentación de ADR-091 (`.specs/frente2-cierre` §3.1). La
+  // muestran el Inicio del transportista y el de Booster Fleet.
+  // ---------------------------------------------------------------------
+  app.get('/huella-mes', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const empresaId = auth.activeMembership.empresa.id;
+    const resumen = await withBusinessSpan(
+      { name: 'huella.mes_transportista', attributes: { 'booster.empresa_id': empresaId } },
+      async (span) => {
+        const r = await resumenCertificados({
+          db: opts.db,
+          transportistaEmpresaId: empresaId,
+          mesDe: new Date(),
+        });
+        setResultAttributes(span, { 'booster.huella.certificados': r.certificados });
+        return r;
+      },
+    );
+    huellaMesConsultasCounter.add(1);
+    return c.json({ resumen });
+  });
+
   app.get('/', async (c) => {
     const auth = requireCarrierAuth(c);
     if (!auth.ok) {
@@ -883,6 +913,7 @@ export function createAssignmentsRoutes(opts: {
         deliveredAt: assignments.deliveredAt,
         tripId: trips.id,
         trackingCode: trips.trackingCode,
+        cargoWeightKg: trips.cargoWeightKg,
         generadorEmpresaId: trips.generadorCargaEmpresaId,
         metricsTripId: tripMetrics.tripId,
         distanceKmEstimated: tripMetrics.distanceKmEstimated,
@@ -992,7 +1023,9 @@ export function createAssignmentsRoutes(opts: {
         delivered_at: toIso(row.deliveredAt),
       },
       trip: { id: row.tripId, tracking_code: row.trackingCode },
-      metrics: row.metricsTripId ? serializeTripMetrics(row) : null,
+      metrics: row.metricsTripId
+        ? serializeTripMetrics(row, { pesoDeclaradoKg: row.cargoWeightKg })
+        : null,
       cobertura,
       certificate: certificado,
     });

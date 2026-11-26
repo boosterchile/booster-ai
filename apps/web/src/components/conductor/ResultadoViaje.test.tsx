@@ -137,3 +137,47 @@ describe('ResultadoViaje — sello de la huella (ADR-091)', () => {
     expect(await screen.findByTestId('resultado-huella')).toHaveTextContent('Estimado');
   });
 });
+
+describe('ResultadoViaje — qué se midió (.specs/frente2-cierre §3.1)', () => {
+  beforeEach(() => {
+    getResultado.mockReset();
+  });
+
+  it('con medicion del API muestra la tabla y el nivel con lo que falta', async () => {
+    const r = resultado(null, '0.00');
+    if (!r.metrics) {
+      throw new Error('fixture sin métricas');
+    }
+    r.metrics = {
+      ...r.metrics,
+      medicion: {
+        filas: [
+          { magnitud: 'distancia', fuente: 'Ruta calculada con Google Routes', clase: 'estimado' },
+          {
+            magnitud: 'combustible',
+            fuente: 'Modelo GLEC v3.0 con el perfil del vehículo',
+            clase: 'modelado',
+          },
+          { magnitud: 'peso', fuente: 'Sin peso declarado', clase: 'sin_dato' },
+        ],
+        nivel: {
+          nivel: 'secundario_modeled',
+          nombre: 'Secundario modelado',
+          falta: [
+            'medir la distancia con un Teltonika instalado en el camión',
+            'medir el consumo con el CAN del camión',
+          ],
+          frase:
+            'Para llegar a primario verificable falta medir la distancia con un Teltonika instalado en el camión y medir el consumo con el CAN del camión.',
+        },
+      },
+    };
+    getResultado.mockResolvedValue(r);
+    render(<ResultadoViaje assignmentId="asg-1" />);
+    const tabla = await screen.findByTestId('resultado-medicion');
+    expect(tabla).toHaveTextContent('DistanciaRuta calculada con Google RoutesEstimado');
+    expect(screen.getByTestId('resultado-medicion-nivel')).toHaveTextContent(
+      'Nivel: Secundario modelado.',
+    );
+  });
+});

@@ -41,3 +41,31 @@ export function campoPorPresentacion(
     estimado: por.estimado[campo],
   };
 }
+
+/**
+ * Qué se midió y el nivel con lo que le falta (`.specs/frente2-cierre` §3.1),
+ * tal como lo arma el API (`medicionHuella` de carbon-calculator).
+ */
+export const medicionSchema = z.object({
+  filas: z.array(
+    z.object({
+      magnitud: z.enum(['distancia', 'combustible', 'peso']),
+      fuente: z.string(),
+      clase: z.enum(['medido', 'modelado', 'declarado', 'estimado', 'sin_dato']),
+    }),
+  ),
+  nivel: z.object({
+    nivel: z.enum(['primario_verificable', 'secundario_modeled', 'secundario_default']).nullable(),
+    nombre: z.string(),
+    falta: z.array(z.string()),
+    frase: z.string(),
+  }),
+});
+
+export type Medicion = z.infer<typeof medicionSchema>;
+
+/** Anticipo de cómo saldrá la huella (`anticipoHuella` de shared-schemas). */
+export const anticipoHuellaSchema = z.object({
+  presentacion: presentacionSchema,
+  frase: z.string(),
+});

@@ -147,4 +147,66 @@ describe('integration: resumen de certificados por presentación', () => {
     });
     expect(resumen.certificados).toBe(0);
   });
+
+  test('por transportista y mes en curso de Santiago (.specs/frente2-cierre §3.1)', async () => {
+    const { db } = handle;
+    const generadorId = await empresa();
+    const transportistaId = await empresa();
+    const otraTransportistaId = await empresa();
+    async function asignado(
+      empresaTransportista: string,
+      emitido: Date,
+      kg: string,
+      m: Partial<typeof schema.tripMetrics.$inferInsert> = {},
+    ) {
+      const [trip] = await db
+        .insert(schema.trips)
+        .values({
+          trackingCode: `BOO-${randomUUID().slice(0, 6).toUpperCase()}`,
+          generadorCargaEmpresaId: generadorId,
+          originAddressRaw: 'Origen 1',
+          destinationAddressRaw: 'Destino 2',
+          cargoType: 'carga_seca',
+          pickupDateRaw: '2026-11-20',
+          status: 'entregado',
+        })
+        .returning({ id: schema.trips.id });
+      if (!trip) {
+        throw new Error('fixture: viaje no creado');
+      }
+      await db.insert(schema.assignments).values({
+        tripId: trip.id,
+        empresaId: empresaTransportista,
+        agreedPriceClp: 100_000,
+        status: 'entregado',
+        deliveredAt: emitido,
+      });
+      await db.insert(schema.tripMetrics).values({
+        tripId: trip.id,
+        carbonEmissionsKgco2eEstimated: kg,
+        certificationLevel: 'secundario_modeled',
+        routeDataSource: 'maps_directions',
+        coveragePct: '0',
+        certificateIssuedAt: emitido,
+        ...m,
+      });
+    }
+    // 2026-11-01 02:00 UTC es todavía 31 de octubre en Santiago (UTC-3): no entra.
+    await asignado(transportistaId, new Date('2026-11-01T02:00:00Z'), '999.000');
+    await asignado(transportistaId, new Date('2026-11-10T12:00:00Z'), '100.000');
+    await asignado(transportistaId, new Date('2026-11-20T12:00:00Z'), '50.000', {
+      routeDataSource: 'teltonika_gps',
+      coveragePct: '91.00',
+    });
+    await asignado(otraTransportistaId, new Date('2026-11-15T12:00:00Z'), '777.000');
+
+    const resumen = await resumenCertificados({
+      db,
+      transportistaEmpresaId: transportistaId,
+      mesDe: new Date('2026-11-26T12:00:00Z'),
+    });
+    expect(resumen.certificados).toBe(2);
+    expect(resumen.por_presentacion.estimado.kgco2e).toBe(100);
+    expect(resumen.por_presentacion.medido_teltonika.kgco2e).toBe(50);
+  });
 });

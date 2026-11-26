@@ -24,6 +24,7 @@ import {
   puedeVerBoosterFleet,
   usePanelBoosterFleet,
 } from '../components/booster-fleet/use-panel.js';
+import { HuellaDelMes } from '../components/huella/HuellaDelMes.js';
 
 export function BoosterFleetRoute() {
   return (
@@ -124,6 +125,11 @@ function Controles({
       ) : null}
 
       <ResumenFlota panel={panel} documentosPendientes={hallazgos.length} />
+
+      {/* `.specs/frente2-cierre` §3.1: la misma huella del mes que el Inicio del servicio completo. */}
+      <div className="mt-4">
+        <HuellaDelMes />
+      </div>
 
       {panel.combustible.truncado ? (
         <p className="mt-3 rounded-md border border-urgency-100 bg-warning-50 px-3 py-2 text-sm text-warning-700">

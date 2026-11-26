@@ -1,4 +1,4 @@
-import { Button } from '@booster-ai/ui-components';
+import { Button, FootprintSeal } from '@booster-ai/ui-components';
 import { useNavigate } from '@tanstack/react-router';
 import { Check, Clock, Leaf, Loader2, MapPin, Package, X } from 'lucide-react';
 import { type FormEvent, useId, useState } from 'react';
@@ -206,6 +206,16 @@ export function OfferCard({ offer, puedeDecidir }: OfferCardProps) {
           <dd className="text-neutral-900">{formatDate(offer.trip_request.pickup_window_end)}</dd>
         </div>
       </dl>
+
+      {offer.anticipo_huella ? (
+        <p
+          data-testid="oferta-anticipo-huella"
+          className="mt-3 flex flex-wrap items-center gap-2 text-neutral-700 text-xs"
+        >
+          <FootprintSeal presentacion={offer.anticipo_huella.presentacion} />
+          <span>{offer.anticipo_huella.frase}</span>
+        </p>
+      ) : null}
 
       {/* Eco preview — Phase 1 PR-H4. Lazy fetch on user click. */}
       <div className="mt-4">

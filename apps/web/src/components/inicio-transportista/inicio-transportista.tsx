@@ -1,3 +1,4 @@
+import { useHuellaDelMes } from '../huella/HuellaDelMes.js';
 import { InicioTransportistaVista } from './inicio-transportista-vista.js';
 import { buildInicioVista } from './modelo.js';
 import { buildNegocioHoy } from './negocio.js';
@@ -33,6 +34,7 @@ export function InicioTransportista({
     ofertasCarga,
     ahora,
   });
+  const huellaMes = useHuellaDelMes();
   const negocio = buildNegocioHoy(datos, ahora);
   return (
     <InicioTransportistaVista
@@ -40,6 +42,7 @@ export function InicioTransportista({
       negocio={negocio}
       onReintentar={reintentar}
       soloLectura={soloLectura}
+      huellaMes={huellaMes}
     />
   );
 }

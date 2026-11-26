@@ -369,3 +369,25 @@ describe('OfferCard — translate ApiError code branches', () => {
     expect(await screen.findByText(/msg-from-err/)).toBeInTheDocument();
   });
 });
+
+describe('OfferCard — anticipo de la huella (.specs/frente2-cierre D4)', () => {
+  it('con camión sugerido muestra cómo saldrá la huella, con su sello', () => {
+    renderCard(
+      makeOffer({
+        anticipo_huella: {
+          presentacion: 'medido_teltonika',
+          frase:
+            'Con el Teltonika la distancia saldrá medida si cubre el 80 % del viaje. Sale «Medido» solo si el camión envía su consumo por CAN.',
+        },
+      }),
+    );
+    const anticipo = screen.getByTestId('oferta-anticipo-huella');
+    expect(anticipo).toHaveTextContent('Distancia medida con Teltonika · consumo modelado');
+    expect(anticipo).toHaveTextContent('saldrá medida si cubre el 80 %');
+  });
+
+  it('sin anticipo (sin camión sugerido) no muestra el bloque', () => {
+    renderCard(makeOffer({ anticipo_huella: null }));
+    expect(screen.queryByTestId('oferta-anticipo-huella')).not.toBeInTheDocument();
+  });
+});

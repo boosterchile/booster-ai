@@ -15,6 +15,7 @@ import {
   Truck,
   Users,
 } from 'lucide-react';
+import { type EstadoHuellaDelMes, HuellaDelMesVista } from '../huella/HuellaDelMes.js';
 import { AvisosCard, AvisosChips } from './avisos-chips.js';
 import { BloqueNegocio, CtaVerde, ErrorBloque, EsqueletoBloque } from './bloque-negocio.js';
 import { ListaProximos } from './lista-proximos.js';
@@ -47,12 +48,15 @@ export function InicioTransportistaVista({
   onReintentar,
   plataActiva = INICIO_PLATA_ACTIVA,
   soloLectura = false,
+  huellaMes,
 }: {
   vista: InicioVista;
   negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
   plataActiva?: boolean;
   soloLectura?: boolean;
+  /** Huella del mes (`.specs/frente2-cierre` §3.1); sin ella no se muestra el bloque. */
+  huellaMes?: EstadoHuellaDelMes;
 }) {
   const avisos = avisosListos(negocio);
   return (
@@ -73,6 +77,7 @@ export function InicioTransportistaVista({
             <Ofertas negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
           ) : null}
           <Retiros negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
+          {huellaMes ? <HuellaDelMesVista estado={huellaMes} /> : null}
           {plataActiva && vista.ofertasCarga ? <Plata /> : null}
           <AvisosChips avisos={avisos} />
           <AvisosDocumentos negocio={negocio} onReintentar={onReintentar} />

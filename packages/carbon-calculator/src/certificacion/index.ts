@@ -19,3 +19,10 @@ export {
 } from './derivar-nivel.js';
 export { calcularFactorIncertidumbre } from './factor-incertidumbre.js';
 export { type LineaMetodoInput, lineaMetodoCertificacion } from './linea-metodo.js';
+export {
+  type ClaseMedicion,
+  type FilaMedicion,
+  type MedicionHuella,
+  type NivelExplicado,
+  medicionHuella,
+} from './medicion-huella.js';

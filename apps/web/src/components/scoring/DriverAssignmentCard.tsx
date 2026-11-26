@@ -1,4 +1,5 @@
-import { Button } from '@booster-ai/ui-components';
+import { anticipoHuella } from '@booster-ai/shared-schemas';
+import { Button, FootprintSeal } from '@booster-ai/ui-components';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Loader2, User, UserPlus } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -50,6 +51,8 @@ const vehiculoFlotaSchema = z.object({
   type: z.string().optional(),
   unit_category: z.string().optional(),
   status: z.string(),
+  // `.specs/frente2-cierre` D4 — anticipa la huella del camión elegido.
+  teltonika_imei: z.string().nullish(),
 });
 
 const respuestaVehiculosSchema = z.union([
@@ -192,6 +195,12 @@ export function DriverAssignmentCard({
   const filas = vehiculosQ.isSuccess ? filasVehiculos(vehiculosQ.data) : null;
   const formaMala = vehiculosQ.isSuccess && filas == null;
   const camiones = (filas ?? []).filter(esCamionElegible);
+  // `.specs/frente2-cierre` D4: cómo saldrá la huella con el camión elegido.
+  // Un camión que no viene en la lista (el ya asignado fuera de ella) no anticipa.
+  const camionElegido = camiones.find((v) => v.id === selectedVehicleId);
+  const anticipo = anticipoHuella({
+    tieneTeltonika: camionElegido ? Boolean(camionElegido.teltonika_imei) : null,
+  });
   const opcionesCamion = conCamionAsignado(
     camiones,
     currentVehicleId,
@@ -324,6 +333,15 @@ export function DriverAssignmentCard({
                   </select>
                 </label>
               )}
+              {puedeElegirCamion && anticipo ? (
+                <p
+                  data-testid="asignacion-anticipo-huella"
+                  className="flex flex-wrap items-center gap-2 text-neutral-700 text-xs"
+                >
+                  <FootprintSeal presentacion={anticipo.presentacion} />
+                  <span>{anticipo.frase}</span>
+                </p>
+              ) : null}
               <label
                 className="flex min-w-0 flex-col gap-1 text-neutral-700 text-sm"
                 htmlFor="driver-assignment-select"

@@ -38,6 +38,7 @@ import {
   SeccionComercial,
 } from '../components/comercial/SeccionComercial.js';
 import { CifraHuella } from '../components/huella/CifraHuella.js';
+import { TablaMedicion } from '../components/huella/TablaMedicion.js';
 import { type LugarDetallado, SelectorLugar } from '../components/lugar/SelectorLugar.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
@@ -61,7 +62,7 @@ import {
 } from '../lib/etiquetas-carga.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 import { logger } from '../lib/logger.js';
-import type { PresentacionHuella } from '../lib/presentacion-huella.js';
+import type { Medicion, PresentacionHuella } from '../lib/presentacion-huella.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -184,6 +185,8 @@ interface TripMetrics {
   linea_metodo: string | null;
   /** ADR-091, calculada por el API. Ausente en respuestas viejas: «Estimado». */
   presentacion?: PresentacionHuella;
+  /** Qué se midió y el nivel (`.specs/frente2-cierre` §3.1). Ausente en respuestas viejas. */
+  medicion?: Medicion;
   certificate_pdf_url: string | null;
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
@@ -1850,6 +1853,15 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     {tripQ.data.metrics.linea_metodo ?? '—'}
                   </DataRow>
                 </div>
+                {tripQ.data.metrics.medicion && (
+                  <div className="sm:col-span-2">
+                    <p className="mb-1 font-medium text-neutral-500 text-xs">Qué se midió</p>
+                    <TablaMedicion
+                      medicion={tripQ.data.metrics.medicion}
+                      data-testid="carga-medicion"
+                    />
+                  </div>
+                )}
                 {tripQ.data.metrics.certificate_issued_at && (
                   <div className="sm:col-span-2">
                     <DescargarCertificadoButton tripId={tripQ.data.trip_request.id} />

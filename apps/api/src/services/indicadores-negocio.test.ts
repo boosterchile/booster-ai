@@ -12,7 +12,7 @@ function dbCon(selects: unknown[][]) {
   const cola = [...selects];
   const select = vi.fn(() => {
     const chain: Record<string, unknown> = {};
-    for (const paso of ['from', 'innerJoin', 'where', 'groupBy', 'orderBy', 'limit']) {
+    for (const paso of ['from', 'innerJoin', 'leftJoin', 'where', 'groupBy', 'orderBy', 'limit']) {
       chain[paso] = vi.fn(() => chain);
     }
     chain.then = (resolver: (filas: unknown[]) => unknown) =>
