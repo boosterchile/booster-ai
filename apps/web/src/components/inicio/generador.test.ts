@@ -141,4 +141,23 @@ describe('buildGeneradorHoy', () => {
     expect(negocio.verMontos).toBe(false);
     expect(negocio.gastoActivo).toBe(false);
   });
+
+  it('el rótulo del mes sale de la fecha, en la zona de Santiago', () => {
+    const octubre = buildGeneradorHoy(listo([]), listo([]), AHORA, { soloLectura: false });
+    expect(octubre.mes).toBe('octubre');
+    const noviembre = buildGeneradorHoy(
+      { estado: 'cargando' },
+      listo([]),
+      new Date('2026-11-26T12:00:00.000Z'),
+      {
+        soloLectura: false,
+      },
+    );
+    expect(noviembre.mes).toBe('noviembre');
+    // 1 de diciembre 01:00 UTC todavía es 30 de noviembre en Santiago.
+    const borde = buildGeneradorHoy(listo([]), listo([]), new Date('2026-12-01T01:00:00.000Z'), {
+      soloLectura: false,
+    });
+    expect(borde.mes).toBe('noviembre');
+  });
 });

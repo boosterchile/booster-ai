@@ -2,7 +2,7 @@ import type { PresentacionHuella } from '../../lib/presentacion-huella.js';
 import { comunaDesdeDireccion } from '../inicio-transportista/modelo.js';
 import type { AgendaItem } from './agenda.js';
 import type { AvisoItem } from './avisos.js';
-import { dentroDeDias, mismoMes, partesCuando } from './cuando.js';
+import { dentroDeDias, mesEnCurso, mismoMes, partesCuando } from './cuando.js';
 import { INICIO_GASTO_GENERADOR_ACTIVO, INICIO_MONTOS_VISUALIZADOR } from './flags.js';
 import type { PinMapa } from './map-preview-card.js';
 import { pipelineDe } from './pipeline.js';
@@ -57,6 +57,8 @@ export interface GeneradorHoy {
   mapa: { pins: PinMapa[]; resumen: string | null };
   gastoActivo: boolean;
   verMontos: boolean;
+  /** Mes en curso en Santiago, para los rótulos «Gasto …» y «Huella …». */
+  mes: string;
 }
 
 const AGENDA_TOPE = 5;
@@ -165,6 +167,7 @@ export function buildGeneradorHoy(
       mapa: { pins: [], resumen: null },
       gastoActivo,
       verMontos,
+      mes: mesEnCurso(ahora),
     };
   }
   if (viajes.estado === 'error') {
@@ -176,6 +179,7 @@ export function buildGeneradorHoy(
       mapa: { pins: [], resumen: null },
       gastoActivo,
       verMontos,
+      mes: mesEnCurso(ahora),
     };
   }
   if (viajes.estado !== 'listo') {
@@ -187,6 +191,7 @@ export function buildGeneradorHoy(
       mapa: { pins: [], resumen: null },
       gastoActivo,
       verMontos,
+      mes: mesEnCurso(ahora),
     };
   }
   const filas = viajes.valor;
@@ -230,6 +235,7 @@ export function buildGeneradorHoy(
     },
     gastoActivo,
     verMontos,
+    mes: mesEnCurso(ahora),
   };
 }
 
