@@ -29,6 +29,9 @@ export async function leerViajesEntregados(db: Db): Promise<ViajeEntregado[]> {
       kgco2eReales: tripMetrics.carbonEmissionsKgco2eActual,
       kgco2eEstimadas: tripMetrics.carbonEmissionsKgco2eEstimated,
       kgco2eEvitado: tripMetrics.ahorroCo2eVsSinMatchingKgco2e,
+      certificationLevel: tripMetrics.certificationLevel,
+      routeDataSource: tripMetrics.routeDataSource,
+      coveragePct: tripMetrics.coveragePct,
     })
     .from(trips)
     .innerJoin(assignments, eq(assignments.tripId, trips.id))

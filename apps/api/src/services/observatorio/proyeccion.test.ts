@@ -22,6 +22,9 @@ const BASE = {
   kgco2eReales: '35.120',
   kgco2eEstimadas: '40.000',
   kgco2eEvitado: '12.300',
+  certificationLevel: 'secundario_modeled' as const,
+  routeDataSource: 'teltonika_gps' as const,
+  coveragePct: '92.00',
 };
 
 describe('franjaHoraria (hora de Chile)', () => {
@@ -68,7 +71,27 @@ describe('proyectarViaje', () => {
       distancia_km: 42.5,
       kgco2e: 35.12,
       kgco2e_evitado: 12.3,
+      presentacion: 'medido_teltonika',
     });
+  });
+
+  it('lleva la presentación de ADR-091 de cada viaje (la misma del certificado)', () => {
+    expect(
+      proyectarViaje({ ...BASE, certificationLevel: 'primario_verificable' }).presentacion,
+    ).toBe('primario');
+    expect(proyectarViaje({ ...BASE, routeDataSource: 'maps_directions' }).presentacion).toBe(
+      'estimado',
+    );
+    expect(proyectarViaje({ ...BASE, coveragePct: '40.00' }).presentacion).toBe('estimado');
+    // Viaje sin métricas (LEFT JOIN): no se afirma lo medido.
+    expect(
+      proyectarViaje({
+        ...BASE,
+        certificationLevel: null,
+        routeDataSource: null,
+        coveragePct: null,
+      }).presentacion,
+    ).toBe('estimado');
   });
 
   it('sin emisiones reales usa las estimadas; sin evitado, 0', () => {

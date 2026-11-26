@@ -35,6 +35,9 @@ const VIAJE: ViajeEntregado = {
   kgco2eReales: '35.120',
   kgco2eEstimadas: null,
   kgco2eEvitado: null,
+  certificationLevel: 'primario_verificable',
+  routeDataSource: 'teltonika_gps',
+  coveragePct: '98.00',
 };
 
 /** Cliente BigQuery falso: captura lo escrito al stream y las consultas. */
@@ -117,10 +120,37 @@ describe('exportarObservatorio', () => {
       datasetId: 'observatory',
       leerViajes: async () => [VIAJE],
       cargador: crearCargadorBigQuery(f.cliente),
+      conPresentacion: false,
     });
     expect(r).toEqual({ filas: 1 });
     const fila = JSON.parse(f.escrito.join('').trim()) as Record<string, unknown>;
     expect(fila).toMatchObject({ viaje_id: VIAJE.viajeId, franja: '09-12', kgco2e: 35.12 });
+  });
+
+  it('con la bandera apagada no manda presentacion: la tabla todavía no tiene la columna', async () => {
+    const f = clienteFalso();
+    await exportarObservatorio({
+      logger,
+      datasetId: 'observatory',
+      leerViajes: async () => [VIAJE],
+      cargador: crearCargadorBigQuery(f.cliente),
+      conPresentacion: false,
+    });
+    const fila = JSON.parse(f.escrito.join('').trim()) as Record<string, unknown>;
+    expect(fila).not.toHaveProperty('presentacion');
+  });
+
+  it('con la bandera encendida cada fila lleva su presentación', async () => {
+    const f = clienteFalso();
+    await exportarObservatorio({
+      logger,
+      datasetId: 'observatory',
+      leerViajes: async () => [VIAJE],
+      cargador: crearCargadorBigQuery(f.cliente),
+      conPresentacion: true,
+    });
+    const fila = JSON.parse(f.escrito.join('').trim()) as Record<string, unknown>;
+    expect(fila.presentacion).toBe('primario');
   });
 
   it('sin viajes igual reemplaza la tabla (vacía)', async () => {
@@ -130,6 +160,7 @@ describe('exportarObservatorio', () => {
       datasetId: 'observatory',
       leerViajes: async () => [],
       cargador: crearCargadorBigQuery(f.cliente),
+      conPresentacion: false,
     });
     expect(r).toEqual({ filas: 0 });
     expect(f.opcionesStream).toHaveLength(1);

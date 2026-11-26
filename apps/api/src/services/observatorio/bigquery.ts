@@ -82,9 +82,23 @@ export async function exportarObservatorio(opts: {
   datasetId: string;
   leerViajes: () => Promise<ViajeEntregado[]>;
   cargador: CargadorBigQuery;
+  /**
+   * `OBSERVATORIO_PRESENTACION_ACTIVADA` (`.specs/observatorio-por-presentacion`
+   * §3): Terraform la enciende solo cuando la tabla tiene la columna. Apagada,
+   * la fila no lleva `presentacion`: un load job falla con un campo que la
+   * tabla no tiene.
+   */
+  conPresentacion: boolean;
 }): Promise<{ filas: number }> {
   const viajes = await opts.leerViajes();
-  const filas = viajes.map(proyectarViaje);
+  const filas = viajes.map((v) => {
+    const fila = proyectarViaje(v);
+    if (opts.conPresentacion) {
+      return fila;
+    }
+    const { presentacion: _sinColumna, ...sinPresentacion } = fila;
+    return sinPresentacion;
+  });
   await opts.cargador.reemplazarTabla({
     datasetId: opts.datasetId,
     tableId: TABLA_VIAJES,

@@ -11,6 +11,10 @@
 # `internal_cron_invoker` (scheduling.tf). Desviación declarada en
 # .specs/observatorio-coquimbo/spec.md: vistas materializadas en lugar de
 # Dataform.
+#
+# Emisiones por presentación de ADR-091 (.specs/observatorio-por-presentacion):
+# la vista agrupa también por `presentacion`. El api solo manda esa columna con
+# OBSERVATORIO_PRESENTACION_ACTIVADA, que compute.tf calcula desde este esquema.
 # -----------------------------------------------------------------------------
 
 locals {
@@ -39,12 +43,13 @@ locals {
         origen_comuna AS comuna,
         mes,
         clase_vehiculo,
+        COALESCE(presentacion, 'estimado') AS presentacion,
         SUM(kgco2e) AS kgco2e,
         SUM(kgco2e_evitado) AS kgco2e_evitado,
         COUNT(*) AS viajes,
         COUNT(DISTINCT vehiculo_id) AS vehiculos
       FROM `${local.observatorio_tabla_viajes}`
-      GROUP BY region, comuna, mes, clase_vehiculo
+      GROUP BY region, comuna, mes, clase_vehiculo, presentacion
       HAVING COUNT(DISTINCT vehiculo_id) >= 1
     SQL
     od        = <<-SQL
@@ -99,6 +104,9 @@ resource "google_bigquery_table" "observatorio_viajes" {
     { name = "distancia_km", type = "FLOAT64", mode = "NULLABLE" },
     { name = "kgco2e", type = "FLOAT64", mode = "REQUIRED" },
     { name = "kgco2e_evitado", type = "FLOAT64", mode = "REQUIRED" },
+    # ADR-091 (.specs/observatorio-por-presentacion): anulable para agregarla
+    # sin recrear la tabla; las filas sin ella cuentan como «estimado».
+    { name = "presentacion", type = "STRING", mode = "NULLABLE" },
   ])
 
   labels = {

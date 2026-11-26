@@ -607,6 +607,14 @@ export const apiEnvSchema = commonEnvSchema
     RUTAS_API_ACTIVADA: booleanFlag(false),
 
     /**
+     * El export del observatorio manda la presentación de cada viaje
+     * (`.specs/observatorio-por-presentacion` §3). Terraform la calcula desde
+     * el esquema de `observatory.viajes`: es `true` solo cuando la columna
+     * existe, porque un load job falla con un campo que la tabla no tiene.
+     */
+    OBSERVATORIO_PRESENTACION_ACTIVADA: booleanFlag(false),
+
+    /**
      * Puntos de telemetría que el panel de Booster Fleet puede leer en una
      * consulta (`.specs/booster-fleet-ventana-completa` §4.2). Un camión
      * genera unos 25.000 por semana: 400.000 cubren 16 camiones con sus 7

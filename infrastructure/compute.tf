@@ -147,6 +147,14 @@ module "service_api" {
     FIREBASE_PROJECT_ID = var.project_id
     # T10-24 / ADR-012 Capa 2 — observatorio urbano (observatorio.tf).
     BIGQUERY_OBSERVATORY_DATASET = google_bigquery_dataset.observatory.dataset_id
+    # .specs/observatorio-por-presentacion §3: el export manda `presentacion`
+    # solo si la tabla ya tiene la columna (un load job falla con un campo
+    # desconocido). Al leer el esquema, Terraform aplica la tabla antes que
+    # el servicio y la bandera se enciende en el mismo apply.
+    OBSERVATORIO_PRESENTACION_ACTIVADA = tostring(contains(
+      [for columna in jsondecode(google_bigquery_table.observatorio_viajes.schema) : columna.name],
+      "presentacion",
+    ))
     # Repositorio documental F4: 4a (este service) sube el PDF/foto y el worker
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.

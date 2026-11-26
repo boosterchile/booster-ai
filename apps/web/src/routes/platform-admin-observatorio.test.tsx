@@ -116,4 +116,30 @@ describe('/app/platform-admin/observatorio (T10-24)', () => {
     renderRoute();
     expect(await screen.findByText('No se pudo cargar el observatorio.')).toBeInTheDocument();
   });
+
+  it('cada fila de Emisiones lleva el sello de su presentación; sin ella, «Estimado»', async () => {
+    const fila = DATOS.emisiones[0];
+    get.mockResolvedValue({
+      ...DATOS,
+      emisiones: [
+        { ...fila, presentacion: 'primario', kgco2e: 100 },
+        { ...fila, presentacion: 'medido_teltonika', kgco2e: 200 },
+        { ...fila, kgco2e: 300 },
+      ],
+    });
+    renderRoute();
+    await screen.findByRole('heading', { name: 'Emisiones' });
+    const tabla = screen.getByRole('heading', { name: 'Emisiones' }).closest('section');
+    const filas = [...(tabla?.querySelectorAll('tbody tr') ?? [])];
+    const sellos = filas.map((tr) =>
+      [...tr.querySelectorAll('[data-cifra-huella]')].map((c) =>
+        c.getAttribute('data-presentacion'),
+      ),
+    );
+    expect(sellos).toEqual([
+      ['primario', 'primario'],
+      ['medido_teltonika', 'medido_teltonika'],
+      ['estimado', 'estimado'],
+    ]);
+  });
 });

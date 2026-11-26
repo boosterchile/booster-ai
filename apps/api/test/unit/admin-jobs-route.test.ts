@@ -478,7 +478,32 @@ describe('POST /admin/jobs/observatorio-export (T10-24)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, filas: 42 });
     expect(exportarObservatorio).toHaveBeenCalledWith(
-      expect.objectContaining({ datasetId: 'observatory' }),
+      expect.objectContaining({ datasetId: 'observatory', conPresentacion: false }),
+    );
+  });
+
+  it('pasa la bandera de presentación al export (.specs/observatorio-por-presentacion §3)', async () => {
+    (exportarObservatorio as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ filas: 1 });
+    const { createAdminJobsRoutes } = await import('../../src/routes/admin-jobs.js');
+    const app = new Hono();
+    app.route(
+      '/admin/jobs',
+      createAdminJobsRoutes({
+        db: {} as never,
+        logger: noopLogger,
+        twilioClient: null,
+        contentSidChatUnread: null,
+        webAppUrl: 'https://app.test',
+        observatorio: {
+          datasetId: 'observatory',
+          cargador: { reemplazarTabla: vi.fn() },
+          conPresentacion: true,
+        },
+      }),
+    );
+    await app.request('/admin/jobs/observatorio-export', { method: 'POST' });
+    expect(exportarObservatorio).toHaveBeenLastCalledWith(
+      expect.objectContaining({ conPresentacion: true }),
     );
   });
 });
