@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const crearViajePropio = vi.hoisted(() => vi.fn());
+const calcularMetricasEstimadas = vi.hoisted(() => vi.fn());
+vi.mock('../services/calcular-metricas-viaje.js', () => ({ calcularMetricasEstimadas }));
 
 vi.mock('../services/crear-viaje-propio.js', async () => {
   const actual = await vi.importActual<typeof import('../services/crear-viaje-propio.js')>(
@@ -107,6 +109,11 @@ describe('POST /viajes-propios', () => {
     const json = (await res.json()) as { origen: string; ruta_id: string };
     expect(json.origen).toBe('propio_transportista');
     expect(json.ruta_id).toBe('r1');
+    // `.specs/frente2-cierre` §3.3: el viaje propio nace con su huella estimada
+    // (sin camión todavía), como un servicio del marketplace.
+    expect(calcularMetricasEstimadas).toHaveBeenCalledWith(
+      expect.objectContaining({ tripId: 't1', vehicleId: null }),
+    );
   });
 
   it('403 generador_sin_vinculo cuando el service rechaza IDOR', async () => {

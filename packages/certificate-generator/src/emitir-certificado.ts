@@ -18,6 +18,7 @@ import { validarVersion } from './reemision.js';
 import { rutaPdfCertificado, subirArtefactosCertificado } from './storage.js';
 import type {
   ConfigInfra,
+  DatosClienteExternoCertificado,
   DatosEmpresaCertificado,
   DatosMetricasCertificado,
   DatosTransportistaCertificado,
@@ -30,6 +31,8 @@ export interface ParametrosEmisionCertificado {
   metricas: DatosMetricasCertificado;
   empresaShipper: DatosEmpresaCertificado;
   transportista?: DatosTransportistaCertificado;
+  /** Viaje propio con cliente externo (`.specs/frente2-cierre` D2). */
+  clienteExterno?: DatosClienteExternoCertificado;
   infra: ConfigInfra;
   /**
    * URL base para construir el verify endpoint que va en el PDF y en el
@@ -76,6 +79,7 @@ export async function emitirCertificado(
     metricas: params.metricas,
     empresaShipper: params.empresaShipper,
     ...(params.transportista ? { transportista: params.transportista } : {}),
+    ...(params.clienteExterno ? { clienteExterno: params.clienteExterno } : {}),
     verifyUrl,
   });
 

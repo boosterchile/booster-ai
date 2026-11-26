@@ -278,6 +278,19 @@ describe('GET /assignments/:id/certificate/download', () => {
     );
   });
 
+  it('viaje propio con cliente externo → la URL firmada es la de la transportista (.specs/frente2-cierre D2)', async () => {
+    signedUrlSpy.mockClear();
+    const propio = { ...ROW, generadorEmpresaId: null, origenAlta: 'propio_transportista' };
+    const app = await buildApp(makeDb([[propio]]), certConfig);
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/certificate/download`, {
+      headers: { 'x-test-userctx': ctx(DRIVER_USER, 'conductor') },
+    });
+    expect(res.status).toBe(200);
+    expect(signedUrlSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: propio.empresaId }),
+    );
+  });
+
   it('certificado reemitido → la URL firmada es la de la versión vigente', async () => {
     signedUrlSpy.mockClear();
     const reemitido = {

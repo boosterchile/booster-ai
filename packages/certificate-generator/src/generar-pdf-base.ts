@@ -44,6 +44,7 @@ import {
   textoNotaMetodo,
 } from './render-helpers.js';
 import type {
+  DatosClienteExternoCertificado,
   DatosEmpresaCertificado,
   DatosMetricasCertificado,
   DatosTransportistaCertificado,
@@ -55,6 +56,12 @@ export interface ParametrosGenerarPdf {
   metricas: DatosMetricasCertificado;
   empresaShipper: DatosEmpresaCertificado;
   transportista?: DatosTransportistaCertificado;
+  /**
+   * Viaje propio con cliente externo (`.specs/frente2-cierre` D2): la titular
+   * (`empresaShipper`) es la transportista y el PDF imprime «Cliente» en vez
+   * de «Generador de carga».
+   */
+  clienteExterno?: DatosClienteExternoCertificado;
   /**
    * URL pública del endpoint /verify (incluida en el PDF como QR/link
    * para que cualquier lector externo valide la firma online).
@@ -426,13 +433,23 @@ export async function generarPdfConCajas(
   // Partes.
   c.seccion('Partes', f);
   const rut = (r: string | null) => (r ? ` (${r})` : '');
-  c.par(
-    'Generador de carga',
-    `${params.empresaShipper.legalName}${rut(params.empresaShipper.rut)}`,
-    null,
-    null,
-    f,
-  );
+  if (params.clienteExterno) {
+    c.par(
+      'Cliente',
+      `${params.clienteExterno.nombre}${rut(params.clienteExterno.rut)}`,
+      null,
+      null,
+      f,
+    );
+  } else {
+    c.par(
+      'Generador de carga',
+      `${params.empresaShipper.legalName}${rut(params.empresaShipper.rut)}`,
+      null,
+      null,
+      f,
+    );
+  }
   const t = params.transportista;
   if (t?.legalName) {
     c.par('Transportista', `${t.legalName}${rut(t.rut)}`, null, null, f);

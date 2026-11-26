@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { ctxDeUserContext } from '../auth/capacidades.js';
 import type { Db } from '../db/client.js';
 import { zValidator } from '../lib/validation.js';
+import { calcularMetricasEstimadas } from '../services/calcular-metricas-viaje.js';
 import {
   EmpresaNoTransportistaError,
   GeneradorNoEncontradoError,
@@ -16,7 +17,12 @@ import {
  * BARH-24 — POST /viajes-propios
  * Alta de viaje propio del transportista (fuera del matching).
  */
-export function createViajesPropiosRoutes(opts: { db: Db; logger: Logger }) {
+export function createViajesPropiosRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /** GCP project para Routes API (ADR-038); sin él, la tabla precomputada de Chile. */
+  routesProjectId?: string | undefined;
+}) {
   const app = new Hono();
 
   app.post('/', zValidator('json', crearViajePropioBodySchema), async (c) => {
@@ -51,6 +57,24 @@ export function createViajesPropiosRoutes(opts: { db: Db; logger: Logger }) {
         userId: userContext.user.id,
         input: body,
       });
+      // `.specs/frente2-cierre` §3.3: el viaje propio nace con su huella
+      // estimada, como un servicio del marketplace al aceptar la oferta
+      // (spec viaje-propio §4.6). Sin camión todavía: estimación por defecto;
+      // el cierre usa el camión de la asignación. Un fallo no revierte el alta.
+      try {
+        await calcularMetricasEstimadas({
+          db: opts.db,
+          logger: opts.logger,
+          tripId: r.trip.id,
+          vehicleId: null,
+          ...(opts.routesProjectId ? { routesProjectId: opts.routesProjectId } : {}),
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId: r.trip.id },
+          'viaje propio creado sin métricas estimadas: el cierre no lo certificará',
+        );
+      }
       return c.json(
         {
           origen: 'propio_transportista',

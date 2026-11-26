@@ -307,7 +307,7 @@ describe('GET /certificates/:tracking_code/verify', () => {
 
   it('cert no emitido (issued_at null) → 404 certificate_not_issued', async () => {
     const db = makeDb({
-      selects: [[{ empresaId: SHIPPER_EMP, certificateIssuedAt: null }]],
+      selects: [[{ generadorEmpresaId: SHIPPER_EMP, certificateIssuedAt: null }]],
     });
     const app = await buildApp({ db, certConfig: VALID_CONFIG });
     const res = await app.request('/certificates/BOO-X/verify');
@@ -319,7 +319,9 @@ describe('GET /certificates/:tracking_code/verify', () => {
 
   it('trip sin empresa (anonymous) + cert issued → 404 defensivo', async () => {
     const db = makeDb({
-      selects: [[{ empresaId: null, certificateIssuedAt: new Date() }]],
+      selects: [
+        [{ generadorEmpresaId: null, origenAlta: 'marketplace', certificateIssuedAt: new Date() }],
+      ],
     });
     const app = await buildApp({ db, certConfig: VALID_CONFIG });
     const res = await app.request('/certificates/BOO-X/verify');
@@ -329,12 +331,34 @@ describe('GET /certificates/:tracking_code/verify', () => {
   it('sidecar no encontrado en GCS pese a issued → 500 certificate_artifacts_missing', async () => {
     (descargarSidecar as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
     const db = makeDb({
-      selects: [[{ empresaId: SHIPPER_EMP, certificateIssuedAt: new Date() }]],
+      selects: [[{ generadorEmpresaId: SHIPPER_EMP, certificateIssuedAt: new Date() }]],
     });
     const app = await buildApp({ db, certConfig: VALID_CONFIG });
     const res = await app.request('/certificates/BOO-X/verify');
     expect(res.status).toBe(500);
     expect(noopLogger.error).toHaveBeenCalled();
+  });
+
+  it('viaje propio con cliente externo → busca la firma bajo la transportista (.specs/frente2-cierre D2)', async () => {
+    (descargarSidecar as ReturnType<typeof vi.fn>).mockClear();
+    (descargarSidecar as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const db = makeDb({
+      selects: [
+        [
+          {
+            generadorEmpresaId: null,
+            origenAlta: 'propio_transportista',
+            transportistaEmpresaId: 'carrier-emp',
+            certificateIssuedAt: new Date(),
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db, certConfig: VALID_CONFIG });
+    await app.request('/certificates/BOO-X/verify');
+    expect(descargarSidecar).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: 'carrier-emp' }),
+    );
   });
 
   it('certificado reemitido → descarga la firma de la versión vigente', async () => {
@@ -344,7 +368,7 @@ describe('GET /certificates/:tracking_code/verify', () => {
       selects: [
         [
           {
-            empresaId: SHIPPER_EMP,
+            generadorEmpresaId: SHIPPER_EMP,
             certificateIssuedAt: new Date(),
             certificatePdfUrl: `gs://b/certificates/${SHIPPER_EMP}/BOO-X.v2.pdf`,
           },
@@ -369,7 +393,7 @@ describe('GET /certificates/:tracking_code/verify', () => {
       verifyUrl: 'https://api.test/certificates/BOO-X/verify',
     });
     const db = makeDb({
-      selects: [[{ empresaId: SHIPPER_EMP, certificateIssuedAt: new Date() }]],
+      selects: [[{ generadorEmpresaId: SHIPPER_EMP, certificateIssuedAt: new Date() }]],
     });
     const app = await buildApp({ db, certConfig: VALID_CONFIG });
     const res = await app.request('/certificates/BOO-X/verify');

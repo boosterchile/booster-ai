@@ -48,6 +48,7 @@ import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { registrarPrimeraVersion } from './certificados-versionados.js';
 import { rutaCompartidaDelViaje } from './ruta-compartida.js';
+import { clienteExternoDelCertificado, titularCertificado } from './titular-certificado.js';
 
 /**
  * Métrica de negocio T10-15 (ADR-082): certificados por resultado.
@@ -130,41 +131,6 @@ export async function armarDatosEmision(opts: {
     logger.error({ tripId }, 'emitirCertificadoViaje skipped: métricas sin version_glec');
     return { ok: false, reason: 'version_glec_missing' };
   }
-  // generadorCargaEmpresaId es nullable en el schema — los trips de
-  // WhatsApp anonymous (pre-binding) lo tienen null. El cert necesita la
-  // identidad del shipper para incluirlo en el PDF y firmar, así que
-  // skippeamos defensivamente. En el lifecycle actual esto no debería
-  // ocurrir post-entrega (el binding ya está hecho), pero el guard cuesta
-  // poco y deja el invariante explícito.
-  if (!trip.generadorCargaEmpresaId) {
-    logger.warn(
-      { tripId },
-      'emitirCertificadoViaje skipped: trip sin shipper (anonymous WhatsApp pre-binding)',
-    );
-    return { ok: false, reason: 'no_shipper' };
-  }
-
-  // Empresa shipper (siempre existe — el trip lo creó).
-  const shipperRows = await db
-    .select({
-      id: empresas.id,
-      legalName: empresas.legalName,
-      rut: empresas.rut,
-    })
-    .from(empresas)
-    .where(eq(empresas.id, trip.generadorCargaEmpresaId))
-    .limit(1);
-  const shipper = shipperRows[0];
-  if (!shipper) {
-    // No debería pasar — FK garantiza referencia. Si pasa, log error y
-    // skip (el cert no se puede emitir sin identidad del shipper).
-    logger.error(
-      { tripId, generadorCargaEmpresaId: trip.generadorCargaEmpresaId },
-      'emitirCertificadoViaje: empresa shipper no encontrada (FK rota?)',
-    );
-    return { ok: false, reason: 'trip_not_found' };
-  }
-
   // Assignment + transportista + vehicle (opcionales — el cert puede
   // emitirse sin transportista en escenarios de prueba, pero
   // normalmente está presente cuando trip='entregado').
@@ -177,6 +143,41 @@ export async function armarDatosEmision(opts: {
     .where(eq(assignments.tripId, tripId))
     .limit(1);
   const assignment = assignmentRows[0];
+
+  // Titular del certificado (`.specs/frente2-cierre` D2): el generador o, en
+  // un viaje propio con cliente externo, la transportista. Sin titular (los
+  // trips de WhatsApp anonymous pre-binding) no se firma: el PDF necesita su
+  // identidad y su carpeta en GCS.
+  const titularId = titularCertificado(trip, assignment?.empresaId ?? null);
+  if (!titularId) {
+    logger.warn(
+      { tripId },
+      'emitirCertificadoViaje skipped: trip sin titular (sin generador ni viaje propio)',
+    );
+    return { ok: false, reason: 'no_shipper' };
+  }
+  const clienteExterno = clienteExternoDelCertificado(trip);
+
+  // Empresa titular (siempre existe — el trip la referencia).
+  const shipperRows = await db
+    .select({
+      id: empresas.id,
+      legalName: empresas.legalName,
+      rut: empresas.rut,
+    })
+    .from(empresas)
+    .where(eq(empresas.id, titularId))
+    .limit(1);
+  const shipper = shipperRows[0];
+  if (!shipper) {
+    // No debería pasar — FK garantiza referencia. Si pasa, log error y
+    // skip (el cert no se puede emitir sin identidad de la titular).
+    logger.error(
+      { tripId, titularId },
+      'emitirCertificadoViaje: empresa titular no encontrada (FK rota?)',
+    );
+    return { ok: false, reason: 'trip_not_found' };
+  }
 
   let transportistaLegalName: string | null = null;
   let transportistaRut: string | null = null;
@@ -323,6 +324,7 @@ export async function armarDatosEmision(opts: {
         legalName: shipper.legalName,
         rut: shipper.rut,
       },
+      ...(clienteExterno ? { clienteExterno } : {}),
       ...(transportistaLegalName
         ? {
             transportista: {

@@ -34,6 +34,7 @@ export type {
   DatosViajeCertificado,
   DatosMetricasCertificado,
   DatosEmpresaCertificado,
+  DatosClienteExternoCertificado,
   DatosTransportistaCertificado,
   ConfigInfra,
   ResultadoEmisionCertificado,
