@@ -41,6 +41,7 @@ const ACCESOS: ReadonlyArray<{
     | '/app/platform-admin/personal'
     | '/app/platform-admin/teltonika'
     | '/app/platform-admin/flota'
+    | '/app/platform-admin/solicitudes'
     | '/app/platform-admin/stakeholders'
     | '/app/platform-admin/matching'
     | '/app/platform-admin/observability'
@@ -82,6 +83,12 @@ const ACCESOS: ReadonlyArray<{
     title: 'Flota',
     desc: 'Los vehículos de todas las empresas en el mapa, con su equipo, lo que leen por CAN y sus certificados.',
     testId: 'flota-link',
+  },
+  {
+    to: '/app/platform-admin/solicitudes',
+    title: 'Solicitudes a Booster',
+    desc: 'Lo que las empresas piden con «Pedir a Booster», como configurar la fuente CAN de combustible.',
+    testId: 'solicitudes-booster-link',
   },
   {
     to: '/app/platform-admin/stakeholders',

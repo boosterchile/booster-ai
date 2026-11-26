@@ -2,6 +2,7 @@ import {
   CONFIGURACION_BOOSTER_FLEET,
   type PanelBoosterFleet,
   type SenalCombustible,
+  type TipoSolicitudBooster,
 } from '@booster-ai/shared-schemas';
 
 /**
@@ -149,8 +150,19 @@ export type Destino =
   | { to: '/app/trayectos'; search: { vehiculo: string; detalle?: string } }
   | { to: '/app/vehiculos/$id'; params: { id: string } };
 
+/**
+ * Lo que ofrece la fila: un enlace a donde se resuelve, o «Pedir a Booster»
+ * cuando lo resuelve el personal de Booster (`.specs/frente2-cierre` §3.4).
+ */
+export type AccionFlota =
+  | { etiqueta: string; destino: Destino }
+  | {
+      etiqueta: string;
+      pedirBooster: { vehiculoId: string; tipo: TipoSolicitudBooster };
+    };
+
 /** La acción de cada señal y a dónde lleva. `en_orden` no tiene acción. */
-export function accionDe(vehiculo: VehiculoFlota): { etiqueta: string; destino: Destino } | null {
+export function accionDe(vehiculo: VehiculoFlota): AccionFlota | null {
   const ficha: Destino = { to: '/app/vehiculos/$id', params: { id: vehiculo.vehiculo_id } };
   const trayectos: Destino = { to: '/app/trayectos', search: { vehiculo: vehiculo.vehiculo_id } };
   switch (vehiculo.senal) {
@@ -171,7 +183,11 @@ export function accionDe(vehiculo: VehiculoFlota): { etiqueta: string; destino: 
     case 'sin_movimiento':
       return { etiqueta: 'Ir al vehículo', destino: ficha };
     case 'sin_sensor':
-      return { etiqueta: 'Revisar sensor', destino: ficha };
+      // La fuente CAN de combustible la configura Booster, no el dueño (D3).
+      return {
+        etiqueta: 'Pedir a Booster',
+        pedirBooster: { vehiculoId: vehiculo.vehiculo_id, tipo: 'configurar_fuente_combustible' },
+      };
     case 'falta_capacidad':
       return { etiqueta: 'Cargar capacidad', destino: ficha };
     case 'dato_no_confiable':

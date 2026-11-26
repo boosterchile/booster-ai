@@ -14,6 +14,7 @@ import {
   fuenteCombustibleCanSchema,
   interpretCanLvcan,
   interpretDallasTemperature,
+  pedirABoosterBodySchema,
   teltonikaImeiSchema,
   unitCategorySchema,
   unitTypeSchema,
@@ -23,7 +24,9 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { tieneAccesoPlataforma } from '../auth/acceso-plataforma.js';
 import { ctxDeUserContext, puedeGestionarFlota, veSoloSuViaje } from '../auth/capacidades.js';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   asignacionConConductor,
@@ -43,8 +46,10 @@ import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
+import { pedirABooster } from '../services/solicitudes-booster.js';
 import { queryUltimaPosicionGpsValida } from '../services/ultima-posicion-gps.js';
 import { ultimasPosicionesDeVehiculos } from '../services/ultimas-posiciones-vehiculos.js';
+import type { UserContext } from '../services/user-context.js';
 import { obtenerClimaActual } from '../services/weather-api.js';
 
 /**
@@ -379,6 +384,8 @@ class PendingDeviceReconciliationConflictError extends Error {
 // .specs/_followups/vehiculos-router-otel-spans.md para el resto del router.
 const dispositivoAsociacionesCounter = getBusinessCounter('dispositivo_asociaciones_total');
 const trazaConsultasCounter = getBusinessCounter('vehiculo_traza_consultas_total');
+const solicitudBoosterCreadaCounter = getBusinessCounter('solicitud_booster_creada_total');
+const vehiculoIdSchema = z.string().uuid();
 
 /** Rango máx defensivo de la ventana de traza (protege query + browser). */
 const MAX_RANGO_TRAZA_MS = 31 * 24 * 60 * 60 * 1000;
@@ -459,14 +466,9 @@ export function createVehiculosRoutes(opts: {
   // nombre previo `requireDeleteRole`, renombrado acá al generalizarse).
   function estanqueSoloDuenoAdmin(
     role: string,
-    body: {
-      capacidad_estanque_l?: number | null | undefined;
-      fuente_combustible_can?: string | undefined;
-    },
+    body: { capacidad_estanque_l?: number | null | undefined },
   ): boolean {
-    const toca =
-      body.capacidad_estanque_l !== undefined || body.fuente_combustible_can !== undefined;
-    return toca && role !== 'dueno' && role !== 'admin';
+    return body.capacidad_estanque_l !== undefined && role !== 'dueno' && role !== 'admin';
   }
 
   const respuestaEstanqueProhibido = (c: Context) =>
@@ -474,8 +476,37 @@ export function createVehiculosRoutes(opts: {
       {
         error: 'forbidden',
         code: 'admin_required',
-        message:
-          'Solo el dueño o un administrador puede editar la capacidad del estanque y la fuente CAN.',
+        message: 'Solo el dueño o un administrador puede editar la capacidad del estanque.',
+      },
+      403,
+    );
+
+  /**
+   * `.specs/frente2-cierre` §3.4 (D3 del PO): la fuente CAN de combustible la
+   * configura el personal de Booster, no la empresa. Vale la cuenta con acceso
+   * al panel (la misma regla de `requirePlatformAdmin`) o la sesión impersonada
+   * por ella: el `impersonation-write-guard` ya comprobó que quien impersona
+   * sigue con acceso al panel y que la empresa admite escrituras.
+   */
+  function fuenteSoloPersonalBooster(
+    userContext: UserContext,
+    body: { fuente_combustible_can?: string | undefined },
+  ): boolean {
+    if (body.fuente_combustible_can === undefined) {
+      return false;
+    }
+    const esPersonalBooster =
+      userContext.impersonatedBy != null ||
+      tieneAccesoPlataforma(userContext.user, appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS);
+    return !esPersonalBooster;
+  }
+
+  const respuestaFuenteProhibida = (c: Context) =>
+    c.json(
+      {
+        error: 'forbidden',
+        code: 'fuente_can_solo_booster',
+        message: 'La fuente CAN de combustible la configura Booster. Pídela con «Pedir a Booster».',
       },
       403,
     );
@@ -642,6 +673,9 @@ export function createVehiculosRoutes(opts: {
     }
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
+    if (fuenteSoloPersonalBooster(auth.userContext, body)) {
+      return respuestaFuenteProhibida(c);
+    }
     if (estanqueSoloDuenoAdmin(auth.activeMembership.membership.role, body)) {
       return respuestaEstanqueProhibido(c);
     }
@@ -749,6 +783,72 @@ export function createVehiculosRoutes(opts: {
   });
 
   // ---------------------------------------------------------------------
+  // POST /:id/pedir-booster — «Pedir a Booster» (.specs/frente2-cierre §3.4,
+  // D3 del PO). Un gestor de la empresa dueña pide al personal de Booster una
+  // configuración (hoy, la fuente CAN de combustible). Idempotente: si ya hay
+  // una abierta para el vehículo y el tipo, la devuelve (200); si no, la crea
+  // (201). Un vehículo de otra empresa responde 404, como el detalle.
+  // ---------------------------------------------------------------------
+  app.post('/:id/pedir-booster', zValidator('json', pedirABoosterBodySchema), async (c) => {
+    const auth = requireWriteRole(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const noExiste = () => c.json({ error: 'vehicle_not_found', code: 'vehicle_not_found' }, 404);
+    const id = vehiculoIdSchema.safeParse(c.req.param('id'));
+    if (!id.success) {
+      return noExiste();
+    }
+    const vehiculoId = id.data;
+    const { tipo } = c.req.valid('json');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    return withBusinessSpan(
+      {
+        name: 'solicitud_booster.pedir',
+        attributes: { 'booster.vehicle_id': vehiculoId, 'booster.solicitud.tipo': tipo },
+      },
+      async (span) => {
+        const [vehiculo] = await opts.db
+          .select({ id: vehicles.id })
+          .from(vehicles)
+          .where(and(eq(vehicles.id, vehiculoId), eq(vehicles.empresaId, empresaId)))
+          .limit(1);
+        if (!vehiculo) {
+          return noExiste();
+        }
+        const { solicitud, creada } = await pedirABooster({
+          db: opts.db,
+          empresaId,
+          vehiculoId,
+          tipo,
+          creadaPor: auth.userContext.user.id,
+        });
+        setResultAttributes(span, { 'booster.solicitud.creada': creada });
+        if (creada) {
+          solicitudBoosterCreadaCounter.add(1, { tipo });
+          opts.logger.info(
+            { solicitudId: solicitud.id, vehiculoId, empresaId, tipo },
+            'solicitud a Booster creada',
+          );
+        }
+        return c.json(
+          {
+            solicitud: {
+              id: solicitud.id,
+              tipo: solicitud.tipo,
+              estado: solicitud.estado,
+              vehiculo_id: solicitud.vehiculoId,
+              creada_en: solicitud.creadaEn.toISOString(),
+            },
+          },
+          creada ? 201 : 200,
+        );
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------
   // GET /:id — detalle.
   // ---------------------------------------------------------------------
   app.get('/:id', async (c) => {
@@ -781,6 +881,9 @@ export function createVehiculosRoutes(opts: {
     const id = c.req.param('id');
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
+    if (fuenteSoloPersonalBooster(auth.userContext, body)) {
+      return respuestaFuenteProhibida(c);
+    }
     if (estanqueSoloDuenoAdmin(auth.activeMembership.membership.role, body)) {
       return respuestaEstanqueProhibido(c);
     }

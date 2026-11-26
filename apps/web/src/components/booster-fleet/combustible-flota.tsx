@@ -2,6 +2,7 @@ import type { PanelBoosterFleet } from '@booster-ai/shared-schemas';
 import { cn } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { Fuel } from 'lucide-react';
+import { PedirABooster } from '../pedir-a-booster.js';
 import { EtiquetaSeveridad, Patente } from './etiqueta-severidad.js';
 import {
   type Destino,
@@ -108,7 +109,13 @@ export function FilaFlota({
         <Consumo vehiculo={vehiculo} mediana={mediana} />
       </td>
       <td className="px-4 py-2.5 text-right align-top">
-        {accion ? (
+        {accion && 'pedirBooster' in accion ? (
+          <PedirABooster
+            vehiculoId={accion.pedirBooster.vehiculoId}
+            tipo={accion.pedirBooster.tipo}
+            className="items-end"
+          />
+        ) : accion ? (
           <EnlaceAccion
             destino={accion.destino}
             className={

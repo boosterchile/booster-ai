@@ -3619,3 +3619,41 @@ export const invitacionesCorreoCuenta = pgTable(
   }),
 );
 export type InvitacionCorreoCuentaRow = typeof invitacionesCorreoCuenta.$inferSelect;
+
+/**
+ * «Pedir a Booster» (migración 0091, `.specs/frente2-cierre` §3.4): una
+ * empresa pide al personal de Booster una configuración que ya no edita ella
+ * (hoy, la fuente CAN de combustible del vehículo). Una abierta por vehículo y
+ * tipo; el personal la marca resuelta desde su panel, con quién y cuándo.
+ */
+export const solicitudesBooster = pgTable(
+  'solicitudes_booster',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    vehiculoId: uuid('vehiculo_id').references(() => vehicles.id, { onDelete: 'restrict' }),
+    tipo: text('tipo').notNull(),
+    estado: text('estado').notNull().default('abierta'),
+    creadaPor: uuid('creada_por').references(() => users.id, { onDelete: 'restrict' }),
+    creadaEn: timestamp('creada_en', { withTimezone: true }).notNull().defaultNow(),
+    resueltaEn: timestamp('resuelta_en', { withTimezone: true }),
+    resueltaPor: uuid('resuelta_por').references(() => users.id, { onDelete: 'restrict' }),
+  },
+  (table) => ({
+    vehiculoTipoAbiertaUq: uniqueIndex('uq_solicitudes_booster_vehiculo_tipo_abierta')
+      .on(table.vehiculoId, table.tipo)
+      .where(sql`estado = 'abierta'`),
+    empresaIdx: index('idx_solicitudes_booster_empresa').on(table.empresaId),
+    tipoCheck: check(
+      'chk_solicitudes_booster_tipo',
+      sql`${table.tipo} IN ('configurar_fuente_combustible')`,
+    ),
+    estadoCheck: check(
+      'chk_solicitudes_booster_estado',
+      sql`${table.estado} IN ('abierta', 'resuelta')`,
+    ),
+  }),
+);
+export type SolicitudBoosterRow = typeof solicitudesBooster.$inferSelect;

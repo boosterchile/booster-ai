@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const pedirABooster = vi.fn();
+vi.mock('../../src/services/solicitudes-booster.js', () => ({ pedirABooster }));
 
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
@@ -133,6 +136,10 @@ async function buildApp(
       typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
     >[0]['logger'];
     obtenerClima?: (lat: number, lng: number) => Promise<number | null>;
+    /** Campos extra del usuario de la sesión (p. ej. personal de Booster). */
+    user?: Record<string, unknown>;
+    /** Sesión impersonada: el id del personal de Booster que impersona. */
+    impersonatedBy?: string;
   } = {},
 ) {
   // Merge explícito (no reemplazo posicional): pasar solo `{ logger }` no
@@ -147,7 +154,8 @@ async function buildApp(
       return;
     }
     c.set('userContext', {
-      user: { id: 'u-1', firebaseUid: 'fb-1', email: 'test@x.com' },
+      user: { id: 'u-1', firebaseUid: 'fb-1', email: 'test@x.com', ...opts.user },
+      ...(opts.impersonatedBy ? { impersonatedBy: opts.impersonatedBy } : {}),
       memberships: [],
       activeMembership: {
         membership: { id: 'm-1', role },
@@ -2218,12 +2226,12 @@ describe('capacidad de estanque y fuente CAN', () => {
     expect(inserted.capacidadEstanqueL).toBeNull();
   });
 
-  it('persiste capacidad válida y la fuente, y el GET de detalle las devuelve', async () => {
+  it('persiste capacidad válida y la fuente (personal de Booster), y el GET de detalle las devuelve', async () => {
     const stub = makeDbStub({
       insertRows: [buildVehicleRow({ capacidadEstanqueL: 200, fuenteCombustibleCan: '84' })],
       selectRows: [buildVehicleRow({ capacidadEstanqueL: 200, fuenteCombustibleCan: '84' })],
     });
-    const app = await buildApp(stub.db);
+    const app = await buildApp(stub.db, { impersonatedBy: 'admin-booster' });
     const created = await app.request('/vehiculos', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -2261,7 +2269,7 @@ describe('capacidad de estanque y fuente CAN', () => {
     }
   });
 
-  it('fuente fuera del conjunto → 400', async () => {
+  it('fuente fuera del conjunto → 400 (antes de mirar quién la manda)', async () => {
     const { res } = await post({ ...base, fuente_combustible_can: '85' });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { issues: Array<{ message: string }> } };
@@ -2296,5 +2304,210 @@ describe('capacidad de estanque y fuente CAN', () => {
       body: JSON.stringify({ fuente_combustible_can: '89' }),
     });
     expect(no.status).toBe(403);
+  });
+});
+
+/**
+ * `.specs/frente2-cierre` §3.4 (D3): la fuente CAN de combustible la configura
+ * el personal de Booster; el dueño y el admin de la empresa la piden.
+ */
+describe('fuente CAN: solo el personal de Booster', () => {
+  const patchFuente = (app: Hono) =>
+    app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fuente_combustible_can: '83' }),
+    });
+
+  it.each(['dueno', 'admin'] as const)(
+    '%s de la empresa que manda la fuente en el PATCH → 403 con code claro, sin escribir',
+    async (role) => {
+      const stub = makeDbStub({ selectRows: [buildVehicleRow({ bodyType: 'plano' })] });
+      const res = await patchFuente(await buildApp(stub.db, { role }));
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string; message: string };
+      expect(body.code).toBe('fuente_can_solo_booster');
+      expect(body.message).toMatch(/la configura Booster/i);
+      expect(stub.spies.updateFn).not.toHaveBeenCalled();
+    },
+  );
+
+  it('el dueño que manda la fuente al crear el vehículo → 403, sin insertar', async () => {
+    const stub = makeDbStub({ insertRows: [buildVehicleRow()] });
+    const app = await buildApp(stub.db, { role: 'dueno' });
+    const res = await app.request('/vehiculos', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        plate: 'ABCD12',
+        vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
+        body_type: 'plano',
+        capacity_kg: 3500,
+        fuente_combustible_can: '84',
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('fuente_can_solo_booster');
+    expect(stub.spies.insertFn).not.toHaveBeenCalled();
+  });
+
+  it('el dueño sigue editando la capacidad del estanque', async () => {
+    const stub = makeDbStub({
+      selectRows: [buildVehicleRow({ bodyType: 'plano' })],
+      updateRows: [buildVehicleRow({ bodyType: 'plano', capacidadEstanqueL: 300 })],
+    });
+    const app = await buildApp(stub.db, { role: 'dueno' });
+    const res = await app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ capacidad_estanque_l: 300 }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('el personal de Booster con acceso al panel la edita', async () => {
+    const stub = makeDbStub({
+      selectRows: [buildVehicleRow({ bodyType: 'plano' })],
+      updateRows: [buildVehicleRow({ bodyType: 'plano', fuenteCombustibleCan: '83' })],
+    });
+    const app = await buildApp(stub.db, {
+      role: 'dueno',
+      user: { isPlatformAdmin: true, status: 'activo' },
+    });
+    const res = await patchFuente(app);
+    expect(res.status).toBe(200);
+    const set = stub.spies.setUpdate.mock.calls[0]?.[0] as { fuenteCombustibleCan: string };
+    expect(set.fuenteCombustibleCan).toBe('83');
+  });
+
+  it('el personal de Booster impersonando a la empresa la edita', async () => {
+    const stub = makeDbStub({
+      selectRows: [buildVehicleRow({ bodyType: 'plano' })],
+      updateRows: [buildVehicleRow({ bodyType: 'plano', fuenteCombustibleCan: '83' })],
+    });
+    const app = await buildApp(stub.db, { role: 'dueno', impersonatedBy: 'admin-booster' });
+    const res = await patchFuente(app);
+    expect(res.status).toBe(200);
+    const set = stub.spies.setUpdate.mock.calls[0]?.[0] as { fuenteCombustibleCan: string };
+    expect(set.fuenteCombustibleCan).toBe('83');
+  });
+
+  it('una cuenta marcada como personal pero no activa no la edita', async () => {
+    const stub = makeDbStub({ selectRows: [buildVehicleRow({ bodyType: 'plano' })] });
+    const app = await buildApp(stub.db, {
+      role: 'dueno',
+      user: { isPlatformAdmin: true, status: 'suspendido' },
+    });
+    const res = await patchFuente(app);
+    expect(res.status).toBe(403);
+  });
+});
+
+/**
+ * `.specs/frente2-cierre` §3.4 (D3): «Pedir a Booster» crea una solicitud que
+ * el personal de Booster ve en su panel. Idempotente: una abierta por
+ * vehículo y tipo.
+ */
+describe('POST /vehiculos/:id/pedir-booster', () => {
+  const SOLICITUD_ID = '33333333-3333-4333-8333-333333333333';
+  const solicitud = {
+    id: SOLICITUD_ID,
+    empresaId: EMPRESA_ID,
+    vehiculoId: VEHICLE_ID,
+    tipo: 'configurar_fuente_combustible',
+    estado: 'abierta',
+    creadaPor: 'u-1',
+    creadaEn: new Date('2026-11-26T12:00:00Z'),
+    resueltaEn: null,
+    resueltaPor: null,
+  };
+  const pedir = (app: Hono, body: unknown = { tipo: 'configurar_fuente_combustible' }) =>
+    app.request(`/vehiculos/${VEHICLE_ID}/pedir-booster`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  beforeEach(() => {
+    pedirABooster.mockReset();
+  });
+
+  it('un gestor de la empresa dueña crea la solicitud → 201', async () => {
+    pedirABooster.mockResolvedValue({ solicitud, creada: true });
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID }] });
+    const res = await pedir(await buildApp(stub.db, { role: 'dueno' }));
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({
+      solicitud: {
+        id: SOLICITUD_ID,
+        tipo: 'configurar_fuente_combustible',
+        estado: 'abierta',
+        vehiculo_id: VEHICLE_ID,
+        creada_en: '2026-11-26T12:00:00.000Z',
+      },
+    });
+    expect(pedirABooster).toHaveBeenCalledWith({
+      db: stub.db,
+      empresaId: EMPRESA_ID,
+      vehiculoId: VEHICLE_ID,
+      tipo: 'configurar_fuente_combustible',
+      creadaPor: 'u-1',
+    });
+  });
+
+  it('si ya había una abierta devuelve la misma → 200', async () => {
+    pedirABooster.mockResolvedValue({ solicitud, creada: false });
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID }] });
+    const res = await pedir(await buildApp(stub.db, { role: 'admin' }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { solicitud: { id: string } }).solicitud.id).toBe(SOLICITUD_ID);
+  });
+
+  it('el despachador también es gestor y puede pedir', async () => {
+    pedirABooster.mockResolvedValue({ solicitud, creada: true });
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID }] });
+    const res = await pedir(await buildApp(stub.db, { role: 'despachador' }));
+    expect(res.status).toBe(201);
+  });
+
+  it.each(['conductor', 'visualizador'] as const)('%s → 403 sin crear nada', async (role) => {
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID }] });
+    const res = await pedir(await buildApp(stub.db, { role }));
+    expect(res.status).toBe(403);
+    expect(pedirABooster).not.toHaveBeenCalled();
+  });
+
+  it('un vehículo de otra empresa → 404 sin crear nada', async () => {
+    const stub = makeDbStub({ selectRows: [] });
+    const res = await pedir(await buildApp(stub.db, { role: 'dueno' }));
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('vehicle_not_found');
+    expect(pedirABooster).not.toHaveBeenCalled();
+  });
+
+  it('un id que no es uuid → 404 sin consultar', async () => {
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID }] });
+    const app = await buildApp(stub.db, { role: 'dueno' });
+    const res = await app.request('/vehiculos/no-es-uuid/pedir-booster', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tipo: 'configurar_fuente_combustible' }),
+    });
+    expect(res.status).toBe(404);
+    expect(stub.spies.selectFn).not.toHaveBeenCalled();
+  });
+
+  it('un tipo que no existe → 400', async () => {
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID }] });
+    const res = await pedir(await buildApp(stub.db, { role: 'dueno' }), { tipo: 'otra_cosa' });
+    expect(res.status).toBe(400);
+    expect(pedirABooster).not.toHaveBeenCalled();
+  });
+
+  it('sin sesión → 401', async () => {
+    const stub = makeDbStub({});
+    const res = await pedir(await buildApp(stub.db, { role: null }));
+    expect(res.status).toBe(401);
   });
 });

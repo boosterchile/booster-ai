@@ -423,16 +423,48 @@ describe('BoosterFleetRoute', () => {
       'En orden · 2',
     ]);
     expect(screen.getByText(/puede ser la vía/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Revisar sensor' })).toHaveAttribute(
-      'href',
-      `/app/vehiculos/${OTRO}`,
-    );
+    expect(screen.getByRole('button', { name: 'Pedir a Booster' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Comparar trayectos' })).toBeInTheDocument();
     const enOrden = container.querySelectorAll('tbody:last-of-type > tr');
     expect(enOrden).toHaveLength(2);
     expect(
       screen.getByRole('img', { name: /5 camiones: 1 desviación, 1 sin lectura/ }),
     ).toBeInTheDocument();
+  });
+
+  it('«Pedir a Booster» en un camión sin sensor crea la solicitud y dice «Pedido a Booster»', async () => {
+    const datos = panel();
+    datos.combustible.vehiculos = [
+      vehiculo(OTRO, 'BBBB22', { senal: 'sin_sensor', litros: null, litros_por_100_km: null }),
+    ];
+    entrar(datos);
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      solicitud: {
+        id: '77777777-7777-4777-8777-777777777777',
+        tipo: 'configurar_fuente_combustible',
+        estado: 'abierta',
+        vehiculo_id: OTRO,
+        creada_en: '2026-11-26T12:00:00.000Z',
+      },
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Pedir a Booster' }));
+    expect(post).toHaveBeenCalledWith(`/vehiculos/${OTRO}/pedir-booster`, {
+      tipo: 'configurar_fuente_combustible',
+    });
+    expect(await screen.findByText('Pedido a Booster')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pedir a Booster' })).not.toBeInTheDocument();
+  });
+
+  it('si pedir a Booster falla lo dice y deja volver a intentar', async () => {
+    const datos = panel();
+    datos.combustible.vehiculos = [
+      vehiculo(OTRO, 'BBBB22', { senal: 'sin_sensor', litros: null, litros_por_100_km: null }),
+    ];
+    entrar(datos);
+    vi.spyOn(api, 'post').mockRejectedValue(new ApiError(500, 'internal', null, 'falló'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pedir a Booster' }));
+    expect(await screen.findByText(/No se pudo pedir a Booster/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pedir a Booster' })).toBeEnabled();
   });
 
   it('lista los documentos pendientes sin el RUT y con enlace a la ficha', async () => {

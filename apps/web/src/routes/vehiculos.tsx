@@ -10,15 +10,17 @@ import { Button, PressableArea } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, ChevronDown, MoreHorizontal, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { PedirABooster } from '../components/pedir-a-booster.js';
 import { VehiculoHub } from '../components/vehiculo-hub.js';
 import { VehiculosLista } from '../components/vehiculos-lista.js';
+import { useImpersonation } from '../hooks/use-impersonation.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -129,6 +131,16 @@ const STATUS_LABELS: Record<VehicleStatus, string> = {
   retirado: 'Retirado',
 };
 
+/**
+ * `.specs/frente2-cierre` §3.4 (D3 del PO): la fuente CAN de combustible la
+ * configura el personal de Booster, en su sesión o impersonando a la empresa.
+ * El API aplica la misma regla (`fuente_can_solo_booster`).
+ */
+function usePuedeEditarFuenteCan(me: MeOnboarded): boolean {
+  const impersonacion = useImpersonation();
+  return me.user.is_platform_admin === true || impersonacion.active === true;
+}
+
 // =============================================================================
 // /app/vehiculos — lista
 // =============================================================================
@@ -194,12 +206,13 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const canEditEstanque = flagsDe(me).borrarFlota;
+  const canEditFuente = usePuedeEditarFuenteCan(me);
 
   const createM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
       return await api.post<{ vehicle: Vehicle }>(
         '/vehiculos',
-        vehicleFormToBody(input, canEditEstanque),
+        vehicleFormToBody(input, { estanque: canEditEstanque, fuente: canEditFuente }),
       );
     },
     onSuccess: () => {
@@ -232,6 +245,7 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
       <VehicleForm
         mode="create"
         canEditEstanque={canEditEstanque}
+        canEditFuente={canEditFuente}
         onSubmit={(values) => {
           setError(null);
           createM.mutate(values);
@@ -282,6 +296,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   // (requireOwnerOrAdminRole, vehiculos.ts) — misma frontera que canDelete,
   // separado en su propia constante para no acoplar semánticas distintas.
   const canManageDispositivo = flags.borrarFlota;
+  const canEditFuente = usePuedeEditarFuenteCan(me);
   const empresa = me.active_membership?.empresa;
   const puedeVerTrayectos = Boolean(empresa?.is_transportista && flags.administrar);
 
@@ -339,7 +354,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
     mutationFn: async (input: VehicleFormValues) => {
       return await api.patch<{ vehicle: Vehicle }>(
         `/vehiculos/${id}`,
-        vehicleFormToBody(input, canManageDispositivo),
+        vehicleFormToBody(input, { estanque: canManageDispositivo, fuente: canEditFuente }),
       );
     },
     onSuccess: () => {
@@ -493,6 +508,15 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
                     mode="edit"
                     initial={vehicleToFormValues(vehicleQ.data)}
                     canEditEstanque={canManageDispositivo}
+                    canEditFuente={canEditFuente}
+                    accionFuente={
+                      canWrite ? (
+                        <PedirABooster
+                          vehiculoId={vehicleQ.data.id}
+                          tipo="configurar_fuente_combustible"
+                        />
+                      ) : null
+                    }
                     onSubmit={(values) => {
                       setError(null);
                       setGuardado(false);
@@ -934,7 +958,7 @@ function vehicleMutationErrorMessage(err: Error): string {
 
 function vehicleFormToBody(
   v: VehicleFormValues,
-  incluirEstanque: boolean,
+  incluir: { estanque: boolean; fuente: boolean },
 ): Record<string, unknown> {
   // El servidor también normaliza vía chileanPlateSchema, pero normalizar
   // del lado del cliente nos da consistencia visual: si el usuario ingresa
@@ -970,9 +994,11 @@ function vehicleFormToBody(
   if (v.vehicle_status) {
     body.vehicle_status = v.vehicle_status;
   }
-  if (incluirEstanque) {
+  if (incluir.estanque) {
     const capacidad = v.capacidad_estanque_l.trim();
     body.capacidad_estanque_l = capacidad === '' ? null : Number(capacidad);
+  }
+  if (incluir.fuente) {
     body.fuente_combustible_can = v.fuente_combustible_can;
   }
   return body;
@@ -982,6 +1008,8 @@ function VehicleForm({
   mode,
   initial,
   canEditEstanque,
+  canEditFuente,
+  accionFuente,
   onSubmit,
   submitting,
   submitLabel,
@@ -991,6 +1019,10 @@ function VehicleForm({
   mode: 'create' | 'edit';
   initial?: VehicleFormValues;
   canEditEstanque: boolean;
+  /** Solo el personal de Booster edita la fuente CAN (`.specs/frente2-cierre` §3.4). */
+  canEditFuente: boolean;
+  /** «Pedir a Booster» junto a la fuente en solo lectura; en el alta no hay vehículo aún. */
+  accionFuente?: ReactNode;
   onSubmit: (values: VehicleFormValues) => void;
   submitting: boolean;
   submitLabel: string;
@@ -1011,6 +1043,7 @@ function VehicleForm({
   useScrollToFirstError(errors, submitCount);
 
   const vehicleStatus = watch('vehicle_status');
+  const fuenteActual = watch('fuente_combustible_can');
 
   /**
    * Validación cliente completa: patente (schema compartido) + rangos
@@ -1241,54 +1274,63 @@ function VehicleForm({
           </span>
         </label>
 
-        <fieldset
-          disabled={disabled || !canEditEstanque}
-          className="grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2"
-        >
-          <legend className="col-span-full mb-1 font-medium text-neutral-900 text-sm">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <p className="col-span-full mb-1 font-medium text-neutral-900 text-sm">
             Estanque y fuente CAN
-          </legend>
-          <FormField
-            label="Capacidad del estanque (L)"
-            error={errors.capacidad_estanque_l?.message}
-            hint="Vacío si no la conoces. Si la indicas, tiene que ser mayor que 0 y de hasta 2000 litros."
-            render={({ id, describedBy }) => (
-              <input
-                id={id}
-                aria-describedby={describedBy}
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min={0.1}
-                max={2000}
-                {...register('capacidad_estanque_l')}
-                className={fieldInputClass(!!errors.capacidad_estanque_l)}
-              />
-            )}
-          />
-          <FormField
-            label="Fuente CAN de combustible"
-            hint="Sin sensor no calculamos litros. No adivinamos el IO."
-            render={({ id, describedBy }) => (
-              <select
-                id={id}
-                aria-describedby={describedBy}
-                {...register('fuente_combustible_can')}
-                className={fieldInputClass(false)}
-              >
-                {(Object.keys(FUENTE_CAN_LABELS) as FuenteCombustibleCan[]).map((fuente) => (
-                  <option key={fuente} value={fuente}>
-                    {FUENTE_CAN_LABELS[fuente]}
-                  </option>
-                ))}
-              </select>
-            )}
-          />
-        </fieldset>
+          </p>
+          <fieldset disabled={disabled || !canEditEstanque} className="min-w-0 border-0 p-0">
+            <FormField
+              label="Capacidad del estanque (L)"
+              error={errors.capacidad_estanque_l?.message}
+              hint="Vacío si no la conoces. Si la indicas, tiene que ser mayor que 0 y de hasta 2000 litros."
+              render={({ id, describedBy }) => (
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min={0.1}
+                  max={2000}
+                  {...register('capacidad_estanque_l')}
+                  className={fieldInputClass(!!errors.capacidad_estanque_l)}
+                />
+              )}
+            />
+          </fieldset>
+          {canEditFuente ? (
+            <FormField
+              label="Fuente CAN de combustible"
+              hint="Sin sensor no calculamos litros. No adivinamos el IO."
+              render={({ id, describedBy }) => (
+                <select
+                  id={id}
+                  aria-describedby={describedBy}
+                  {...register('fuente_combustible_can')}
+                  className={fieldInputClass(false)}
+                >
+                  {(Object.keys(FUENTE_CAN_LABELS) as FuenteCombustibleCan[]).map((fuente) => (
+                    <option key={fuente} value={fuente}>
+                      {FUENTE_CAN_LABELS[fuente]}
+                    </option>
+                  ))}
+                </select>
+              )}
+            />
+          ) : (
+            <dl className="min-w-0 space-y-1">
+              <dt className="font-medium text-neutral-700 text-sm">Fuente CAN de combustible</dt>
+              <dd className="text-neutral-900 text-sm">
+                {FUENTE_CAN_LABELS[fuenteActual] ?? FUENTE_CAN_LABELS.sin_sensor}
+              </dd>
+              <dd className="text-neutral-600 text-xs">Lo configura Booster</dd>
+              {accionFuente ? <dd>{accionFuente}</dd> : null}
+            </dl>
+          )}
+        </div>
         {!disabled && !canEditEstanque ? (
           <p className="text-neutral-600 text-sm">
-            Solo el dueño o un administrador puede cambiar la capacidad del estanque y la fuente
-            CAN.
+            Solo el dueño o un administrador puede cambiar la capacidad del estanque.
           </p>
         ) : null}
 

@@ -36,6 +36,15 @@ vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({ id: 'veh-1' }),
 }));
 
+// La sesión impersonada (personal de Booster) se lee del token de Firebase.
+let impersonando = false;
+vi.mock('../hooks/use-impersonation.js', () => ({
+  useImpersonation: () => ({
+    active: impersonando,
+    impersonatedBy: impersonando ? 'admin-booster' : null,
+  }),
+}));
+
 vi.mock('../components/Layout.js', () => ({
   Layout: ({ children, title }: { children: ReactNode; title: string }) => (
     <div data-testid="layout" data-title={title}>
@@ -112,6 +121,7 @@ if (!Element.prototype.scrollIntoView) {
 beforeEach(() => {
   vi.clearAllMocks();
   providedContext = { kind: 'unmanaged' };
+  impersonando = false;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1648,7 +1658,7 @@ describe('VehiculoDetallePage — hub', () => {
     }
   });
 
-  it('dueño ve capacidad y fuente CAN guardadas, y el PATCH las persiste', async () => {
+  it('dueño ve la fuente CAN en solo lectura («Lo configura Booster») y el PATCH no la manda', async () => {
     vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
       if (path === '/vehiculos/veh-1') {
         return {
@@ -1667,6 +1677,65 @@ describe('VehiculoDetallePage — hub', () => {
     wrap(<VehiculosDetalleRoute />);
     const capacidad = await screen.findByLabelText('Capacidad del estanque (L)');
     expect(capacidad).toHaveValue(200);
+    expect(screen.queryByRole('combobox', { name: 'Fuente CAN de combustible' })).toBeNull();
+    expect(screen.getByText('IO 84 — nivel en porcentaje')).toBeInTheDocument();
+    expect(screen.getByText('Lo configura Booster')).toBeInTheDocument();
+    fireEvent.change(capacidad, { target: { value: '180' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const body = patch.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body.capacidad_estanque_l).toBe(180);
+    expect(body.fuente_combustible_can).toBeUndefined();
+  });
+
+  it('dueño pide a Booster la fuente CAN desde la ficha y ve «Pedido a Booster»', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ fuente_combustible_can: 'sin_sensor' }) };
+      }
+      return {} as never;
+    });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      solicitud: {
+        id: '77777777-7777-4777-8777-777777777777',
+        tipo: 'configurar_fuente_combustible',
+        estado: 'abierta',
+        vehiculo_id: 'veh-1',
+        creada_en: '2026-11-26T12:00:00.000Z',
+      },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Pedir a Booster' }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/vehiculos/veh-1/pedir-booster', {
+        tipo: 'configurar_fuente_combustible',
+      }),
+    );
+    expect(await screen.findByText('Pedido a Booster')).toBeInTheDocument();
+  });
+
+  it('el personal de Booster impersonando edita la fuente CAN y el PATCH la persiste', async () => {
+    impersonando = true;
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return {
+          vehicle: makeVehicleRow({
+            capacidad_estanque_l: 200,
+            fuente_combustible_can: '84',
+          }),
+        };
+      }
+      return {} as never;
+    });
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({
+      vehicle: makeVehicleRow(),
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const capacidad = await screen.findByLabelText('Capacidad del estanque (L)');
+    expect(capacidad).toHaveValue(200);
+    expect(screen.queryByRole('button', { name: 'Pedir a Booster' })).toBeNull();
     expect(screen.getByLabelText('Fuente CAN de combustible')).toHaveValue('84');
     fireEvent.change(capacidad, { target: { value: '180' } });
     fireEvent.change(screen.getByLabelText('Fuente CAN de combustible'), {
@@ -1709,7 +1778,11 @@ describe('VehiculoDetallePage — hub', () => {
     const capacidad = await screen.findByLabelText('Capacidad del estanque (L)');
     expect(capacidad).toBeDisabled();
     expect(capacidad).toHaveValue(200);
-    expect(screen.getByLabelText('Fuente CAN de combustible')).toBeDisabled();
+    expect(screen.queryByRole('combobox', { name: 'Fuente CAN de combustible' })).toBeNull();
+    expect(screen.getByText('IO 89 — nivel en porcentaje')).toBeInTheDocument();
+    expect(screen.getByText('Lo configura Booster')).toBeInTheDocument();
+    // El despachador es gestor: también puede pedir a Booster.
+    expect(screen.getByRole('button', { name: 'Pedir a Booster' })).toBeEnabled();
     expect(screen.getByText(/solo el dueño o un administrador puede cambiar/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
     await waitFor(() => expect(patch).toHaveBeenCalled());
@@ -1717,5 +1790,23 @@ describe('VehiculoDetallePage — hub', () => {
     expect(body.capacidad_estanque_l).toBeUndefined();
     expect(body.fuente_combustible_can).toBeUndefined();
     expect(body.capacity_kg).toBe(5000);
+  });
+
+  it('al crear un vehículo el dueño no manda la fuente CAN: la configura Booster', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: makeVehicleRow() });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosNuevoRoute />);
+    expect(await screen.findByText('Lo configura Booster')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Fuente CAN de combustible' })).toBeNull();
+    // En el alta todavía no hay vehículo al que pedirle la configuración.
+    expect(screen.queryByRole('button', { name: 'Pedir a Booster' })).toBeNull();
+    fireEvent.change(screen.getByLabelText(/^Patente/), { target: { value: 'BCDF12' } });
+    fireEvent.change(screen.getByLabelText(/^Carrocería/), { target: { value: 'plano' } });
+    fireEvent.change(screen.getByLabelText(/^Capacidad \(kg\)/), { target: { value: '5000' } });
+    fireEvent.click(screen.getByRole('button', { name: /crear vehículo/i }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    const body = post.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body.fuente_combustible_can).toBeUndefined();
+    expect(body).toHaveProperty('capacidad_estanque_l');
   });
 });
