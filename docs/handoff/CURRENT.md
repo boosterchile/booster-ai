@@ -1,9 +1,18 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-26 · America/Santiago (frente 8 del rediseño en prod, `14e885dc`; ver «Rediseño, frente 8». Antes: frente 1 y arreglo de fechas #1099, `251dfd1e`).  
+**Última actualización**: 2026-11-26 · America/Santiago (frente 2 del rediseño fusionado, #1109 `670f1615`, con solicitud de release esperando la aprobación del PO; ver «Rediseño, frente 2». Antes: frente 8 en prod, `14e885dc`).
 **Prod**: `14e885dc` (Release on request [45741987240](https://github.com/boosterchile/booster-ai/actions/runs/45741987240) SUCCESS, terminó el 2026-11-26 a las 03:07Z; frente 8 del rediseño, #1083, #1103, #1104, #1105; los 8 servicios de Cloud Run en esa imagen al 100 %, api `booster-ai-api-00501-hh7` y web `00443-zxn`). Releases anteriores: `251dfd1e` (fechas de documentos, [45726135080](https://github.com/boosterchile/booster-ai/actions/runs/45726135080)), `505fbf06` (frente 1, [45717367685](https://github.com/boosterchile/booster-ai/actions/runs/45717367685)) y `c37fa6c0` ([45635387767](https://github.com/boosterchile/booster-ai/actions/runs/45635387767)).  
-**`main`**: igual a prod (`14e885dc`). Pendiente de `apply`: `infrastructure/observatorio.tf` (#1096, vistas del observatorio con umbral 1).
+**`main`**: adelante de prod en #1109 (frente 2, `670f1615`). Pendiente de `apply`: `infrastructure/observatorio.tf` (#1096, vistas del observatorio con umbral 1).
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+
+## Rediseño, frente 2: el sello de huella en toda la web
+
+**Fusionado el 2026-11-26** (#1109, `670f1615`; spec `.specs/sello-huella-toda-la-web/`, goal del PO); release pedido en `.github/release-requests/2026-11-26-frente2-sello-huella.md`, esperando la aprobación del PO en el Environment production. Toda cifra de emisiones de la web sale con `CifraHuella` (cifra + `FootprintSeal`) o `TotalHuella` (un bloque por presentación, sin mezclar clases). El API calcula la presentación con `presentacionDesdeMetricas` (envuelve `presentacionNivel`, la del PDF) en las métricas del viaje, cada certificado y `resumen.por_presentacion`. Sin migraciones.
+
+- Pruebas: el guardián `sin-cifras-de-emisiones-sueltas.test.ts` falla si otro archivo llama al formateador; `e2e-conductor/sello-huella.spec.ts` recorre Certificados y el Inicio del panel y falla con una cifra visible sin sello (en el CI: 7 y 3 cifras, las tres presentaciones, ninguna sin sello).
+- Certificados en el teléfono: tarjetas (`ListaCertificados`); referencias visuales a 1.280 y 390 px aprobadas por el PO. `/apariencia` muestra cifras, total y lista de muestra.
+- «Estimado» con motivo donde el API no clasifica: la oferta y la emisión previa al viaje (proyecciones) y el observatorio (la vista de BigQuery no guarda la presentación). Separar el observatorio exige cambiar la vista y un `apply` del PO.
+- Fuera: lo que depende de T10-05 y el resto del frente 2 (tabla de qué se midió, nivel con lo que falta, anticipar la huella, «Pedir a Booster», viaje propio certificado).
 
 ## Rediseño, frente 8: un solo sistema visual
 
