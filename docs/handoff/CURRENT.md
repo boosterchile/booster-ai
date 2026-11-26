@@ -11,7 +11,7 @@
 
 - Pruebas: el guardián `sin-cifras-de-emisiones-sueltas.test.ts` falla si otro archivo llama al formateador; `e2e-conductor/sello-huella.spec.ts` recorre Certificados y el Inicio del panel y falla con una cifra visible sin sello (en el CI: 7 y 3 cifras, las tres presentaciones, ninguna sin sello).
 - Certificados en el teléfono: tarjetas (`ListaCertificados`); referencias visuales a 1.280 y 390 px aprobadas por el PO. `/apariencia` muestra cifras, total y lista de muestra.
-- «Estimado» con motivo donde el API no clasifica: la oferta y la emisión previa al viaje (proyecciones). El observatorio ya separa por presentación en el código (`.specs/observatorio-por-presentacion/`); hasta el `apply` del PO sus filas siguen «Estimado».
+- «Estimado» con motivo donde el API no clasifica: la oferta y la emisión previa al viaje (proyecciones). El observatorio ya separa por presentación en el código (#1115, `.specs/observatorio-por-presentacion/`); release pedido en `.github/release-requests/2026-11-26-observatorio-por-presentacion.md`. Hasta el `apply` del PO sus filas siguen «Estimado».
 - #1111 (mes en curso en «Gasto …» y «Huella …» del Inicio del generador; antes decía «octubre» fijo) en prod desde el 2026-11-26 (`969a7e4d`, run [45764951190](https://github.com/boosterchile/booster-ai/actions/runs/45764951190), 06:45Z). Sin ver con sesión real: lo cubre el test de `generador.test.ts`.
 - Fuera: lo que depende de T10-05 y el resto del frente 2 (tabla de qué se midió, nivel con lo que falta, anticipar la huella, «Pedir a Booster», viaje propio certificado).
 
