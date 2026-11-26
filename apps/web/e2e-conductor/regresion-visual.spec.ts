@@ -71,13 +71,44 @@ async function neutralizar(page: Page): Promise<void> {
   });
 }
 
+/**
+ * `listo`: uno o más data-testid separados por coma; se espera el primero
+ * visible (hay bloques que solo existen en móvil o solo en escritorio).
+ */
 async function capturar(page: Page, url: string, nombre: string, listo: string): Promise<void> {
+  const selector = listo
+    .split(',')
+    .map((id) => `[data-testid="${id.trim()}"]`)
+    .join(', ');
   for (const ancho of ANCHOS) {
     await page.setViewportSize({ width: ancho.width, height: ancho.height });
     await page.goto(url);
-    await expect(page.getByTestId(listo).first()).toBeVisible();
+    await expect(page.locator(selector).filter({ visible: true }).first()).toBeVisible();
     await page.waitForLoadState('networkidle');
     await neutralizar(page);
+    // Responsivo (frente 8): ninguna pantalla desborda a lo ancho; las tablas y
+    // las pestañas se desplazan dentro de su caja.
+    const desborde = await page.evaluate(() => {
+      const ancho = document.documentElement.clientWidth;
+      const fuera: string[] = [];
+      for (const el of document.body.querySelectorAll('*')) {
+        const r = el.getBoundingClientRect();
+        const padre = el.parentElement?.getBoundingClientRect();
+        if (r.width > 0 && r.right > ancho + 1 && padre && padre.right <= ancho + 1) {
+          const caja = getComputedStyle(el.parentElement as Element).overflowX;
+          if (caja !== 'auto' && caja !== 'scroll' && caja !== 'hidden') {
+            fuera.push(
+              `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)} → ${Math.round(r.right)}px`,
+            );
+          }
+        }
+      }
+      return { scroll: document.documentElement.scrollWidth - ancho, fuera: fuera.slice(0, 6) };
+    });
+    expect(desborde, `${nombre} a ${ancho.nombre} px desborda a lo ancho`).toEqual({
+      scroll: 0,
+      fuera: [],
+    });
     await expect(page).toHaveScreenshot(`${nombre}-${ancho.nombre}.png`, {
       fullPage: true,
       animations: 'disabled',
@@ -112,6 +143,6 @@ test.describe('regresión visual del frente 8', () => {
   test('Inicio del generador', async ({ page }) => {
     await loginRutClave(page, CREDENCIAL_F.gen);
     await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
-    await capturar(page, '/app', 'inicio-generador', 'inicio-accesos');
+    await capturar(page, '/app', 'inicio-generador', 'inicio-accesos, inicio-mapa-cargas');
   });
 });
