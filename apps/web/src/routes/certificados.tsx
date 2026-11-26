@@ -1,22 +1,14 @@
-/**
- * /app/certificados — listado dedicado de certificados de huella de
- * carbono emitidos a la empresa shipper activa.
- *
- * Origen del listado: GET /certificates (auth shipper). El endpoint
- * filtra automáticamente por activeMembership.empresa.
- *
- * Acción principal: descargar el PDF firmado. El click llama al endpoint
- * de download (signed URL TTL 5 min) y abre en pestaña nueva.
- */
-
-import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Award, Download, Leaf, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Award, Leaf, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import {
+  type CertificadoListItem,
+  ListaCertificados,
+} from '../components/certificados/ListaCertificados.js';
 import { CifraHuella, TotalHuella } from '../components/huella/CifraHuella.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
@@ -27,39 +19,9 @@ import {
 } from '../lib/cert-download.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 import { CO2E, formatoFactorEmision } from '../lib/formato-emisiones.js';
-import {
-  type PorPresentacion,
-  type PresentacionHuella,
-  campoPorPresentacion,
-} from '../lib/presentacion-huella.js';
+import { type PorPresentacion, campoPorPresentacion } from '../lib/presentacion-huella.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
-
-interface CertificadoListItem {
-  trip_id: string;
-  tracking_code: string;
-  origin_address: string;
-  destination_address: string;
-  cargo_type: string;
-  kg_co2e: string | null;
-  distance_km: string | null;
-  precision_method: string | null;
-  glec_version: string | null;
-  route_data_source: string | null;
-  coverage_pct: string | null;
-  certification_level: string | null;
-  /** ADR-077 §4 — línea de método derivada por el API; se muestra tal cual. */
-  linea_metodo: string | null;
-  /** ADR-091, calculada por el API (la misma función que el PDF). Ausente en respuestas viejas. */
-  presentacion?: PresentacionHuella;
-  certificate_sha256: string | null;
-  certificate_kms_key_version: string | null;
-  certificate_issued_at: string | null;
-  // ADR-021 §6.4 — empty backhaul allocation. Null para certs legacy
-  // o trips sin perfil energético del vehículo.
-  factor_matching_aplicado: string | null;
-  ahorro_co2e_vs_sin_matching_kgco2e: string | null;
-}
 
 /** Totales de todos los certificados de la empresa (`resumenCertificados` del API). */
 interface ResumenCertificados {
@@ -218,79 +180,11 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
             />
           </div>
 
-          {/* En un teléfono la tabla se desplaza a lo ancho: la cifra y su sello
-              se ven completos (`relative` para que nada absoluto escape del scroll). */}
-          <div className="relative mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-neutral-200">
-              <thead className="bg-neutral-50">
-                <tr>
-                  <Th>Código</Th>
-                  <Th>Trayecto</Th>
-                  <Th>Carga</Th>
-                  <Th className="text-right">{CO2E}</Th>
-                  <Th className="text-right">Ahorro matching</Th>
-                  <Th>Emitido</Th>
-                  <Th className="text-right">Acción</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 bg-white">
-                {certsQ.data.certificates.map((c) => (
-                  <tr key={c.trip_id} className="hover:bg-neutral-50">
-                    <Td className="font-mono font-semibold text-neutral-900">{c.tracking_code}</Td>
-                    <Td>
-                      <div className="flex flex-col gap-0.5 text-xs">
-                        <span>{c.origin_address}</span>
-                        <span className="text-neutral-500">→ {c.destination_address}</span>
-                        {c.linea_metodo && (
-                          <span className="text-neutral-500" title="Método de cálculo (ADR-077)">
-                            {c.linea_metodo}
-                          </span>
-                        )}
-                      </div>
-                    </Td>
-                    <Td className="text-xs">{formatCargoType(c.cargo_type)}</Td>
-                    <Td className="text-right font-semibold text-emerald-700">
-                      <CifraHuella
-                        valor={c.kg_co2e}
-                        presentacion={c.presentacion ?? 'estimado'}
-                        className="justify-end whitespace-nowrap"
-                      />
-                    </Td>
-                    <Td className="text-right">
-                      {c.ahorro_co2e_vs_sin_matching_kgco2e &&
-                      Number(c.ahorro_co2e_vs_sin_matching_kgco2e) > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 text-xs">
-                          <CifraHuella
-                            valor={-Number(c.ahorro_co2e_vs_sin_matching_kgco2e)}
-                            presentacion={c.presentacion ?? 'estimado'}
-                            className="whitespace-nowrap"
-                          />
-                        </span>
-                      ) : (
-                        <span className="text-neutral-400 text-xs">—</span>
-                      )}
-                    </Td>
-                    <Td className="text-neutral-600 text-xs">
-                      {c.certificate_issued_at ? formatDate(c.certificate_issued_at) : '—'}
-                    </Td>
-                    <Td className="text-right">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => downloadM.mutate(c.trip_id)}
-                        disabled={downloadM.isPending && downloadM.variables === c.trip_id}
-                      >
-                        <Download className="h-3.5 w-3.5" aria-hidden />
-                        {downloadM.isPending && downloadM.variables === c.trip_id
-                          ? 'Abriendo…'
-                          : 'Descargar'}
-                      </Button>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ListaCertificados
+            certificados={certsQ.data.certificates}
+            onDescargar={(tripId) => downloadM.mutate(tripId)}
+            descargando={downloadM.isPending ? (downloadM.variables ?? null) : null}
+          />
 
           <p className="mt-4 text-neutral-500 text-xs">
             Cada certificado se firma con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.
@@ -396,22 +290,6 @@ function NoShipperPermission({ me }: { me: MeOnboarded }) {
 // Helpers de presentación
 // =============================================================================
 
-function Th({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return (
-    <th
-      className={`px-4 py-2 text-left font-medium text-neutral-500 text-xs uppercase tracking-wider ${className}`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return (
-    <td className={`px-4 py-3 align-top text-neutral-800 text-sm ${className}`}>{children}</td>
-  );
-}
-
 function SummaryCard({
   title,
   value,
@@ -436,19 +314,4 @@ function SummaryCard({
       </div>
     </div>
   );
-}
-
-function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('es-CL', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Santiago',
-  }).format(new Date(iso));
-}
-
-function formatCargoType(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
 }

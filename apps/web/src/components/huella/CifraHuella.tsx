@@ -25,12 +25,20 @@ export interface CifraHuellaProps extends Atributos {
   presentacion: Presentacion;
   /** `emisiones` en kg CO₂e (por defecto) o `intensidad` en g CO₂e/t·km. */
   tipo?: 'emisiones' | 'intensidad';
+  /**
+   * `en-linea` (por defecto): el sello al lado de la cifra, para textos y celdas.
+   * `apilada`: la cifra arriba y el sello debajo, alineados a la izquierda; las
+   * tres presentaciones quedan con el mismo ritmo aunque el sello intermedio sea
+   * largo.
+   */
+  disposicion?: 'en-linea' | 'apilada';
 }
 
 export function CifraHuella({
   valor,
   presentacion,
   tipo = 'emisiones',
+  disposicion = 'en-linea',
   className,
   ...rest
 }: CifraHuellaProps) {
@@ -48,10 +56,15 @@ export function CifraHuella({
     <span
       data-cifra-huella=""
       data-presentacion={sello}
-      className={cn('inline-flex flex-wrap items-center gap-x-2 gap-y-1', className)}
+      className={cn(
+        disposicion === 'apilada'
+          ? 'flex flex-col items-start gap-1'
+          : 'inline-flex flex-wrap items-center gap-x-2 gap-y-1',
+        className,
+      )}
       {...rest}
     >
-      <span>{texto}</span>
+      <span className="whitespace-nowrap">{texto}</span>
       <FootprintSeal presentacion={sello} />
     </span>
   );
@@ -80,9 +93,19 @@ export function TotalHuella({
     );
   }
   return (
-    <span data-total-huella="" className={cn('flex flex-col gap-1', className)} {...rest}>
+    <span
+      data-total-huella=""
+      className={cn('flex flex-col divide-y divide-neutral-100', className)}
+      {...rest}
+    >
       {lineas.map((p) => (
-        <CifraHuella key={p} valor={porPresentacion[p]} presentacion={p} />
+        <CifraHuella
+          key={p}
+          valor={porPresentacion[p]}
+          presentacion={p}
+          disposicion="apilada"
+          className="py-2 first:pt-0 last:pb-0"
+        />
       ))}
     </span>
   );

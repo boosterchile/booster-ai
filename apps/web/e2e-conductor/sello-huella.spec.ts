@@ -87,7 +87,7 @@ test.describe('sello de huella', () => {
     // Certificados: el total y una fila por certificado.
     await page.goto('/app/certificados');
     await expect(page.getByTestId('certificados-emisiones')).toBeVisible();
-    await expect(page.getByText('UVE-000003')).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'UVE-000003' })).toBeVisible();
     porPantalla.Certificados = await revisar(page);
 
     // Inicio del panel, con la empresa elegida.

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -146,7 +146,10 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    await waitFor(() => expect(screen.getByText('BST-001')).toBeInTheDocument());
+    const tabla = await screen.findByRole('table');
+    expect(within(tabla).getByText('BST-001')).toBeInTheDocument();
+    // Bajo 640 px el mismo certificado es una tarjeta.
+    expect(screen.getByTestId('certificado-tarjeta-BST-001')).toHaveTextContent('BST-001');
   });
 
   it('muestra la línea de método que entrega el API (ADR-077 §4) junto al kg CO₂e, sin reconstruirla', async () => {
@@ -177,7 +180,8 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    const linea = await screen.findByText(/GPS del celular del conductor \(cobertura 100 %\)/);
+    const tabla = await screen.findByRole('table');
+    const linea = within(tabla).getByText(/GPS del celular del conductor \(cobertura 100 %\)/);
     expect(linea).toBeInTheDocument();
     // La fila muestra la línea tal cual llegó: vocabulario cerrado del API.
     expect(linea.closest('tr')?.textContent).not.toMatch(/verificable/i);
@@ -207,7 +211,8 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    const btn = await screen.findByRole('button', { name: /Descargar/ });
+    const tabla = await screen.findByRole('table');
+    const btn = within(tabla).getByRole('button', { name: /Descargar/ });
     fireEvent.click(btn);
     await waitFor(() => expect(descargarMock).toHaveBeenCalled());
   });
@@ -246,9 +251,18 @@ describe('CertificadosRoute', () => {
       'primario',
       'estimado',
     ]);
-    expect(screen.getByText('BST-001').closest('tr')).toHaveTextContent('375,2 kg CO₂eMedido');
+    const tabla = screen.getByRole('table');
+    expect(within(tabla).getByText('BST-001').closest('tr')).toHaveTextContent(
+      '375,2 kg CO₂eMedido',
+    );
     // Sin presentación (respuesta vieja) la fila no afirma lo medido.
-    expect(screen.getByText('BST-002').closest('tr')).toHaveTextContent('50,0 kg CO₂eEstimado');
+    expect(within(tabla).getByText('BST-002').closest('tr')).toHaveTextContent(
+      '50,0 kg CO₂eEstimado',
+    );
+    // La tarjeta del teléfono lleva la misma cifra con su sello.
+    expect(screen.getByTestId('certificado-tarjeta-BST-001')).toHaveTextContent(
+      '375,2 kg CO₂eMedido',
+    );
   });
 
   it('respuesta vieja sin por_presentacion: el total entero va «Estimado»', async () => {

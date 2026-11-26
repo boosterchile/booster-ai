@@ -9,8 +9,9 @@ export interface FootprintSealProps extends Omit<HTMLAttributes<HTMLSpanElement>
   presentacion: FootprintPresentation;
 }
 
-/** Texto fijo de la presentación intermedia de ADR-091. */
-const TEXTO_INTERMEDIA = 'Distancia medida con Teltonika · consumo modelado';
+/** Texto fijo de la presentación intermedia de ADR-091: «Distancia medida con Teltonika · consumo modelado». */
+const TEXTO_DISTANCIA = 'Distancia medida con Teltonika';
+const TEXTO_CONSUMO = 'consumo modelado';
 
 /**
  * Sello de la huella de carbono (decisión 2 del PO del 2026-11-25). Son tres
@@ -46,7 +47,7 @@ export function FootprintSeal({ presentacion, className, ...rest }: FootprintSea
     <span
       data-presentacion={presentacion}
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-neutral-500 bg-neutral-0 px-2 py-0.5 font-semibold text-neutral-700 text-xs',
+        'inline-flex max-w-full items-center gap-1 rounded-md border border-neutral-500 bg-neutral-0 px-2 py-0.5 font-semibold text-neutral-700 text-xs',
         className,
       )}
       {...rest}
@@ -65,7 +66,11 @@ export function FootprintSeal({ presentacion, className, ...rest }: FootprintSea
         <path d="M2.5 9.5v4M13.5 9.5v4M8 10.5v2" />
         <path d="M4 6.5c1.3-1.4 2.7-1.4 4 0s2.7 1.4 4 0" />
       </svg>
-      {TEXTO_INTERMEDIA}
+      {/* Cada mitad baja entera a la línea siguiente: corta en el «·» y solo se parte por dentro si no cabe. */}
+      <span>
+        <span className="inline-block">{TEXTO_DISTANCIA} ·</span>{' '}
+        <span className="inline-block">{TEXTO_CONSUMO}</span>
+      </span>
     </span>
   );
 }
