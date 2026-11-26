@@ -65,4 +65,20 @@ test.describe('Armazón operador — menú superior', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('link', { name: 'Mi perfil' })).toHaveCount(0);
   });
+
+  test('320 px: sin desplazamiento horizontal, con un nombre de empresa largo (WCAG 1.4.10)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    for (const rol of ['transportista', 'generador', 'dual']) {
+      await page.goto(`/apariencia/shell?rol=${rol}`);
+      await expect(page.getByTestId('menu-cuenta')).toBeVisible();
+      const desborde = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(desborde, `rol ${rol}`).toBeLessThanOrEqual(1);
+      const caja = await page.getByTestId('menu-cuenta').boundingBox();
+      expect((caja?.x ?? 0) + (caja?.width ?? 0), `rol ${rol}`).toBeLessThanOrEqual(320);
+    }
+  });
 });

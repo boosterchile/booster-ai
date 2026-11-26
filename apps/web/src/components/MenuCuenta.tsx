@@ -75,16 +75,16 @@ export function MenuCuenta({ me }: { me: MeOnboarded }) {
   const cerrar = () => setAbierto(false);
 
   return (
-    <div ref={contenedor} className="relative min-w-0">
+    <div ref={contenedor} className="relative min-w-0 shrink">
       <Button
         variant="ghost"
         aria-expanded={abierto}
         aria-controls={panelId}
         onClick={() => setAbierto((v) => !v)}
         data-testid="menu-cuenta"
-        className="max-w-[14rem] sm:max-w-xs"
+        className="min-w-0 max-w-full sm:max-w-xs"
       >
-        <span className="truncate">{nombre}</span>
+        <span className="min-w-0 truncate">{nombre}</span>
         <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
       </Button>
       {abierto && (

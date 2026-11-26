@@ -33,7 +33,7 @@ function mockMe(rol: string): MeOnboarded {
         joined_at: null,
         empresa: {
           id: 'e-1',
-          legal_name: 'Demo Operador SpA',
+          legal_name: 'Transportes y Logística Demo Operador SpA',
           rut: '76.123.456-7',
           is_generador_carga: generador,
           is_transportista: transportista,
