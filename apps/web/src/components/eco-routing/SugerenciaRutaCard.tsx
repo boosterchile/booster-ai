@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Leaf } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -79,23 +80,23 @@ export function SugerenciaRutaCard({
       ) : (
         sugerencia && (
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
+            <Button
+              variant="primary"
               type="button"
               aria-label="Aceptar ruta alternativa"
               disabled={responder.isPending}
               onClick={() => void registrar(sugerencia.id, 'aceptada')}
-              className="rounded-md bg-success-700 px-3 py-3 font-medium text-base text-white disabled:opacity-60"
             >
               Aceptar
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
               type="button"
               disabled={responder.isPending}
               onClick={() => void registrar(sugerencia.id, 'rechazada')}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-3 font-medium text-base text-neutral-800 disabled:opacity-60"
             >
               Seguir mi ruta
-            </button>
+            </Button>
           </div>
         )
       )}

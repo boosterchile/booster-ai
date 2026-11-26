@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import {
   APIProvider,
   AdvancedMarker,
@@ -146,15 +147,16 @@ function VehicleMapInner({
             // los controles de zoom (también RIGHT_BOTTOM) y nunca se
             // solapa, sea desktop o mobile.
             <MapControl position={ControlPosition.RIGHT_BOTTOM}>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="icon"
                 onClick={follow.resume}
-                className="m-2 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+                className="m-2 rounded-full shadow-lg"
                 aria-label="Recentrar mapa en el vehículo"
                 title="Recentrar"
               >
                 <LocateFixed className="h-5 w-5 text-neutral-700" aria-hidden />
-              </button>
+              </Button>
             </MapControl>
           )}
         </GoogleMap>

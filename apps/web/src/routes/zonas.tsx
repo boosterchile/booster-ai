@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { MapPinned } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
@@ -176,14 +177,15 @@ function ZonasPage({ me }: { me: MeOnboarded }) {
                 </select>
               </label>
               <div className="flex items-end">
-                <button
+                <Button
+                  variant="primary"
                   type="submit"
                   disabled={submitting}
-                  className="w-full rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50 sm:w-auto"
+                  className="w-full sm:w-auto"
                   data-testid="zona-agregar"
                 >
                   {submitting ? 'Agregando…' : 'Agregar'}
-                </button>
+                </Button>
               </div>
             </form>
 

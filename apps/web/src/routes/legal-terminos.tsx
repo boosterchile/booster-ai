@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/use-auth.js';
@@ -77,11 +78,10 @@ function AcceptanceCard(props: {
         auditoría.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={props.onAccept}
           disabled={props.isPending || props.isSuccess}
-          className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {props.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -89,7 +89,7 @@ function AcceptanceCard(props: {
             <CheckCircle2 className="h-4 w-4" aria-hidden />
           )}
           {props.isPending ? 'Registrando aceptación…' : 'Acepto los Términos de Servicio v2'}
-        </button>
+        </Button>
         {props.isError && (
           <span role="alert" className="text-danger-700 text-sm">
             No pudimos registrar tu aceptación. Intenta de nuevo.

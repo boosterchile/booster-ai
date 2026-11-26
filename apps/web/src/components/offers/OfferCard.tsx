@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useNavigate } from '@tanstack/react-router';
 import { Check, Clock, Leaf, Loader2, MapPin, Package, X } from 'lucide-react';
 import { type FormEvent, useId, useState } from 'react';
@@ -211,14 +212,15 @@ export function OfferCard({ offer, puedeDecidir }: OfferCardProps) {
         {showEcoPreview ? (
           <EcoPreviewBlock query={ecoPreview} />
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="sm"
+            style={{ paddingInline: 0 }}
             onClick={() => setShowEcoPreview(true)}
-            className="flex items-center gap-1.5 text-success-700 text-xs underline-offset-2 transition hover:text-success-700 hover:underline"
           >
             <Leaf className="h-3.5 w-3.5" aria-hidden />
             Ver impacto ambiental estimado
-          </button>
+          </Button>
         )}
       </div>
 
@@ -245,47 +247,32 @@ export function OfferCard({ offer, puedeDecidir }: OfferCardProps) {
             />
           </div>
           <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => {
                 setShowRejectForm(false);
                 setRejectReason('');
                 setError(null);
               }}
               disabled={busy}
-              className="rounded-md px-4 py-2 font-medium text-neutral-600 text-sm transition hover:bg-neutral-100"
             >
               Volver
-            </button>
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-md bg-danger-500 px-5 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-danger-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            </Button>
+            <Button variant="danger" type="submit" disabled={busy}>
               {rejectMutation.isPending ? 'Enviando…' : 'Confirmar rechazo'}
-            </button>
+            </Button>
           </div>
         </form>
       ) : puedeDecidir ? (
         <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setShowRejectForm(true)}
-            disabled={busy}
-            className="flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          <Button variant="secondary" onClick={() => setShowRejectForm(true)} disabled={busy}>
             <X className="h-4 w-4" aria-hidden />
             Rechazar
-          </button>
-          <button
-            type="button"
-            onClick={handleAccept}
-            disabled={busy}
-            className="flex items-center gap-1 rounded-md bg-primary-600 px-5 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          </Button>
+          <Button variant="primary" onClick={handleAccept} disabled={busy}>
             <Check className="h-4 w-4" aria-hidden />
             {acceptMutation.isPending ? 'Aceptando…' : 'Aceptar oferta'}
-          </button>
+          </Button>
         </div>
       ) : null}
     </article>

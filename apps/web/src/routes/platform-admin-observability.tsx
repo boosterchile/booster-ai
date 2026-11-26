@@ -1,3 +1,4 @@
+import { PressableArea } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import {
   ActivityIcon,
@@ -107,9 +108,8 @@ function PlatformAdminObservabilityPage() {
           role="tablist"
         >
           {TABS.map((tab) => (
-            <button
+            <PressableArea
               key={tab.id}
-              type="button"
               role="tab"
               aria-selected={activeTab === tab.id}
               data-testid={`observability-tab-${tab.id}`}
@@ -122,7 +122,7 @@ function PlatformAdminObservabilityPage() {
             >
               {tab.icon}
               {tab.label}
-            </button>
+            </PressableArea>
           ))}
         </nav>
 

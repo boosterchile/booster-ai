@@ -22,6 +22,7 @@
  * mismo elemento pisa ese padding-top.
  */
 
+import { Button } from '@booster-ai/ui-components';
 import { useMutation } from '@tanstack/react-query';
 import { Bell, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -94,22 +95,17 @@ export function PushSubscribeBanner({ reservaInset = true }: { reservaInset?: bo
           Activa las notificaciones para enterarte cuando la otra parte te escriba, incluso con la
           app cerrada.
         </p>
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={() => subscribeM.mutate()}
           disabled={subscribeM.isPending}
-          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md bg-amber-600 px-3 font-medium text-white text-xs hover:bg-amber-700 disabled:opacity-60"
+          className="shrink-0"
         >
           {subscribeM.isPending ? 'Activando…' : 'Activar'}
-        </button>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded text-amber-700 hover:bg-amber-100"
-          aria-label="Descartar banner"
-        >
+        </Button>
+        <Button variant="ghost" size="icon" onClick={onDismiss} aria-label="Descartar banner">
           <X className="h-4 w-4" aria-hidden />
-        </button>
+        </Button>
       </div>
     </div>
   );

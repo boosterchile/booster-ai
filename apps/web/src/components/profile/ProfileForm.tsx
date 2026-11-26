@@ -5,6 +5,7 @@ import {
   ensureRutHasDash,
   rutSchema,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Save } from 'lucide-react';
 import { useState } from 'react';
@@ -238,14 +239,10 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       )}
 
       <div className="flex items-center justify-end">
-        <button
-          type="submit"
-          disabled={isSubmitting || mutation.isPending}
-          className="flex items-center gap-2 rounded-md bg-primary-500 px-5 py-2.5 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <Button variant="primary" type="submit" disabled={isSubmitting || mutation.isPending}>
           <Save className="h-4 w-4" aria-hidden />
           {mutation.isPending ? 'Guardando…' : 'Guardar cambios'}
-        </button>
+        </Button>
       </div>
     </form>
   );

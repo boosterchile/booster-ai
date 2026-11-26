@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -143,15 +144,10 @@ export function IncidentReportCard({ assignmentId, recognizer }: IncidentReportC
         className="border-neutral-200 border-b bg-white px-4 py-3"
       >
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={openPanel}
-            className="inline-flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 font-medium text-amber-800 text-sm ring-1 ring-amber-500/30 hover:bg-amber-100"
-            data-testid="incident-open-button"
-          >
+          <Button variant="secondary" onClick={openPanel} data-testid="incident-open-button">
             <AlertTriangle className="h-4 w-4" aria-hidden />
             Reportar incidente
-          </button>
+          </Button>
           <span className="text-neutral-500 text-xs">o di "marcar incidente"</span>
           {/* VoiceCommandButton compacto al lado para activar el flow
               hands-free. Comparte intents marcar_incidente + cancelar. */}
@@ -178,29 +174,30 @@ export function IncidentReportCard({ assignmentId, recognizer }: IncidentReportC
     >
       <div className="mb-3 flex items-center justify-between">
         <p className="font-semibold text-amber-900 text-sm">¿Qué tipo de incidente?</p>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={closePanel}
           aria-label="Cancelar"
           disabled={localState === 'submitting'}
-          className="rounded p-1 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
         >
           <X className="h-4 w-4" aria-hidden />
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {INCIDENT_TYPES.map((t) => (
-          <button
+          <Button
             key={t}
-            type="button"
+            variant="secondary"
             onClick={() => submitIncident(t)}
             disabled={localState === 'submitting'}
-            className="flex min-h-[56px] items-center justify-center rounded-md bg-white px-4 py-3 font-medium text-amber-900 text-sm ring-1 ring-amber-500/30 hover:bg-amber-100 disabled:opacity-50"
+            // Objetivo táctil de 56 px para pulsar con las manos ocupadas.
+            style={{ minHeight: 'max(56px, var(--touch-min))' }}
             data-testid={`incident-type-${t}`}
           >
             {INCIDENT_TYPE_LABELS[t]}
-          </button>
+          </Button>
         ))}
       </div>
 

@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban } from 'lucide-react';
 import { useState } from 'react';
@@ -98,14 +99,10 @@ export function BajaCarga({
 
   if (!abierto) {
     return (
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="flex items-center gap-1 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
-      >
+      <Button variant="secondary" size="sm" type="button" onClick={() => setAbierto(true)}>
         <Ban className="h-4 w-4" aria-hidden />
         {textos.boton}
-      </button>
+      </Button>
     );
   }
 
@@ -142,21 +139,18 @@ export function BajaCarga({
         </p>
       )}
       <div className="mt-3 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={cerrar}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-        >
+        <Button variant="secondary" size="sm" type="button" onClick={cerrar}>
           Volver
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
           type="button"
           onClick={confirmar}
           disabled={baja.isPending}
-          className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
         >
           {baja.isPending ? textos.enCurso : textos.confirmar}
-        </button>
+        </Button>
       </div>
     </section>
   );

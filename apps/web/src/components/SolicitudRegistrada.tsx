@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Info } from 'lucide-react';
 
 /** Resultado del alta cuando el RUT ya existe en Booster. Igual para cualquier persona. */
@@ -21,13 +22,9 @@ export function SolicitudRegistrada({
             Se sumará a tu equipo cuando acepte. Pronto podrá hacerlo desde Booster; por ahora,
             avísale tú.
           </p>
-          <button
-            type="button"
-            onClick={onVolver}
-            className="mt-3 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-100"
-          >
+          <Button variant="secondary" onClick={onVolver} className="mt-3">
             {volverLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

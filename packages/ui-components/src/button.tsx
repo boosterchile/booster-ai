@@ -81,6 +81,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         'select-none items-center justify-center gap-2 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         SIZE_CLASS[size],
         VARIANT_CLASS[variant],
+        // Un enlace dentro de un texto se distingue por algo más que el color (WCAG 1.4.1).
+        variant === 'link' && size === 'inline' && 'underline',
         className,
       )}
       style={{ ...SIZE_STYLE[size], ...style }}

@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Building2, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -430,31 +431,22 @@ function SucursalesDetallePage({ me }: { me: MeOnboarded }) {
             {confirmDelete ? (
               <>
                 <span className="text-neutral-700 text-sm">¿Retirar esta sucursal?</span>
-                <button
-                  type="button"
+                <Button
+                  variant="danger"
                   onClick={() => deleteM.mutate()}
                   disabled={deleteM.isPending}
-                  className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                 >
                   Sí, retirar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-                >
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
                   Cancelar
-                </button>
+                </Button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
-              >
+              <Button variant="secondary" onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="h-4 w-4" aria-hidden />
                 Retirar
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -694,13 +686,9 @@ function SucursalForm({
             Cancelar
           </Link>
           {!disabled && (
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" disabled={submitting}>
               {submitting ? 'Guardando…' : mode === 'create' ? 'Crear sucursal' : 'Guardar cambios'}
-            </button>
+            </Button>
           )}
         </div>
       </fieldset>

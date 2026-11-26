@@ -22,6 +22,7 @@
  *   - Precio acordado
  */
 
+import { Button } from '@booster-ai/ui-components';
 import { useParams } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -189,15 +190,15 @@ function StatusCard({
           ) : (
             <Truck className={`h-8 w-8 ${meta.text}`} aria-hidden />
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onRefresh}
             disabled={isFetching}
             aria-label="Refrescar"
-            className={`rounded p-1 transition ${meta.text} hover:bg-white/50 disabled:opacity-50`}
           >
             <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden />
-          </button>
+          </Button>
         </div>
       </div>
     </section>

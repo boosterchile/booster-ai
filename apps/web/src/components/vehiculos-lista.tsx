@@ -1,4 +1,5 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Map as MapIcon, MoreHorizontal, Navigation, Plus, Search, Truck } from 'lucide-react';
@@ -332,13 +333,9 @@ function ListaError({ onRetry }: { onRetry: () => void }) {
     <div role="alert" className="mt-6 rounded-lg border border-danger-200 bg-danger-50 p-6">
       <p className="font-medium text-danger-800">No pudimos cargar los vehículos.</p>
       <p className="mt-1 text-danger-700 text-sm">Revisa la conexión e inténtalo otra vez.</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="mt-4 rounded-md bg-danger-700 px-4 py-2 font-medium text-sm text-white hover:bg-danger-800"
-      >
+      <Button variant="primary" type="button" onClick={onRetry} className="mt-4">
         Reintentar
-      </button>
+      </Button>
     </div>
   );
 }
@@ -420,7 +417,7 @@ function ListaConDatos({
           {FILTROS.map((item) => {
             const activo = filtro === item.id;
             return (
-              <button
+              <PressableArea
                 key={item.id}
                 type="button"
                 aria-pressed={activo}
@@ -434,7 +431,7 @@ function ListaConDatos({
               >
                 <span>{item.label}</span>
                 <span className="tabular-nums">{cuentas[item.id]}</span>
-              </button>
+              </PressableArea>
             );
           })}
         </fieldset>
@@ -446,13 +443,9 @@ function ListaConDatos({
           <p className="mx-auto mt-1 max-w-md text-neutral-600 text-sm">
             Prueba con otra patente o limpia el filtro.
           </p>
-          <button
-            type="button"
-            onClick={onLimpiar}
-            className="mt-4 rounded-md border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-800 text-sm hover:bg-neutral-50"
-          >
+          <Button variant="secondary" type="button" onClick={onLimpiar} className="mt-4">
             Limpiar
-          </button>
+          </Button>
         </div>
       ) : (
         <>
@@ -673,7 +666,9 @@ function MenuAcciones({
 
   return (
     <div ref={ref} className="relative">
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
         type="button"
         aria-haspopup="menu"
         aria-expanded={abierto}
@@ -685,10 +680,9 @@ function MenuAcciones({
             onAbrir();
           }
         }}
-        className="rounded-md p-1.5 text-neutral-600 hover:bg-neutral-100"
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden />
-      </button>
+      </Button>
       {abierto ? (
         <div
           role="menu"

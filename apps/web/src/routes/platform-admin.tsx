@@ -5,6 +5,7 @@ import {
   ensureRutHasDash,
   rutSchema,
 } from '@booster-ai/shared-schemas';
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Building2, Loader2, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -262,26 +263,26 @@ function StakeholderOrgsSection() {
           </div>
         </div>
         <div className="flex shrink-0 flex-col gap-2">
-          <button
+          <Button
+            variant="secondary"
             type="button"
             onClick={() => void crearCorfo()}
             disabled={
               creandoCorfo || orgs.some((o) => o.nombre_legal.trim().toLowerCase() === 'corfo')
             }
-            className="inline-flex items-center gap-1 rounded-md border border-primary-300 bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm hover:bg-primary-100 disabled:opacity-50"
             data-testid="stakeholder-crear-corfo"
           >
             {creandoCorfo ? 'Creando Corfo…' : 'Crear Corfo'}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             type="button"
             onClick={() => setShowCreate((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700"
             data-testid="stakeholder-org-create-toggle"
           >
             <Plus className="h-4 w-4" aria-hidden />
             {showCreate ? 'Cancelar' : 'Crear organización'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -342,10 +343,10 @@ function StakeholderOrgRow({ org }: { org: OrganizacionStakeholder }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <li className="py-3" data-testid={`stakeholder-org-row-${org.id}`}>
-      <button
+      <PressableArea
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start justify-between gap-3 text-left transition hover:bg-neutral-50"
+        className="flex w-full items-start justify-between gap-3 transition hover:bg-neutral-50"
         aria-expanded={expanded}
         aria-controls={`stakeholder-org-detail-${org.id}`}
         data-testid={`stakeholder-org-toggle-${org.id}`}
@@ -363,7 +364,7 @@ function StakeholderOrgRow({ org }: { org: OrganizacionStakeholder }) {
           {new Date(org.creado_en).toLocaleDateString('es-CL')}
           <span aria-hidden>{expanded ? '▾' : '▸'}</span>
         </div>
-      </button>
+      </PressableArea>
 
       {expanded && !org.eliminado_en && (
         <div
@@ -456,18 +457,19 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
         <span className="font-medium text-neutral-700 text-xs">
           Miembros ({detail.miembros.length})
         </span>
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           type="button"
           onClick={() => {
             setResultado(null);
             setShowInvite((v) => !v);
           }}
-          className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-1 font-medium text-primary-700 text-xs hover:bg-primary-100"
           data-testid={`stakeholder-org-invite-toggle-${orgId}`}
         >
           <Plus className="h-3 w-3" aria-hidden />
           {showInvite ? 'Cancelar' : 'Invitar miembro'}
-        </button>
+        </Button>
       </div>
 
       {showInvite && <InviteStakeholderMemberForm orgId={orgId} onInvited={handleInvited} />}
@@ -639,10 +641,11 @@ function InviteStakeholderMemberForm({
         </div>
       )}
       <div className="sm:col-span-3">
-        <button
+        <Button
+          variant="primary"
+          size="sm"
           type="submit"
           disabled={submitting || !form.rut || !form.email || !form.full_name}
-          className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-white text-xs hover:bg-primary-700 disabled:opacity-50"
           data-testid={`stakeholder-org-invite-submit-${orgId}`}
         >
           {submitting ? (
@@ -653,7 +656,7 @@ function InviteStakeholderMemberForm({
           ) : (
             'Crear usuario'
           )}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -774,10 +777,10 @@ function CreateStakeholderOrgForm({ onCreated }: { onCreated: () => void }) {
         </div>
       )}
       <div className="sm:col-span-2">
-        <button
+        <Button
+          variant="primary"
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
           data-testid="stakeholder-org-create-submit"
         >
           {submitting ? (
@@ -791,7 +794,7 @@ function CreateStakeholderOrgForm({ onCreated }: { onCreated: () => void }) {
               Crear organización
             </>
           )}
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -1,4 +1,5 @@
 import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Copy, Loader2, UserPlus } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { urlActivar } from '../../lib/activar-url.js';
@@ -272,11 +273,7 @@ export function InvitarMiembroEmpresa({
         )}
 
         <div className="sm:col-span-2">
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" disabled={!canSubmit}>
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -288,7 +285,7 @@ export function InvitarMiembroEmpresa({
                 Agregar a la empresa
               </>
             )}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -317,27 +314,29 @@ export function InvitarMiembroEmpresa({
             <div className="min-w-0 flex-1 select-all break-all rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-sm">
               {urlActivar()}
             </div>
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void handleCopy(urlActivar(), 'direccion')}
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+              className="shrink-0"
             >
               <Copy className="h-3 w-3" aria-hidden />
               {copied === 'direccion' ? 'Copiada ✓' : 'Copiar dirección'}
-            </button>
+            </Button>
           </div>
           <div className="mt-2 flex items-center gap-2">
             <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
               {result.codigo_activacion}
             </div>
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void handleCopy(result.codigo_activacion ?? '', 'codigo')}
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+              className="shrink-0"
             >
               <Copy className="h-3 w-3" aria-hidden />
               {copied === 'codigo' ? 'Copiado ✓' : 'Copiar código'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

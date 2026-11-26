@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Copy, RotateCcwIcon, UserPlusIcon, XCircle } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
@@ -198,15 +199,15 @@ function PlatformAdminSignupRequestsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => void fetchList()}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
               disabled={state.kind === 'loading'}
             >
               <RotateCcwIcon className="h-4 w-4" aria-hidden />
               Refrescar
-            </button>
+            </Button>
             <Link
               to="/app/platform-admin"
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
@@ -282,24 +283,25 @@ function PlatformAdminSignupRequestsPage() {
                         {new Date(req.solicitado_en).toLocaleString('es-CL')}
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <button
-                          type="button"
+                        <Button
+                          variant="primary"
+                          size="sm"
                           onClick={() => void handleApprove(req)}
                           disabled={busy}
-                          className="mr-2 inline-flex cursor-pointer items-center gap-1 rounded-md bg-green-600 px-3 py-1 font-medium text-white text-xs transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mr-2"
                         >
                           <CheckCircle2 className="h-3 w-3" aria-hidden />
                           Aprobar
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
                           onClick={() => void handleReject(req)}
                           disabled={busy}
-                          className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-red-600 px-3 py-1 font-medium text-white text-xs transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <XCircle className="h-3 w-3" aria-hidden />
                           Rechazar
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -427,13 +429,9 @@ function AltaExencionForm({
             className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900"
           />
         </label>
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="inline-flex cursor-pointer items-center justify-center rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button variant="primary" type="submit" disabled={!canSubmit}>
           {submitting ? 'Emitiendo…' : 'Emitir enlace de alta'}
-        </button>
+        </Button>
       </div>
       {error ? <p className="mt-2 text-red-700 text-sm">{error}</p> : null}
     </form>
@@ -513,13 +511,9 @@ function OnboardingLinkPanel({
             Expira: {new Date(info.expiresAt).toLocaleString('es-CL')}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="cursor-pointer text-amber-700 text-xs underline hover:text-amber-900"
-        >
+        <Button variant="link" size="inline" onClick={onDismiss} className="text-xs">
           Ocultar
-        </button>
+        </Button>
       </div>
 
       <div className="mt-3 flex items-center gap-2">
@@ -536,14 +530,10 @@ function OnboardingLinkPanel({
             {info.link}
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => void handleCopy()}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
-        >
+        <Button variant="primary" size="sm" onClick={() => void handleCopy()} className="shrink-0">
           <Copy className="h-3 w-3" aria-hidden />
           {copied ? 'Copiado ✓' : 'Copiar enlace'}
-        </button>
+        </Button>
       </div>
 
       {/* T2.0 — link de acceso. Va segundo porque el orden de uso es: primero
@@ -573,14 +563,15 @@ function OnboardingLinkPanel({
                 {info.accessLink}
               </div>
             )}
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void handleCopyAccess()}
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+              className="shrink-0"
             >
               <Copy className="h-3 w-3" aria-hidden />
               {accessCopied ? 'Copiado ✓' : 'Copiar enlace de acceso'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

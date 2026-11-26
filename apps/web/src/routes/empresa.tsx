@@ -1,4 +1,4 @@
-import { Card, CardBody, CardHeader } from '@booster-ai/ui-components';
+import { Button, Card, CardBody, CardHeader } from '@booster-ai/ui-components';
 import { Leaf } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
@@ -306,13 +306,9 @@ function UmbralesCombustible({
                 ))}
               </select>
             </div>
-            <button
-              type="submit"
-              className="inline-flex w-fit rounded-md bg-neutral-900 px-3 py-2 text-sm text-white disabled:opacity-40"
-              disabled={saving}
-            >
+            <Button variant="primary" type="submit" className="w-fit" disabled={saving}>
               Guardar umbrales
-            </button>
+            </Button>
           </fieldset>
           {error ? (
             <p role="alert" className="mt-4 text-danger-700 text-sm">

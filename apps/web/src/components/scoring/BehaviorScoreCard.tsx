@@ -1,3 +1,4 @@
+import { PressableArea } from '@booster-ai/ui-components';
 import { ChevronDown, ChevronUp, Gauge, Info, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import {
@@ -107,8 +108,7 @@ export function BehaviorScoreCard({ assignmentId }: BehaviorScoreCardProps) {
 
   return (
     <div className="border-neutral-200 border-b bg-white">
-      <button
-        type="button"
+      <PressableArea
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center gap-3 px-4 py-3 transition hover:bg-neutral-50"
         aria-expanded={expanded}
@@ -142,7 +142,7 @@ export function BehaviorScoreCard({ assignmentId }: BehaviorScoreCardProps) {
         ) : (
           <ChevronDown className="h-4 w-4 text-neutral-400" aria-hidden />
         )}
-      </button>
+      </PressableArea>
 
       {expanded && (
         <div

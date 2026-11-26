@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { MapPin } from 'lucide-react';
 import { instruccionesRetiroQueryOptions } from '../../lib/instrucciones-retiro-api.js';
@@ -14,13 +15,9 @@ export function InstruccionesRetiroConductor({ tripId }: { tripId: string }) {
     return (
       <div role="alert" className="space-y-2 text-danger-700 text-sm">
         <p>No pudimos cargar las instrucciones de retiro.</p>
-        <button
-          type="button"
-          onClick={() => void consulta.refetch()}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
-        >
+        <Button variant="secondary" size="sm" type="button" onClick={() => void consulta.refetch()}>
           Reintentar
-        </button>
+        </Button>
       </div>
     );
   }

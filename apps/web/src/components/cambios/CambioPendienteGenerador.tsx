@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -57,17 +58,16 @@ export function CambioPendienteGenerador({
         </p>
       )}
       {puedeRetirar && (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => {
             setError(null);
             retirar.mutate();
           }}
           disabled={retirar.isPending}
-          className="rounded-md border border-amber-400 px-3 py-1.5 font-medium text-amber-900 text-sm hover:bg-amber-100 disabled:opacity-60"
         >
           {retirar.isPending ? 'Retirando…' : 'Retirar solicitud'}
-        </button>
+        </Button>
       )}
     </section>
   );

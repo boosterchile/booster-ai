@@ -17,6 +17,7 @@ import {
   quitarAccesoPersonalBoosterResponseSchema,
   reemitirCodigoPersonalBoosterResponseSchema,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { Copy, KeyRound, Loader2, UserMinus, UserPlus, Users } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { ZodError } from 'zod';
@@ -457,15 +458,15 @@ export function PersonalBooster() {
               data-testid="personal-invitar-email"
             />
           </label>
-          <button
+          <Button
+            variant="primary"
             type="submit"
             disabled={enviandoInvitar}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
             data-testid="personal-invitar-submit"
           >
             {enviandoInvitar ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             Enviar invitación
-          </button>
+          </Button>
         </form>
         {errorInvitar ? (
           <p className="mt-3 text-danger-700 text-sm" role="alert">
@@ -530,12 +531,9 @@ export function PersonalBooster() {
               />
             </label>
             <div className="sm:col-span-2">
-              <button
-                type="submit"
-                className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-              >
+              <Button variant="primary" type="submit">
                 Revisar datos
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
@@ -560,11 +558,10 @@ export function PersonalBooster() {
               <dd className="font-mono text-neutral-900">{formatRut(confirmacion.rut)}</dd>
             </dl>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 disabled={enviando}
                 onClick={() => void crear(confirmacion)}
-                className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
               >
                 {enviando ? (
                   <>
@@ -574,15 +571,10 @@ export function PersonalBooster() {
                 ) : (
                   'Crear cuenta'
                 )}
-              </button>
-              <button
-                type="button"
-                disabled={enviando}
-                onClick={() => setConfirmacion(null)}
-                className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-50 disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="secondary" disabled={enviando} onClick={() => setConfirmacion(null)}>
                 Corregir datos
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -694,37 +686,31 @@ export function PersonalBooster() {
                       </div>
                       <div className="flex shrink-0 gap-2">
                         {persona.estado === 'sin_cuenta' && (
-                          <button
-                            type="button"
-                            onClick={() => precargar(persona.email)}
-                            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-50"
-                          >
+                          <Button variant="secondary" onClick={() => precargar(persona.email)}>
                             Dar de alta
-                          </button>
+                          </Button>
                         )}
                         {puedeReemitir && (
-                          <button
-                            type="button"
+                          <Button
+                            variant="secondary"
                             disabled={reemitiendoId === userId}
                             onClick={() => void reemitir(persona, userId)}
-                            className="rounded-md border border-amber-400 bg-amber-50 px-3 py-1.5 font-medium text-amber-950 text-sm hover:bg-amber-100 disabled:opacity-50"
                           >
                             {reemitiendoId === userId ? 'Generando…' : 'Generar código nuevo'}
-                          </button>
+                          </Button>
                         )}
                         {puedeQuitar && confirmandoQuitar !== userId && (
-                          <button
-                            type="button"
+                          <Button
+                            variant="secondary"
                             onClick={() => {
                               setConfirmandoQuitar(userId);
                               setErrorQuitar(null);
                               setAccesoQuitado(null);
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-danger-200 bg-white px-3 py-1.5 font-medium text-danger-700 text-sm hover:bg-danger-50"
                           >
                             <UserMinus className="h-4 w-4" aria-hidden />
                             Quitar acceso
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -742,25 +728,23 @@ export function PersonalBooster() {
                             : 'Deja de entrar al panel desde su próxima acción. Su cuenta y su clave no cambian; si todavía no activó, su código deja de servir. Avisamos a la lista de respaldo.'}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            type="button"
+                          <Button
+                            variant="danger"
                             disabled={quitandoId === userId}
                             onClick={() => void quitarAcceso(persona, userId)}
-                            className="rounded-md bg-danger-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                           >
                             {quitandoId === userId ? 'Quitando…' : 'Sí, quitar acceso'}
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="secondary"
                             disabled={quitandoId === userId}
                             onClick={() => {
                               setConfirmandoQuitar(null);
                               setErrorQuitar(null);
                             }}
-                            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-50 disabled:opacity-50"
                           >
                             Cancelar
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     )}
@@ -912,14 +896,10 @@ function CodigoParaCopiar({ codigo }: { codigo: string }) {
     <>
       <div className="mt-3 flex items-center gap-2">
         <CodigoEnPantalla codigo={codigo} />
-        <button
-          type="button"
-          onClick={() => void copiar()}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
-        >
+        <Button variant="primary" size="sm" onClick={() => void copiar()} className="shrink-0">
           <Copy className="h-3 w-3" aria-hidden />
           {copia === 'copiado' ? 'Copiado ✓' : 'Copiar código'}
-        </button>
+        </Button>
       </div>
       {copia === 'fallo' && (
         <p className="mt-2 text-amber-900 text-sm">
@@ -982,13 +962,9 @@ function PanelCodigo({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar: () =
       <p className="mt-2 font-medium text-amber-900 text-sm" data-testid="personal-aviso-lista">
         {avisoDeLista(panel)}
       </p>
-      <button
-        type="button"
-        onClick={onCerrar}
-        className="mt-3 rounded-md border border-amber-400 bg-white px-3 py-1.5 font-medium text-amber-950 text-sm hover:bg-amber-100"
-      >
+      <Button variant="secondary" onClick={onCerrar} className="mt-3">
         Listo, cerrar
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1037,13 +1013,9 @@ function PanelConfirmacion({ panel, onCerrar }: { panel: CodigoEmitido; onCerrar
         </span>{' '}
         y escribe este código.
       </p>
-      <button
-        type="button"
-        onClick={onCerrar}
-        className="mt-3 rounded-md border border-amber-400 bg-white px-3 py-1.5 font-medium text-amber-950 text-sm hover:bg-amber-100"
-      >
+      <Button variant="secondary" onClick={onCerrar} className="mt-3">
         Listo, cerrar
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1092,13 +1064,9 @@ function PanelSinCodigo({ panel, onCerrar }: { panel: AltaSinCodigo; onCerrar: (
       ) : (
         <PanelCodigoPendiente panel={panel} />
       )}
-      <button
-        type="button"
-        onClick={onCerrar}
-        className="mt-3 rounded-md border border-amber-400 bg-white px-3 py-1.5 font-medium text-amber-950 text-sm hover:bg-amber-100"
-      >
+      <Button variant="secondary" onClick={onCerrar} className="mt-3">
         Cerrar
-      </button>
+      </Button>
     </div>
   );
 }

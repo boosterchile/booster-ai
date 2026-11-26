@@ -4,6 +4,7 @@ import {
   crearCuentaInvitacionSchema,
   ensureRutHasDash,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useNavigate } from '@tanstack/react-router';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -307,14 +308,10 @@ export function CrearCuentaRoute() {
             </p>
           ) : null}
 
-          <button
-            type="submit"
-            disabled={enviando}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-60"
-          >
+          <Button variant="primary" type="submit" disabled={enviando} className="w-full">
             {enviando ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             Crear cuenta
-          </button>
+          </Button>
         </form>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -54,16 +55,17 @@ export function ContactoYNotasCard({
           Contacto y notas
         </h3>
         {editable && !editando && (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => {
               setEnlaceRenovado(false);
               setEditando(true);
             }}
-            className="shrink-0 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
+            className="shrink-0"
           >
             Editar
-          </button>
+          </Button>
         )}
       </div>
       {editando ? (
@@ -237,20 +239,12 @@ function Formulario({
         </p>
       )}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={guardar.isPending}
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-60"
-        >
+        <Button variant="primary" type="submit" disabled={guardar.isPending}>
           {guardar.isPending ? 'Guardando…' : 'Guardar'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancelar}
-          className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onCancelar}>
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );

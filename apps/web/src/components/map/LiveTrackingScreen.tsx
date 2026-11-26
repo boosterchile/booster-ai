@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 // biome-ignore lint/suspicious/noShadowRestrictedNames: `Map` es el componente exportado por la lib de Google Maps; renombrarlo localmente confunde más que ayuda.
 import { APIProvider, AdvancedMarker, ControlPosition, Map, Pin } from '@vis.gl/react-google-maps';
@@ -110,15 +111,16 @@ export function LiveTrackingScreen({
       {/* Botón Recentrar — solo visible cuando el usuario interactuó y se
           pausó el follow. Posicionado encima del bottom card. */}
       {hasMaps && hasPos && !follow.following && (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="icon"
           onClick={follow.resume}
-          className="absolute right-4 bottom-44 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-2xl ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+          className="absolute right-4 bottom-44 z-20 h-12 w-12 rounded-full shadow-2xl"
           aria-label="Recentrar mapa en el vehículo"
           title="Recentrar"
         >
           <LocateFixed className="h-6 w-6 text-neutral-700" aria-hidden />
-        </button>
+        </Button>
       )}
 
       {/* Empty states cubriendo el área del mapa */}
@@ -156,18 +158,19 @@ export function LiveTrackingScreen({
             {subtitle && <div className="text-neutral-600 text-xs leading-tight">{subtitle}</div>}
           </div>
           {onRefresh && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="icon"
               onClick={onRefresh}
               disabled={isFetching}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg transition hover:bg-neutral-50 disabled:opacity-60"
+              className="rounded-full shadow-lg"
               aria-label="Refrescar"
             >
               <RefreshCw
                 className={`h-4 w-4 text-neutral-700 ${isFetching ? 'animate-spin' : ''}`}
                 aria-hidden
               />
-            </button>
+            </Button>
           )}
         </div>
       </div>

@@ -12,7 +12,7 @@ import { expect, test } from '@playwright/test';
  * Este test cae si alguien saca el reset de `@layer base` (validado revirtiendo
  * el fix localmente → rojo).
  */
-test('el botón de acento en /apariencia computa texto blanco (#576)', async ({ page }) => {
+test('el botón principal en /apariencia computa texto blanco (#576)', async ({ page }) => {
   await page.goto('/apariencia');
 
   const button = page.getByTestId('accent-preview-button');

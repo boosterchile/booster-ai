@@ -9,6 +9,7 @@ import {
   Input,
   MeasurementSeal,
   Modal,
+  PressableArea,
   RegisterProvider,
   ToastProvider,
   useToast,
@@ -62,9 +63,8 @@ export function AparienciaRoute() {
               ['conductor', 'Conductor'],
             ] as const
           ).map(([value, label]) => (
-            <button
+            <PressableArea
               key={value}
-              type="button"
               data-testid={`palette-toggle-${value}`}
               aria-pressed={palette === value}
               onClick={() => setPalette(value)}
@@ -75,7 +75,7 @@ export function AparienciaRoute() {
               }`}
             >
               {label}
-            </button>
+            </PressableArea>
           ))}
         </fieldset>
 
@@ -121,13 +121,10 @@ export function AparienciaRoute() {
         <div className="mt-8 border-neutral-200 border-t pt-6">
           <p className="mb-3 text-neutral-500 text-xs">Vista previa (acento activo)</p>
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="rounded-md bg-accent-600 px-4 py-2 font-medium text-sm text-white"
-              data-testid="accent-preview-button"
-            >
-              Botón de acento
-            </button>
+            {/* D-18: el botón principal es verde y no cambia con el acento. */}
+            <Button variant="primary" data-testid="accent-preview-button">
+              Botón principal
+            </Button>
             <span className="rounded-full bg-accent-50 px-3 py-1 font-medium text-accent-800 text-sm">
               Etiqueta tint
             </span>
@@ -156,9 +153,8 @@ export function AparienciaRoute() {
             >
               <legend className="sr-only">Registro</legend>
               {REGISTER_KEYS.map((value) => (
-                <button
+                <PressableArea
                   key={value}
-                  type="button"
                   data-testid={`register-toggle-${value}`}
                   aria-pressed={register === value}
                   onClick={() => setRegister(value)}
@@ -169,7 +165,7 @@ export function AparienciaRoute() {
                   }`}
                 >
                   {REGISTER_LABEL[value]}
-                </button>
+                </PressableArea>
               ))}
             </fieldset>
 
@@ -179,9 +175,8 @@ export function AparienciaRoute() {
             >
               <legend className="sr-only">Densidad</legend>
               {DENSITY_KEYS.map((value) => (
-                <button
+                <PressableArea
                   key={value}
-                  type="button"
                   data-testid={`density-toggle-${value}`}
                   aria-pressed={density === value}
                   onClick={() => setDensity(value)}
@@ -192,7 +187,7 @@ export function AparienciaRoute() {
                   }`}
                 >
                   {DENSITY_LABEL[value]}
-                </button>
+                </PressableArea>
               ))}
             </fieldset>
           </div>
@@ -205,18 +200,9 @@ export function AparienciaRoute() {
             className="mt-4 flex flex-col rounded-md bg-neutral-50 p-4"
           >
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--gap)' }}>
-              <button
-                type="button"
-                data-testid="register-sample-button"
-                className="rounded-md bg-accent-600 font-medium text-sm text-white"
-                style={{
-                  minHeight: 'var(--touch-min)',
-                  paddingBlock: 'var(--pad-y)',
-                  paddingInline: 'var(--pad-x)',
-                }}
-              >
+              <Button variant="primary" data-testid="register-sample-button">
                 Acción
-              </button>
+              </Button>
               <span
                 data-testid="register-sample-chip"
                 className="inline-flex items-center rounded-md border border-neutral-300 text-neutral-700 text-sm"

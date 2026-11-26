@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useState } from 'react';
 
 /**
@@ -30,15 +31,16 @@ export function PublicTrackingShare({ url }: { url: string }) {
       >
         {url}
       </a>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
         onClick={() => {
           void copy();
         }}
-        className="mt-2 rounded-md border border-neutral-300 bg-white px-3 py-1 font-medium text-neutral-800 text-xs hover:bg-neutral-100"
+        className="mt-2"
       >
         {copied ? 'Copiado' : 'Copiar enlace'}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { FootprintSeal } from '@booster-ai/ui-components';
+import { FootprintSeal, PressableArea } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
@@ -283,15 +283,14 @@ function ListaDeVehiculos({
           {vehiculos.map((v) => (
             <tr key={v.id} className={seleccion === v.id ? 'bg-primary-50' : 'hover:bg-neutral-50'}>
               <td className="px-3 py-2">
-                <button
-                  type="button"
+                <PressableArea
                   onClick={() => onSeleccionar(v.id)}
                   aria-label={`Ver la ficha de ${v.patente}`}
                   aria-current={seleccion === v.id ? 'true' : undefined}
-                  className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600"
+                  className="rounded"
                 >
                   <ChileanPlate plate={v.patente} size="sm" />
-                </button>
+                </PressableArea>
               </td>
               <td className="px-3 py-2 text-neutral-800">{v.empresa.nombre}</td>
               <td className="px-3 py-2">

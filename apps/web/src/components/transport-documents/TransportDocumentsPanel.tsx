@@ -11,6 +11,7 @@
  */
 
 import type { DocType } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Download, FileText, Loader2, Upload } from 'lucide-react';
 import { type ChangeEvent, type FormEvent, useRef, useState } from 'react';
@@ -132,11 +133,11 @@ export function TransportDocumentsPanel({
             aria-label="Sube un PDF o una foto"
             data-testid="transport-doc-file"
           />
-          <button
+          <Button
+            variant="primary"
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadM.isPending}
-            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
           >
             {uploadM.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -144,7 +145,7 @@ export function TransportDocumentsPanel({
               <Upload className="h-4 w-4" aria-hidden />
             )}
             {uploadM.isPending ? 'Subiendo…' : 'Sube un PDF o una foto'}
-          </button>
+          </Button>
           <p className="mt-1 text-neutral-500 text-xs">PDF, JPEG o PNG · máximo 15 MB.</p>
         </div>
       )}
@@ -236,11 +237,12 @@ function DocumentRow({
             {EXTRACTION_STATUS_LABEL[doc.extractionStatus]}
           </p>
         </div>
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           type="button"
           onClick={() => void onDownload()}
           disabled={downloading}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-neutral-700 text-xs hover:bg-neutral-50 disabled:opacity-50"
         >
           {downloading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -248,7 +250,7 @@ function DocumentRow({
             <Download className="h-3.5 w-3.5" aria-hidden />
           )}
           Descarga
-        </button>
+        </Button>
       </div>
       {showManual && <ManualEntryForm documentId={doc.id} tripId={tripId} />}
     </li>
@@ -293,13 +295,15 @@ function ManualEntryForm({ documentId, tripId }: { documentId: string; tripId: s
 
   if (!open) {
     return (
-      <button
+      <Button
+        variant="link"
+        size="inline"
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-2 text-primary-700 text-xs underline"
+        className="mt-2 text-xs"
       >
         Completar a mano
-      </button>
+      </Button>
     );
   }
 
@@ -371,20 +375,12 @@ function ManualEntryForm({ documentId, tripId }: { documentId: string; tripId: s
         </p>
       )}
       <div className="flex gap-2 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={saveM.isPending}
-          className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-        >
+        <Button variant="primary" type="submit" disabled={saveM.isPending}>
           {saveM.isPending ? 'Guardando…' : 'Guarda'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm"
-        >
+        </Button>
+        <Button variant="secondary" type="button" onClick={() => setOpen(false)}>
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );

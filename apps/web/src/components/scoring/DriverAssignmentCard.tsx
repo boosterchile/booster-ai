@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Loader2, User, UserPlus } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -344,10 +345,11 @@ export function DriverAssignmentCard({
                   ))}
                 </select>
               </label>
-              <button
+              <Button
+                variant="primary"
                 type="submit"
                 disabled={!puedeConfirmar || submitState.kind === 'submitting'}
-                className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                className="w-full min-w-0"
                 data-testid="driver-assignment-submit"
               >
                 {submitState.kind === 'submitting' ? (
@@ -361,7 +363,7 @@ export function DriverAssignmentCard({
                     Confirmar
                   </>
                 )}
-              </button>
+              </Button>
             </form>
           )}
 

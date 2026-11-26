@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { Inbox, RefreshCw } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
@@ -66,21 +67,20 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => {
               void offersQuery.refetch();
               void abiertosQuery.refetch();
             }}
             disabled={offersQuery.isFetching || abiertosQuery.isFetching}
-            className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw
               className={`h-4 w-4 ${offersQuery.isFetching || abiertosQuery.isFetching ? 'animate-spin' : ''}`}
               aria-hidden
             />
             {offersQuery.isFetching || abiertosQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
-          </button>
+          </Button>
         </div>
       </div>
 

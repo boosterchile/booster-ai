@@ -8,6 +8,7 @@ import {
   rutSchema,
   telefonoMovilConductorSchema,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -868,13 +869,9 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           >
             Cancelar
           </Link>
-          <button
-            type="submit"
-            disabled={!puedeCrear || createM.isPending}
-            className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" disabled={!puedeCrear || createM.isPending}>
             {createM.isPending ? 'Creando…' : 'Crear conductor'}
-          </button>
+          </Button>
         </div>
       </form>
     </Layout>
@@ -1122,31 +1119,22 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
                     '¿Retirar a este conductor?'
                   )}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="danger"
                   onClick={() => deleteM.mutate()}
                   disabled={deleteM.isPending}
-                  className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                 >
                   {pendiente ? 'Cancelar invitación' : 'Sí, retirar'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-                >
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
                   {pendiente ? 'Volver' : 'Cancelar'}
-                </button>
+                </Button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
-              >
+              <Button variant="secondary" onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="h-4 w-4" aria-hidden />
                 Retirar
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -1227,18 +1215,17 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             />
             {canWrite && conductorQ.data.deleted_at == null && (
               <div className="flex justify-end">
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={guardarEmail}
                   disabled={!puedeGuardarEmail || emailM.isPending}
-                  className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
                   {emailM.isPending
                     ? 'Guardando…'
                     : conductorQ.data.user.is_pending
                       ? 'Guardar email y reenviar invitación'
                       : 'Guardar email'}
-                </button>
+                </Button>
               </div>
             )}
             {pinReenviado && (
@@ -1293,23 +1280,21 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
                   <output className="mr-auto text-sm text-success-700">Teléfono guardado.</output>
                 )}
                 {conductorQ.data.user.is_pending && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
                     onClick={() => guardarTelefono(true)}
                     disabled={!telefonoValido || telefonoM.isPending}
-                    className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-100 disabled:opacity-50"
                   >
                     {reenviandoInvitacion ? 'Reenviando…' : 'Guardar y reenviar invitación'}
-                  </button>
+                  </Button>
                 )}
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={() => guardarTelefono(false)}
                   disabled={!telefonoValido || telefonoM.isPending}
-                  className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
                   {telefonoM.isPending && !reenviandoInvitacion ? 'Guardando…' : 'Guardar teléfono'}
-                </button>
+                </Button>
               </div>
             )}
             {pinTelefono && (
@@ -1424,13 +1409,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
                   >
                     Cancelar
                   </Link>
-                  <button
-                    type="submit"
-                    disabled={updateM.isPending}
-                    className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-                  >
+                  <Button type="submit" variant="primary" disabled={updateM.isPending}>
                     {updateM.isPending ? 'Guardando…' : 'Guardar cambios'}
-                  </button>
+                  </Button>
                 </div>
               )}
             </fieldset>
@@ -1537,14 +1518,14 @@ function ActivationPinCard({
               >
                 {enlaceActivacion}
               </a>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => void handleCopyLink()}
                 data-testid="copiar-enlace-activacion"
-                className="mt-2 inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-50"
+                className="mt-2"
               >
                 {copiedLink ? 'Copiado' : 'Copiar enlace + PIN'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1558,14 +1539,10 @@ function ActivationPinCard({
           <div className="flex-1 rounded-md bg-neutral-900 px-6 py-4 text-center font-bold font-mono text-3xl text-white tracking-[0.5em]">
             {pin}
           </div>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-2 rounded-md border border-neutral-300 px-4 py-3 font-medium text-neutral-700 text-sm transition hover:bg-neutral-50"
-          >
+          <Button variant="secondary" onClick={handleCopy}>
             <Copy className="h-4 w-4" aria-hidden />
             {copied ? 'Copiado' : 'Copiar'}
-          </button>
+          </Button>
         </div>
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900 text-sm">
           <strong>Importante:</strong> este PIN no se vuelve a mostrar. Si el conductor lo pierde,
@@ -1574,13 +1551,9 @@ function ActivationPinCard({
       </div>
 
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onContinue}
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
-        >
+        <Button variant="primary" onClick={onContinue}>
           Continuar
-        </button>
+        </Button>
       </div>
     </div>
   );

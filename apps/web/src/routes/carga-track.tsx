@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { Building2, MessageCircle, User as UserIcon, X } from 'lucide-react';
@@ -191,14 +192,16 @@ function CargaTrackPage({
       />
       {/* FAB chat — solo si hay assignment activo. */}
       {assignment && !chatOpen && (
-        <button
+        <Button
+          variant="primary"
+          size="icon"
           type="button"
           onClick={() => setChatOpen(true)}
-          className="fixed right-6 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg transition hover:bg-primary-700"
+          className="fixed right-6 bottom-24 z-30 h-14 w-14 rounded-full shadow-lg"
           aria-label="Abrir chat con transportista"
         >
           <MessageCircle className="h-6 w-6" aria-hidden />
-        </button>
+        </Button>
       )}
       {/* Drawer chat. Overlay sobre el mapa, full height en mobile, sidebar en desktop. */}
       {assignment && chatOpen && (
@@ -228,14 +231,15 @@ function CargaTrackPage({
                   <p className="truncate text-neutral-500 text-xs">Carga {trip.id.slice(0, 8)}…</p>
                 )}
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 type="button"
                 onClick={() => setChatOpen(false)}
-                className="rounded p-1 text-neutral-500 hover:bg-neutral-100"
                 aria-label="Cerrar chat"
               >
                 <X className="h-5 w-5" aria-hidden />
-              </button>
+              </Button>
             </div>
             <div className="flex-1 overflow-hidden">
               <ChatPanel assignmentId={assignment.id} title="" readOnly={isClosed} />

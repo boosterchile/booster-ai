@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { CheckCircle2, Loader2, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useConfirmarEntregaMutation } from '../../hooks/use-confirmar-entrega.js';
@@ -199,30 +200,18 @@ export function DeliveryConfirmCard({
 
           <div className="flex flex-1 flex-col gap-2">
             {localState === 'idle' && (
-              <button
-                type="button"
-                onClick={handleFirstConfirm}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-50 px-4 py-3 font-medium text-primary-700 text-sm ring-1 ring-primary-700/30 hover:bg-primary-100"
-              >
+              <Button variant="secondary" onClick={handleFirstConfirm}>
                 Sí, ya entregué
-              </button>
+              </Button>
             )}
             {localState === 'confirming' && (
               <>
-                <button
-                  type="button"
-                  onClick={handleRatify}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-success-700 px-4 py-3 font-semibold text-sm text-white shadow hover:bg-success-800"
-                >
+                <Button variant="primary" onClick={handleRatify}>
                   <CheckCircle2 className="h-4 w-4" aria-hidden /> Confirmar entrega
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="text-neutral-500 text-xs underline"
-                >
+                </Button>
+                <Button variant="link" size="sm" onClick={handleCancel}>
                   Cancelar (volver atrás)
-                </button>
+                </Button>
               </>
             )}
             {localState === 'submitting' && (
@@ -232,13 +221,9 @@ export function DeliveryConfirmCard({
               </div>
             )}
             {localState === 'error' && (
-              <button
-                type="button"
-                onClick={handleFirstConfirm}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-50 px-4 py-3 font-medium text-amber-800 text-sm ring-1 ring-amber-500 hover:bg-amber-100"
-              >
+              <Button variant="secondary" onClick={handleFirstConfirm}>
                 Reintentar
-              </button>
+              </Button>
             )}
           </div>
         </div>

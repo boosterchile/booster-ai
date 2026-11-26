@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -163,13 +164,14 @@ function Pagina() {
                   {v.liberacion.estado} · vence {fecha(v.liberacion.vence_en)}
                 </td>
                 <td className="py-2">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     type="button"
                     onClick={() => setSeleccionado(v)}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-neutral-700 text-xs hover:bg-neutral-100"
                   >
                     Registrar
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -318,20 +320,12 @@ function FormularioEvento({
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCerrar}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-        >
+        <Button variant="secondary" type="button" onClick={onCerrar}>
           Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={enviando || evidencia.trim() === ''}
-          className="rounded-md bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-        >
+        </Button>
+        <Button variant="primary" type="submit" disabled={enviando || evidencia.trim() === ''}>
           {enviando ? 'Registrando…' : 'Registrar'}
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -3,6 +3,7 @@ import {
   confirmarAccesoBoosterResponseSchema,
   confirmarAccesoBoosterSchema,
 } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2, ShieldCheck } from 'lucide-react';
@@ -189,11 +190,7 @@ function FormularioConfirmacion() {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={enviando}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-      >
+      <Button type="submit" variant="primary" disabled={enviando} className="w-full">
         {enviando ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -202,7 +199,7 @@ function FormularioConfirmacion() {
         ) : (
           'Confirmar acceso'
         )}
-      </button>
+      </Button>
     </form>
   );
 }

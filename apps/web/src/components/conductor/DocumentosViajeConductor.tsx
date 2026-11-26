@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { useState } from 'react';
@@ -37,13 +38,9 @@ export function DocumentosViajeConductor({ tripId }: { tripId: string }) {
     return (
       <div role="alert" className="space-y-2 text-danger-700 text-sm">
         <p>No pudimos cargar los documentos del viaje.</p>
-        <button
-          type="button"
-          onClick={() => void lista.refetch()}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
-        >
+        <Button variant="secondary" size="sm" onClick={() => void lista.refetch()}>
           Reintentar
-        </button>
+        </Button>
       </div>
     );
   }
@@ -70,14 +67,15 @@ export function DocumentosViajeConductor({ tripId }: { tripId: string }) {
                   {d.folio ? <p className="text-neutral-600 text-xs">Folio {d.folio}</p> : null}
                 </div>
               </div>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => void ver(d.id)}
                 aria-label={`Ver ${tipo}`}
-                className="shrink-0 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
+                className="shrink-0"
               >
                 Ver
-              </button>
+              </Button>
             </li>
           );
         })}

@@ -25,6 +25,7 @@
  *   - readOnly: si true, oculta el input footer (chat de viaje cerrado).
  */
 
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Camera, Loader2, MapPin, RefreshCw, Send, X } from 'lucide-react';
 import { type ChangeEvent, type FormEvent, useRef, useState } from 'react';
@@ -68,14 +69,9 @@ export function ChatPanel({
       <header className="flex items-center justify-between border-neutral-200 border-b bg-white px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-100"
-              aria-label="Cerrar chat"
-            >
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Cerrar chat">
               <X className="h-5 w-5" aria-hidden />
-            </button>
+            </Button>
           )}
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-semibold text-neutral-900">{title}</h2>
@@ -126,11 +122,12 @@ export function ChatPanel({
         {messagesAsc.length > 0 && (
           <div className="flex flex-col gap-2 p-4">
             {hasMore && (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={loadMore}
                 disabled={isLoadingMore}
-                className="mx-auto flex items-center gap-1 self-center rounded-full border border-neutral-300 bg-white px-3 py-1 text-neutral-600 text-xs hover:bg-neutral-50 disabled:opacity-60"
+                className="mx-auto self-center rounded-full"
               >
                 {isLoadingMore ? (
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -138,7 +135,7 @@ export function ChatPanel({
                   <RefreshCw className="h-3 w-3" aria-hidden />
                 )}
                 {isLoadingMore ? 'Cargando…' : 'Cargar más viejos'}
-              </button>
+              </Button>
             )}
             {messagesAsc.map((msg) => (
               <MessageBubble
@@ -358,15 +355,16 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
       onSubmit={onSubmit}
       className="flex items-end gap-2 border-neutral-200 border-t bg-white p-3"
     >
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={() => fileInputRef.current?.click()}
         disabled={isSending}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 disabled:opacity-60"
+        className="rounded-full"
         aria-label="Adjuntar foto"
       >
         <Camera className="h-5 w-5" aria-hidden />
-      </button>
+      </Button>
       <input
         ref={fileInputRef}
         type="file"
@@ -374,15 +372,16 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
         className="hidden"
         onChange={onPhotoChange}
       />
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={() => sendLocationM.mutate()}
         disabled={isSending}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 disabled:opacity-60"
+        className="rounded-full"
         aria-label="Compartir ubicación"
       >
         <MapPin className="h-5 w-5" aria-hidden />
-      </button>
+      </Button>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -400,10 +399,12 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
         maxLength={4000}
         className="max-h-32 min-h-[40px] flex-1 resize-none rounded-2xl border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
       />
-      <button
+      <Button
+        variant="primary"
+        size="icon"
         type="submit"
         disabled={!text.trim() || isSending}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+        className="rounded-full"
         aria-label="Enviar"
       >
         {sendTextM.isPending ? (
@@ -411,7 +412,7 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
         ) : (
           <Send className="h-5 w-5" aria-hidden />
         )}
-      </button>
+      </Button>
     </form>
   );
 }

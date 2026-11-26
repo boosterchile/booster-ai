@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MapPin, QrCode } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -39,13 +40,14 @@ export function InstruccionesRetiroPanel({
           </p>
         </div>
         {canWrite && !editando && consulta.isSuccess && (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => setEditando(true)}
-            className="shrink-0 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
+            className="shrink-0"
           >
             {consulta.data ? 'Reemplazar' : 'Cargar'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -53,13 +55,9 @@ export function InstruccionesRetiroPanel({
       {consulta.isError && (
         <div role="alert" className="mt-3 space-y-2 text-danger-700 text-sm">
           <p>No pudimos cargar las instrucciones de retiro.</p>
-          <button
-            type="button"
-            onClick={() => void consulta.refetch()}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-xs"
-          >
+          <Button variant="secondary" size="sm" onClick={() => void consulta.refetch()}>
             Reintentar
-          </button>
+          </Button>
         </div>
       )}
       {consulta.isSuccess && !editando && (
@@ -224,20 +222,12 @@ function Formulario({
         </p>
       )}
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={guardar.isPending}
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-60"
-        >
+        <Button variant="primary" type="submit" disabled={guardar.isPending}>
           {guardar.isPending ? 'Guardando…' : 'Guardar'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancelar}
-          className="rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onCancelar}>
           Cancelar
-        </button>
+        </Button>
       </div>
     </form>
   );

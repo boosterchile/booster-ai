@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { CheckCircle2, Info, Loader2, Mic } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useAcceptOfferMutation } from '../../hooks/use-offers.js';
@@ -220,29 +221,20 @@ export function VoiceAcceptOfferControl({
 
         {localState === 'confirming' && (
           <>
-            <button
-              type="button"
-              onClick={ratify}
-              className="inline-flex items-center gap-2 rounded-md bg-success-700 px-4 py-3 font-semibold text-sm text-white shadow hover:bg-success-800"
-              data-testid="voice-accept-confirm"
-            >
+            <Button variant="primary" onClick={ratify} data-testid="voice-accept-confirm">
               <CheckCircle2 className="h-4 w-4" aria-hidden />
               Confirmar aceptación · {trackingCode}
-            </button>
-            <button type="button" onClick={cancel} className="text-neutral-500 text-xs underline">
+            </Button>
+            <Button variant="ghost" size="sm" onClick={cancel}>
               Cancelar
-            </button>
+            </Button>
           </>
         )}
 
         {localState === 'error' && (
-          <button
-            type="button"
-            onClick={cancel}
-            className="inline-flex items-center gap-2 rounded-md bg-amber-50 px-4 py-3 font-medium text-amber-800 text-sm ring-1 ring-amber-500 hover:bg-amber-100"
-          >
+          <Button variant="secondary" onClick={cancel}>
             Volver
-          </button>
+          </Button>
         )}
       </div>
 

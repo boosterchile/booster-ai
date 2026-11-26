@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useNavigate } from '@tanstack/react-router';
 import { Check, Loader2, MapPin, Package } from 'lucide-react';
 import { useState } from 'react';
@@ -91,19 +92,14 @@ export function ViajeAbiertoCard({ viaje, puedeReclamar }: ViajeAbiertoCardProps
       )}
       {puedeReclamar && (
         <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => void onReclamar()}
-            disabled={reclamar.isPending}
-            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700 disabled:opacity-60"
-          >
+          <Button variant="primary" onClick={() => void onReclamar()} disabled={reclamar.isPending}>
             {reclamar.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             ) : (
               <Check className="h-4 w-4" aria-hidden />
             )}
             Reclamar carga
-          </button>
+          </Button>
           <p className="mt-2 text-neutral-500 text-xs">
             Al reclamar te asignas la carga. Después debes declarar un vehículo de tu flota que
             cumpla capacidad y carrocería.

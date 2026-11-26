@@ -1,3 +1,4 @@
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
@@ -310,25 +311,25 @@ function ListadoTrayectos({
       )}
       {data.total > data.page_size ? (
         <div className="mt-4 flex items-center gap-3">
-          <button
+          <Button
+            variant="secondary"
             type="button"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm disabled:opacity-40"
             disabled={page <= 1}
             onClick={() => onPage(page - 1)}
           >
             Anterior
-          </button>
+          </Button>
           <p className="text-neutral-600 text-sm">
             Página {page} de {paginas}
           </p>
-          <button
+          <Button
+            variant="secondary"
             type="button"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm disabled:opacity-40"
             disabled={page >= paginas}
             onClick={() => onPage(page + 1)}
           >
             Siguiente
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
@@ -353,22 +354,22 @@ function PestanasCombustible({
   return (
     <fieldset className="mb-4 flex flex-wrap gap-2">
       <legend className="sr-only">Filtrar por combustible</legend>
-      <button
+      <PressableArea
         type="button"
         aria-pressed={activa === 'con_dato'}
         className={clase('con_dato')}
         onClick={() => onCambiar('con_dato')}
       >
         Con combustible ({totalCon})
-      </button>
-      <button
+      </PressableArea>
+      <PressableArea
         type="button"
         aria-pressed={activa === 'sin_dato'}
         className={clase('sin_dato')}
         onClick={() => onCambiar('sin_dato')}
       >
         Sin dato de combustible ({totalSin})
-      </button>
+      </PressableArea>
     </fieldset>
   );
 }

@@ -1,4 +1,5 @@
 import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -567,28 +568,27 @@ function DescargarCertificadoButton({
 
   if (compact) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="link"
+        size="sm"
         onClick={() => downloadM.mutate(tripId)}
         disabled={downloadM.isPending}
-        className="inline-flex items-center gap-1 text-primary-600 text-xs hover:underline disabled:opacity-60"
       >
         <Download className="h-3.5 w-3.5" aria-hidden />
         {downloadM.isPending ? 'Abriendo…' : 'Descargar'}
-      </button>
+      </Button>
     );
   }
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
       onClick={() => downloadM.mutate(tripId)}
       disabled={downloadM.isPending}
-      className="inline-flex items-center gap-2 rounded-md border border-primary-200 bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm transition hover:bg-primary-100 disabled:opacity-60"
     >
       <Download className="h-4 w-4" aria-hidden />
       {downloadM.isPending ? 'Abriendo…' : 'Descargar certificado de huella de carbono'}
-    </button>
+    </Button>
   );
 }
 
@@ -716,21 +716,17 @@ function CargaEditarPage({ me }: { me: MeOnboarded }) {
             la carga quedará sin transportista.
           </p>
           <div className="mt-3 flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => guardar.mutate(porConfirmar)}
               disabled={guardar.isPending}
-              className="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white disabled:opacity-60"
             >
               Sí, guardar cambios
-            </button>
-            <button
-              type="button"
-              onClick={() => setPorConfirmar(null)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700"
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setPorConfirmar(null)}>
               Volver
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -1471,13 +1467,9 @@ function TripForm({
         >
           Cancelar
         </Link>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-        >
+        <Button variant="primary" type="submit" disabled={submitting}>
           {submitting ? 'Guardando…' : (submitLabel ?? 'Crear carga')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -1648,13 +1640,9 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 onListo={() => setSolicitandoCambio(false)}
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => setSolicitandoCambio(true)}
-                className="rounded-md border border-primary-300 px-3 py-1.5 font-medium text-primary-700 text-sm hover:bg-primary-50"
-              >
+              <Button variant="secondary" onClick={() => setSolicitandoCambio(true)}>
                 Solicitar cambio
-              </button>
+              </Button>
             )}
           </div>
         )}

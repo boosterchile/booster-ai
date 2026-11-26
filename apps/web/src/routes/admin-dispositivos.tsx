@@ -1,3 +1,4 @@
+import { Button } from '@booster-ai/ui-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Check, Cpu } from 'lucide-react';
@@ -126,12 +127,9 @@ function AdminDispositivosBody({ me }: { me: MeOnboarded }) {
             className="rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono"
           />
         </label>
-        <button
-          type="submit"
-          className="rounded-md bg-primary-600 px-3 py-2 text-sm text-white hover:bg-primary-700"
-        >
+        <Button type="submit" variant="primary">
           Buscar
-        </button>
+        </Button>
       </form>
       {formError && <p className="mt-2 text-danger-700 text-sm">{formError}</p>}
 
@@ -222,15 +220,14 @@ function DeviceRow({
               </option>
             ))}
           </select>
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={() => vehicleId && associateM.mutate(vehicleId)}
             disabled={!vehicleId || associateM.isPending}
-            className="flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
           >
             <Check className="h-4 w-4" />
             Asociar
-          </button>
+          </Button>
         </div>
       </div>
       {error && <div className="mt-2 text-danger-700 text-sm">{error}</div>}

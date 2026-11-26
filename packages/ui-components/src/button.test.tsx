@@ -124,4 +124,17 @@ describe('Button', () => {
     expect(btn.style.paddingInline).toBe('');
     expect(btn.className).toContain('inline');
   });
+
+  it('link inline va subrayado siempre: dentro de un texto no se distingue solo por color (WCAG 1.4.1)', () => {
+    render(
+      <p>
+        Sin dispositivo no hay historial.{' '}
+        <Button size="inline" variant="link">
+          Configurar dispositivo
+        </Button>
+      </p>,
+    );
+    const btn = screen.getByRole('button', { name: 'Configurar dispositivo' });
+    expect(btn.className).toMatch(/(^|\s)underline(\s|$)/);
+  });
 });
