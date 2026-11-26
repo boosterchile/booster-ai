@@ -342,6 +342,9 @@ export async function onboardEmpresa(opts: {
         planId: plan.id,
         status: 'pendiente_verificacion',
         timezone: 'America/Santiago',
+        // `.specs/frente2-cierre` D1 (PO, 2026-11-26): la medición de huella nace
+        // encendida; se apaga en Empresa. Las empresas existentes no cambian.
+        carbonMeasurementEnabled: true,
       })
       .returning();
     const empresa = empresaInsert[0];
