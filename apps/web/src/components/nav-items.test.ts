@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
-import { navSectionsForMe } from './nav-items.js';
+import { grupoActivo, itemActivo, navGroupsForMe, navSectionsForMe } from './nav-items.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Role = MeOnboarded['memberships'][number]['role'];
@@ -253,5 +253,107 @@ describe('navSectionsForMe', () => {
     expect(labels(navSectionsForMe(buildMe({ generador: true }), { rutas: true }))).not.toContain(
       'Rutas',
     );
+  });
+});
+
+/** Grupos y sus pantallas, legibles. */
+function grupos(me: MeOnboarded, rutas = false): Record<string, string[]> {
+  return Object.fromEntries(
+    navGroupsForMe(me, { rutas }).map((g) => [g.label, g.items.map((i) => i.label)]),
+  );
+}
+
+describe('navGroupsForMe (frente 8, menú superior)', () => {
+  it('transportista con servicio completo, admin: Inicio · Flota · Viajes · Ofertas · Empresa', () => {
+    const me = buildMe({ transportista: true, role: 'admin' });
+    expect(Object.keys(grupos(me))).toEqual(['Inicio', 'Flota', 'Viajes', 'Ofertas', 'Empresa']);
+    expect(grupos(me, true)).toEqual({
+      Inicio: ['Inicio'],
+      Flota: [
+        'Booster Fleet',
+        'Seguimiento de flota',
+        'Trayectos',
+        'Vehículos',
+        'Conductores',
+        'Cumplimiento',
+        'Dispositivos',
+      ],
+      Viajes: ['Servicios', 'Rutas', 'Cobra hoy', 'Liquidaciones'],
+      Ofertas: ['Ofertas'],
+      Empresa: ['Empresa', 'Equipo', 'Zonas de matching'],
+    });
+  });
+
+  it('Booster Fleet solo: Inicio · Flota · Viajes propios · Empresa, sin Ofertas ni cargas', () => {
+    const me = buildMe({ transportista: true, role: 'dueno', recibeOfertasCarga: false });
+    const g = grupos(me);
+    expect(Object.keys(g)).toEqual(['Inicio', 'Flota', 'Viajes propios', 'Empresa']);
+    expect(g.Inicio).toEqual(['Panel de flota']);
+    expect(navGroupsForMe(me)[0]?.items[0]?.to).toBe('/app/booster-fleet');
+  });
+
+  it('generadora: Inicio · Mis cargas · Huella y certificados · Empresa', () => {
+    const g = grupos(buildMe({ generador: true }));
+    expect(g).toEqual({
+      Inicio: ['Inicio'],
+      'Mis cargas': ['Crear carga', 'Mis cargas', 'Sucursales'],
+      'Huella y certificados': ['Certificados'],
+      Empresa: ['Empresa', 'Equipo'],
+    });
+  });
+
+  it('transportista y generadora: Empresa al final', () => {
+    const g = grupos(buildMe({ transportista: true, generador: true }));
+    expect(Object.keys(g)).toEqual([
+      'Inicio',
+      'Flota',
+      'Viajes',
+      'Ofertas',
+      'Mis cargas',
+      'Huella y certificados',
+      'Empresa',
+    ]);
+  });
+
+  it('stakeholder: Inicio · Zonas', () => {
+    expect(grupos(buildMe({ stakeholder: true }))).toEqual({
+      Inicio: ['Inicio'],
+      Zonas: ['Zonas'],
+    });
+  });
+
+  it('conductor empleado: solo Mi viaje', () => {
+    expect(grupos(buildMe({ transportista: true, role: 'conductor' }))).toEqual({
+      'Mi viaje': ['Mi viaje'],
+    });
+  });
+
+  it.each([
+    ['dueno', true, true],
+    ['admin', true, false],
+    ['despachador', true, false],
+    ['visualizador', false, true],
+    ['dueno', false, false],
+  ] as const)('no abre ni cierra accesos (%s, transportista=%s, generador=%s)', (role, t, g) => {
+    for (const rutas of [false, true]) {
+      const me = buildMe({ role, transportista: t, generador: g });
+      const antes = navSectionsForMe(me, { rutas })
+        .flatMap((s) => s.items.map((i) => i.to))
+        .sort();
+      const despues = navGroupsForMe(me, { rutas })
+        .flatMap((x) => x.items.map((i) => i.to))
+        .sort();
+      expect(despues).toEqual(antes);
+    }
+  });
+
+  it('la pantalla activa es la de prefijo más largo, y su grupo el activo', () => {
+    const groups = navGroupsForMe(buildMe({ transportista: true, generador: true, role: 'dueno' }));
+    expect(itemActivo(groups, '/app/cargas/nueva')?.label).toBe('Crear carga');
+    expect(itemActivo(groups, '/app/cargas/c-1')?.label).toBe('Mis cargas');
+    expect(itemActivo(groups, '/app/cobra-hoy/c-9')?.label).toBe('Cobra hoy');
+    expect(grupoActivo(groups, '/app/vehiculos/v-1')?.label).toBe('Flota');
+    expect(grupoActivo(groups, '/app')?.label).toBe('Inicio');
+    expect(grupoActivo(groups, '/app/perfil')).toBeNull();
   });
 });

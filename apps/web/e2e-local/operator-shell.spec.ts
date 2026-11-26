@@ -1,55 +1,84 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Shell de operador (sidebar D2) verificado en Chromium real contra el preview
- * `/apariencia/shell?rol=…` (me mock, sin backend). Cada test FALLA si el
- * sidebar muestra items del rol equivocado o si el drawer móvil no funciona —
- * no son asserts que pasan siempre.
+ * Armazón de operador (`.specs/frente8-menu-superior`) en Chromium real contra
+ * el preview `/apariencia/shell?rol=…` (me mock, sin backend). Falla si el
+ * menú muestra entradas del rol equivocado, si a 390 px no aparece la barra
+ * inferior o si a 1.280 px aparece.
  */
-test.describe('Shell operador — sidebar en Chromium', () => {
-  test('transportista ve SUS items del sidebar y NO los de generador', async ({ page }) => {
+const principal = 'Navegación principal';
+const movil = 'Navegación principal en móvil';
+
+test.describe('Armazón operador — menú superior', () => {
+  test('1.280 px: menú superior con las entradas del transportista, sin barra inferior', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/apariencia/shell?rol=transportista');
-    await expect(page.getByRole('link', { name: 'Ofertas' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Vehículos' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Liquidaciones' })).toBeVisible();
-    // items de generador NO deben aparecer
+    const menu = page.getByRole('navigation', { name: principal, exact: true });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('link')).toHaveText([
+      'Inicio',
+      'Flota',
+      'Viajes',
+      'Ofertas',
+      'Empresa',
+    ]);
+    await expect(page.getByRole('navigation', { name: movil })).toBeHidden();
     await expect(page.getByRole('link', { name: 'Mis cargas' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Sucursales' })).toHaveCount(0);
   });
 
-  test('generador ve SUS items del sidebar y NO los de transportista', async ({ page }) => {
+  test('1.280 px: el generador ve sus entradas y no las del transportista', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/apariencia/shell?rol=generador');
-    await expect(page.getByRole('link', { name: 'Mis cargas' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Crear carga' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Ofertas' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Liquidaciones' })).toHaveCount(0);
+    const menu = page.getByRole('navigation', { name: principal, exact: true });
+    await expect(menu.getByRole('link')).toHaveText([
+      'Inicio',
+      'Mis cargas',
+      'Huella y certificados',
+      'Empresa',
+    ]);
+    await expect(menu.getByRole('link', { name: 'Ofertas' })).toHaveCount(0);
   });
 
-  test('desktop: hamburguesa oculta, sidebar visible', async ({ page }) => {
-    await page.goto('/apariencia/shell?rol=dual');
-    await expect(page.getByRole('button', { name: 'Abrir menú' })).toBeHidden();
-    await expect(page.getByRole('link', { name: 'Ofertas' })).toBeVisible();
-  });
-
-  test('móvil: el sidebar colapsa a drawer y se abre/cierra por el toggle', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+  test('390 px: barra inferior fija con las entradas y el menú superior oculto', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/apariencia/shell?rol=transportista');
+    await expect(page.getByRole('navigation', { name: principal, exact: true })).toBeHidden();
+    const barra = page.getByRole('navigation', { name: movil });
+    await expect(barra).toBeVisible();
+    await expect(barra.getByRole('link')).toHaveCount(5);
+    const caja = await barra.boundingBox();
+    expect(caja).not.toBeNull();
+    // Pegada al borde inferior del viewport.
+    expect(Math.round((caja?.y ?? 0) + (caja?.height ?? 0))).toBe(844);
+  });
 
-    // Cerrado: hamburguesa visible; el sidebar desktop está en el DOM pero oculto.
-    const hamburger = page.getByRole('button', { name: 'Abrir menú' });
-    await expect(hamburger).toBeVisible();
-    await expect(page.getByTestId('mobile-drawer')).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Ofertas' })).toBeHidden();
+  test('menú de cuenta: abre con el perfil y Salir', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/apariencia/shell?rol=dual');
+    await page.getByTestId('menu-cuenta').click();
+    await expect(page.getByRole('link', { name: 'Mi perfil' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Salir' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('link', { name: 'Mi perfil' })).toHaveCount(0);
+  });
 
-    // Abrir el drawer.
-    await hamburger.click();
-    const drawer = page.getByTestId('mobile-drawer');
-    await expect(drawer).toBeVisible();
-    await expect(drawer.getByRole('link', { name: 'Ofertas' })).toBeVisible();
-
-    // Cerrar por el backdrop: click en la zona destapada (a la derecha del
-    // drawer w-72=288px; el viewport es 375px de ancho).
-    await page.mouse.click(350, 400);
-    await expect(page.getByTestId('mobile-drawer')).toHaveCount(0);
+  test('320 px: sin desplazamiento horizontal, con un nombre de empresa largo (WCAG 1.4.10)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 640 });
+    for (const rol of ['transportista', 'generador', 'dual']) {
+      await page.goto(`/apariencia/shell?rol=${rol}`);
+      await expect(page.getByTestId('menu-cuenta')).toBeVisible();
+      const desborde = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(desborde, `rol ${rol}`).toBeLessThanOrEqual(1);
+      const caja = await page.getByTestId('menu-cuenta').boundingBox();
+      expect((caja?.x ?? 0) + (caja?.width ?? 0), `rol ${rol}`).toBeLessThanOrEqual(320);
+    }
   });
 });

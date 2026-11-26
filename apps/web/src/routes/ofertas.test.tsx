@@ -26,7 +26,7 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
-  // Layout → Sidebar usa useRouterState para el item activo.
+  // Layout usa useRouterState para la entrada activa del menú.
   useRouterState: () => '/app/ofertas',
 }));
 
@@ -224,7 +224,7 @@ describe('OfertasRoute', () => {
     expect(screen.getByRole('button', { name: /Actualizando/ })).toBeDisabled();
   });
 
-  it('click Salir → signOutUser', () => {
+  it('click Salir (menú de cuenta) → signOutUser', async () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     useOffersMineMock.mockReturnValue({
       isLoading: false,
@@ -234,7 +234,8 @@ describe('OfertasRoute', () => {
       isFetching: false,
     });
     renderWithQueryClient(<OfertasRoute />);
-    screen.getByRole('button', { name: /Salir/ }).click();
+    screen.getByTestId('menu-cuenta').click();
+    (await screen.findByRole('button', { name: /Salir/ })).click();
     expect(signOutUserMock).toHaveBeenCalled();
   });
 

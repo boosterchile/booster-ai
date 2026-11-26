@@ -326,7 +326,7 @@ describe('ConductorConfiguracionRoute', () => {
   });
 
   // El shell del conductor no tenía ninguna forma de cerrar sesión (solo el
-  // Sidebar del operador tiene "Salir"): un conductor logueado no podía
+  // menú de cuenta del operador tiene "Salir"): un conductor logueado no podía
   // cambiar de cuenta ni salir desde la app.
   it('ofrece "Salir" y al tocarlo cierra la sesión con signOutUser', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };

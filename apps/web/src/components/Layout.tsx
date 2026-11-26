@@ -1,27 +1,33 @@
 import { RegisterProvider } from '@booster-ai/ui-components';
-import { Menu } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { Link, useRouterState } from '@tanstack/react-router';
+import { type ReactNode, useEffect } from 'react';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { NOMBRE_PRODUCTO, productoDe } from '../lib/producto.js';
 import { ConsentTermsBanner } from './ConsentTermsBanner.js';
-import { Sidebar } from './Sidebar.js';
+import { MenuCuenta } from './MenuCuenta.js';
+import { BarraInferior, MenuSuperior, PestanasGrupo } from './MenuSuperior.js';
+import { grupoActivo, navGroupsForMe } from './nav-items.js';
+import { useBadgesTransporte } from './use-badges-transporte.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
- * AppShell estándar para las superficies de operador (`/app/*`): transportista,
- * generador, stakeholder y perfil. **Sidebar persistente** (D2) con navegación
- * role-aware; colapsa a **drawer** en móvil. Envuelto en `RegisterProvider`
- * (registro **operador**) para que las primitivas D2 respondan al registro.
+ * Armazón de las pantallas de operador (`/app/*`): transportista, generador,
+ * stakeholder y perfil (`.specs/frente8-menu-superior`). Menú superior con
+ * pocas entradas; si la entrada activa agrupa varias pantallas, una fila de
+ * pestañas las lista; bajo 640 px las entradas pasan a una barra inferior
+ * fija. Envuelto en `RegisterProvider` (registro **operador**).
  *
  * El **conductor** (`conductor.tsx`) y el **panel de platform-admin**
- * (`platform-admin.tsx`) tienen shell propio y NO usan este Layout. La persona
- * de Booster que entra a la web de su empresa sí lo usa, y el sidebar le
- * ofrece volver al panel.
+ * (`platform-admin.tsx`) tienen armazón propio y NO usan este Layout. La
+ * persona de Booster que entra a la web de su empresa sí lo usa, y el menú de
+ * cuenta le ofrece volver al panel.
  *
  * Siempre que crees una página de operador bajo `/app/*`, envuelve el cuerpo en
- * `<Layout me={me} title="…">`. Sin Layout, el usuario pierde el sidebar, el
- * switcher y "Salir" (regresión de UX bloqueante). El `title` se muestra como
- * contexto en la topbar (cada página mantiene su propio `<h1>`).
+ * `<Layout me={me} title="…">`. Sin Layout, el usuario pierde el menú, el
+ * cambio de empresa y «Salir». El `title` queda como título del documento;
+ * cada página mantiene su propio `<h1>`.
  */
 export function Layout({
   me,
@@ -32,66 +38,51 @@ export function Layout({
   title: string;
   children: ReactNode;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { flags } = useFeatureFlags();
+  const groups = navGroupsForMe(me, { rutas: flags.rutas_api_activada });
+  const active = grupoActivo(groups, pathname);
+  const esTransportista = Boolean(me.active_membership?.empresa?.is_transportista);
+  const badges = useBadgesTransporte(esTransportista);
+  const producto = NOMBRE_PRODUCTO[productoDe(me)];
+
+  useEffect(() => {
+    document.title = `${title} · ${producto}`;
+  }, [title, producto]);
 
   return (
     <RegisterProvider
       register="operador"
       density="comoda"
-      className="flex min-h-screen bg-neutral-50"
+      className="flex min-h-screen flex-col bg-neutral-50"
     >
-      {/* Sidebar persistente (desktop) */}
-      <aside className="hidden w-64 shrink-0 border-neutral-200 border-r bg-neutral-0 md:block">
-        <div className="sticky top-0 h-screen">
-          <Sidebar me={me} />
-        </div>
-      </aside>
-
-      {/* Sidebar como drawer (móvil) */}
-      {mobileOpen && (
-        <div className="md:hidden">
-          <button
-            type="button"
-            aria-label="Cerrar menú"
-            onClick={() => setMobileOpen(false)}
-            className="fixed inset-0 z-40 bg-neutral-1000/40"
-          />
-          {/* El landmark de navegación lo aporta el <nav> interno del Sidebar. */}
-          <div
-            data-testid="mobile-drawer"
-            className="fixed inset-y-0 left-0 z-50 w-72 border-neutral-200 border-r bg-neutral-0 pt-safe pb-safe shadow-xl"
-          >
-            <Sidebar me={me} onNavigate={() => setMobileOpen(false)} />
+      {/* pt-safe: en la PWA standalone de iOS la página corre bajo la barra de
+          estado; la cabecera reserva ese inset. */}
+      <header className="sticky top-0 z-30 border-neutral-200 border-b bg-neutral-0 pt-safe">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2 sm:px-6">
+          <Link to="/app" className="flex shrink-0 items-center gap-2">
+            <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
+            <span data-testid="marca-producto" className="font-semibold text-lg text-neutral-900">
+              {producto}
+            </span>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <MenuSuperior groups={groups} active={active} badges={badges} />
           </div>
+          <MenuCuenta me={me} />
         </div>
-      )}
+      </header>
 
-      {/* Columna principal */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* pt-safe: en la PWA standalone de iOS la página corre bajo la barra de
-            estado; el header (con su fondo) reserva ese inset para que la
-            hamburguesa quede visible y tocable. */}
-        <header className="border-neutral-200 border-b bg-neutral-0 pt-safe">
-          <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
-            <button
-              type="button"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Abrir menú"
-              aria-expanded={mobileOpen}
-              className="rounded-md p-2 text-neutral-700 hover:bg-neutral-100 md:hidden"
-            >
-              <Menu className="h-5 w-5" aria-hidden />
-            </button>
-            <span className="font-semibold text-neutral-900">{title}</span>
-          </div>
-        </header>
+      <PestanasGrupo group={active} pathname={pathname} badges={badges} />
 
-        <ConsentTermsBanner />
+      <ConsentTermsBanner />
 
-        <main className="flex-1">
-          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">{children}</div>
-        </main>
-      </div>
+      {/* pb-24 bajo 640 px: la barra inferior fija no tapa el final de la página. */}
+      <main className="flex-1 pb-24 sm:pb-0">
+        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">{children}</div>
+      </main>
+
+      <BarraInferior groups={groups} active={active} badges={badges} />
     </RegisterProvider>
   );
 }

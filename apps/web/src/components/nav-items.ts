@@ -206,3 +206,154 @@ function navFleet(opts: { flags: FlagsCapacidad; esDueno: boolean; rutas: boolea
     { heading: 'Viajes propios', items: viajes },
   ];
 }
+
+/** Grupo del menú superior (frente 8, `.specs/frente8-menu-superior`). */
+export interface NavGroup {
+  id: NavGroupId;
+  label: string;
+  /** Nombre para la barra inferior bajo 640 px. */
+  shortLabel: string;
+  icon: LucideIcon;
+  /** Pantallas del grupo, en orden. La primera es el destino de la entrada. */
+  items: NavItem[];
+}
+
+export type NavGroupId =
+  | 'inicio'
+  | 'mi-viaje'
+  | 'flota'
+  | 'viajes'
+  | 'ofertas'
+  | 'cargas'
+  | 'huella'
+  | 'empresa'
+  | 'zonas';
+
+const ORDEN_GRUPOS: NavGroupId[] = [
+  'inicio',
+  'mi-viaje',
+  'flota',
+  'viajes',
+  'ofertas',
+  'cargas',
+  'huella',
+  'empresa',
+  'zonas',
+];
+
+const GRUPO_POR_RUTA: Record<string, NavGroupId> = {
+  '/app': 'inicio',
+  '/app/conductor': 'inicio',
+  '/app/booster-fleet': 'flota',
+  '/app/flota': 'flota',
+  '/app/trayectos': 'flota',
+  '/app/vehiculos': 'flota',
+  '/app/conductores': 'flota',
+  '/app/cumplimiento': 'flota',
+  '/app/admin/dispositivos': 'flota',
+  '/app/servicios': 'viajes',
+  '/app/rutas': 'viajes',
+  '/app/cobra-hoy/historial': 'viajes',
+  '/app/liquidaciones': 'viajes',
+  '/app/ofertas': 'ofertas',
+  '/app/cargas': 'cargas',
+  '/app/cargas/nueva': 'cargas',
+  '/app/sucursales': 'cargas',
+  '/app/certificados': 'huella',
+  '/app/empresa': 'empresa',
+  '/app/equipo': 'empresa',
+  '/app/zonas': 'empresa',
+  '/app/stakeholder/zonas': 'zonas',
+};
+
+/**
+ * Menú superior del armazón de operador (decisión 1 del PO del 2026-11-25).
+ * Reagrupa las mismas pantallas de `navSectionsForMe`, así que los permisos
+ * no cambian: el menú reordena, no abre ni cierra accesos.
+ */
+export function navGroupsForMe(me: MeOnboarded, opciones: { rutas?: boolean } = {}): NavGroup[] {
+  const items = navSectionsForMe(me, opciones).flatMap((s) => s.items);
+  const fleet = productoDe(me) === 'fleet';
+  const soloMiViaje = items.length === 1 && items[0]?.to === '/app/conductor';
+  const tieneInicio = items.some((i) => i.to === '/app');
+
+  const porGrupo = new Map<NavGroupId, NavItem[]>();
+  for (const item of items) {
+    let grupo = GRUPO_POR_RUTA[item.to] ?? 'inicio';
+    if (soloMiViaje) {
+      grupo = 'mi-viaje';
+    } else if (fleet && !tieneInicio && item.to === '/app/booster-fleet') {
+      // Booster Fleet: el panel de flota es el Inicio del dueño y del admin.
+      grupo = 'inicio';
+    }
+    const lista = porGrupo.get(grupo) ?? [];
+    lista.push(item);
+    porGrupo.set(grupo, lista);
+  }
+
+  return ORDEN_GRUPOS.flatMap((id) => {
+    const lista = porGrupo.get(id);
+    if (!lista || lista.length === 0) {
+      return [];
+    }
+    return [{ id, ...encabezadoGrupo(id, fleet), items: lista }];
+  });
+}
+
+function encabezadoGrupo(
+  id: NavGroupId,
+  fleet: boolean,
+): { label: string; shortLabel: string; icon: LucideIcon } {
+  switch (id) {
+    case 'inicio':
+      return { label: 'Inicio', shortLabel: 'Inicio', icon: Home };
+    case 'mi-viaje':
+      return { label: 'Mi viaje', shortLabel: 'Mi viaje', icon: Truck };
+    case 'flota':
+      return { label: 'Flota', shortLabel: 'Flota', icon: Bus };
+    case 'viajes':
+      return fleet
+        ? { label: 'Viajes propios', shortLabel: 'Viajes', icon: ClipboardList }
+        : { label: 'Viajes', shortLabel: 'Viajes', icon: ClipboardList };
+    case 'ofertas':
+      return { label: 'Ofertas', shortLabel: 'Ofertas', icon: Truck };
+    case 'cargas':
+      return { label: 'Mis cargas', shortLabel: 'Cargas', icon: Package };
+    case 'huella':
+      return { label: 'Huella y certificados', shortLabel: 'Huella', icon: Leaf };
+    case 'empresa':
+      return { label: 'Empresa', shortLabel: 'Empresa', icon: Building2 };
+    case 'zonas':
+      return { label: 'Zonas', shortLabel: 'Zonas', icon: MapPinned };
+  }
+}
+
+/** Prefijo de ruta que cuenta como «dentro» de una pantalla del menú. */
+function prefijoDe(to: string): string {
+  return to === '/app/cobra-hoy/historial' ? '/app/cobra-hoy' : to;
+}
+
+function coincide(pathname: string, to: string): boolean {
+  if (to === '/app') {
+    return pathname === '/app' || pathname === '/app/';
+  }
+  const prefijo = prefijoDe(to);
+  return pathname === prefijo || pathname.startsWith(`${prefijo}/`);
+}
+
+/** La pantalla del menú que corresponde a la ruta: la de prefijo más largo. */
+export function itemActivo(groups: NavGroup[], pathname: string): NavItem | null {
+  let mejor: NavItem | null = null;
+  for (const item of groups.flatMap((g) => g.items)) {
+    if (coincide(pathname, item.to) && (!mejor || item.to.length > mejor.to.length)) {
+      mejor = item;
+    }
+  }
+  return mejor;
+}
+
+/** El grupo que contiene la pantalla activa, si la hay. */
+export function grupoActivo(groups: NavGroup[], pathname: string): NavGroup | null {
+  const item = itemActivo(groups, pathname);
+  return item ? (groups.find((g) => g.items.includes(item)) ?? null) : null;
+}
