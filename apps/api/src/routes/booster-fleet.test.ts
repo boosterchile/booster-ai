@@ -8,6 +8,9 @@ const EMPRESA = '22222222-2222-4222-8222-222222222222';
 const VEHICULO = '11111111-1111-4111-8111-111111111111';
 const MANTENCION = '33333333-3333-4333-8333-333333333333';
 
+const solicitudesAbiertasDeEmpresa = vi.hoisted(() => vi.fn(async () => []));
+vi.mock('../services/solicitudes-booster.js', () => ({ solicitudesAbiertasDeEmpresa }));
+
 vi.mock('../services/booster-fleet.js', () => ({
   armarPanelBoosterFleet: vi.fn(),
   programarMantencion: vi.fn(),
@@ -122,6 +125,23 @@ describe('GET /booster-fleet', () => {
     expect(armarPanelBoosterFleet).toHaveBeenCalledWith(
       expect.objectContaining({ combustibleGuardado: false }),
     );
+  });
+
+  it('trae las solicitudes a Booster abiertas para mostrarlas pedidas al recargar', async () => {
+    vi.mocked(armarPanelBoosterFleet).mockResolvedValue(panel);
+    solicitudesAbiertasDeEmpresa.mockResolvedValueOnce([
+      { vehiculoId: '11111111-1111-4111-8111-111111111111', tipo: 'configurar_fuente_combustible' },
+    ] as never);
+    const res = await appDe().request('/');
+    const body = (await res.json()) as {
+      solicitudes_booster_abiertas: Array<{ vehiculo_id: string; tipo: string }>;
+    };
+    expect(body.solicitudes_booster_abiertas).toEqual([
+      {
+        vehiculo_id: '11111111-1111-4111-8111-111111111111',
+        tipo: 'configurar_fuente_combustible',
+      },
+    ]);
   });
 
   it('con combustible=guardada acepta la lectura guardada', async () => {

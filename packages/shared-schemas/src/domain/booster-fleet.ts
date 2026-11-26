@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isoCalendarDateSchema } from '../primitives/dates.js';
+import { tipoSolicitudBoosterSchema } from './solicitud-booster.js';
 
 /**
  * Booster Fleet: configuración del servicio de gestión de flota para el
@@ -116,7 +117,17 @@ export const desviacionCombustibleSchema = z.object({
   total: z.number().int().min(1),
 });
 
+/**
+ * Solicitudes «Pedir a Booster» abiertas de la empresa (`.specs/frente2-cierre`
+ * §3.4): la fila del camión se muestra «Pedido a Booster» también al recargar.
+ */
+export const solicitudBoosterAbiertaPanelSchema = z.object({
+  vehiculo_id: z.string(),
+  tipo: tipoSolicitudBoosterSchema,
+});
+
 export const panelBoosterFleetSchema = z.object({
+  solicitudes_booster_abiertas: z.array(solicitudBoosterAbiertaPanelSchema).default([]),
   configuracion: z.object({
     slug: z.literal(CONFIGURACION_BOOSTER_FLEET.slug),
     nombre: z.literal(CONFIGURACION_BOOSTER_FLEET.nombre),
@@ -918,6 +929,8 @@ function armarMantenciones(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet
 
 export function componerPanelBoosterFleet(entrada: EntradaPanelBoosterFleet): PanelBoosterFleet {
   return {
+    // Las llena la ruta del API (`.specs/frente2-cierre` §3.4); el panel no las calcula.
+    solicitudes_booster_abiertas: [],
     configuracion: {
       slug: CONFIGURACION_BOOSTER_FLEET.slug,
       nombre: CONFIGURACION_BOOSTER_FLEET.nombre,

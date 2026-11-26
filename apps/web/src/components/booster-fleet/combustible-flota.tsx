@@ -74,12 +74,17 @@ function Consumo({ vehiculo, mediana }: { vehiculo: VehiculoFlota; mediana: numb
 }
 
 /** Un camión: patente, señal, litros, consumo contra la mediana y la acción. */
+const NINGUNO: ReadonlySet<string> = new Set();
+
 export function FilaFlota({
   vehiculo,
   mediana,
+  pedidos = NINGUNO,
 }: {
   vehiculo: VehiculoFlota;
   mediana: number | null;
+  /** Claves `vehiculo_id:tipo` con una solicitud «Pedir a Booster» abierta. */
+  pedidos?: ReadonlySet<string>;
 }) {
   const tono = TONO_DE_SENAL[vehiculo.senal];
   const accion = accionDe(vehiculo);
@@ -113,6 +118,7 @@ export function FilaFlota({
           <PedirABooster
             vehiculoId={accion.pedirBooster.vehiculoId}
             tipo={accion.pedirBooster.tipo}
+            yaPedido={pedidos.has(`${accion.pedirBooster.vehiculoId}:${accion.pedirBooster.tipo}`)}
             className="items-end"
           />
         ) : accion ? (
@@ -139,9 +145,13 @@ export function FilaFlota({
  */
 export function CombustibleFlota({
   combustible,
+  solicitudesAbiertas = [],
 }: {
   combustible: PanelBoosterFleet['combustible'];
+  /** `.specs/frente2-cierre` §3.4: el camión ya pedido se ve pedido al recargar. */
+  solicitudesAbiertas?: PanelBoosterFleet['solicitudes_booster_abiertas'];
 }) {
+  const pedidos = new Set(solicitudesAbiertas.map((s) => `${s.vehiculo_id}:${s.tipo}`));
   const mediana = medianaLectura(combustible.vehiculos);
   const grupos = agruparPorTono(combustible.vehiculos);
 
@@ -217,7 +227,12 @@ export function CombustibleFlota({
                 </tr>
               ) : (
                 grupo.vehiculos.map((vehiculo) => (
-                  <FilaFlota key={vehiculo.vehiculo_id} vehiculo={vehiculo} mediana={mediana} />
+                  <FilaFlota
+                    key={vehiculo.vehiculo_id}
+                    vehiculo={vehiculo}
+                    mediana={mediana}
+                    pedidos={pedidos}
+                  />
                 ))
               )}
             </tbody>
