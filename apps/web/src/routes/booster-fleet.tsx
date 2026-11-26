@@ -140,7 +140,10 @@ function Controles({
       ) : null}
 
       <div className="mt-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
-        <CombustibleFlota combustible={panel.combustible} />
+        <CombustibleFlota
+          combustible={panel.combustible}
+          solicitudesAbiertas={panel.solicitudes_booster_abiertas}
+        />
         <div className="space-y-6">
           <DocumentosFlota documental={panel.documental} hallazgos={hallazgos} />
           <MantencionesFlota

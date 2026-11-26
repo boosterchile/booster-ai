@@ -90,6 +90,7 @@ function me(rol: 'dueno' | 'despachador' = 'dueno'): MeOnboarded {
 
 function panel(): PanelBoosterFleet {
   return {
+    solicitudes_booster_abiertas: [],
     configuracion: {
       slug: 'booster-fleet',
       nombre: 'Booster Fleet',

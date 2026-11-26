@@ -78,6 +78,7 @@ function me(rol: 'dueno' | 'admin' | 'despachador' = 'dueno', transportista = tr
 
 function panel(): PanelBoosterFleet {
   return {
+    solicitudes_booster_abiertas: [],
     configuracion: {
       slug: 'booster-fleet',
       nombre: 'Booster Fleet',
@@ -451,6 +452,19 @@ describe('BoosterFleetRoute', () => {
     expect(post).toHaveBeenCalledWith(`/vehiculos/${OTRO}/pedir-booster`, {
       tipo: 'configurar_fuente_combustible',
     });
+    expect(await screen.findByText('Pedido a Booster')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pedir a Booster' })).not.toBeInTheDocument();
+  });
+
+  it('un camión con la solicitud ya abierta se ve «Pedido a Booster» al recargar', async () => {
+    const datos = panel();
+    datos.combustible.vehiculos = [
+      vehiculo(OTRO, 'BBBB22', { senal: 'sin_sensor', litros: null, litros_por_100_km: null }),
+    ];
+    datos.solicitudes_booster_abiertas = [
+      { vehiculo_id: OTRO, tipo: 'configurar_fuente_combustible' },
+    ];
+    entrar(datos);
     expect(await screen.findByText('Pedido a Booster')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pedir a Booster' })).not.toBeInTheDocument();
   });

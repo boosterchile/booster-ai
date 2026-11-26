@@ -21,6 +21,7 @@ import {
   leerCombustibleConCache,
 } from '../services/cache-combustible-flota.js';
 import { leerTrayectosDeLaFlota } from '../services/listar-trayectos-teltonika.js';
+import { solicitudesAbiertasDeEmpresa } from '../services/solicitudes-booster.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -137,7 +138,15 @@ export function createBoosterFleetRoutes(opts: {
           },
           'booster-fleet: panel',
         );
-        return c.json(panel);
+        // `.specs/frente2-cierre` §3.4: el camión ya pedido se ve pedido al recargar.
+        const abiertas = await solicitudesAbiertasDeEmpresa(opts.db, auth.empresaId);
+        return c.json({
+          ...panel,
+          solicitudes_booster_abiertas: abiertas.map((a) => ({
+            vehiculo_id: a.vehiculoId,
+            tipo: a.tipo,
+          })),
+        });
       },
     );
   });

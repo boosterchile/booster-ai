@@ -1,4 +1,8 @@
-import type { FuenteCombustibleCan, TipoSolicitudBooster } from '@booster-ai/shared-schemas';
+import {
+  type FuenteCombustibleCan,
+  type TipoSolicitudBooster,
+  tipoSolicitudBoosterSchema,
+} from '@booster-ai/shared-schemas';
 import { and, asc, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { pgErrorCode } from '../db/pg-error.js';
@@ -110,6 +114,23 @@ export type ResultadoResolver =
  * 'abierta'` hace que dos personas no la resuelvan dos veces: la segunda ve
  * `ya_resuelta`.
  */
+/** Las solicitudes abiertas de una empresa, para marcar su camión «Pedido a Booster» en el panel. */
+export async function solicitudesAbiertasDeEmpresa(
+  db: Db,
+  empresaId: string,
+): Promise<Array<{ vehiculoId: string; tipo: TipoSolicitudBooster }>> {
+  const filas = await db
+    .select({ vehiculoId: solicitudesBooster.vehiculoId, tipo: solicitudesBooster.tipo })
+    .from(solicitudesBooster)
+    .where(
+      and(eq(solicitudesBooster.empresaId, empresaId), eq(solicitudesBooster.estado, 'abierta')),
+    );
+  return filas.flatMap((f) => {
+    const tipo = tipoSolicitudBoosterSchema.safeParse(f.tipo);
+    return f.vehiculoId && tipo.success ? [{ vehiculoId: f.vehiculoId, tipo: tipo.data }] : [];
+  });
+}
+
 export async function resolverSolicitud(opts: {
   db: Db;
   id: string;
