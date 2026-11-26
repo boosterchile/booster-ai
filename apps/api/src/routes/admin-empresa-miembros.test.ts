@@ -931,7 +931,12 @@ describe('POST /admin/empresas', () => {
     const json = (await res.json()) as { estado: string; es_transportista: boolean };
     expect(json.estado).toBe('activa');
     expect(json.es_transportista).toBe(true);
-    expect(d.insertedEmpresas[0]).toMatchObject({ status: 'activa', isTransportista: true });
+    expect(d.insertedEmpresas[0]).toMatchObject({
+      status: 'activa',
+      isTransportista: true,
+      // `.specs/frente2-cierre` D1: nace con la medición de huella encendida.
+      carbonMeasurementEnabled: true,
+    });
     expect(d.insertedCarrierMemberships[0]).toMatchObject({ tierSlug: 'free', status: 'activa' });
   });
 

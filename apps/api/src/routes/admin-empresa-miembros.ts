@@ -283,6 +283,9 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
                 planId: plan.id,
                 status: 'activa',
                 timezone: 'America/Santiago',
+                // `.specs/frente2-cierre` D1 (PO, 2026-11-26): la medición de huella nace
+                // encendida; se apaga en Empresa. Las empresas existentes no cambian.
+                carbonMeasurementEnabled: true,
               })
               .returning({
                 id: empresas.id,

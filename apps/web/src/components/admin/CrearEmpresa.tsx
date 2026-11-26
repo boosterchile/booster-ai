@@ -218,6 +218,10 @@ export function CrearEmpresa({ onCreated }: { onCreated: (empresaId: string) => 
           </p>
         )}
 
+        <p className="text-neutral-600 text-sm sm:col-span-2" data-testid="crear-empresa-medicion">
+          La empresa nace con la medición de huella encendida. Se apaga en Empresa.
+        </p>
+
         <div className="sm:col-span-2">
           <Button variant="primary" type="submit" disabled={!canSubmit}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}

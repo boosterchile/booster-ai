@@ -44,10 +44,12 @@ function makeDb(opts: DbQueues = {}) {
     return chain;
   };
 
+  const insertedValues: unknown[] = [];
   const buildInsertChain = () => ({
-    values: vi.fn(() => ({
-      returning: vi.fn(async () => inserts.shift() ?? []),
-    })),
+    values: vi.fn((v: unknown) => {
+      insertedValues.push(v);
+      return { returning: vi.fn(async () => inserts.shift() ?? []) };
+    }),
   });
 
   const buildUpdateChain = () => ({
@@ -67,6 +69,7 @@ function makeDb(opts: DbQueues = {}) {
   return {
     transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     ...tx,
+    insertedValues,
   };
 }
 
@@ -144,6 +147,8 @@ describe('onboardEmpresa', () => {
     expect(result.user.id).toBe('user-uuid');
     expect(result.empresa.id).toBe('empresa-uuid');
     expect(result.membership.id).toBe('membership-uuid');
+    // `.specs/frente2-cierre` D1: la empresa nace con la medición de huella encendida.
+    expect(db.insertedValues[1]).toMatchObject({ carbonMeasurementEnabled: true });
   });
 
   it('throw UserAlreadyExistsError si el firebase_uid ya tiene cuenta', async () => {

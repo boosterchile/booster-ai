@@ -87,6 +87,13 @@ describe('CrearEmpresa', () => {
     expect(aviso).toHaveTextContent('generador de carga y transportista');
   });
 
+  it('dice que la empresa nace con la medición de huella encendida (.specs/frente2-cierre D1)', () => {
+    render(<CrearEmpresa onCreated={vi.fn()} />);
+    expect(screen.getByTestId('crear-empresa-medicion')).toHaveTextContent(
+      'La empresa nace con la medición de huella encendida. Se apaga en Empresa.',
+    );
+  });
+
   it('explica que la empresa queda activa al crearla', () => {
     render(<CrearEmpresa onCreated={vi.fn()} />);
     expect(screen.getByText(/La empresa queda activa/)).toBeInTheDocument();
