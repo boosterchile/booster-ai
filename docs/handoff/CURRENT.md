@@ -1,9 +1,20 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-11-26 · America/Santiago (`terraform apply` del observatorio corrido por el PO a las 08:32Z: umbral 1 y emisiones por presentación; prod en `6bcf7879`; ver «Rediseño, frente 2»).
+**Última actualización**: 2026-11-26 · America/Santiago (cierre del frente 2 del rediseño fusionado, #1119 a #1123, con solicitud de release esperando la aprobación del PO; ver «Rediseño, frente 2»).
 **Prod**: `6bcf7879` (Release on request [45773528546](https://github.com/boosterchile/booster-ai/actions/runs/45773528546) SUCCESS, terminó el 2026-11-26 a las 07:57Z, aprobado por el PO; lleva #1115; los 8 servicios de Cloud Run en esa imagen al 100 % y en su última revisión, api `booster-ai-api-00504-nx6` y web `00446-fhq`; sin entradas ERROR ni 5xx en esas revisiones; el export del observatorio de las 08:07Z respondió 200, todavía sin la columna). Releases anteriores: `969a7e4d` (mes del Inicio, #1111, [45764951190](https://github.com/boosterchile/booster-ai/actions/runs/45764951190)), `5bcf36d2` (frente 2, [45757996298](https://github.com/boosterchile/booster-ai/actions/runs/45757996298)) y `14e885dc` (frente 8, [45741987240](https://github.com/boosterchile/booster-ai/actions/runs/45741987240)).  
-**`main`**: igual a prod (`6bcf7879`) salvo documentación. Terraform sin `apply` pendiente: el PO aplicó `infrastructure/` el 2026-11-26 (4 altas, 2 cambios, 4 bajas: columna `presentacion` en `observatory.viajes`, las 4 vistas `urban_flow_metrics_*` recreadas con umbral 1 de #1096 y emisiones por presentación de #1115, y `OBSERVATORIO_PRESENTACION_ACTIVADA=true` en el api, revisión `booster-ai-api-00505-44z` al 100 %); plan previo desde un worktree limpio de `9d47676c`.
+**`main`**: adelante de prod en el cierre del frente 2 (#1119 a #1123, `0436315c`), con las migraciones expand-only 0090 y 0091. Terraform sin `apply` pendiente: el PO aplicó `infrastructure/` el 2026-11-26 (4 altas, 2 cambios, 4 bajas: columna `presentacion` en `observatory.viajes`, las 4 vistas `urban_flow_metrics_*` recreadas con umbral 1 de #1096 y emisiones por presentación de #1115, y `OBSERVATORIO_PRESENTACION_ACTIVADA=true` en el api, revisión `booster-ai-api-00505-44z` al 100 %); plan previo desde un worktree limpio de `9d47676c`.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
+
+## Rediseño, frente 2: cierre (lo medido, viaje propio certificado, «Pedir a Booster»)
+
+**Fusionado el 2026-11-26** (spec `.specs/frente2-cierre/`, decisiones del PO D1 a D4); release pedido en `.github/release-requests/2026-11-26-frente2-cierre.md`, esperando la aprobación del PO.
+
+- #1119: `medicionHuella` (carbon-calculator) con qué se midió y el nivel con lo que falta; huella del mes del transportista (`GET /assignments/huella-mes`) en su Inicio y Booster Fleet; `anticipoHuella` en ofertas y al elegir camión. Siete referencias visuales nuevas, aprobadas por el PO; la regresión visual compara en blando.
+- #1120 (D1): las altas nacen con `carbon_measurement_enabled = true`; las empresas existentes no cambian.
+- #1121 + #1122 (D2): el viaje propio crea sus métricas al nacer y se certifica; sin generador, la titular es la transportista (`titularCertificado`) y el PDF imprime «Cliente». Migración 0090 (correo del cliente), «Enviar al cliente» (enlace firmado de 7 días + verificación; Resend no adjunta) y «Viaje propio entregado y certificado» en `/app/asignaciones/$id`.
+- #1123 (D3): «Pedir a Booster», migración 0091 (`solicitudes_booster`), panel `/app/platform-admin/solicitudes`; la fuente CAN solo la escribe Booster, y al resolver la guarda en el camión (la impersonación no escribe en empresas reales).
+- D4: anticipo al asignar camión y en ofertas; elegir transportista queda para ADR-095.
+- Fuera: lo que depende de T10-05; encender la medición en empresas existentes; que Booster Fleet muestre «Pedido a Booster» al recargar si ya había una solicitud abierta.
 
 ## Rediseño, frente 2: el sello de huella en toda la web
 
