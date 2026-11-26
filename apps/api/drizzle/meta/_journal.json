@@ -645,6 +645,13 @@
       "when": 1781913600420,
       "tag": "0091_solicitudes_booster",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1782000000420,
+      "tag": "0092_medicion_encendida_transportistas_activas",
+      "breakpoints": true
     }
   ]
 }
