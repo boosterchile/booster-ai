@@ -218,7 +218,9 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
             />
           </div>
 
-          <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+          {/* En un teléfono la tabla se desplaza a lo ancho: la cifra y su sello
+              se ven completos (`relative` para que nada absoluto escape del scroll). */}
+          <div className="relative mt-6 overflow-x-auto rounded-lg border border-neutral-200 bg-white shadow-sm">
             <table className="min-w-full divide-y divide-neutral-200">
               <thead className="bg-neutral-50">
                 <tr>
@@ -251,7 +253,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                       <CifraHuella
                         valor={c.kg_co2e}
                         presentacion={c.presentacion ?? 'estimado'}
-                        className="justify-end"
+                        className="justify-end whitespace-nowrap"
                       />
                     </Td>
                     <Td className="text-right">
@@ -261,6 +263,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                           <CifraHuella
                             valor={-Number(c.ahorro_co2e_vs_sin_matching_kgco2e)}
                             presentacion={c.presentacion ?? 'estimado'}
+                            className="whitespace-nowrap"
                           />
                         </span>
                       ) : (
