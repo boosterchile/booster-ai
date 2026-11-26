@@ -67,6 +67,11 @@ Las dos altas (panel de administración y onboarding) crean la empresa con
 Solicitudes de configuración al personal de Booster, visibles en el panel; la
 edición de la fuente CAN pasa al personal de Booster.
 
+- Migración 0091 `solicitudes_booster` (expand-only); `POST /vehiculos/:id/pedir-booster`
+  (gestor, idempotente: 201 nueva, 200 la abierta), `GET /admin/plataforma/solicitudes` y
+  `POST /admin/plataforma/solicitudes/:id/resolver`; `fuente_combustible_can` en el alta o el
+  `PATCH` de vehículos responde 403 `fuente_can_solo_booster` fuera del personal de Booster.
+
 ## 4. Criterios de éxito
 
 1. La clase de cada magnitud y la frase del nivel salen de una función pura

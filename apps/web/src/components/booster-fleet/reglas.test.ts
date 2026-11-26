@@ -159,9 +159,9 @@ describe('accionDe', () => {
         destino: { to: '/app/trayectos', search: { vehiculo: A, detalle: 't1' } },
       },
     );
-    expect(accionDe(vehiculo('AAAA11', { senal: 'posible_robo' }))?.destino).toEqual({
-      to: '/app/trayectos',
-      search: { vehiculo: A },
+    expect(accionDe(vehiculo('AAAA11', { senal: 'posible_robo' }))).toEqual({
+      etiqueta: 'Analizar trayecto',
+      destino: { to: '/app/trayectos', search: { vehiculo: A } },
     });
   });
 
@@ -173,9 +173,10 @@ describe('accionDe', () => {
       destino: ficha,
     });
     expect(accionDe(vehiculo('A', { senal: 'sin_movimiento' }))?.etiqueta).toBe('Ir al vehículo');
+    // `.specs/frente2-cierre` §3.4 (D3): la fuente CAN la configura Booster.
     expect(accionDe(vehiculo('A', { senal: 'sin_sensor' }))).toEqual({
-      etiqueta: 'Revisar sensor',
-      destino: ficha,
+      etiqueta: 'Pedir a Booster',
+      pedirBooster: { vehiculoId: A, tipo: 'configurar_fuente_combustible' },
     });
     expect(accionDe(vehiculo('A', { senal: 'falta_capacidad' }))).toEqual({
       etiqueta: 'Cargar capacidad',

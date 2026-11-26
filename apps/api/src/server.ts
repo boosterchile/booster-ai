@@ -42,6 +42,7 @@ import { createAdminObservabilityRoutes } from './routes/admin-observability.js'
 import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
 import { createAdminPersonalBoosterRoutes } from './routes/admin-personal-booster.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
+import { createAdminSolicitudesBoosterRoutes } from './routes/admin-solicitudes-booster.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createAuthActivarRoutes } from './routes/auth-activar.js';
@@ -884,6 +885,25 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.route(
       '/admin/plataforma/indicadores',
       createAdminIndicadoresRoutes({ db: opts.db, logger }),
+    );
+
+    // Platform-admin: solicitudes «Pedir a Booster» abiertas y resolverlas
+    // (`.specs/frente2-cierre` §3.4). Mismo chain que la flota.
+    app.use('/admin/plataforma/solicitudes', firebaseAuthMiddleware);
+    app.use('/admin/plataforma/solicitudes/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/plataforma/solicitudes',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/plataforma/solicitudes/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/plataforma/solicitudes',
+      createAdminSolicitudesBoosterRoutes({ db: opts.db, logger }),
     );
 
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /

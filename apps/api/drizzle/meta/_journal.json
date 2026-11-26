@@ -638,6 +638,13 @@
       "when": 1781827200420,
       "tag": "0090_viajes_cliente_externo_correo",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1781913600420,
+      "tag": "0091_solicitudes_booster",
+      "breakpoints": true
     }
   ]
 }

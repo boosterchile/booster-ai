@@ -445,6 +445,16 @@ const platformAdminFlotaRoute = createRoute({
   ),
 });
 
+// .specs/frente2-cierre §3.4 — solicitudes «Pedir a Booster» abiertas.
+const platformAdminSolicitudesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/solicitudes',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-solicitudes.js'),
+    'PlatformAdminSolicitudesRoute',
+  ),
+});
+
 // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna).
 const platformAdminObservatorioRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -745,6 +755,7 @@ const routeTree = rootRoute.addChildren([
   confirmarAccesoBoosterRoute,
   platformAdminTeltonikaRoute,
   platformAdminFlotaRoute,
+  platformAdminSolicitudesRoute,
   platformAdminStakeholdersRoute,
   platformAdminObservatorioRoute,
   platformAdminImpersonarRoute,

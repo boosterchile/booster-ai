@@ -90,3 +90,5 @@ export * from './domain/invitar-correo-cuenta.js';
 export * from './domain/viaje-propio.js';
 export * from './domain/anticipo-huella.js';
 export * from './domain/booster-fleet.js';
+// «Pedir a Booster» (.specs/frente2-cierre §3.4).
+export * from './domain/solicitud-booster.js';
