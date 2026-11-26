@@ -88,6 +88,7 @@ import {
   rechazarSolicitudCambio,
   solicitudPendienteDeViaje,
 } from '../services/solicitud-cambio-carga.js';
+import { titularCertificado } from '../services/titular-certificado.js';
 import { serializeTripMetrics } from './trip-requests-v2.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
@@ -915,6 +916,7 @@ export function createAssignmentsRoutes(opts: {
         trackingCode: trips.trackingCode,
         cargoWeightKg: trips.cargoWeightKg,
         generadorEmpresaId: trips.generadorCargaEmpresaId,
+        origenAlta: trips.origenAlta,
         metricsTripId: tripMetrics.tripId,
         distanceKmEstimated: tripMetrics.distanceKmEstimated,
         distanceKmActual: tripMetrics.distanceKmActual,
@@ -1046,9 +1048,15 @@ export function createAssignmentsRoutes(opts: {
     if (!puedeLeerResultado(row, auth)) {
       return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
     }
-    // Sin generador no hay certificado (emitirCertificadoViaje lo salta con
-    // `no_shipper`) y tampoco ruta de objeto donde buscarlo.
-    if (!row.certificateIssuedAt || !row.certificatePdfUrl || !row.generadorEmpresaId) {
+    // Sin titular no hay certificado (emitirCertificadoViaje lo salta con
+    // `no_shipper`) ni ruta de objeto donde buscarlo. La titular es el
+    // generador o, en un viaje propio con cliente externo, la transportista
+    // (`.specs/frente2-cierre` D2).
+    const titularId = titularCertificado(
+      { generadorCargaEmpresaId: row.generadorEmpresaId, origenAlta: row.origenAlta },
+      row.empresaId,
+    );
+    if (!row.certificateIssuedAt || !row.certificatePdfUrl || !titularId) {
       return c.json(
         {
           error: 'certificate_not_issued',
@@ -1058,11 +1066,10 @@ export function createAssignmentsRoutes(opts: {
         404,
       );
     }
-    // Misma ruta de objeto que la descarga del generador: el PDF vive bajo
-    // la empresa generadora, no bajo la transportista.
+    // Misma ruta de objeto que la emisión: el PDF vive bajo la titular.
     const downloadUrl = await generarSignedUrlPdf({
       bucket: opts.certConfig.certificatesBucket,
-      empresaId: row.generadorEmpresaId,
+      empresaId: titularId,
       trackingCode: row.trackingCode,
       // La versión vigente: la URI guardada es la de su PDF (reemision-certificado).
       version: versionDePdf(row.certificatePdfUrl),

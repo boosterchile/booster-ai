@@ -234,8 +234,8 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [METRICS_BASE],
-        [SHIPPER_ROW],
         [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [SHIPPER_ROW],
         [CARRIER_ROW],
         [{ plate: 'AB-CD-12' }],
       ],
@@ -270,8 +270,8 @@ describe('emitirCertificadoViaje', () => {
         selects: [
           [TRIP_DELIVERED],
           [metrics],
-          [SHIPPER_ROW],
           [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+          [SHIPPER_ROW],
           [CARRIER_ROW],
           [{ plate: 'AB-CD-12' }],
           deRuta,
@@ -358,6 +358,7 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [METRICS_BASE],
+        [], // assignment vacío (la titular sale del generador)
         [], // shipper SELECT vacío (FK rota)
       ],
     });
@@ -376,8 +377,8 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [METRICS_BASE],
-        [SHIPPER_ROW],
         [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [SHIPPER_ROW],
         [CARRIER_ROW],
         [{ plate: 'AB-CD-12' }],
       ],
@@ -446,8 +447,8 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [{ ...METRICS_BASE, ...cols }],
-        [SHIPPER_ROW],
         [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [SHIPPER_ROW],
         [CARRIER_ROW],
         [{ plate: 'AB-CD-12' }],
       ],
@@ -488,8 +489,8 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [METRICS_BASE],
-        [SHIPPER_ROW],
         [], // assignment vacío
+        [SHIPPER_ROW],
       ],
       updates: [[]],
       inserts: [[]],
@@ -512,8 +513,8 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [METRICS_BASE],
-        [SHIPPER_ROW],
         [{ empresaId: CARRIER_EMP_ID, vehicleId: null }], // assignment sin vehicleId
+        [SHIPPER_ROW],
         [], // carrier vacío
       ],
       updates: [[]],
@@ -544,8 +545,8 @@ describe('emitirCertificadoViaje', () => {
             fuelConsumedLActual: '12.0',
           },
         ],
-        [SHIPPER_ROW],
         [],
+        [SHIPPER_ROW],
       ],
       updates: [[]],
       inserts: [[]],
@@ -566,7 +567,7 @@ describe('emitirCertificadoViaje', () => {
   it('emisión exitosa persiste con UPDATE tripMetrics + INSERT tripEvent', async () => {
     (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
     const db = makeDb({
-      selects: [[TRIP_DELIVERED], [METRICS_BASE], [SHIPPER_ROW], []],
+      selects: [[TRIP_DELIVERED], [METRICS_BASE], [], [SHIPPER_ROW]],
       updates: [[]],
       inserts: [[]],
     });
@@ -592,8 +593,8 @@ describe('emitirCertificadoViaje', () => {
             decisionVersion: 2,
           },
         ],
-        [SHIPPER_ROW],
         [],
+        [SHIPPER_ROW],
       ],
       updates: [[]],
       inserts: [[]],
@@ -643,8 +644,8 @@ describe('emitirCertificadoViaje', () => {
       selects: [
         [TRIP_DELIVERED],
         [METRICS_BASE],
-        [SHIPPER_ROW],
         [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [SHIPPER_ROW],
         [CARRIER_ROW],
         [{ plate: 'AB-CD-12' }],
       ],

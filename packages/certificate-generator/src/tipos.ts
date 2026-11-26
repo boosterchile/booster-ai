@@ -123,6 +123,16 @@ export interface DatosEmpresaCertificado {
 }
 
 /**
+ * Cliente externo de un viaje propio del transportista (`.specs/frente2-cierre`
+ * D2): no es una empresa de Booster. Con él, el certificado queda bajo la
+ * transportista (`empresaShipper` es la titular) y el PDF imprime «Cliente».
+ */
+export interface DatosClienteExternoCertificado {
+  nombre: string;
+  rut: string | null;
+}
+
+/**
  * Datos de la empresa transportista (assignment.empresa_id). Opcional
  * porque el certificado puede emitirse antes de tener assignment final
  * (ej. para preview).

@@ -1164,7 +1164,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/viajes-propios', guardiaVisibilidadTransportista);
     app.use('/viajes-propios', firebaseAuthMiddleware);
     app.use('/viajes-propios', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/viajes-propios', createViajesPropiosRoutes({ db: opts.db, logger }));
+    app.route(
+      '/viajes-propios',
+      createViajesPropiosRoutes({
+        db: opts.db,
+        logger,
+        routesProjectId: config.GOOGLE_CLOUD_PROJECT,
+      }),
+    );
 
     // Rutas con varias paradas (ADR-088): API del transportista, detrás de
     // RUTAS_API_ACTIVADA. Mismos middlewares que /assignments, incluida la

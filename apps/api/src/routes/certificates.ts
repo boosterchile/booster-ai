@@ -27,7 +27,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { certificadosViaje, tripMetrics, trips } from '../db/schema.js';
+import { assignments, certificadosViaje, tripMetrics, trips } from '../db/schema.js';
 import { zValidator } from '../lib/validation.js';
 import { obtenerVigente } from '../services/certificados-versionados.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
@@ -35,6 +35,7 @@ import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { medicionDesdeMetricas } from '../services/medicion-huella-metricas.js';
 import { presentacionDesdeMetricas } from '../services/presentacion-huella.js';
 import { resumenCertificados } from '../services/resumen-certificados.js';
+import { titularCertificado } from '../services/titular-certificado.js';
 
 export function createCertificatesRoutes(opts: {
   db: Db;
@@ -207,13 +208,16 @@ export function createCertificatesRoutes(opts: {
     const tripRows = await opts.db
       .select({
         tripId: trips.id,
-        empresaId: trips.generadorCargaEmpresaId,
+        generadorEmpresaId: trips.generadorCargaEmpresaId,
+        origenAlta: trips.origenAlta,
+        transportistaEmpresaId: assignments.empresaId,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
         certificateSha256: tripMetrics.certificateSha256,
         certificatePdfUrl: tripMetrics.certificatePdfUrl,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .leftJoin(assignments, eq(assignments.tripId, trips.id))
       .where(eq(trips.trackingCode, trackingCode))
       .limit(1);
     const trip = tripRows[0];
@@ -264,8 +268,14 @@ export function createCertificatesRoutes(opts: {
         },
       });
     }
-    if (!trip.empresaId) {
-      // Edge: trip sin shipper (anonymous WhatsApp). No debería tener
+    // La carpeta del PDF es la de la titular: el generador o, en un viaje
+    // propio con cliente externo, la transportista (`.specs/frente2-cierre` D2).
+    const titularId = titularCertificado(
+      { generadorCargaEmpresaId: trip.generadorEmpresaId, origenAlta: trip.origenAlta },
+      trip.transportistaEmpresaId,
+    );
+    if (!titularId) {
+      // Edge: trip sin titular (anonymous WhatsApp). No debería tener
       // cert (el servicio skipea), pero defensivo.
       return c.json({ error: 'certificate_not_issued', code: 'certificate_not_issued' }, 404);
     }
@@ -273,7 +283,7 @@ export function createCertificatesRoutes(opts: {
     // Descargar sidecar JSON desde GCS.
     const sidecar = await descargarSidecar({
       bucket: opts.certConfig.certificatesBucket,
-      empresaId: trip.empresaId,
+      empresaId: titularId,
       trackingCode,
       // La firma de la versión vigente (reemision-certificado).
       version: versionDePdf(trip.certificatePdfUrl),
@@ -283,7 +293,7 @@ export function createCertificatesRoutes(opts: {
       // Loggeamos para que un humano investigue (¿bucket mal seteado?
       // ¿borrado manual?).
       opts.logger.error(
-        { trackingCode, empresaId: trip.empresaId },
+        { trackingCode, empresaId: titularId },
         '/certificates/:tracking/verify: sidecar no encontrado en GCS pese a issued_at notNull',
       );
       return c.json(
