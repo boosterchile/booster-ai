@@ -231,6 +231,19 @@ describe('Layout — armazón con menú superior (frente 8)', () => {
     ).toBeInTheDocument();
   });
 
+  it('la fila de pestañas contiene lo que desborda: es relative y se desplaza en su caja', () => {
+    rutaActual.pathname = '/app/vehiculos';
+    renderLayout(
+      <Layout me={buildMe([membership('e-1', 'Trans', { transportista: true })])} title="Vehículos">
+        <div>x</div>
+      </Layout>,
+    );
+    const lista = within(screen.getByRole('navigation', { name: 'Secciones de Flota' })).getByRole(
+      'list',
+    );
+    expect(lista).toHaveClass('relative', 'overflow-x-auto');
+  });
+
   it('una entrada con una sola pantalla no muestra pestañas', () => {
     renderLayout(
       <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">

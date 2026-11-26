@@ -70,7 +70,7 @@ export function MenuSuperior({
 }) {
   return (
     <nav aria-label="Navegación principal" className="hidden min-w-0 sm:block">
-      <ul className="flex items-center gap-1 overflow-x-auto">
+      <ul className="relative flex items-center gap-1 overflow-x-auto">
         {groups.map((group) => {
           const actual = active?.id === group.id;
           const badge = badgeDeGrupo(group, badges);
@@ -98,7 +98,12 @@ export function MenuSuperior({
   );
 }
 
-/** Pestañas con las pantallas del grupo activo, cuando tiene más de una. */
+/**
+ * Pestañas con las pantallas del grupo activo, cuando tiene más de una. La
+ * lista es `relative`: el texto `sr-only` de un conteo es `absolute` y, sin un
+ * contenedor posicionado, escapa del desplazamiento de la fila y ensancha la
+ * página (Flota a 390 px, frente 8).
+ */
 export function PestanasGrupo({
   group,
   pathname,
@@ -117,7 +122,7 @@ export function PestanasGrupo({
       aria-label={`Secciones de ${group.label}`}
       className="border-neutral-200 border-b bg-neutral-0"
     >
-      <ul className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 sm:px-6">
+      <ul className="relative mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 sm:px-6">
         {group.items.map((item) => {
           const esActual = actual?.to === item.to;
           const badge = badgeDeItem(item.to, badges);
