@@ -12,7 +12,7 @@ function dbCon(selects: unknown[][]) {
   const cola = [...selects];
   const select = vi.fn(() => {
     const chain: Record<string, unknown> = {};
-    for (const paso of ['from', 'innerJoin', 'where', 'orderBy', 'limit']) {
+    for (const paso of ['from', 'innerJoin', 'where', 'groupBy', 'orderBy', 'limit']) {
       chain[paso] = vi.fn(() => chain);
     }
     chain.then = (resolver: (filas: unknown[]) => unknown) =>
@@ -31,10 +31,29 @@ const documentalConTresFaltantes = [
   [],
 ];
 
+const CERO = { certificados: 0, kgco2e: 0, ahorro_kgco2e: 0 };
+
+/** Una fila agrupada por nivel, fuente y cobertura, como la devuelve Postgres. */
+function grupo(
+  certificationLevel: string | null,
+  routeDataSource: string | null,
+  coveragePct: string | null,
+  certificados: string,
+  kgco2e: string | null,
+  ahorro: string | null = null,
+) {
+  return { certificationLevel, routeDataSource, coveragePct, certificados, kgco2e, ahorro };
+}
+
 describe('resumenCertificados', () => {
-  it('cuenta medidos y estimados y suma la huella', async () => {
+  it('separa por presentación de ADR-091 y suma el total', async () => {
     const { db } = dbCon([
-      [{ certificados: '5', medidos: '2', kgco2e: '1254.500', ahorro: '80.25' }],
+      [
+        grupo('primario_verificable', 'teltonika_gps', '98.00', '2', '400.250', '20.25'),
+        grupo('secundario_modeled', 'teltonika_gps', '91.00', '1', '300.000'),
+        grupo('secundario_modeled', 'maps_directions', '0', '1', '500.000', '60'),
+        grupo('secundario_modeled', 'teltonika_gps', '40.00', '1', '54.250'),
+      ],
     ]);
     expect(await resumenCertificados({ db, empresaId: EMPRESA })).toEqual({
       certificados: 5,
@@ -42,17 +61,23 @@ describe('resumenCertificados', () => {
       estimados: 3,
       kgco2e: 1254.5,
       ahorro_kgco2e: 80.25,
+      por_presentacion: {
+        primario: { certificados: 2, kgco2e: 400.25, ahorro_kgco2e: 20.25 },
+        medido_teltonika: { certificados: 1, kgco2e: 300, ahorro_kgco2e: 0 },
+        estimado: { certificados: 2, kgco2e: 554.25, ahorro_kgco2e: 60 },
+      },
     });
   });
 
   it('sin certificados todo es cero', async () => {
-    const { db } = dbCon([[{ certificados: '0', medidos: '0', kgco2e: null, ahorro: null }]]);
+    const { db } = dbCon([[]]);
     expect(await resumenCertificados({ db })).toEqual({
       certificados: 0,
       medidos: 0,
       estimados: 0,
       kgco2e: 0,
       ahorro_kgco2e: 0,
+      por_presentacion: { primario: CERO, medido_teltonika: CERO, estimado: CERO },
     });
   });
 });
@@ -65,7 +90,7 @@ describe('indicadoresNegocio', () => {
       [{ n: '1' }], // camiones
       [{ n: '0' }], // camiones con huella medida
       ...documentalConTresFaltantes,
-      [{ certificados: '2', medidos: '0', kgco2e: '300.000', ahorro: null }],
+      [grupo('secundario_default', null, null, '2', '300.000')],
     ]);
     const indicadores = await indicadoresNegocio({ db, empresaId: EMPRESA, ahora: AHORA });
     expect(indicadores).toEqual({
@@ -73,7 +98,18 @@ describe('indicadoresNegocio', () => {
       cargas: 7,
       camiones: 1,
       camiones_con_huella_medida: 0,
-      certificados: { certificados: 2, medidos: 0, estimados: 2, kgco2e: 300, ahorro_kgco2e: 0 },
+      certificados: {
+        certificados: 2,
+        medidos: 0,
+        estimados: 2,
+        kgco2e: 300,
+        ahorro_kgco2e: 0,
+        por_presentacion: {
+          primario: CERO,
+          medido_teltonika: CERO,
+          estimado: { certificados: 2, kgco2e: 300, ahorro_kgco2e: 0 },
+        },
+      },
       // Revisión técnica, permiso de circulación y SOAP sin subir.
       documentos_pendientes: 3,
     });
@@ -89,7 +125,10 @@ describe('indicadoresNegocio', () => {
       [{ n: '1' }], // camiones con huella medida
       ...documentalConTresFaltantes,
       ...documentalConTresFaltantes,
-      [{ certificados: '9', medidos: '1', kgco2e: '5000', ahorro: '10' }],
+      [
+        grupo('primario_verificable', 'teltonika_gps', '99', '1', '1000', '10'),
+        grupo('secundario_default', null, null, '8', '4000'),
+      ],
     ]);
     const indicadores = await indicadoresNegocio({ db, ahora: AHORA });
     expect(indicadores.empresas_activas).toBe(4);

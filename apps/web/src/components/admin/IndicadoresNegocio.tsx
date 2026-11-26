@@ -1,8 +1,9 @@
 import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { api } from '../../lib/api-client.js';
-import { formatoEmisiones } from '../../lib/formato-emisiones.js';
+import { campoPorPresentacion, porPresentacionSchema } from '../../lib/presentacion-huella.js';
+import { TotalHuella } from '../huella/CifraHuella.js';
 
 /**
  * Indicadores del negocio en el Inicio del panel
@@ -25,6 +26,7 @@ const respuestaSchema = z.object({
       estimados: z.number(),
       kgco2e: z.number(),
       ahorro_kgco2e: z.number(),
+      por_presentacion: porPresentacionSchema,
     }),
     documentos_pendientes: z.number(),
   }),
@@ -150,16 +152,31 @@ function Cifras({ datos }: { datos: Respuesta }) {
       <Cifra
         etiqueta="Certificados"
         valor={String(certificados.certificados)}
-        nota={`${certificados.medidos} medidos · ${certificados.estimados} estimados`}
+        nota={notaCertificados(certificados.por_presentacion)}
         id="certificados"
       />
       <Cifra
         etiqueta="Emisiones certificadas"
-        valor={formatoEmisiones(certificados.kgco2e)}
+        valor={
+          <TotalHuella
+            porPresentacion={campoPorPresentacion(certificados.por_presentacion, 'kgco2e')}
+            vacio="Sin emisiones certificadas"
+            className="text-base"
+          />
+        }
         id="emisiones"
       />
     </dl>
   );
+}
+
+/** Las tres presentaciones de ADR-091, con su nombre en pantalla. */
+function notaCertificados(por: z.infer<typeof porPresentacionSchema>): string {
+  return [
+    `${por.primario.certificados} medidos`,
+    `${por.medido_teltonika.certificados} con distancia medida con Teltonika`,
+    `${por.estimado.certificados} estimados`,
+  ].join(' · ');
 }
 
 function Cifra({
@@ -169,7 +186,7 @@ function Cifra({
   id,
 }: {
   etiqueta: string;
-  valor: string;
+  valor: ReactNode;
   nota?: string;
   id: string;
 }) {

@@ -38,6 +38,7 @@ function resultado(
       certificate_sha256: null,
       certificate_kms_key_version: null,
       certificate_issued_at: null,
+      presentacion: 'estimado',
     },
     cobertura,
     certificate: null,
@@ -64,7 +65,7 @@ describe('ResultadoViaje — cobertura 0 con puntos del teléfono', () => {
     expect(cobertura).toHaveTextContent(/más de un minuto/);
     expect(cobertura.textContent ?? '').not.toMatch(/0 %/);
     const panel = screen.getByTestId('resultado-viaje');
-    expect(panel).toHaveTextContent(/Huella estimada/);
+    expect(screen.getByTestId('resultado-huella')).toHaveTextContent('20,0 kg CO₂eEstimado');
     expect(panel.textContent ?? '').not.toMatch(/cobertura insuficiente/);
     expect(panel.textContent ?? '').not.toMatch(/\btenés\b|\belegí\b|\bquerés\b/);
   });
@@ -91,5 +92,48 @@ describe('ResultadoViaje — cobertura 0 con puntos del teléfono', () => {
     const cobertura = await screen.findByTestId('cobertura-posicion');
     expect(cobertura.textContent ?? '').toMatch(/0[,.]4 %/);
     expect(cobertura.textContent ?? '').not.toMatch(/^0 %$/);
+  });
+});
+
+describe('ResultadoViaje — sello de la huella (ADR-091)', () => {
+  beforeEach(() => {
+    getResultado.mockReset();
+  });
+
+  it('distancia medida con Teltonika: la cifra lleva su texto y no dice «Medido» ni «Huella medida»', async () => {
+    const r = resultado(null, '92.00');
+    if (!r.metrics) {
+      throw new Error('fixture sin métricas');
+    }
+    r.metrics = {
+      ...r.metrics,
+      carbon_emissions_kgco2e_actual: '18.500',
+      route_data_source: 'teltonika_gps',
+      presentacion: 'medido_teltonika',
+    };
+    getResultado.mockResolvedValue(r);
+    render(<ResultadoViaje assignmentId="asg-1" />);
+    const huella = await screen.findByTestId('resultado-huella');
+    expect(huella).toHaveTextContent('18,5 kg CO₂e');
+    expect(huella).toHaveTextContent('Distancia medida con Teltonika · consumo modelado');
+    expect(screen.getByTestId('resultado-viaje').textContent ?? '').not.toMatch(
+      /Huella medida|\bMedido\b/,
+    );
+  });
+
+  it('primario: «Medido»; respuesta vieja sin presentación: «Estimado»', async () => {
+    const r = resultado(null, '98.00');
+    if (!r.metrics) {
+      throw new Error('fixture sin métricas');
+    }
+    r.metrics = { ...r.metrics, presentacion: 'primario' };
+    getResultado.mockResolvedValue(r);
+    const { unmount } = render(<ResultadoViaje assignmentId="asg-1" />);
+    expect(await screen.findByTestId('resultado-huella')).toHaveTextContent('Medido');
+    unmount();
+    const { presentacion: _sin, ...vieja } = r.metrics;
+    getResultado.mockResolvedValue({ ...r, metrics: vieja });
+    render(<ResultadoViaje assignmentId="asg-1" />);
+    expect(await screen.findByTestId('resultado-huella')).toHaveTextContent('Estimado');
   });
 });

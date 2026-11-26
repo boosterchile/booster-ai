@@ -1,4 +1,5 @@
 import { Clock } from 'lucide-react';
+import { TotalHuella } from '../huella/CifraHuella.js';
 import type { NavItem } from '../nav-items.js';
 import { AccesosGrid } from './accesos-grid.js';
 import { AgendaList, AgendaTable } from './agenda.js';
@@ -180,7 +181,17 @@ function PlataCuerpo({
   if (huella.estado === 'error') {
     return <ErrorBloque nombre="Certificados" fuente="certificados" onReintentar={onReintentar} />;
   }
-  const valorHuella = huella.estado === 'listo' ? huella.valor.texto : '—';
+  const valorHuella =
+    huella.estado === 'listo' ? (
+      <TotalHuella
+        porPresentacion={huella.valor.porPresentacion}
+        vacio="—"
+        className="text-base"
+        data-testid="inicio-huella-mes"
+      />
+    ) : (
+      '—'
+    );
   const detalleHuella = huella.estado === 'listo' ? huella.valor.detalle : null;
   return (
     <MoneyPair

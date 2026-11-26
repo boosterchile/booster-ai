@@ -94,11 +94,12 @@ describe('buildGeneradorHoy', () => {
     expect(negocio.mapa.pins).toHaveLength(1);
   });
 
-  it('la huella del mes suma los certificados y avisa los nuevos', () => {
+  it('la huella del mes suma los certificados por sello y avisa los nuevos', () => {
     const certs: CertificadoInicio[] = [
       {
         trackingCode: 'BST-1',
         kg: 2500,
+        presentacion: 'medido_teltonika',
         emitidoEn: '2026-10-18T12:00:00.000Z',
         origen: 'A',
         destino: 'B',
@@ -106,6 +107,7 @@ describe('buildGeneradorHoy', () => {
       {
         trackingCode: 'BST-2',
         kg: 2300,
+        presentacion: 'estimado',
         emitidoEn: '2026-10-02T12:00:00.000Z',
         origen: 'A',
         destino: 'B',
@@ -113,6 +115,7 @@ describe('buildGeneradorHoy', () => {
       {
         trackingCode: 'viejo',
         kg: 9000,
+        presentacion: 'primario',
         emitidoEn: '2026-09-01T12:00:00.000Z',
         origen: 'A',
         destino: 'B',
@@ -121,7 +124,10 @@ describe('buildGeneradorHoy', () => {
     const negocio = buildGeneradorHoy(listo([]), listo(certs), AHORA, { soloLectura: false });
     expect(negocio.huella).toEqual({
       estado: 'listo',
-      valor: { texto: '4,80 t CO₂e', detalle: '2 certificados' },
+      valor: {
+        porPresentacion: { primario: 0, medido_teltonika: 2500, estimado: 2300 },
+        detalle: '2 certificados',
+      },
     });
     expect(negocio.avisos[0]?.titulo).toBe('1 certificado nuevo');
   });

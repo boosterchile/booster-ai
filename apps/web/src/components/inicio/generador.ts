@@ -1,4 +1,4 @@
-import { formatoEmisiones } from '../../lib/formato-emisiones.js';
+import type { PresentacionHuella } from '../../lib/presentacion-huella.js';
 import { comunaDesdeDireccion } from '../inicio-transportista/modelo.js';
 import type { AgendaItem } from './agenda.js';
 import type { AvisoItem } from './avisos.js';
@@ -29,6 +29,8 @@ export interface ViajeInicio {
 export interface CertificadoInicio {
   trackingCode: string;
   kg: number | null;
+  /** ADR-091, calculada por el API. */
+  presentacion: PresentacionHuella;
   emitidoEn: string | null;
   origen: string;
   destino: string;
@@ -41,8 +43,9 @@ export interface CargasVista {
   destacada: { codigo: string; detalle: string } | null;
 }
 
+/** La huella del mes separada por presentación: ningún total mezcla clases. */
 export interface HuellaVista {
-  texto: string;
+  porPresentacion: Record<PresentacionHuella, number>;
   detalle: string;
 }
 
@@ -243,15 +246,19 @@ function huellaDe(certificados: Panel<CertificadoInicio[]>, ahora: Date): Panel<
   const delMes = certificados.valor.filter(
     (cert) => cert.emitidoEn != null && mismoMes(cert.emitidoEn, ahora),
   );
-  const kg = delMes.reduce((suma, cert) => suma + (cert.kg ?? 0), 0);
+  const porPresentacion: Record<PresentacionHuella, number> = {
+    primario: 0,
+    medido_teltonika: 0,
+    estimado: 0,
+  };
+  for (const cert of delMes) {
+    porPresentacion[cert.presentacion] += cert.kg ?? 0;
+  }
   if (delMes.length === 0) {
-    return {
-      estado: 'listo',
-      valor: { texto: formatoEmisiones(0), detalle: 'Sin certificados este mes' },
-    };
+    return { estado: 'listo', valor: { porPresentacion, detalle: 'Sin certificados este mes' } };
   }
   const detalle = delMes.length === 1 ? '1 certificado' : `${delMes.length} certificados`;
-  return { estado: 'listo', valor: { texto: formatoEmisiones(kg), detalle } };
+  return { estado: 'listo', valor: { porPresentacion, detalle } };
 }
 
 function avisosDe(certificados: Panel<CertificadoInicio[]>, ahora: Date): AvisoItem[] {

@@ -5,12 +5,16 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * Guardián del formateador único (`.specs/una-sola-verdad-por-dato`, criterio
- * 2). Recorre `apps/web/src` y falla si un archivo distinto de
- * `lib/formato-emisiones.ts` escribe una cifra de emisiones por su cuenta.
+ * 2) y del sello (`.specs/sello-huella-toda-la-web`, criterio 4). Recorre
+ * `apps/web/src` y falla si un archivo distinto de `lib/formato-emisiones.ts`
+ * escribe una cifra de emisiones por su cuenta, o si un archivo distinto de
+ * `components/huella/CifraHuella.tsx` la escribe sin su sello.
  */
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FORMATEADOR = 'lib/formato-emisiones.ts';
+/** La cifra con su sello: el único que llama a `formatoEmisiones` o `formatoIntensidad`. */
+const CIFRA_CON_SELLO = 'components/huella/CifraHuella.tsx';
 
 /**
  * Archivos que leen un campo de emisiones sin mostrarlo: lo pasan, lo suman
@@ -24,6 +28,7 @@ const SOLO_TRANSPORTAN: Record<string, string> = {
 const CAMPO_EMISIONES = /\.\s*[A-Za-z0-9_]*(?:co2e|kgco2|carbon_emissions)[A-Za-z0-9_]*/i;
 const FORMATO_NUMERICO = /\.toFixed\(|\.toLocaleString\(|Intl\.NumberFormat/;
 const TEXTO_CO2 = /CO₂|CO2(?!E\b)/;
+const CIFRA_SIN_SELLO = /\bformato(?:Emisiones|Intensidad)\s*\(/;
 
 function archivos(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entrada) => {
@@ -55,13 +60,18 @@ function revisar(): Hallazgo[] {
       continue;
     }
     const codigo = sinComentarios(readFileSync(ruta, 'utf8'));
-    const importaFormateador = /from '[./]+(?:\/lib)?\/formato-emisiones\.js'/.test(codigo);
+    const importaCifraConSello = /from '[./]+(?:\/components)?(?:\/huella)?\/CifraHuella\.js'/.test(
+      codigo,
+    );
     const lineas = codigo.split('\n');
     lineas.forEach((texto, indice) => {
       const anotar = (motivo: string) =>
         hallazgos.push({ archivo, linea: indice + 1, motivo, texto: texto.trim() });
       if (TEXTO_CO2.test(texto)) {
-        anotar('escribe «CO₂» a mano; usa CO2E o formatoEmisiones');
+        anotar('escribe «CO₂» a mano; usa CO2E o CifraHuella');
+      }
+      if (archivo !== CIFRA_CON_SELLO && CIFRA_SIN_SELLO.test(texto)) {
+        anotar('escribe una cifra de emisiones sin sello; usa CifraHuella o TotalHuella');
       }
       if (!CAMPO_EMISIONES.test(texto)) {
         return;
@@ -69,8 +79,8 @@ function revisar(): Hallazgo[] {
       if (FORMATO_NUMERICO.test(texto)) {
         anotar('da formato numérico a un campo de emisiones');
       }
-      if (!importaFormateador && !(archivo in SOLO_TRANSPORTAN)) {
-        anotar('lee un campo de emisiones y no importa formato-emisiones');
+      if (!importaCifraConSello && !(archivo in SOLO_TRANSPORTAN)) {
+        anotar('lee un campo de emisiones y no la muestra con CifraHuella');
       }
     });
   }
@@ -78,7 +88,7 @@ function revisar(): Hallazgo[] {
 }
 
 describe('cifras de emisiones en apps/web', () => {
-  it('todas pasan por lib/formato-emisiones.ts', () => {
+  it('todas pasan por lib/formato-emisiones.ts y llevan su sello', () => {
     const hallazgos = revisar().map((h) => `${h.archivo}:${h.linea} — ${h.motivo} — ${h.texto}`);
     expect(hallazgos).toEqual([]);
   });

@@ -5,8 +5,8 @@ import { type ReactNode, useState } from 'react';
 import { z } from 'zod';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
+import { CifraHuella } from '../components/huella/CifraHuella.js';
 import { ApiError, api } from '../lib/api-client.js';
-import { formatoEmisiones } from '../lib/formato-emisiones.js';
 
 /**
  * /app/platform-admin/observatorio — observatorio urbano, vista interna
@@ -213,8 +213,11 @@ function Secciones({ datos }: { datos: Respuesta }) {
           f.mes,
           comuna(f.comuna),
           CLASE[f.clase_vehiculo] ?? f.clase_vehiculo,
-          formatoEmisiones(f.kgco2e),
-          formatoEmisiones(f.kgco2e_evitado),
+          // La vista de BigQuery suma todos los viajes sin guardar su
+          // presentación: el agregado no se puede separar por clase y lleva
+          // «Estimado» (ADR-091; `.specs/sello-huella-toda-la-web`).
+          <CifraHuella key="emitido" valor={f.kgco2e} presentacion="estimado" />,
+          <CifraHuella key="evitado" valor={f.kgco2e_evitado} presentacion="estimado" />,
           n(f.viajes),
         ])}
       />

@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
-import { CO2E, formatoEmisiones } from '../lib/formato-emisiones.js';
+import { CO2E } from '../lib/formato-emisiones.js';
 
 const DESDE_VIAJES = UMBRAL_ANONIMATO === 1 ? '1 viaje' : `${UMBRAL_ANONIMATO} viajes`;
 
@@ -60,7 +60,6 @@ interface ZonaPredefinida {
    * filtradas por bounding box + ventana temporal + k-anonymity ≥ 5.
    */
   demo_viajes_30d: number;
-  demo_co2e_kg: number;
   demo_horario_pico: string;
   /**
    * Marca la zona como prioritaria en el contexto de demo actual. Las
@@ -83,7 +82,6 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     // (Carmen, Andacollo) + uva de mesa y vinos para exportación
     // (refrigerados con ventana pico madrugada).
     demo_viajes_30d: 728,
-    demo_co2e_kg: 287_400,
     demo_horario_pico: '04:00 – 08:00',
     destacado: true,
     destacado_foco: 'Exportación frutícola + concentrado de cobre',
@@ -95,7 +93,6 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     region_iso: 'CL-VS',
     tipo: 'puerto',
     demo_viajes_30d: 1247,
-    demo_co2e_kg: 312_400,
     demo_horario_pico: '06:00 – 10:00',
   },
   {
@@ -105,7 +102,6 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     region_iso: 'CL-VS',
     tipo: 'puerto',
     demo_viajes_30d: 1893,
-    demo_co2e_kg: 478_900,
     demo_horario_pico: '05:00 – 09:00',
   },
   {
@@ -115,7 +111,6 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     region_iso: 'CL-RM',
     tipo: 'mercado_abastos',
     demo_viajes_30d: 2104,
-    demo_co2e_kg: 89_300,
     demo_horario_pico: '03:00 – 07:00',
   },
   {
@@ -125,7 +120,6 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     region_iso: 'CL-RM',
     tipo: 'polo_industrial',
     demo_viajes_30d: 856,
-    demo_co2e_kg: 167_200,
     demo_horario_pico: '07:00 – 11:00',
   },
   {
@@ -135,7 +129,6 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     region_iso: 'CL-TA',
     tipo: 'zona_franca',
     demo_viajes_30d: 425,
-    demo_co2e_kg: 198_500,
     demo_horario_pico: '08:00 – 12:00',
   },
 ];
@@ -402,7 +395,6 @@ function ZonaCard({ zona }: { zona: ZonaPredefinida }) {
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
         <Stat label="Viajes (30 días)" value={zona.demo_viajes_30d.toLocaleString('es-CL')} />
-        <Stat label={`${CO2E} total`} value={formatoEmisiones(zona.demo_co2e_kg)} />
         <Stat label="Horario pico" value={zona.demo_horario_pico} className="col-span-2" />
       </dl>
 

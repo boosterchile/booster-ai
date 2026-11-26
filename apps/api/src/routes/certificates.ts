@@ -32,6 +32,7 @@ import { zValidator } from '../lib/validation.js';
 import { obtenerVigente } from '../services/certificados-versionados.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
+import { presentacionDesdeMetricas } from '../services/presentacion-huella.js';
 import { resumenCertificados } from '../services/resumen-certificados.js';
 
 export function createCertificatesRoutes(opts: {
@@ -147,6 +148,8 @@ export function createCertificatesRoutes(opts: {
         // ADR-077 §4 — derivada acá (misma función que el PDF); la UI no la
         // reconstruye. null en certs legacy.
         linea_metodo: lineaMetodoDesdeMetricas(r),
+        // ADR-091 — el sello de la cifra en la web (`.specs/sello-huella-toda-la-web`).
+        presentacion: presentacionDesdeMetricas(r),
         certificate_sha256: r.certificateSha256,
         certificate_kms_key_version: r.certificateKmsKeyVersion,
         certificate_issued_at: r.certificateIssuedAt,

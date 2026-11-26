@@ -1,4 +1,4 @@
-import { Button, FootprintSeal, PressableArea } from '@booster-ai/ui-components';
+import { Button, PressableArea } from '@booster-ai/ui-components';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Inbox, Plus, Truck, UserRound, X } from 'lucide-react';
@@ -7,12 +7,12 @@ import { z } from 'zod';
 import { EmptyState } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { CifraHuella } from '../components/huella/CifraHuella.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
-import { formatoEmisiones } from '../lib/formato-emisiones.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -334,6 +334,12 @@ function DetalleDeRuta({
     return <div className="text-center text-neutral-500 text-sm">Cargando la ruta…</div>;
   }
   const ruta = detalleQ.data;
+  // ADR-091: una ruta en estimación lleva «Estimado» aunque su nivel diga otra cosa.
+  const presentacionRuta = ruta?.huella
+    ? ruta.huella.es_estimacion
+      ? 'estimado'
+      : ruta.huella.presentacion
+    : null;
   if (!ruta) {
     return (
       <div
@@ -436,19 +442,19 @@ function DetalleDeRuta({
         </p>
       )}
 
-      {ruta.huella && (
+      {ruta.huella && presentacionRuta && (
         <section
           aria-label="Huella de la ruta"
           className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
         >
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 className="font-semibold text-base text-neutral-900">Huella de la ruta</h2>
-            <FootprintSeal
-              presentacion={ruta.huella.es_estimacion ? 'estimado' : ruta.huella.presentacion}
+          <h2 className="font-semibold text-base text-neutral-900">Huella de la ruta</h2>
+          <p className="mt-2 flex flex-wrap items-center gap-x-1 text-neutral-800 text-sm">
+            Total de la ruta:{' '}
+            <CifraHuella
+              valor={ruta.huella.emisiones_kgco2e}
+              presentacion={presentacionRuta}
+              data-testid="ruta-huella-total"
             />
-          </div>
-          <p className="mt-2 text-neutral-800 text-sm">
-            Total de la ruta: {formatoEmisiones(ruta.huella.emisiones_kgco2e)}
           </p>
           <ul className="mt-3 space-y-1 text-sm">
             {ruta.huella.servicios.map((s) => (
@@ -457,8 +463,10 @@ function DetalleDeRuta({
                 className="flex flex-wrap justify-between gap-2 text-neutral-700"
               >
                 <span className="font-mono text-xs">{s.codigo_seguimiento}</span>
-                <span>
-                  {porcentaje(s.participacion_pct)} · {formatoEmisiones(s.emisiones_kgco2e)}
+                {/* Cada servicio hereda la presentación de la ruta (ADR-089). */}
+                <span className="inline-flex flex-wrap items-center gap-x-1">
+                  {porcentaje(s.participacion_pct)} ·{' '}
+                  <CifraHuella valor={s.emisiones_kgco2e} presentacion={presentacionRuta} />
                 </span>
               </li>
             ))}

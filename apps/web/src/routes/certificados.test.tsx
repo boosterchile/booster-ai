@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -87,7 +87,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const RESUMEN = { certificados: 1, medidos: 0, estimados: 1, kgco2e: 375.2, ahorro_kgco2e: 0 };
+const RESUMEN = {
+  certificados: 2,
+  medidos: 1,
+  estimados: 1,
+  kgco2e: 425.2,
+  ahorro_kgco2e: 0,
+  por_presentacion: {
+    primario: { certificados: 1, kgco2e: 375.2, ahorro_kgco2e: 0 },
+    medido_teltonika: { certificados: 0, kgco2e: 0, ahorro_kgco2e: 0 },
+    estimado: { certificados: 1, kgco2e: 50, ahorro_kgco2e: 0 },
+  },
+};
 
 describe('CertificadosRoute', () => {
   it('no onboarded → no renderiza Layout', () => {
@@ -135,7 +146,10 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    await waitFor(() => expect(screen.getByText('BST-001')).toBeInTheDocument());
+    const tabla = await screen.findByRole('table');
+    expect(within(tabla).getByText('BST-001')).toBeInTheDocument();
+    // Bajo 640 px el mismo certificado es una tarjeta.
+    expect(screen.getByTestId('certificado-tarjeta-BST-001')).toHaveTextContent('BST-001');
   });
 
   it('muestra la línea de método que entrega el API (ADR-077 §4) junto al kg CO₂e, sin reconstruirla', async () => {
@@ -166,7 +180,8 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    const linea = await screen.findByText(/GPS del celular del conductor \(cobertura 100 %\)/);
+    const tabla = await screen.findByRole('table');
+    const linea = within(tabla).getByText(/GPS del celular del conductor \(cobertura 100 %\)/);
     expect(linea).toBeInTheDocument();
     // La fila muestra la línea tal cual llegó: vocabulario cerrado del API.
     expect(linea.closest('tr')?.textContent).not.toMatch(/verificable/i);
@@ -196,8 +211,81 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    const btn = await screen.findByRole('button', { name: /Descargar/ });
+    const tabla = await screen.findByRole('table');
+    const btn = within(tabla).getByRole('button', { name: /Descargar/ });
     fireEvent.click(btn);
     await waitFor(() => expect(descargarMock).toHaveBeenCalled());
+  });
+
+  it('el total y cada fila llevan su sello; el total no mezcla clases (ADR-091)', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: RESUMEN,
+      certificates: [
+        {
+          trip_id: 't1',
+          tracking_code: 'BST-001',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '375.20',
+          presentacion: 'primario',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+        {
+          trip_id: 't2',
+          tracking_code: 'BST-002',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '50.00',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+      ],
+      pagination: { limit: 100, offset: 0, returned: 2 },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    const total = await screen.findByTestId('certificados-emisiones');
+    const lineas = total.querySelectorAll('[data-cifra-huella]');
+    expect([...lineas].map((l) => l.getAttribute('data-presentacion'))).toEqual([
+      'primario',
+      'estimado',
+    ]);
+    const tabla = screen.getByRole('table');
+    expect(within(tabla).getByText('BST-001').closest('tr')).toHaveTextContent(
+      '375,2 kg CO₂eMedido',
+    );
+    // Sin presentación (respuesta vieja) la fila no afirma lo medido.
+    expect(within(tabla).getByText('BST-002').closest('tr')).toHaveTextContent(
+      '50,0 kg CO₂eEstimado',
+    );
+    // La tarjeta del teléfono lleva la misma cifra con su sello.
+    expect(screen.getByTestId('certificado-tarjeta-BST-001')).toHaveTextContent(
+      '375,2 kg CO₂eMedido',
+    );
+  });
+
+  it('respuesta vieja sin por_presentacion: el total entero va «Estimado»', async () => {
+    const { por_presentacion: _sin, ...viejo } = RESUMEN;
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: viejo,
+      certificates: [
+        {
+          trip_id: 't1',
+          tracking_code: 'BST-001',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '50.00',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+      ],
+      pagination: { limit: 100, offset: 0, returned: 1 },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    const total = await screen.findByTestId('certificados-emisiones');
+    expect(total).toHaveTextContent('425,2 kg CO₂eEstimado');
+    expect(total).not.toHaveTextContent('Medido');
   });
 });

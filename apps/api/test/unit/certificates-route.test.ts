@@ -6,11 +6,15 @@ beforeAll(() => {
   process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
 });
 
-vi.mock('@booster-ai/certificate-generator', async (original) => ({
-  // La lectura de la versión desde la URI del PDF es la real.
-  versionDePdf: (await original<typeof import('@booster-ai/certificate-generator')>()).versionDePdf,
-  descargarSidecar: vi.fn(),
-}));
+vi.mock('@booster-ai/certificate-generator', async (original) => {
+  const real = await original<typeof import('@booster-ai/certificate-generator')>();
+  return {
+    // La versión desde la URI del PDF y la presentación de ADR-091 son las reales.
+    versionDePdf: real.versionDePdf,
+    presentacionNivel: real.presentacionNivel,
+    descargarSidecar: vi.fn(),
+  };
+});
 
 const { descargarSidecar } = await import('@booster-ai/certificate-generator');
 
@@ -38,6 +42,7 @@ function makeDb(queues: DbQueues = {}) {
       where: vi.fn(() => chain),
       innerJoin: vi.fn(() => chain),
       leftJoin: vi.fn(() => chain),
+      groupBy: vi.fn(() => chain),
       orderBy: vi.fn(() => chain),
       limit: vi.fn(() => chain),
       offset: vi.fn(async () => selects.shift() ?? []),
@@ -163,6 +168,7 @@ describe('GET /certificates (lista)', () => {
         coverage_pct: string | null;
         certification_level: string | null;
         linea_metodo: string | null;
+        presentacion: string;
       }>;
       pagination: { limit: number; offset: number };
     };
@@ -175,6 +181,50 @@ describe('GET /certificates (lista)', () => {
     expect(body.certificates[0]?.certification_level).toBe('secundario_modeled');
     expect(body.certificates[0]?.linea_metodo).toMatch(/GPS del celular del conductor/);
     expect(body.certificates[0]?.linea_metodo).not.toMatch(/verificable/i);
+    // ADR-091 — el GPS del móvil conserva «Estimado».
+    expect(body.certificates[0]?.presentacion).toBe('estimado');
+  });
+
+  it('distancia medida con Teltonika sin CAN → presentacion medido_teltonika (ADR-091)', async () => {
+    const db = makeDb({
+      selects: [
+        [
+          {
+            tripId: 't3',
+            trackingCode: 'BOO-C',
+            originAddress: 'Stgo',
+            destinationAddress: 'Vpo',
+            cargoType: 'carga_seca',
+            kgco2eEstimated: '40.0',
+            kgco2eActual: '39.0',
+            distanceKmEstimated: '120.0',
+            distanceKmActual: '121.0',
+            precisionMethod: 'modelado',
+            glecVersion: 'v3.0',
+            routeDataSource: 'teltonika_gps',
+            coveragePct: '92.00',
+            certificationLevel: 'secundario_modeled',
+            certificateSha256: 'sha-3',
+            certificateKmsKeyVersion: '1',
+            certificateIssuedAt: new Date('2026-05-09T12:00:00Z'),
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request('/certificates', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    const body = (await res.json()) as {
+      certificates: Array<{ presentacion: string }>;
+      resumen: { por_presentacion: Record<string, unknown> };
+    };
+    expect(body.certificates[0]?.presentacion).toBe('medido_teltonika');
+    expect(Object.keys(body.resumen.por_presentacion)).toEqual([
+      'primario',
+      'medido_teltonika',
+      'estimado',
+    ]);
   });
 
   it('cert legacy sin fuente de ruta → linea_metodo null (no se inventa método)', async () => {
@@ -207,8 +257,11 @@ describe('GET /certificates (lista)', () => {
     const res = await app.request('/certificates', {
       headers: { 'x-test-userctx': VALID_CTX },
     });
-    const body = (await res.json()) as { certificates: Array<{ linea_metodo: string | null }> };
+    const body = (await res.json()) as {
+      certificates: Array<{ linea_metodo: string | null; presentacion: string }>;
+    };
     expect(body.certificates[0]?.linea_metodo).toBeNull();
+    expect(body.certificates[0]?.presentacion).toBe('estimado');
   });
 
   it('limit fuera de rango se clamps a [1, 100]', async () => {

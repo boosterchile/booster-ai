@@ -27,6 +27,8 @@ import {
   allAccentPresets,
 } from '@booster-ai/ui-tokens';
 import { useState } from 'react';
+import { ListaCertificados } from '../components/certificados/ListaCertificados.js';
+import { CifraHuella, TotalHuella } from '../components/huella/CifraHuella.js';
 import { useAccentPreset } from '../hooks/use-accent-preset.js';
 
 /**
@@ -255,6 +257,7 @@ function PrimitivasDemo() {
         <MeasurementSeal kind="estimated" />
         <FootprintSeal presentacion="medido_teltonika" />
       </div>
+      <HuellaDeMuestra />
       <Card className="max-w-sm">
         <CardHeader>Carga #1234</CardHeader>
         <CardBody>Santiago → Valparaíso · 12 t</CardBody>
@@ -330,5 +333,66 @@ function PrimitivasDemo() {
         )}
       </Modal>
     </div>
+  );
+}
+
+/** Cifras de huella con su sello (`.specs/sello-huella-toda-la-web`), con datos de muestra. */
+function HuellaDeMuestra() {
+  return (
+    <section aria-label="Cifras de huella" className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-4 text-sm">
+        <CifraHuella valor={375.2} presentacion="primario" />
+        <CifraHuella valor={820.5} presentacion="medido_teltonika" />
+        <CifraHuella valor={62.4} tipo="intensidad" presentacion="estimado" />
+      </div>
+      <div className="max-w-xs rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+        <p className="font-medium text-neutral-500 text-xs uppercase tracking-wider">
+          Total certificado
+        </p>
+        <TotalHuella
+          porPresentacion={{ primario: 375.2, medido_teltonika: 820.5, estimado: 112.3 }}
+          className="mt-2 font-semibold text-base text-neutral-900"
+        />
+      </div>
+      <ListaCertificados
+        descargando={null}
+        onDescargar={() => undefined}
+        certificados={[
+          {
+            trip_id: 'muestra-1',
+            tracking_code: 'BOO-PRIM01',
+            origin_address: 'Av. Origen 100, Santiago',
+            destination_address: 'Av. Destino 200, Valparaíso',
+            cargo_type: 'carga_seca',
+            kg_co2e: '375.200',
+            presentacion: 'primario',
+            certificate_issued_at: '2026-11-21T12:00:00.000Z',
+            ahorro_co2e_vs_sin_matching_kgco2e: '42.100',
+          },
+          {
+            trip_id: 'muestra-2',
+            tracking_code: 'BOO-TELT02',
+            origin_address: 'Av. Origen 100, Santiago',
+            destination_address: 'Av. Destino 200, Valparaíso',
+            cargo_type: 'refrigerada',
+            kg_co2e: '820.500',
+            presentacion: 'medido_teltonika',
+            linea_metodo:
+              'Distancia medida por GPS del vehículo (cobertura 92 %) · Consumo modelado según GLEC v3.0',
+            certificate_issued_at: '2026-11-21T12:00:00.000Z',
+          },
+          {
+            trip_id: 'muestra-3',
+            tracking_code: 'BOO-ESTI03',
+            origin_address: 'Av. Origen 100, Santiago',
+            destination_address: 'Av. Destino 200, Valparaíso',
+            cargo_type: 'carga_seca',
+            kg_co2e: '112.300',
+            presentacion: 'estimado',
+            certificate_issued_at: '2026-11-21T12:00:00.000Z',
+          },
+        ]}
+      />
+    </section>
   );
 }

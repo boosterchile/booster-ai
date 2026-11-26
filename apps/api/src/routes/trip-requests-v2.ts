@@ -87,6 +87,7 @@ import {
   reenviarTrackingLinkADestinatario,
 } from '../services/notify-tracking-link.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
+import { presentacionDesdeMetricas } from '../services/presentacion-huella.js';
 import { resolverEnlaceMapa } from '../services/resolver-enlace-mapa.js';
 import { contextoDeRuta } from '../services/ruta-en-seguimiento.js';
 import {
@@ -184,6 +185,8 @@ export function serializeTripMetrics(
     coverage_pct: m.coveragePct,
     certification_level: m.certificationLevel,
     linea_metodo: lineaMetodoDesdeMetricas(m),
+    // ADR-091 — el sello de la cifra en la web (`.specs/sello-huella-toda-la-web`).
+    presentacion: presentacionDesdeMetricas(m),
     certificate_pdf_url: m.certificatePdfUrl,
     certificate_sha256: m.certificateSha256,
     certificate_kms_key_version: m.certificateKmsKeyVersion,

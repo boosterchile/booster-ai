@@ -9,13 +9,13 @@
 import { Button } from '@booster-ai/ui-components';
 import { Download, Leaf, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { formatoEmisiones } from '../../lib/formato-emisiones.js';
 import {
   type MotivoCoberturaCero,
   type ResultadoAsignacion,
   descargarCertificadoDeAsignacion,
   getResultadoAsignacion,
 } from '../../services/assignment-resultado.js';
+import { CifraHuella } from '../huella/CifraHuella.js';
 
 const REINTENTO_MS = 3_000;
 const MAX_REINTENTOS = 20;
@@ -195,10 +195,8 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
   }
 
   const m = resultado.metrics;
-  const medida = m?.carbon_emissions_kgco2e_actual != null;
-  const huella = formatoEmisiones(
-    medida ? m.carbon_emissions_kgco2e_actual : (m?.carbon_emissions_kgco2e_estimated ?? null),
-  );
+  const kgHuella =
+    m?.carbon_emissions_kgco2e_actual ?? m?.carbon_emissions_kgco2e_estimated ?? null;
   const km = numero(m?.distance_km_actual ?? m?.distance_km_estimated ?? null, 1);
   const motivoRaw = resultado.cobertura?.motivo;
   const motivo = motivoRaw && esMotivo(motivoRaw) ? motivoRaw : null;
@@ -217,14 +215,15 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
       {m ? (
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-neutral-800">
           <div className="col-span-2">
-            <dt className="text-neutral-500 text-xs">
-              {medida
-                ? 'Huella medida'
-                : motivo
-                  ? 'Huella estimada'
-                  : 'Huella estimada (cobertura insuficiente para medir)'}
-            </dt>
-            <dd className="font-semibold text-lg">{huella}</dd>
+            {/* El sello dice qué se midió (ADR-091); el rótulo no lo repite. */}
+            <dt className="text-neutral-500 text-xs">Huella del viaje</dt>
+            <dd className="font-semibold text-lg">
+              <CifraHuella
+                valor={kgHuella}
+                presentacion={m.presentacion ?? 'estimado'}
+                data-testid="resultado-huella"
+              />
+            </dd>
           </div>
           <div>
             <dt className="text-neutral-500 text-xs">
