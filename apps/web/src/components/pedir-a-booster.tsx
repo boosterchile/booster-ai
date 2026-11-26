@@ -17,10 +17,13 @@ import { api } from '../lib/api-client.js';
 export function PedirABooster({
   vehiculoId,
   tipo,
+  yaPedido = false,
   className,
 }: {
   vehiculoId: string;
   tipo: TipoSolicitudBooster;
+  /** Ya hay una solicitud abierta (el panel lo dice al recargar). */
+  yaPedido?: boolean;
   className?: string;
 }) {
   const pedir = useMutation({
@@ -34,7 +37,7 @@ export function PedirABooster({
     },
   });
 
-  if (pedir.isSuccess) {
+  if (yaPedido || pedir.isSuccess) {
     return (
       <output className={cn('inline-flex items-center gap-1 text-neutral-700 text-sm', className)}>
         <Check className="h-4 w-4 text-primary-700" aria-hidden />
