@@ -125,6 +125,7 @@ export async function crearViajePropio(opts: {
   let clienteExternoNombre: string | null = null;
   let clienteExternoRut: string | null = null;
   let clienteExternoContacto: string | null = null;
+  let clienteExternoCorreo: string | null = null;
 
   if (body.cliente.tipo === 'generador') {
     const genRows = await opts.db
@@ -151,6 +152,7 @@ export async function crearViajePropio(opts: {
     clienteExternoNombre = body.cliente.nombre;
     clienteExternoRut = body.cliente.rut ?? null;
     clienteExternoContacto = body.cliente.contacto ?? null;
+    clienteExternoCorreo = body.cliente.correo ?? null;
   }
 
   const now = new Date();
@@ -176,6 +178,7 @@ export async function crearViajePropio(opts: {
         clienteExternoNombre,
         clienteExternoRut,
         clienteExternoContacto,
+        clienteExternoCorreo,
         status: 'asignado',
         createdAt: now,
         updatedAt: now,

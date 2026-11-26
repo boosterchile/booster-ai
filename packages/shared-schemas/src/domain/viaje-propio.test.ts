@@ -38,4 +38,18 @@ describe('crearViajePropioBodySchema', () => {
     });
     expect(parsed.cliente).toEqual({ tipo: 'generador', empresa_id: id });
   });
+
+  it('acepta el correo del cliente externo y rechaza uno inválido (.specs/frente2-cierre D2)', () => {
+    const conCorreo = crearViajePropioBodySchema.parse({
+      ...base,
+      cliente: { tipo: 'externo', nombre: 'Cliente SPA', correo: ' compras@cliente.cl ' },
+    });
+    expect(conCorreo.cliente).toMatchObject({ correo: 'compras@cliente.cl' });
+    expect(() =>
+      crearViajePropioBodySchema.parse({
+        ...base,
+        cliente: { tipo: 'externo', nombre: 'Cliente SPA', correo: 'no-es-correo' },
+      }),
+    ).toThrow();
+  });
 });

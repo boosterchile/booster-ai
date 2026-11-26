@@ -784,6 +784,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       certConfig,
+      // `.specs/frente2-cierre` D2: «Enviar al cliente» del certificado de un viaje propio.
+      emailSender,
       // Cierre flexible documental (ADR-070, F4-4a) en el POD del carrier.
       documentClosePolicy,
       // ADR-038: Routes API via ADC. GOOGLE_CLOUD_PROJECT va como

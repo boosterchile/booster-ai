@@ -32,6 +32,7 @@ import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.j
 import { DriverAssignmentCard } from '../components/scoring/DriverAssignmentCard.js';
 import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
 import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
+import { CertificadoDelServicio } from '../components/servicio/CertificadoDelServicio.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
 import { flagsDe } from '../lib/capacidades.js';
@@ -284,6 +285,8 @@ function AsignacionDetallePage({
           Para trips en curso, el componente igual maneja el estado
           "no disponible" pero lo escondemos para no agregar ruido a
           la surface activa. */}
+          {/* `.specs/frente2-cierre` §3.3: la huella y el certificado del servicio entregado. */}
+          {isDelivered && <CertificadoDelServicio assignmentId={assignmentId} />}
           {isClosed && <BehaviorScoreCard assignmentId={assignmentId} />}
 
           {/* ADR-029 v1 / ADR-032 — Botón "Cobra hoy" para el carrier una

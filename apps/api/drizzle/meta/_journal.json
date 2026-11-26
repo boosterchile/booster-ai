@@ -631,6 +631,13 @@
       "when": 1781740800420,
       "tag": "0089_empresas_recibe_ofertas_carga",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1781827200420,
+      "tag": "0090_viajes_cliente_externo_correo",
+      "breakpoints": true
     }
   ]
 }

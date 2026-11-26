@@ -285,7 +285,7 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
         ) : (
           <output className="flex items-center gap-2 text-neutral-600">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            Certificado en proceso. Tu empresa lo recibe en Servicios.
+            Certificado en proceso. Tu empresa lo descarga en el detalle del servicio.
           </output>
         )}
         {descargaError && (

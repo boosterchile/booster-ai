@@ -77,6 +77,7 @@ import type { EmitirCertificadoConfig } from '../services/emitir-certificado-via
 import { estimarHuellaDeRuta } from '../services/estimar-huella-de-ruta.js';
 import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import { notifyCambioCarga } from '../services/notify-cambio-carga.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
@@ -93,6 +94,9 @@ import { serializeTripMetrics } from './trip-requests-v2.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
 const huellaMesConsultasCounter = getBusinessCounter('huella_mes_transportista_consultas_total');
+const certificadoEnviadoClienteCounter = getBusinessCounter('certificado_enviado_cliente_total');
+/** Vigencia del enlace firmado al PDF que recibe el cliente: 7 días, el máximo de GCS V4. */
+const ENLACE_CLIENTE_SEGUNDOS = 7 * 24 * 3600;
 /**
  * T7 (medicion-huella-segmento): recogidas confirmadas por el endpoint. Atributos
  * `via` (conductor|carrier), `picked_up_at_source` (cliente = cruce del geofence
@@ -130,6 +134,11 @@ export function createAssignmentsRoutes(opts: {
   db: Db;
   logger: Logger;
   certConfig?: Partial<EmitirCertificadoConfig>;
+  /**
+   * Correo saliente (`.specs/frente2-cierre` D2): «Enviar al cliente» del
+   * certificado de un viaje propio. Ausente: el envío responde 503.
+   */
+  emailSender?: EmailSender;
   /**
    * Política de cierre flexible documental (ADR-070, F4-4a). Si se provee y el
    * flag está ON, el cierre POD del carrier exige ≥1 documento subido (según
@@ -917,6 +926,8 @@ export function createAssignmentsRoutes(opts: {
         cargoWeightKg: trips.cargoWeightKg,
         generadorEmpresaId: trips.generadorCargaEmpresaId,
         origenAlta: trips.origenAlta,
+        clienteExternoNombre: trips.clienteExternoNombre,
+        clienteExternoCorreo: trips.clienteExternoCorreo,
         metricsTripId: tripMetrics.tripId,
         distanceKmEstimated: tripMetrics.distanceKmEstimated,
         distanceKmActual: tripMetrics.distanceKmActual,
@@ -1030,7 +1041,126 @@ export function createAssignmentsRoutes(opts: {
         : null,
       cobertura,
       certificate: certificado,
+      viaje_propio: await viajePropioDe(row),
     });
+  });
+
+  /**
+   * Viaje propio (`.specs/frente2-cierre` §3.3): a quién es y la huella del mes
+   * para ese cliente, por presentación. Null en un servicio del marketplace.
+   */
+  async function viajePropioDe(row: {
+    origenAlta: string;
+    empresaId: string;
+    generadorEmpresaId: string | null;
+    clienteExternoNombre: string | null;
+    clienteExternoCorreo: string | null;
+  }) {
+    if (row.origenAlta !== 'propio_transportista') {
+      return null;
+    }
+    let clienteNombre = row.clienteExternoNombre;
+    if (!clienteNombre && row.generadorEmpresaId) {
+      const [gen] = await opts.db
+        .select({ legalName: empresasTable.legalName })
+        .from(empresasTable)
+        .where(eq(empresasTable.id, row.generadorEmpresaId))
+        .limit(1);
+      clienteNombre = gen?.legalName ?? null;
+    }
+    const totalMes = await resumenCertificados({
+      db: opts.db,
+      transportistaEmpresaId: row.empresaId,
+      mesDe: new Date(),
+      ...(row.generadorEmpresaId
+        ? { empresaId: row.generadorEmpresaId }
+        : { clienteExternoNombre: row.clienteExternoNombre ?? undefined }),
+    });
+    return {
+      cliente_nombre: clienteNombre,
+      cliente_correo: row.generadorEmpresaId ? null : row.clienteExternoCorreo,
+      total_mes_cliente: {
+        certificados: totalMes.certificados,
+        por_presentacion: totalMes.por_presentacion,
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // POST /assignments/:id/certificate/enviar-cliente — el gestor de la
+  // transportista envía por correo el certificado de un viaje propio a su
+  // cliente externo (`.specs/frente2-cierre` D2). El correo lleva un enlace
+  // firmado al PDF (7 días, el máximo de GCS) y el de verificación pública:
+  // el proveedor no admite adjuntos.
+  // ---------------------------------------------------------------------
+  app.post('/:id/certificate/enviar-cliente', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    if (!opts.certConfig?.certificatesBucket || !opts.emailSender) {
+      return c.json({ error: 'envio_no_disponible', code: 'envio_no_disponible' }, 503);
+    }
+    const row = await cargarResultado(c.req.param('id'));
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    const ctxEnvio = ctxDeUserContext(auth.userContext);
+    if (row.empresaId !== auth.activeMembership.empresa.id || !ctxEnvio || !esGestor(ctxEnvio)) {
+      return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
+    }
+    if (row.origenAlta !== 'propio_transportista' || row.generadorEmpresaId) {
+      return c.json({ error: 'no_es_cliente_externo', code: 'no_es_cliente_externo' }, 409);
+    }
+    if (!row.clienteExternoCorreo) {
+      return c.json({ error: 'sin_correo_cliente', code: 'sin_correo_cliente' }, 409);
+    }
+    if (!row.certificateIssuedAt || !row.certificatePdfUrl) {
+      return c.json({ error: 'certificate_not_issued', code: 'certificate_not_issued' }, 404);
+    }
+    const bucket = opts.certConfig.certificatesBucket;
+    const sender = opts.emailSender;
+    const correo = row.clienteExternoCorreo;
+    const verifyBase = opts.certConfig.verifyBaseUrl ?? 'https://api.boosterchile.com';
+    const resultado = await withBusinessSpan(
+      { name: 'certificado.enviar_cliente', attributes: { 'booster.trip_id': row.tripId } },
+      async (span) => {
+        const enlacePdf = await generarSignedUrlPdf({
+          bucket,
+          empresaId: row.empresaId,
+          trackingCode: row.trackingCode,
+          version: versionDePdf(row.certificatePdfUrl ?? ''),
+          ttlSeconds: ENLACE_CLIENTE_SEGUNDOS,
+        });
+        const verifyUrl = `${verifyBase}/certificates/${row.trackingCode}/verify`;
+        const nombre = row.clienteExternoNombre ?? 'cliente';
+        const envio = await sender.send({
+          to: correo,
+          subject: `Certificado de huella de carbono del viaje ${row.trackingCode}`,
+          text: [
+            `Hola, ${nombre}:`,
+            '',
+            `Te enviamos el certificado de huella de carbono del viaje ${row.trackingCode}.`,
+            '',
+            `Descárgalo aquí (el enlace vence en 7 días): ${enlacePdf}`,
+            `Verifica su firma aquí: ${verifyUrl}`,
+            '',
+            'Booster',
+          ].join('\n'),
+        });
+        setResultAttributes(span, { 'booster.certificado.enviado': envio.enviado });
+        return envio;
+      },
+    );
+    certificadoEnviadoClienteCounter.add(1, { enviado: String(resultado.enviado) });
+    if (!resultado.enviado) {
+      opts.logger.error(
+        { tripId: row.tripId, motivo: resultado.motivo },
+        'certificado no enviado al cliente externo',
+      );
+      return c.json({ error: 'envio_fallido', code: 'envio_fallido' }, 502);
+    }
+    return c.json({ enviado: true, correo });
   });
 
   app.get('/:id/certificate/download', async (c) => {
