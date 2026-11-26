@@ -135,6 +135,9 @@ describe('integration: fuente del observatorio (ADR-012 Capa 2)', () => {
           carbonEmissionsKgco2eEstimated: o.metricas.estimadas,
           carbonEmissionsKgco2eActual: o.metricas.reales,
           ahorroCo2eVsSinMatchingKgco2e: o.metricas.evitado,
+          certificationLevel: 'secundario_modeled',
+          routeDataSource: 'teltonika_gps',
+          coveragePct: '92.00',
         });
       }
       return t;
@@ -170,6 +173,10 @@ describe('integration: fuente del observatorio (ADR-012 Capa 2)', () => {
       kgco2eReales: '35.120',
       kgco2eEstimadas: '40.000',
       kgco2eEvitado: '12.300',
+      // ADR-091 (`.specs/observatorio-por-presentacion`): lo que necesita la presentación.
+      certificationLevel: 'secundario_modeled',
+      routeDataSource: 'teltonika_gps',
+      coveragePct: '92.00',
     });
     expect(fila?.recogidoEn).toEqual(new Date('2026-10-07T13:30:00Z'));
     expect(fila?.entregadoEn).toEqual(new Date('2026-10-07T16:00:00Z'));

@@ -752,6 +752,7 @@ export function createServer(opts: CreateServerOptions): Hono {
                 observatorio: {
                   datasetId: observatorio.datasetId,
                   cargador: observatorio.cargador,
+                  conPresentacion: config.OBSERVATORIO_PRESENTACION_ACTIVADA,
                 },
               }
             : {}),

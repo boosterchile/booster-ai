@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-26 · America/Santiago (mes en curso en el Inicio del generador en prod, #1111, `969a7e4d`; frente 2 del rediseño en prod desde `5bcf36d2`; ver «Rediseño, frente 2»).
 **Prod**: `969a7e4d` (Release on request [45764951190](https://github.com/boosterchile/booster-ai/actions/runs/45764951190) SUCCESS, terminó el 2026-11-26 a las 06:45Z, aprobado por el PO; lleva #1111; los 8 servicios de Cloud Run en esa imagen al 100 % y en su última revisión, api `booster-ai-api-00503-kqn` y web `00445-hl4`; sin entradas ERROR ni 5xx en esas revisiones tras el deploy). Releases anteriores: `5bcf36d2` (frente 2, [45757996298](https://github.com/boosterchile/booster-ai/actions/runs/45757996298)), `14e885dc` (frente 8, [45741987240](https://github.com/boosterchile/booster-ai/actions/runs/45741987240)) y `251dfd1e` (fechas de documentos, [45726135080](https://github.com/boosterchile/booster-ai/actions/runs/45726135080)).  
-**`main`**: igual a prod (`969a7e4d`) salvo documentación. Pendiente de `apply`: `infrastructure/observatorio.tf` (#1096, vistas del observatorio con umbral 1).
+**`main`**: igual a prod (`969a7e4d`) salvo documentación. Pendiente de `apply` (PO): `infrastructure/observatorio.tf` (#1096, vistas del observatorio con umbral 1; y la columna `presentacion` con la vista de emisiones por presentación, `.specs/observatorio-por-presentacion/`, que enciende `OBSERVATORIO_PRESENTACION_ACTIVADA` en el mismo apply).
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
 ## Rediseño, frente 2: el sello de huella en toda la web
@@ -11,7 +11,7 @@
 
 - Pruebas: el guardián `sin-cifras-de-emisiones-sueltas.test.ts` falla si otro archivo llama al formateador; `e2e-conductor/sello-huella.spec.ts` recorre Certificados y el Inicio del panel y falla con una cifra visible sin sello (en el CI: 7 y 3 cifras, las tres presentaciones, ninguna sin sello).
 - Certificados en el teléfono: tarjetas (`ListaCertificados`); referencias visuales a 1.280 y 390 px aprobadas por el PO. `/apariencia` muestra cifras, total y lista de muestra.
-- «Estimado» con motivo donde el API no clasifica: la oferta y la emisión previa al viaje (proyecciones) y el observatorio (la vista de BigQuery no guarda la presentación). Separar el observatorio exige cambiar la vista y un `apply` del PO.
+- «Estimado» con motivo donde el API no clasifica: la oferta y la emisión previa al viaje (proyecciones). El observatorio ya separa por presentación en el código (`.specs/observatorio-por-presentacion/`); hasta el `apply` del PO sus filas siguen «Estimado».
 - #1111 (mes en curso en «Gasto …» y «Huella …» del Inicio del generador; antes decía «octubre» fijo) en prod desde el 2026-11-26 (`969a7e4d`, run [45764951190](https://github.com/boosterchile/booster-ai/actions/runs/45764951190), 06:45Z). Sin ver con sesión real: lo cubre el test de `generador.test.ts`.
 - Fuera: lo que depende de T10-05 y el resto del frente 2 (tabla de qué se midió, nivel con lo que falta, anticipar la huella, «Pedir a Booster», viaje propio certificado).
 

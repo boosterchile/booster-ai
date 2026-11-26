@@ -116,7 +116,12 @@ export function createAdminJobsRoutes(opts: {
    * T10-24 — export del observatorio a BigQuery. Ausente cuando
    * `BIGQUERY_OBSERVATORY_DATASET` no está configurado: el job responde skip.
    */
-  observatorio?: { datasetId: string; cargador: CargadorBigQuery };
+  observatorio?: {
+    datasetId: string;
+    cargador: CargadorBigQuery;
+    /** `OBSERVATORIO_PRESENTACION_ACTIVADA`; ausente = apagada. */
+    conPresentacion?: boolean;
+  };
   /**
    * T10-23 — eco-routing en tiempo real (mismas deps que `assignments`, para
    * compartir throttle). Ausente = flag `ECO_ROUTING_REALTIME_ACTIVATED` OFF.
@@ -141,6 +146,7 @@ export function createAdminJobsRoutes(opts: {
         datasetId: observatorio.datasetId,
         leerViajes: () => leerViajesEntregados(opts.db),
         cargador: observatorio.cargador,
+        conPresentacion: observatorio.conPresentacion === true,
       });
       setResultAttributes(span, { 'booster.observatorio.filas': res.filas });
       return res;

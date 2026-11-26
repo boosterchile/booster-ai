@@ -7,6 +7,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
 import { CifraHuella } from '../components/huella/CifraHuella.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { presentacionSchema } from '../lib/presentacion-huella.js';
 
 /**
  * /app/platform-admin/observatorio — observatorio urbano, vista interna
@@ -55,6 +56,10 @@ const respuestaSchema = z.object({
       clase_vehiculo: z.string(),
       kgco2e: z.number(),
       kgco2e_evitado: z.number(),
+      // ADR-091 (`.specs/observatorio-por-presentacion`). Ausente mientras la
+      // vista de BigQuery no la tenga; un valor fuera del contrato no rompe la
+      // lectura: la fila sale «Estimado».
+      presentacion: presentacionSchema.nullish().catch(null),
     }),
   ),
   od: z.array(
@@ -213,11 +218,18 @@ function Secciones({ datos }: { datos: Respuesta }) {
           f.mes,
           comuna(f.comuna),
           CLASE[f.clase_vehiculo] ?? f.clase_vehiculo,
-          // La vista de BigQuery suma todos los viajes sin guardar su
-          // presentación: el agregado no se puede separar por clase y lleva
-          // «Estimado» (ADR-091; `.specs/sello-huella-toda-la-web`).
-          <CifraHuella key="emitido" valor={f.kgco2e} presentacion="estimado" />,
-          <CifraHuella key="evitado" valor={f.kgco2e_evitado} presentacion="estimado" />,
+          // La vista agrupa por presentación (ADR-091,
+          // `.specs/observatorio-por-presentacion`); sin ella, «Estimado».
+          <CifraHuella
+            key="emitido"
+            valor={f.kgco2e}
+            presentacion={f.presentacion ?? 'estimado'}
+          />,
+          <CifraHuella
+            key="evitado"
+            valor={f.kgco2e_evitado}
+            presentacion={f.presentacion ?? 'estimado'}
+          />,
           n(f.viajes),
         ])}
       />

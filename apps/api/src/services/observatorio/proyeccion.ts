@@ -9,7 +9,10 @@
  *   aplican y el API lo vuelve a aplicar como defensa en profundidad.
  */
 
+import type { Presentacion } from '@booster-ai/certificate-generator';
 import { UMBRAL_ANONIMATO } from '@booster-ai/shared-schemas';
+import type { tripMetrics } from '../../db/schema.js';
+import { presentacionDesdeMetricas } from '../presentacion-huella.js';
 
 export const K_MIN_VEHICULOS = UMBRAL_ANONIMATO;
 
@@ -79,6 +82,10 @@ export interface ViajeEntregado {
   kgco2eReales: string | null;
   kgco2eEstimadas: string | null;
   kgco2eEvitado: string | null;
+  /** ADR-091: nulos cuando el viaje no tiene métricas (LEFT JOIN). */
+  certificationLevel: (typeof tripMetrics.$inferSelect)['certificationLevel'];
+  routeDataSource: (typeof tripMetrics.$inferSelect)['routeDataSource'];
+  coveragePct: string | null;
 }
 
 export interface FilaObservatorio {
@@ -97,6 +104,8 @@ export interface FilaObservatorio {
   distancia_km: number | null;
   kgco2e: number;
   kgco2e_evitado: number;
+  /** Presentación de la huella (ADR-091), la misma del certificado. */
+  presentacion: Presentacion;
 }
 
 const num = (v: string | null): number | null => (v === null ? null : Number(v));
@@ -121,6 +130,7 @@ export function proyectarViaje(v: ViajeEntregado): FilaObservatorio {
     distancia_km: num(v.distanciaKm),
     kgco2e: num(v.kgco2eReales) ?? num(v.kgco2eEstimadas) ?? 0,
     kgco2e_evitado: num(v.kgco2eEvitado) ?? 0,
+    presentacion: presentacionDesdeMetricas(v),
   };
 }
 
