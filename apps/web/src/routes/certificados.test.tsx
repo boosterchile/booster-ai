@@ -87,7 +87,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const RESUMEN = { certificados: 1, medidos: 0, estimados: 1, kgco2e: 375.2, ahorro_kgco2e: 0 };
+const RESUMEN = {
+  certificados: 2,
+  medidos: 1,
+  estimados: 1,
+  kgco2e: 425.2,
+  ahorro_kgco2e: 0,
+  por_presentacion: {
+    primario: { certificados: 1, kgco2e: 375.2, ahorro_kgco2e: 0 },
+    medido_teltonika: { certificados: 0, kgco2e: 0, ahorro_kgco2e: 0 },
+    estimado: { certificados: 1, kgco2e: 50, ahorro_kgco2e: 0 },
+  },
+};
 
 describe('CertificadosRoute', () => {
   it('no onboarded → no renderiza Layout', () => {
@@ -199,5 +210,68 @@ describe('CertificadosRoute', () => {
     const btn = await screen.findByRole('button', { name: /Descargar/ });
     fireEvent.click(btn);
     await waitFor(() => expect(descargarMock).toHaveBeenCalled());
+  });
+
+  it('el total y cada fila llevan su sello; el total no mezcla clases (ADR-091)', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: RESUMEN,
+      certificates: [
+        {
+          trip_id: 't1',
+          tracking_code: 'BST-001',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '375.20',
+          presentacion: 'primario',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+        {
+          trip_id: 't2',
+          tracking_code: 'BST-002',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '50.00',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+      ],
+      pagination: { limit: 100, offset: 0, returned: 2 },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    const total = await screen.findByTestId('certificados-emisiones');
+    const lineas = total.querySelectorAll('[data-cifra-huella]');
+    expect([...lineas].map((l) => l.getAttribute('data-presentacion'))).toEqual([
+      'primario',
+      'estimado',
+    ]);
+    expect(screen.getByText('BST-001').closest('tr')).toHaveTextContent('375,2 kg CO₂eMedido');
+    // Sin presentación (respuesta vieja) la fila no afirma lo medido.
+    expect(screen.getByText('BST-002').closest('tr')).toHaveTextContent('50,0 kg CO₂eEstimado');
+  });
+
+  it('respuesta vieja sin por_presentacion: el total entero va «Estimado»', async () => {
+    const { por_presentacion: _sin, ...viejo } = RESUMEN;
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      resumen: viejo,
+      certificates: [
+        {
+          trip_id: 't1',
+          tracking_code: 'BST-001',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '50.00',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+      ],
+      pagination: { limit: 100, offset: 0, returned: 1 },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    const total = await screen.findByTestId('certificados-emisiones');
+    expect(total).toHaveTextContent('425,2 kg CO₂eEstimado');
+    expect(total).not.toHaveTextContent('Medido');
   });
 });

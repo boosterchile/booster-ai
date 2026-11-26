@@ -5,6 +5,7 @@
  */
 import { ApiError, api } from '../lib/api-client.js';
 import { CertDisabledError, CertNotIssuedError } from '../lib/cert-download.js';
+import type { PresentacionHuella } from '../lib/presentacion-huella.js';
 
 export interface MetricasResultado {
   distance_km_estimated: string | null;
@@ -17,6 +18,8 @@ export interface MetricasResultado {
   coverage_pct: string | null;
   certification_level: 'primario_verificable' | 'secundario_modeled' | 'secundario_default' | null;
   linea_metodo: string | null;
+  /** ADR-091, calculada por el API. Ausente en respuestas viejas: se muestra «Estimado». */
+  presentacion?: PresentacionHuella;
   certificate_pdf_url: string | null;
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;

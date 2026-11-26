@@ -9,7 +9,6 @@ const ZONAS = [
     region_iso: 'CL-VS',
     tipo: 'puerto',
     demo_viajes_30d: 1,
-    demo_co2e_kg: 1,
     demo_horario_pico: 'x',
   },
   {
@@ -19,7 +18,6 @@ const ZONAS = [
     region_iso: 'CL-VS',
     tipo: 'puerto',
     demo_viajes_30d: 1,
-    demo_co2e_kg: 1,
     demo_horario_pico: 'x',
   },
   {
@@ -29,7 +27,6 @@ const ZONAS = [
     region_iso: 'CL-RM',
     tipo: 'mercado_abastos',
     demo_viajes_30d: 1,
-    demo_co2e_kg: 1,
     demo_horario_pico: 'x',
   },
   {
@@ -39,7 +36,6 @@ const ZONAS = [
     region_iso: 'CL-TA',
     tipo: 'zona_franca',
     demo_viajes_30d: 1,
-    demo_co2e_kg: 1,
     demo_horario_pico: 'x',
   },
 ] as Parameters<typeof filterZonasByRegion>[0];
@@ -80,7 +76,6 @@ describe('sortZonasDestacadasPrimero', () => {
       region_iso: 'CL-VS',
       tipo: 'puerto',
       demo_viajes_30d: 1,
-      demo_co2e_kg: 1,
       demo_horario_pico: 'x',
     },
     {
@@ -90,7 +85,6 @@ describe('sortZonasDestacadasPrimero', () => {
       region_iso: 'CL-CO',
       tipo: 'puerto',
       demo_viajes_30d: 1,
-      demo_co2e_kg: 1,
       demo_horario_pico: 'x',
       destacado: true,
     },
@@ -101,7 +95,6 @@ describe('sortZonasDestacadasPrimero', () => {
       region_iso: 'CL-VS',
       tipo: 'puerto',
       demo_viajes_30d: 1,
-      demo_co2e_kg: 1,
       demo_horario_pico: 'x',
     },
   ] as Parameters<typeof sortZonasDestacadasPrimero>[0];

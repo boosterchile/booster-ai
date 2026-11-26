@@ -120,6 +120,7 @@ function certs(): CertificadoInicio[] {
     {
       trackingCode: 'BST-4701',
       kg: 2400,
+      presentacion: 'medido_teltonika',
       emitidoEn: '2026-10-17T15:00:00.000Z',
       origen: 'Santiago',
       destino: 'Rancagua',
@@ -127,6 +128,7 @@ function certs(): CertificadoInicio[] {
     {
       trackingCode: 'BST-4702',
       kg: 2400,
+      presentacion: 'estimado',
       emitidoEn: '2026-10-10T15:00:00.000Z',
       origen: 'Santiago',
       destino: 'Talca',

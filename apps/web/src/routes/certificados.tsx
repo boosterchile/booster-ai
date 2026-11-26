@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { CifraHuella, TotalHuella } from '../components/huella/CifraHuella.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
 import {
@@ -25,7 +26,12 @@ import {
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
-import { CO2E, formatoEmisiones, formatoFactorEmision } from '../lib/formato-emisiones.js';
+import { CO2E, formatoFactorEmision } from '../lib/formato-emisiones.js';
+import {
+  type PorPresentacion,
+  type PresentacionHuella,
+  campoPorPresentacion,
+} from '../lib/presentacion-huella.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -44,6 +50,8 @@ interface CertificadoListItem {
   certification_level: string | null;
   /** ADR-077 §4 — línea de método derivada por el API; se muestra tal cual. */
   linea_metodo: string | null;
+  /** ADR-091, calculada por el API (la misma función que el PDF). Ausente en respuestas viejas. */
+  presentacion?: PresentacionHuella;
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
   certificate_issued_at: string | null;
@@ -60,6 +68,8 @@ interface ResumenCertificados {
   estimados: number;
   kgco2e: number;
   ahorro_kgco2e: number;
+  /** Las mismas cifras separadas por presentación: ningún total mezcla clases. */
+  por_presentacion?: PorPresentacion;
 }
 
 interface CertificadosResponse {
@@ -172,13 +182,33 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
             />
             <SummaryCard
               title={`Total ${CO2E} certificado`}
-              value={formatoEmisiones(certsQ.data.resumen.kgco2e)}
+              value={
+                <TotalHuella
+                  porPresentacion={campoPorPresentacion(
+                    certsQ.data.resumen.por_presentacion,
+                    'kgco2e',
+                    certsQ.data.resumen.kgco2e,
+                  )}
+                  className="text-base"
+                />
+              }
               testId="certificados-emisiones"
               icon={<Leaf className="h-5 w-5 text-emerald-600" aria-hidden />}
             />
             <SummaryCard
               title={`Ahorro ${CO2E} vía matching`}
-              value={formatoEmisiones(certsQ.data.resumen.ahorro_kgco2e)}
+              value={
+                <TotalHuella
+                  porPresentacion={campoPorPresentacion(
+                    certsQ.data.resumen.por_presentacion,
+                    'ahorro_kgco2e',
+                    certsQ.data.resumen.ahorro_kgco2e,
+                  )}
+                  vacio="Sin ahorro registrado"
+                  className="text-base"
+                  data-testid="certificados-ahorro"
+                />
+              }
               icon={<Leaf className="h-5 w-5 text-emerald-700" aria-hidden />}
             />
             <SummaryCard
@@ -218,13 +248,20 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                     </Td>
                     <Td className="text-xs">{formatCargoType(c.cargo_type)}</Td>
                     <Td className="text-right font-semibold text-emerald-700">
-                      {formatoEmisiones(c.kg_co2e)}
+                      <CifraHuella
+                        valor={c.kg_co2e}
+                        presentacion={c.presentacion ?? 'estimado'}
+                        className="justify-end"
+                      />
                     </Td>
                     <Td className="text-right">
                       {c.ahorro_co2e_vs_sin_matching_kgco2e &&
                       Number(c.ahorro_co2e_vs_sin_matching_kgco2e) > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 text-xs">
-                          {formatoEmisiones(-Number(c.ahorro_co2e_vs_sin_matching_kgco2e))}
+                          <CifraHuella
+                            valor={-Number(c.ahorro_co2e_vs_sin_matching_kgco2e)}
+                            presentacion={c.presentacion ?? 'estimado'}
+                          />
                         </span>
                       ) : (
                         <span className="text-neutral-400 text-xs">—</span>
@@ -309,7 +346,9 @@ function MethodologyCard() {
           <div>consumo = 28 L/100km · diesel (camión pesado cargado)</div>
           <div>litros = 500 × 28 / 100 = 140 L</div>
           <div>
-            emisiones = 140 L × {formatoFactorEmision(2.68)} = {formatoEmisiones(140 * 2.68)}
+            {/* Consumo y distancia modelados: el ejemplo es «Estimado» (ADR-091). */}
+            emisiones = 140 L × {formatoFactorEmision(2.68)} ={' '}
+            <CifraHuella valor={140 * 2.68} presentacion="estimado" className="font-sans" />
           </div>
         </div>
       </div>
@@ -377,7 +416,7 @@ function SummaryCard({
   testId,
 }: {
   title: string;
-  value: string;
+  value: ReactNode;
   icon: ReactNode;
   testId?: string;
 }) {

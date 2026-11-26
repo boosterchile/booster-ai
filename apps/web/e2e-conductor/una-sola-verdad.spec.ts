@@ -182,6 +182,6 @@ test.describe('una sola verdad por dato', () => {
     expect(lecturas.camiones?.Flota).toBeGreaterThan(0);
     expect(lecturas['conductores con documentos pendientes']?.Flota).toBeGreaterThan(0);
     expect(lecturas.certificados?.Certificados).toBeGreaterThan(0);
-    expect(String(lecturas['emisiones certificadas']?.Certificados)).toMatch(/CO₂e$/);
+    expect(String(lecturas['emisiones certificadas']?.Certificados)).toMatch(/CO₂e/);
   });
 });

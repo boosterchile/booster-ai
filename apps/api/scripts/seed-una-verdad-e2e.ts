@@ -59,10 +59,30 @@ const CAMIONES = [
   { plate: 'UVEC03', estado: 'activo' },
   { plate: 'UVER04', estado: 'retirado' },
 ] as const;
+// Uno por presentación de ADR-091 (`.specs/sello-huella-toda-la-web`):
+// primario, distancia medida con Teltonika y estimado.
 const CERTIFICADOS = [
-  { codigo: 'UVE-000001', kg: '375.200', nivel: 'primario_verificable' },
-  { codigo: 'UVE-000002', kg: '820.500', nivel: 'secundario_modeled' },
-  { codigo: 'UVE-000003', kg: '112.300', nivel: 'secundario_default' },
+  {
+    codigo: 'UVE-000001',
+    kg: '375.200',
+    nivel: 'primario_verificable',
+    fuente: 'teltonika_gps',
+    cobertura: '98.00',
+  },
+  {
+    codigo: 'UVE-000002',
+    kg: '820.500',
+    nivel: 'secundario_modeled',
+    fuente: 'teltonika_gps',
+    cobertura: '92.00',
+  },
+  {
+    codigo: 'UVE-000003',
+    kg: '112.300',
+    nivel: 'secundario_default',
+    fuente: 'maps_directions',
+    cobertura: '0',
+  },
 ] as const;
 
 const modoSchema = z.enum(['completo', 'fleet', 'mixta']);
@@ -336,6 +356,8 @@ async function main(): Promise<void> {
         carbonEmissionsKgco2eEstimated: cert.kg,
         carbonEmissionsKgco2eActual: null,
         certificationLevel: cert.nivel,
+        routeDataSource: cert.fuente,
+        coveragePct: cert.cobertura,
         certificateIssuedAt: new Date('2026-11-21T12:00:00.000Z'),
         certificateSha256: `${'0'.repeat(54)}${cert.codigo.slice(-6)}0000`,
       };

@@ -37,6 +37,7 @@ import {
   type ModalidadCarga,
   SeccionComercial,
 } from '../components/comercial/SeccionComercial.js';
+import { CifraHuella } from '../components/huella/CifraHuella.js';
 import { type LugarDetallado, SelectorLugar } from '../components/lugar/SelectorLugar.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
@@ -58,9 +59,9 @@ import {
   etiquetaEvento,
   regionLabel,
 } from '../lib/etiquetas-carga.js';
-import { formatoEmisiones } from '../lib/formato-emisiones.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 import { logger } from '../lib/logger.js';
+import type { PresentacionHuella } from '../lib/presentacion-huella.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -181,6 +182,8 @@ interface TripMetrics {
   certification_level: string | null;
   /** ADR-077 §4 — línea de método derivada por el API; se muestra tal cual. */
   linea_metodo: string | null;
+  /** ADR-091, calculada por el API. Ausente en respuestas viejas: «Estimado». */
+  presentacion?: PresentacionHuella;
   certificate_pdf_url: string | null;
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
@@ -1814,11 +1817,21 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     ? `${tripQ.data.metrics.distance_km_actual} km`
                     : '—'}
                 </DataRow>
-                <DataRow label="Emisiones estimadas">
-                  {formatoEmisiones(tripQ.data.metrics.carbon_emissions_kgco2e_estimated)}
+                {/* La proyección previa al viaje es siempre «Estimado»; la del
+                    cierre lleva la presentación de ADR-091 que calcula el API. */}
+                <DataRow label="Emisiones estimadas antes del viaje">
+                  <CifraHuella
+                    valor={tripQ.data.metrics.carbon_emissions_kgco2e_estimated}
+                    presentacion="estimado"
+                    data-testid="carga-emisiones-estimadas"
+                  />
                 </DataRow>
-                <DataRow label="Emisiones reales">
-                  {formatoEmisiones(tripQ.data.metrics.carbon_emissions_kgco2e_actual)}
+                <DataRow label="Emisiones al cierre del viaje">
+                  <CifraHuella
+                    valor={tripQ.data.metrics.carbon_emissions_kgco2e_actual}
+                    presentacion={tripQ.data.metrics.presentacion ?? 'estimado'}
+                    data-testid="carga-emisiones-cierre"
+                  />
                 </DataRow>
                 {tripQ.data.metrics.consolidacion && (
                   <div className="sm:col-span-2">

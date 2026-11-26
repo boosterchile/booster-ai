@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api } from '../../lib/api-client.js';
 import { useEmpresaScope } from '../../lib/empresa-activa.js';
+import { presentacionSchema } from '../../lib/presentacion-huella.js';
 import type { Panel } from './generador.js';
 import { type CertificadoInicio, type ViajeInicio, kgDe } from './generador.js';
 
@@ -33,6 +34,7 @@ const certSchema = z
   .object({
     tracking_code: z.string(),
     kg_co2e: z.union([z.number(), z.string()]).nullish(),
+    presentacion: presentacionSchema.nullish(),
     certificate_issued_at: z.string().nullish(),
     origin_address: z.string().nullish(),
     destination_address: z.string().nullish(),
@@ -60,6 +62,8 @@ function aCert(row: z.infer<typeof certSchema>): CertificadoInicio {
   return {
     trackingCode: row.tracking_code,
     kg: kgDe(row.kg_co2e),
+    // Sin presentación (respuesta vieja) no se afirma lo medido.
+    presentacion: row.presentacion ?? 'estimado',
     emitidoEn: row.certificate_issued_at ?? null,
     origen: row.origin_address ?? '',
     destino: row.destination_address ?? '',

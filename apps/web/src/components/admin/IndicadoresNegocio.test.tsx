@@ -17,7 +17,18 @@ function respuesta(empresaId: string | null, extra: Record<string, unknown> = {}
       cargas: 12,
       camiones: 5,
       camiones_con_huella_medida: 1,
-      certificados: { certificados: 3, medidos: 1, estimados: 2, kgco2e: 1254.5, ahorro_kgco2e: 0 },
+      certificados: {
+        certificados: 3,
+        medidos: 1,
+        estimados: 2,
+        kgco2e: 1254.5,
+        ahorro_kgco2e: 0,
+        por_presentacion: {
+          primario: { certificados: 1, kgco2e: 375.2, ahorro_kgco2e: 0 },
+          medido_teltonika: { certificados: 1, kgco2e: 820.5, ahorro_kgco2e: 0 },
+          estimado: { certificados: 1, kgco2e: 58.8, ahorro_kgco2e: 0 },
+        },
+      },
       documentos_pendientes: 6,
       ...extra,
     },
@@ -29,7 +40,7 @@ describe('IndicadoresNegocio', () => {
     get.mockReset();
   });
 
-  it('muestra los indicadores de la plataforma con el formateador de emisiones', async () => {
+  it('muestra los indicadores de la plataforma con las emisiones separadas por sello', async () => {
     get.mockResolvedValue(respuesta(null));
     render(<IndicadoresNegocio />);
     expect(await screen.findByTestId('indicador-documentos-pendientes')).toHaveTextContent('6');
@@ -38,9 +49,19 @@ describe('IndicadoresNegocio', () => {
     expect(screen.getByTestId('indicador-camiones')).toHaveTextContent('5');
     expect(screen.getByTestId('indicador-camiones-nota')).toHaveTextContent('1 con huella medida');
     expect(screen.getByTestId('indicador-certificados-nota')).toHaveTextContent(
-      '1 medidos · 2 estimados',
+      '1 medidos · 1 con distancia medida con Teltonika · 1 estimados',
     );
-    expect(screen.getByTestId('indicador-emisiones')).toHaveTextContent('1,25 t CO₂e');
+    const lineas = screen
+      .getByTestId('indicador-emisiones')
+      .querySelectorAll('[data-cifra-huella]');
+    expect([...lineas].map((l) => l.getAttribute('data-presentacion'))).toEqual([
+      'primario',
+      'medido_teltonika',
+      'estimado',
+    ]);
+    expect(lineas[0]).toHaveTextContent('375,2 kg CO₂eMedido');
+    expect(lineas[1]).toHaveTextContent('820,5 kg CO₂eDistancia medida con Teltonika');
+    expect(lineas[2]).toHaveTextContent('58,8 kg CO₂eEstimado');
   });
 
   it('al elegir una empresa pide sus indicadores y deja de contar empresas', async () => {

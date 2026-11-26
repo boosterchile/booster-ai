@@ -34,6 +34,19 @@ describe('serializeTripMetrics — línea de método en el detalle del viaje', (
     expect(m.carbon_emissions_kgco2e_actual).toBe('39.120');
   });
 
+  it('expone la presentación de ADR-091 (la misma función que el certificado)', () => {
+    expect(serializeTripMetrics(base).presentacion).toBe('estimado');
+    expect(serializeTripMetrics({ ...base, routeDataSource: 'teltonika_gps' }).presentacion).toBe(
+      'medido_teltonika',
+    );
+    expect(
+      serializeTripMetrics({ ...base, certificationLevel: 'primario_verificable' }).presentacion,
+    ).toBe('primario');
+    expect(serializeTripMetrics({ ...base, certificationLevel: null }).presentacion).toBe(
+      'estimado',
+    );
+  });
+
   it('sin fuente de ruta o sin cobertura (métricas legacy) → linea_metodo null', () => {
     expect(serializeTripMetrics({ ...base, routeDataSource: null }).linea_metodo).toBeNull();
     expect(serializeTripMetrics({ ...base, coveragePct: null }).linea_metodo).toBeNull();

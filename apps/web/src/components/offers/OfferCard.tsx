@@ -10,7 +10,7 @@ import {
   useRejectOfferMutation,
 } from '../../hooks/use-offers.js';
 import { ApiError } from '../../lib/api-client.js';
-import { formatoEmisiones, formatoIntensidad } from '../../lib/formato-emisiones.js';
+import { CifraHuella } from '../huella/CifraHuella.js';
 import { EcoRouteMapPreview } from './EcoRouteMapPreview.js';
 
 const CARGO_LABELS: Record<string, string> = {
@@ -337,12 +337,19 @@ function EcoPreviewBlock(props: {
         <div>
           <dt className="text-neutral-600">Emisiones (WTW)</dt>
           <dd className="font-semibold text-success-700">
-            {formatoEmisiones(p.emisiones_kgco2e_wtw)}
+            {/* Proyección previa al viaje: siempre «Estimado» (ADR-091). */}
+            <CifraHuella valor={p.emisiones_kgco2e_wtw} presentacion="estimado" />
           </dd>
         </div>
         <div>
           <dt className="text-neutral-600">Intensidad</dt>
-          <dd className="text-neutral-900">{formatoIntensidad(p.intensidad_gco2e_por_tonkm)}</dd>
+          <dd className="text-neutral-900">
+            <CifraHuella
+              valor={p.intensidad_gco2e_por_tonkm}
+              tipo="intensidad"
+              presentacion="estimado"
+            />
+          </dd>
         </div>
         {p.fuel_liters_estimated != null && (
           <div>

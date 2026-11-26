@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
 import { RuleBadge } from './piezas.js';
 
 export interface LadoPlata {
   label: string;
-  valor: string | null;
+  valor: ReactNode | null;
   detalle: string | null;
 }
 
