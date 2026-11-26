@@ -1,7 +1,7 @@
-import { ZONA_INICIO } from '../inicio-transportista/modelo.js';
 import type { NegocioHoy, OfertaNegocio, RetiroNegocio } from '../inicio-transportista/negocio.js';
 import type { AgendaItem } from './agenda.js';
 import type { AvisoItem } from './avisos.js';
+import { mesEnCurso } from './cuando.js';
 import type { GeneradorHoy, Panel } from './generador.js';
 import type { LadoPlata } from './money-pair.js';
 
@@ -74,10 +74,6 @@ function ofertasSinMonto(panel: Panel<OfertaNegocio>, verMontos: boolean): Panel
     return panel;
   }
   return { estado: 'listo', valor: { ...panel.valor, precio: null } };
-}
-
-function mesEnCurso(ahora: Date): string {
-  return new Intl.DateTimeFormat('es-CL', { month: 'long', timeZone: ZONA_INICIO }).format(ahora);
 }
 
 /**

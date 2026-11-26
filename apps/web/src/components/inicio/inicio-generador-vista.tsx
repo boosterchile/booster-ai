@@ -197,11 +197,11 @@ function PlataCuerpo({
     <MoneyPair
       regla={!INICIO_GASTO_GENERADOR_ACTIVO || !negocio.verMontos}
       izquierda={{
-        label: 'Gasto octubre',
+        label: `Gasto ${negocio.mes}`,
         valor: negocio.gastoActivo ? null : null,
         detalle: negocio.gastoActivo ? null : null,
       }}
-      derecha={{ label: 'Huella octubre', valor: valorHuella, detalle: detalleHuella }}
+      derecha={{ label: `Huella ${negocio.mes}`, valor: valorHuella, detalle: detalleHuella }}
     />
   );
 }

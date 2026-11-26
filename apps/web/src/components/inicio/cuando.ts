@@ -68,3 +68,8 @@ export function dentroDeDias(iso: string, ahora: Date, dias: number): boolean {
   const delta = ahora.getTime() - instante.getTime();
   return delta >= 0 && delta <= dias * 24 * 60 * 60_000;
 }
+
+/** Nombre del mes en curso en la zona de Santiago («noviembre»). */
+export function mesEnCurso(ahora: Date): string {
+  return new Intl.DateTimeFormat('es-CL', { month: 'long', timeZone: ZONA_INICIO }).format(ahora);
+}
