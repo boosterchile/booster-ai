@@ -59,7 +59,7 @@ export function Layout({
       {/* pt-safe: en la PWA standalone de iOS la página corre bajo la barra de
           estado; la cabecera reserva ese inset. */}
       <header className="sticky top-0 z-30 border-neutral-200 border-b bg-neutral-0 pt-safe">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4 sm:px-6">
           <Link to="/app" className="flex shrink-0 items-center gap-2">
             <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
             <span data-testid="marca-producto" className="font-semibold text-lg text-neutral-900">
