@@ -5,6 +5,10 @@
 **`main`**: igual a prod (`33b0a786`) salvo documentación. Terraform sin `apply` pendiente: el PO aplicó `infrastructure/` el 2026-11-26 (4 altas, 2 cambios, 4 bajas: columna `presentacion` en `observatory.viajes`, las 4 vistas `urban_flow_metrics_*` recreadas con umbral 1 de #1096 y emisiones por presentación de #1115, y `OBSERVATORIO_PRESENTACION_ACTIVADA=true` en el api, revisión `booster-ai-api-00505-44z` al 100 %); plan previo desde un worktree limpio de `9d47676c`.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
+## Registro de cargas de combustible (entrega 2, 2026-11-27)
+
+Spec `.specs/registro-cargas-combustible/` (D4 del PO). Migración 0093 `cargas_combustible` (expand-only), `GET/POST /vehiculos/:id/cargas-combustible` y `DELETE …/:cargaId` (anula, no borra), sección «Cargas de combustible» en la ficha del vehículo para quien gestiona la flota. Probado en local con api + web + emulador. Falta la entrega 3: usar las cargas en `reconcilePeriod` (Booster Fleet y panel).
+
 ## Rediseño, frente 2: cierre (lo medido, viaje propio certificado, «Pedir a Booster»)
 
 **En prod desde el 2026-11-26** (`ef8ec6af`, run [45807853157](https://github.com/boosterchile/booster-ai/actions/runs/45807853157), 11:56Z; migraciones 0090 y 0091 verificadas en prod) (spec `.specs/frente2-cierre/`, decisiones del PO D1 a D4).

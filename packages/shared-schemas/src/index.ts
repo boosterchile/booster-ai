@@ -92,3 +92,4 @@ export * from './domain/anticipo-huella.js';
 export * from './domain/booster-fleet.js';
 // «Pedir a Booster» (.specs/frente2-cierre §3.4).
 export * from './domain/solicitud-booster.js';
+export * from './domain/carga-combustible.js';
