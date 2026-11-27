@@ -5,6 +5,10 @@
 **`main`**: igual a prod (`33b0a786`) salvo documentación. Terraform sin `apply` pendiente: el PO aplicó `infrastructure/` el 2026-11-26 (4 altas, 2 cambios, 4 bajas: columna `presentacion` en `observatory.viajes`, las 4 vistas `urban_flow_metrics_*` recreadas con umbral 1 de #1096 y emisiones por presentación de #1115, y `OBSERVATORIO_PRESENTACION_ACTIVADA=true` en el api, revisión `booster-ai-api-00505-44z` al 100 %); plan previo desde un worktree limpio de `9d47676c`.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
+## Desviación de combustible confiable (propuesta, 2026-11-27)
+
+Pedido del PO, fuera de slot. Spec `.specs/desviacion-combustible-confiable/` (PR de la spec, sin código): la regla de golpe vigente con el IO 89 da 28 avisos en 17 días en JLKT54, casi todos ruido de 2 puntos. Propone nivel asentado en el mismo lugar, sin evaluar las 4 h tras una carga parcial, y confirmación por balance contra el IO 83. Espera las decisiones D1 a D4 del PO. Ningún camión de prod tiene la fuente `89`; JLKT54, JWTH77, KFKW23 y PLFL57 mandan combustible por CAN y siguen en `sin_sensor`; LFGR63 (200 L) y KZXB64 (600 L) tienen la capacidad mal según el balance.
+
 ## Rediseño, frente 2: cierre (lo medido, viaje propio certificado, «Pedir a Booster»)
 
 **En prod desde el 2026-11-26** (`ef8ec6af`, run [45807853157](https://github.com/boosterchile/booster-ai/actions/runs/45807853157), 11:56Z; migraciones 0090 y 0091 verificadas en prod) (spec `.specs/frente2-cierre/`, decisiones del PO D1 a D4).
