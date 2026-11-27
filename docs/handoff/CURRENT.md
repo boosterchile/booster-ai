@@ -5,6 +5,10 @@
 **`main`**: igual a prod (`33b0a786`) salvo documentación. Terraform sin `apply` pendiente: el PO aplicó `infrastructure/` el 2026-11-26 (4 altas, 2 cambios, 4 bajas: columna `presentacion` en `observatory.viajes`, las 4 vistas `urban_flow_metrics_*` recreadas con umbral 1 de #1096 y emisiones por presentación de #1115, y `OBSERVATORIO_PRESENTACION_ACTIVADA=true` en el api, revisión `booster-ai-api-00505-44z` al 100 %); plan previo desde un worktree limpio de `9d47676c`.
 **Contrato**: `CLAUDE.md`. Frentes: `docs/frentes-vivos.md`.
 
+## Desviación de combustible confiable (entrega 1, 2026-11-27)
+
+Pedido del PO, fuera de slot. Spec `.specs/desviacion-combustible-confiable/` aceptada (D1–D4). PR #1129: paquete puro `packages/fuel-deviation` (calibración L/pt por camión desde el IO 83, baja única confirmada por balance, balance en detenciones con piso por camión, conciliación de cargas registradas). Prueba retrospectiva de 30 días en los seis camiones con CAN: 0 desviaciones al cliente (la regla vigente daba 28 en 17 días en JLKT54). Un bidón de 10–20 L no se ve en el nivel; solo lo ve cargas registradas contra el IO 83 (entrega 2, registro de cargas). Entrega 3: conectarlo a Booster Fleet/panel y recién ahí poner JLKT54 y JWTH77 en `89` (con la regla vigente verían desviaciones falsas). Prod corregido por SQL el 2026-11-27 (pedido del PO): KFKW23 `83` + 560 L, PLFL57 `83`, LFGR63 200→560 L, KZXB64 600→500 L. JWTH77: 46 «cargas» en 30 días, revisar su sensor.
+
 ## Rediseño, frente 2: cierre (lo medido, viaje propio certificado, «Pedir a Booster»)
 
 **En prod desde el 2026-11-26** (`ef8ec6af`, run [45807853157](https://github.com/boosterchile/booster-ai/actions/runs/45807853157), 11:56Z; migraciones 0090 y 0091 verificadas en prod) (spec `.specs/frente2-cierre/`, decisiones del PO D1 a D4).
