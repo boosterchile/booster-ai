@@ -10,6 +10,7 @@ import {
   bodyTypeSchema,
   capacidadEstanqueLInputSchema,
   chileanPlateSchema,
+  crearCargaCombustibleBodySchema,
   derivarUnidadDesdeTipoLegacy,
   fuenteCombustibleCanSchema,
   interpretCanLvcan,
@@ -35,6 +36,7 @@ import {
 } from '../db/configuracion-de-asignacion.js';
 import { pgErrorCode } from '../db/pg-error.js';
 import {
+  type CargaCombustibleRow,
   assignments,
   pendingDevices,
   posicionesMovilConductor,
@@ -44,6 +46,11 @@ import {
 import { zValidator } from '../lib/validation.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import {
+  anularCargaCombustible,
+  listarCargasCombustible,
+  registrarCargaCombustible,
+} from '../services/cargas-combustible.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
 import { pedirABooster } from '../services/solicitudes-booster.js';
@@ -386,6 +393,26 @@ const dispositivoAsociacionesCounter = getBusinessCounter('dispositivo_asociacio
 const trazaConsultasCounter = getBusinessCounter('vehiculo_traza_consultas_total');
 const solicitudBoosterCreadaCounter = getBusinessCounter('solicitud_booster_creada_total');
 const vehiculoIdSchema = z.string().uuid();
+const cargaCombustibleRegistradaCounter = getBusinessCounter('carga_combustible_registrada_total');
+const cargaCombustibleAnuladaCounter = getBusinessCounter('carga_combustible_anulada_total');
+const LIMITE_CARGAS_COMBUSTIBLE = 100;
+
+/** El índice único compara al minuto: la misma carga con otros segundos es la misma. */
+function truncarAlMinuto(fecha: Date): Date {
+  return new Date(Math.floor(fecha.getTime() / 60_000) * 60_000);
+}
+
+function cargaCombustibleJson(carga: CargaCombustibleRow) {
+  return {
+    id: carga.id,
+    vehiculo_id: carga.vehiculoId,
+    cargada_en: carga.cargadaEn.toISOString(),
+    litros: Number(carga.litros),
+    lugar: carga.lugar,
+    registrada_en: carga.registradaEn.toISOString(),
+    anulada_en: carga.anuladaEn ? carga.anuladaEn.toISOString() : null,
+  };
+}
 
 /** Rango máx defensivo de la ventana de traza (protege query + browser). */
 const MAX_RANGO_TRAZA_MS = 31 * 24 * 60 * 60 * 1000;
@@ -844,6 +871,146 @@ export function createVehiculosRoutes(opts: {
           },
           creada ? 201 : 200,
         );
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // Cargas de combustible (.specs/registro-cargas-combustible, D4 del PO).
+  // Litros cargados con su fecha y hora; Booster los compara contra el
+  // consumo del motor (IO 83). Gestiona quien gestiona la flota de la empresa
+  // dueña; un vehículo o carga de otra empresa responde 404.
+  // ---------------------------------------------------------------------
+  const vehiculoNoEncontrado = (c: Context) =>
+    c.json({ error: 'vehicle_not_found', code: 'vehicle_not_found' }, 404);
+
+  async function vehiculoDeLaEmpresa(vehiculoId: string, empresaId: string): Promise<boolean> {
+    const [vehiculo] = await opts.db
+      .select({ id: vehicles.id })
+      .from(vehicles)
+      .where(and(eq(vehicles.id, vehiculoId), eq(vehicles.empresaId, empresaId)))
+      .limit(1);
+    return vehiculo != null;
+  }
+
+  app.get('/:id/cargas-combustible', async (c) => {
+    const auth = requireWriteRole(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = vehiculoIdSchema.safeParse(c.req.param('id'));
+    if (!id.success) {
+      return vehiculoNoEncontrado(c);
+    }
+    const vehiculoId = id.data;
+    const empresaId = auth.activeMembership.empresa.id;
+    return withBusinessSpan(
+      { name: 'carga_combustible.listar', attributes: { 'booster.vehicle_id': vehiculoId } },
+      async (span) => {
+        if (!(await vehiculoDeLaEmpresa(vehiculoId, empresaId))) {
+          return vehiculoNoEncontrado(c);
+        }
+        const cargas = await listarCargasCombustible({
+          db: opts.db,
+          empresaId,
+          vehiculoId,
+          limite: LIMITE_CARGAS_COMBUSTIBLE,
+        });
+        setResultAttributes(span, { 'booster.cargas_combustible.cantidad': cargas.length });
+        return c.json({ cargas: cargas.map(cargaCombustibleJson) });
+      },
+    );
+  });
+
+  app.post(
+    '/:id/cargas-combustible',
+    zValidator('json', crearCargaCombustibleBodySchema),
+    async (c) => {
+      const auth = requireWriteRole(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const id = vehiculoIdSchema.safeParse(c.req.param('id'));
+      if (!id.success) {
+        return vehiculoNoEncontrado(c);
+      }
+      const vehiculoId = id.data;
+      const body = c.req.valid('json');
+      const empresaId = auth.activeMembership.empresa.id;
+      return withBusinessSpan(
+        { name: 'carga_combustible.registrar', attributes: { 'booster.vehicle_id': vehiculoId } },
+        async (span) => {
+          if (!(await vehiculoDeLaEmpresa(vehiculoId, empresaId))) {
+            return vehiculoNoEncontrado(c);
+          }
+          const resultado = await registrarCargaCombustible({
+            db: opts.db,
+            empresaId,
+            vehiculoId,
+            cargadaEn: truncarAlMinuto(new Date(body.cargada_en)),
+            litros: body.litros,
+            lugar: body.lugar,
+            registradaPor: auth.userContext.user.id,
+          });
+          setResultAttributes(span, { 'booster.carga_combustible.registrada': resultado.ok });
+          if (!resultado.ok) {
+            return c.json(
+              {
+                error: 'conflict',
+                code: resultado.code,
+                message: 'Esa carga ya está registrada.',
+              },
+              409,
+            );
+          }
+          cargaCombustibleRegistradaCounter.add(1);
+          opts.logger.info(
+            { cargaId: resultado.carga.id, vehiculoId, empresaId, litros: body.litros },
+            'carga de combustible registrada',
+          );
+          return c.json({ carga: cargaCombustibleJson(resultado.carga) }, 201);
+        },
+      );
+    },
+  );
+
+  app.delete('/:id/cargas-combustible/:cargaId', async (c) => {
+    const auth = requireWriteRole(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = vehiculoIdSchema.safeParse(c.req.param('id'));
+    const cargaIdParse = vehiculoIdSchema.safeParse(c.req.param('cargaId'));
+    const cargaNoEncontrada = () =>
+      c.json({ error: 'carga_not_found', code: 'carga_not_found' }, 404);
+    if (!id.success) {
+      return vehiculoNoEncontrado(c);
+    }
+    if (!cargaIdParse.success) {
+      return cargaNoEncontrada();
+    }
+    const vehiculoId = id.data;
+    const cargaId = cargaIdParse.data;
+    const empresaId = auth.activeMembership.empresa.id;
+    return withBusinessSpan(
+      {
+        name: 'carga_combustible.anular',
+        attributes: { 'booster.vehicle_id': vehiculoId, 'booster.carga_combustible.id': cargaId },
+      },
+      async () => {
+        const carga = await anularCargaCombustible({
+          db: opts.db,
+          empresaId,
+          vehiculoId,
+          cargaId,
+          anuladaPor: auth.userContext.user.id,
+        });
+        if (!carga) {
+          return cargaNoEncontrada();
+        }
+        cargaCombustibleAnuladaCounter.add(1);
+        opts.logger.info({ cargaId, vehiculoId, empresaId }, 'carga de combustible anulada');
+        return c.json({ carga: cargaCombustibleJson(carga) });
       },
     );
   });

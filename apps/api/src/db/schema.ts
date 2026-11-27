@@ -3657,3 +3657,42 @@ export const solicitudesBooster = pgTable(
   }),
 );
 export type SolicitudBoosterRow = typeof solicitudesBooster.$inferSelect;
+
+/**
+ * Cargas de combustible registradas (`.specs/registro-cargas-combustible`,
+ * D4 del PO). `cargada_en` llega truncada al minuto desde el api: el índice
+ * único detecta la misma carga registrada dos veces. Anular no borra.
+ */
+export const cargasCombustible = pgTable(
+  'cargas_combustible',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    vehiculoId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    cargadaEn: timestamp('cargada_en', { withTimezone: true }).notNull(),
+    litros: numeric('litros', { precision: 7, scale: 1, mode: 'number' }).notNull(),
+    lugar: varchar('lugar', { length: 200 }),
+    registradaPor: uuid('registrada_por').references(() => users.id, { onDelete: 'restrict' }),
+    registradaEn: timestamp('registrada_en', { withTimezone: true }).notNull().defaultNow(),
+    anuladaEn: timestamp('anulada_en', { withTimezone: true }),
+    anuladaPor: uuid('anulada_por').references(() => users.id, { onDelete: 'restrict' }),
+  },
+  (table) => ({
+    vigenteUq: uniqueIndex('uq_cargas_combustible_vigente')
+      .on(table.vehiculoId, table.cargadaEn, table.litros)
+      .where(sql`anulada_en IS NULL`),
+    vehiculoFechaIdx: index('idx_cargas_combustible_vehiculo_fecha').on(
+      table.vehiculoId,
+      table.cargadaEn.desc(),
+    ),
+    litrosCheck: check(
+      'chk_cargas_combustible_litros',
+      sql`${table.litros} > 0 AND ${table.litros} <= 2000`,
+    ),
+  }),
+);
+export type CargaCombustibleRow = typeof cargasCombustible.$inferSelect;

@@ -17,6 +17,7 @@ import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { CargasCombustibleSeccion } from '../components/cargas-combustible-seccion.js';
 import { PedirABooster } from '../components/pedir-a-booster.js';
 import { VehiculoHub } from '../components/vehiculo-hub.js';
 import { VehiculosLista } from '../components/vehiculos-lista.js';
@@ -467,6 +468,8 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
             puedeConfigurar={canManageDispositivo}
             onAbrirConfig={abrirConfig}
           />
+
+          {canWrite ? <CargasCombustibleSeccion vehiculoId={vehicleQ.data.id} /> : null}
 
           <details
             ref={configRef}

@@ -652,6 +652,13 @@
       "when": 1782000000420,
       "tag": "0092_medicion_encendida_transportistas_activas",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1782086400420,
+      "tag": "0093_cargas_combustible",
+      "breakpoints": true
     }
   ]
 }
