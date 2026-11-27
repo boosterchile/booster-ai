@@ -90,6 +90,8 @@ Hecho en staging el 2026-11-24: los cuatro pasos, incluida la variable `STAGING_
 
 **Orden.** Crea primero el Environment y todo lo demás; deja `STAGING_URL` y `STAGING_PROJECT_ID` para el final, juntas y con staging listo para recibir un deploy. `STAGING_URL` no es inocua por sí sola: en `e2e-staging.yml` hace que el job corra en cada PR y es la `BASE_URL` también del nightly, así que con la variable creada y sin PWA desplegada el E2E falla.
 
+**Usuarios de prueba del E2E.** `scripts/db/seed-staging-e2e.sh` crea en staging dos empresas de prueba con su dueño (transportista y generador), con claves al azar que nunca se muestran, y deja en GitHub las variables y secretos `STAGING_E2E_*` que lee `e2e-staging.yml`. Sin ellos, las pruebas con sesión se saltan y corre solo el humo público. Detalle y guardas en `.specs/e2e-staging/spec.md`.
+
 Con `STAGING_PROJECT_ID` definida:
 
 - `release-staging.yml` despliega cada push a `main`. Mientras no exista, el job se salta.

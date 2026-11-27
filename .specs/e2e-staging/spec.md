@@ -19,10 +19,10 @@ Que cada corrida de «E2E Staging» ejecute pruebas reales contra staging: siemp
 ## Salidas
 
 - `apps/web/e2e/humo-publico.spec.ts` (nuevo): pruebas sin sesión, que corren siempre. La PWA carga y ofrece los tipos de acceso; `/app` sin sesión lleva al login; las pantallas de activación de conductor y de solicitud de acceso se dibujan; el api responde en `/health` y `/ready` y rechaza `/me` sin sesión.
-- `apps/web/e2e/fixtures.ts`: sesión por RUT y clave numérica con `E2E_USER_RUT`, `E2E_USER_CLAVE` y `E2E_USER_TIPO`, por los mismos `data-testid` que usa la suite local (`e2e-conductor/helpers.ts`). `apiUrl()` deriva el api de `BASE_URL` (`app.` → `api.`) o lo toma de `E2E_API_URL`.
+- `apps/web/e2e/fixtures.ts`: sesión por RUT y clave numérica, con las credenciales de cada rol tomadas del entorno, por los mismos `data-testid` que usa la suite local (`e2e-conductor/helpers.ts`). `apiUrl()` deriva el api de `BASE_URL` (`app.` → `api.`) o lo toma de `E2E_API_URL`.
 - `apps/web/e2e/perfil-validacion.spec.ts`: usa la sesión nueva; se salta sin credenciales, con un mensaje que dice cuáles faltan.
 - `apps/web/e2e/redis-ratelimit-smoke.spec.ts`: api derivado de `BASE_URL`; se activa con `RUN_RATELIMIT_SMOKE=1` y se niega a correr contra un host que no sea de staging.
-- `.github/workflows/e2e-staging.yml`: pasa `E2E_USER_RUT` (variable), `E2E_USER_CLAVE` (secreto) y activa el smoke de rate limit solo cuando el destino es staging.
+- `.github/workflows/e2e-staging.yml`: pasa el RUT (variable) y la clave (secreto) de cada rol, y activa el smoke de rate limit solo cuando el destino es staging.
 
 ## Criterios de éxito
 
@@ -32,19 +32,39 @@ Que cada corrida de «E2E Staging» ejecute pruebas reales contra staging: siemp
 - [x] Lint y typecheck de la web en verde.
 - [ ] **Lo comprueba el PO o el nightly:** con el usuario de prueba sembrado, las pruebas de sesión corren.
 
-## Usuario de prueba en staging: decisión pendiente del PO
+## Usuarios de prueba en staging
 
-Las pruebas de sesión necesitan un usuario activo en staging, con empresa, y su clave numérica. Hoy no hay forma de crearlo sin tocar una decisión existente:
+**Decisión del PO (chat, 2026-11-24):** el E2E usa dos empresas de prueba creadas en staging, «Transportes Van Oosterwyk» como transportista y «Prueba Generador SpA» como generador. Esos nombres existen en prod como empresas reales; en staging son datos de prueba con RUT ficticios.
 
-- Las siembras del repo (`apps/api/scripts/seed-*-e2e.ts`) usan claves que están escritas en el código de un repo público y apuntan al emulador de Auth. Además `requireSafeDatabaseUrl` las hace abortar a propósito contra una base de prod o de staging.
-- Staging es alcanzable desde internet: un usuario con una clave publicada en el repo sería una cuenta abierta.
+Las siembras locales (`apps/api/scripts/seed-*-e2e.ts`) no sirven para esto: usan claves escritas en el código de un repo público, apuntan al emulador de Auth, y `requireSafeDatabaseUrl` las hace abortar a propósito contra una base desplegada. Staging es alcanzable desde internet: un usuario con una clave publicada sería una cuenta abierta. Por eso la siembra de staging es un script aparte, con guardas propias.
 
-Opciones:
+### Salidas
 
-1. **Siembra dedicada para staging.** Un script nuevo que exija un destino explícito, use Identity Platform real y tome la clave de una variable de entorno; lo corre el PO por el túnel del bastion. Deja un usuario estable para el nightly. Implica aceptar que una siembra escriba en la base de staging, que es lo que la guarda actual impide.
-2. **Alta por el producto.** Crear la empresa y su dueño desde el panel de plataforma de staging y activarlo en `/activar`. No agrega código, pero necesita antes un platform-admin en staging y deja el alta sin automatizar.
+- `apps/api/scripts/seed-staging-e2e.ts` (`pnpm --filter @booster-ai/api seed:staging-e2e`): crea o actualiza las dos empresas, el dueño de cada una (cuenta en Identity Platform de staging y `clave_numerica_hash`), y para el transportista una zona XIII y un camión activo. Idempotente; no borra nada que no haya creado.
+- `apps/api/scripts/seed-staging-e2e-guardas.ts`: guardas puras, con tests.
+  - Exige `SEED_E2E_DESTINO=staging` y `GOOGLE_CLOUD_PROJECT=booster-ai-stg-494222`.
+  - Rechaza el emulador de Auth.
+  - Las claves vienen del entorno: seis dígitos, ni publicadas en el repo ni triviales.
+  - Aborta sin escribir si la base tiene una de las dos razones sociales con un RUT que no es el de la siembra: así se ve prod.
+- `scripts/db/seed-staging-e2e.sh`: abre el túnel IAP al bastion de staging, arma la URL de la base desde Secret Manager sin imprimirla, genera las dos claves al azar, corre la siembra y deja en GitHub lo que lee el workflow (`STAGING_E2E_TRANSPORTISTA_RUT` y `STAGING_E2E_GENERADOR_RUT` como variables; `STAGING_E2E_TRANSPORTISTA_CLAVE` y `STAGING_E2E_GENERADOR_CLAVE` como secretos). Lo corre el PO.
+- `apps/web/e2e/`: `fixtures.ts` con sesión por rol, `perfil-validacion.spec.ts` (transportista) y `sesion-generador.spec.ts`.
 
-Hasta que el PO elija, las pruebas de sesión se saltan y la corrida sigue valiendo por las públicas.
+### Límite de intentos de login
+
+El login por RUT admite 5 intentos cada 15 minutos por RUT y cuenta también los exitosos; en staging nadie lo limpia entre corridas. Por eso cada rol inicia sesión una sola vez por corrida (`abrirSesion` en `beforeAll`) y las pruebas con sesión corren solo en Chromium de escritorio. Más de cinco corridas del workflow en 15 minutos harían fallar el login.
+
+### Criterios de éxito
+
+- [x] Rojo exhibido en las guardas antes de implementarlas (los usuarios son cuentas de autenticación).
+- [x] Cada guarda aborta la siembra antes de conectarse a la base: sin destino, con el proyecto de prod, con el emulador, con una clave publicada y con una trivial.
+- [x] Sin credenciales, la suite corre contra staging en los cuatro navegadores: pasan las públicas y se saltan las de sesión.
+- [ ] **Lo corre el PO:** `scripts/db/seed-staging-e2e.sh` siembra staging y configura GitHub.
+- [ ] **Lo comprueba la siguiente corrida de «E2E Staging»:** las pruebas con sesión de los dos roles pasan.
+
+### Sin verificar
+
+- La siembra contra una base y un Identity Platform reales: no se pudo ejecutar fuera de staging, porque rechaza el emulador. Su primera corrida es la del PO.
+- Las pruebas con sesión: dependen de esa siembra.
 
 ## Fuera de alcance
 
