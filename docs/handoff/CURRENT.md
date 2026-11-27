@@ -8,6 +8,9 @@
 ## Registro de cargas de combustible (entrega 2, 2026-11-27)
 
 Spec `.specs/registro-cargas-combustible/` (D4 del PO). Migración 0093 `cargas_combustible` (expand-only), `GET/POST /vehiculos/:id/cargas-combustible` y `DELETE …/:cargaId` (anula, no borra), sección «Cargas de combustible» en la ficha del vehículo para quien gestiona la flota. Probado en local con api + web + emulador. Falta la entrega 3: usar las cargas en `reconcilePeriod` (Booster Fleet y panel).
+## Desviación de combustible confiable (entrega 1, 2026-11-27)
+
+Pedido del PO, fuera de slot. Spec `.specs/desviacion-combustible-confiable/` aceptada (D1–D4). #1129 en main (`66c432eb`): paquete puro `packages/fuel-deviation` (calibración L/pt por camión desde el IO 83, baja única confirmada por balance, balance en detenciones con piso por camión, conciliación de cargas registradas). Prueba retrospectiva de 30 días en los seis camiones con CAN: 0 desviaciones al cliente (la regla vigente daba 28 en 17 días en JLKT54). Un bidón de 10–20 L no se ve en el nivel; solo lo ve cargas registradas contra el IO 83 (entrega 2, registro de cargas). Entrega 3: conectarlo a Booster Fleet/panel y recién ahí poner JLKT54 y JWTH77 en `89` (con la regla vigente verían desviaciones falsas). Prod corregido por SQL el 2026-11-27 (pedido del PO): KFKW23 `83` + 560 L, PLFL57 `83`, LFGR63 200→560 L, KZXB64 600→500 L. JWTH77: 46 «cargas» en 30 días, revisar su sensor.
 
 ## Rediseño, frente 2: cierre (lo medido, viaje propio certificado, «Pedir a Booster»)
 
